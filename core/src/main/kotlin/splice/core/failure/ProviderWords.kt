@@ -83,6 +83,18 @@ public object ProviderWordsFilter {
         return ProviderWords(fitted(kept))
     }
 
+    /** custom-provider (cp-errors): [raw] as the provider wrote it, for a provider whose table sets
+     *  `error_messages = "whole"`: trimmed, at most [MAX_READ] characters, its explanation and URLs kept rather than
+     *  cut to one sentence; null when it is empty or is still JSON as a whole. Still [DROP]ped: a provider asking for
+     *  its own words never gets to echo an id, a key or a masked credential back onto a line splice writes or stores
+     *  (ProviderErrors) — that boundary holds for every provider, not only the filtered ones. */
+    public fun whole(raw: String?): ProviderWords? {
+        val text = raw?.trim()?.takeIf { it.isNotEmpty() && json(it) == null } ?: return null
+        val capped = text.take(MAX_READ).trim()
+        val safe = DROP.fold(capped) { body, rule -> rule.replace(body, " ") }
+        return ProviderWords(SPACES.replace(safe, " ").trim())
+    }
+
     /** [text] read as JSON, or null when it is not JSON as a whole. The parser takes any unquoted token as a value, so
      *  a single word (a refusal's category given alone) is read as a sentence unless it is one of JSON's own values. */
     private fun json(text: String): JsonElement? = try {

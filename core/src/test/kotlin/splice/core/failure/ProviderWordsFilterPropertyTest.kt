@@ -110,6 +110,7 @@ private fun Random.keyToken(): String = when (nextInt(3)) {
 }
 
 private fun words(raw: String): String? = ProviderWordsFilter.of(raw)?.text
+private fun whole(raw: String): String? = ProviderWordsFilter.whole(raw)?.text
 
 class ProviderWordsFilterPropertyTest {
     @Test
@@ -278,5 +279,62 @@ class ProviderWordsFilterPropertyTest {
             "https://grok.com/?_s=usage or upgrade at https://grok.com/supergrok."
 
         assertEquals("You have run out of credits or need a Grok subscription.", words(raw))
+    }
+
+    // custom-provider (cp-errors): `error_messages = "whole"` keeps a provider's full explanation and its URLs — the
+    // whole point of asking for the provider's own words — but a provider still never gets to echo an id, a key or a
+    // masked credential back onto a line splice writes or records (ProviderErrors). The redaction boundary is the
+    // same DROP rules [of] applies, so there is one answer to "can this reach the person" for every provider.
+    @Test
+    fun `whole mode drops key-shaped tokens and masked keys, same as filtered mode`() {
+        val random = Random(8)
+        repeat(RUNS) {
+            val subject = random.pick(SUBJECTS)
+            val predicate = random.pick(PREDICATES)
+            val key = random.keyToken()
+            val raw = "$subject $predicate: $key."
+
+            val out = whole(raw)
+
+            assertNotNull(out, raw)
+            val kept = out.orEmpty()
+            assertFalse(key in kept, "$raw -> $kept")
+            assertFalse(MASKED.containsMatchIn(kept), "$raw -> $kept")
+            assertFalse(LONG_TOKEN.containsMatchIn(kept), "$raw -> $kept")
+        }
+    }
+
+    @Test
+    fun `whole mode drops a parenthesised request id too`() {
+        val random = Random(9)
+        repeat(RUNS) {
+            val id = random.parenthesisedId()
+            val raw = "${random.pick(SUBJECTS)} ${random.pick(PREDICATES)} $id."
+
+            val out = whole(raw).orEmpty()
+
+            assertFalse(id.removePrefix("(").removeSuffix(")") in out, "$raw -> $out")
+        }
+    }
+
+    // Unlike filtered mode, whole mode is for a provider that WANTS its people to read its own words: the sentence
+    // boundary, the URL and the retry advice all survive, since cutting them is exactly what asking for "whole" means
+    // splice should not do.
+    @Test
+    fun `whole mode keeps URLs, hosts, retry advice and the full explanation, unlike filtered mode`() {
+        val raw = "You have run out of credits or need a Grok subscription. Add credits at " +
+            "https://grok.com/?_s=usage or upgrade at https://grok.com/supergrok. Please retry after that."
+
+        val out = whole(raw)
+
+        assertEquals(raw, out)
+        assertNull(words(raw), "filtered mode still cuts the same body")
+    }
+
+    @Test
+    fun `whole mode is null for an empty or JSON-whole body, same as filtered mode`() {
+        assertNull(ProviderWordsFilter.whole(null))
+        assertNull(whole("   "))
+        JSON_BODIES.forEach { assertNull(whole(it), it) }
     }
 }

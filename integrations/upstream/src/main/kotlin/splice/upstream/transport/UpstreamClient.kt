@@ -202,22 +202,32 @@ public class UpstreamClient(
         val looked = Cancellables.runCatchingCancellable { ctx.requireAuth() }
             .getOrElse { LoginAnswer.Unrenewed(RefreshOutcome.ReadFailed(it)) }
         return when (val answer = looked) {
-            is LoginAnswer.Granted -> {
-                val auth = state.credentials(ctx, answer.credentials, credentialCooldowns, cooldown)
-                val cause = state.cooldown.terminalLimit
-                if (cause == null) {
-                    // The vendor's body route moves with the place credentials just chose (VendorRoute.body).
-                    attempt(ctx, state.routedBody(ctx, body, request::body), state, block, auth)
-                } else {
-                    steps.retainedLimit(cause, ctx, state)
-                }
-            }
+            is LoginAnswer.Granted -> granted(ctx, body, state, block, answer)
             LoginAnswer.Missing -> LoopStep.Done(UpstreamPost.Ended(UpstreamAuthMissing()))
+            is LoginAnswer.Unavailable -> LoopStep.Done(UpstreamPost.Ended(UpstreamAuthMissing(answer.why)))
             is LoginAnswer.Refused -> {
                 val evidence = FailureEvidence(LOGIN_REFUSED, said = answer.cause.said?.text)
                 LoopStep.Done(UpstreamPost.Ended(UpstreamFailed(answer.cause, evidence, state.ledger.attempts)))
             }
             is LoginAnswer.Unrenewed -> steps.unrenewed(answer, ctx, state)
+        }
+    }
+
+    /** A login granted: the credentials it holds, and the attempt they make, or the terminal limit a cooldown kept. */
+    private suspend fun <T> granted(
+        ctx: PostContext,
+        body: RequestBody,
+        state: RetryState,
+        block: UpstreamHandler<T>,
+        answer: LoginAnswer.Granted,
+    ): LoopStep<T> {
+        val auth = state.credentials(ctx, answer.credentials, credentialCooldowns, cooldown)
+        val cause = state.cooldown.terminalLimit
+        // The vendor's body route moves with the place credentials just chose (VendorRoute.body).
+        return if (cause == null) {
+            attempt(ctx, state.routedBody(ctx, body, request::body), state, block, auth)
+        } else {
+            steps.retainedLimit(cause, ctx, state)
         }
     }
 

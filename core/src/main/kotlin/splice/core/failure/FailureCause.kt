@@ -36,6 +36,11 @@ public sealed class FailureCause {
     /** The provider answered, and the answer was a failure. [said] waits for slice 2's ProviderWordsFilter. */
     public sealed class Provider : FailureCause() {
         public abstract val said: ProviderWords?
+
+        /** This cause with [words] in place of what its reader quoted: a provider whose table asks for its own words
+         *  whole (custom-provider, cp-errors) has them read once, beside the cause, and set here. */
+        public abstract fun saying(words: ProviderWords?): Provider
+
         override val providerReported: Boolean get() = true
 
         /** A rate limit: a 429, or a body or event that names one. */
@@ -44,6 +49,8 @@ public sealed class FailureCause {
             val window: LimitWindow?,
             override val said: ProviderWords? = null,
         ) : Provider() {
+            override fun saying(words: ProviderWords?): Provider = copy(said = words)
+
             override val persisted: PersistedCause get() = PersistedCause.VENDOR_RATE_LIMITED
             override val permanent: Boolean get() = true
             override val resumeAt: Instant? get() = (lift as? Lift.At)?.at
@@ -64,13 +71,22 @@ public sealed class FailureCause {
             val loading: Boolean,
             override val said: ProviderWords? = null,
         ) : Provider() {
+            override fun saying(words: ProviderWords?): Provider = copy(said = words)
+
             override val persisted: PersistedCause get() = PersistedCause.UPSTREAM_STATUS_5XX
             override val resumeAt: Instant? get() = (lift as? Lift.At)?.at
+
+            /** custom-provider (cp-errors): when the provider's own Retry-After (or retry-after-ms) said to come back,
+             *  which splice passes on to the client at once rather than waiting it out itself; null when the answer
+             *  named none. */
+            public val pushback: Instant? get() = (lift as? Lift.At)?.takeIf { it.source == LiftSource.RETRY_AFTER }?.at
         }
 
         /** A 5xx that is no overload, or [ServerFault.FOREIGN_KEY]: a 401 naming a masked key the login never sent,
          *  the provider failing its own check (V4-242). */
         public data class ServerError(val fault: ServerFault, override val said: ProviderWords? = null) : Provider() {
+            override fun saying(words: ProviderWords?): Provider = copy(said = words)
+
             override val persisted: PersistedCause
                 get() = if (fault == ServerFault.FOREIGN_KEY) {
                     PersistedCause.UPSTREAM_REPORTED
@@ -85,6 +101,8 @@ public sealed class FailureCause {
             val subscription: Boolean,
             override val said: ProviderWords? = null,
         ) : Provider() {
+            override fun saying(words: ProviderWords?): Provider = copy(said = words)
+
             override val persisted: PersistedCause get() = PersistedCause.VENDOR_QUOTA_EXHAUSTED
             override val permanent: Boolean get() = true
             override val resumeAt: Instant? get() = (lift as? Lift.At)?.at
@@ -96,11 +114,15 @@ public sealed class FailureCause {
             override val said: ProviderWords? = null,
             val block: AccountBlock? = null,
         ) : Provider() {
+            override fun saying(words: ProviderWords?): Provider = copy(said = words)
+
             override val persisted: PersistedCause get() = PersistedCause.UPSTREAM_STATUS_4XX
             override val permanent: Boolean get() = true
         }
 
         public data class AuthRejected(val owner: LoginOwner, override val said: ProviderWords? = null) : Provider() {
+            override fun saying(words: ProviderWords?): Provider = copy(said = words)
+
             override val persisted: PersistedCause get() = PersistedCause.AUTH_MISSING
             override val permanent: Boolean get() = true
         }
@@ -112,22 +134,30 @@ public sealed class FailureCause {
             val whileAnswering: Boolean,
             override val said: ProviderWords? = null,
         ) : Provider() {
+            override fun saying(words: ProviderWords?): Provider = copy(said = words)
+
             override val persisted: PersistedCause get() = PersistedCause.REQUEST_TOO_LARGE
             override val permanent: Boolean get() = true
         }
 
         public data class Rejected(val staleReasoning: Boolean, override val said: ProviderWords? = null) : Provider() {
+            override fun saying(words: ProviderWords?): Provider = copy(said = words)
+
             override val persisted: PersistedCause get() = PersistedCause.UPSTREAM_STATUS_4XX
             override val permanent: Boolean get() = true
         }
 
         public data class ModelMissing(val model: String, override val said: ProviderWords? = null) : Provider() {
+            override fun saying(words: ProviderWords?): Provider = copy(said = words)
+
             override val persisted: PersistedCause get() = PersistedCause.UPSTREAM_STATUS_4XX
             override val permanent: Boolean get() = true
         }
 
         /** The model or the provider's policy answered no: a refusal, a policy code or a content filter. */
         public data class Refused(val by: RefusedBy, override val said: ProviderWords? = null) : Provider() {
+            override fun saying(words: ProviderWords?): Provider = copy(said = words)
+
             override val persisted: PersistedCause
                 get() = if (by == RefusedBy.MODEL) PersistedCause.MODEL_REFUSED else PersistedCause.CONTENT_FILTERED
             override val permanent: Boolean get() = true
@@ -141,6 +171,8 @@ public sealed class FailureCause {
             override val said: ProviderWords? = null,
             val loop: ReasoningLoop? = null,
         ) : Provider() {
+            override fun saying(words: ProviderWords?): Provider = copy(said = words)
+
             override val persisted: PersistedCause get() = PersistedCause.UPSTREAM_REPORTED
         }
 
@@ -152,6 +184,8 @@ public sealed class FailureCause {
             override val permanent: Boolean = false,
             override val said: ProviderWords? = null,
         ) : Provider() {
+            override fun saying(words: ProviderWords?): Provider = copy(said = words)
+
             override val persisted: PersistedCause get() = PersistedCause.TOOL_TEAR
             override val providerReported: Boolean get() = !runaway
         }
@@ -164,6 +198,8 @@ public sealed class FailureCause {
             val reasoningTokens: Long,
             override val said: ProviderWords? = null,
         ) : Provider() {
+            override fun saying(words: ProviderWords?): Provider = copy(said = words)
+
             override val persisted: PersistedCause get() = PersistedCause.UPSTREAM_REPORTED
         }
 
@@ -172,6 +208,8 @@ public sealed class FailureCause {
             val clientError: Boolean,
             override val said: ProviderWords? = null,
         ) : Provider() {
+            override fun saying(words: ProviderWords?): Provider = copy(said = words)
+
             override val persisted: PersistedCause get() = PersistedCause.UPSTREAM_REPORTED
             override val permanent: Boolean get() = clientError
         }
@@ -187,7 +225,11 @@ public sealed class FailureCause {
             val why: Unreach,
             val local: Boolean,
             val noneOf: List<String> = emptyList(),
+            /** [Unreach.UNTRUSTED]: the TLS reason, short, as the line quotes it; null for every other. */
+            val reason: String? = null,
         ) : Path() {
+            override val permanent: Boolean get() = why == Unreach.UNTRUSTED
+
             override val persisted: PersistedCause
                 get() =
                     if (why == Unreach.REFUSED) PersistedCause.CONNECT_REFUSED else PersistedCause.UPSTREAM_CONN_RESET
@@ -208,8 +250,10 @@ public sealed class FailureCause {
 
     /** splice ended or declined the turn itself. */
     public sealed class Splice : FailureCause() {
-        /** No login to send. [loginCommand] fixes it, where the head has one. */
-        public data class NoLogin(val loginCommand: String?) : Splice() {
+        /** No login to send. [loginCommand] fixes it, where the head has one.
+         *  custom-provider (cp-credential): [why] is the provider's own reason there is none, its credential command's
+         *  words or that the person is not signed in; null where no provider says. */
+        public data class NoLogin(val loginCommand: String?, val why: String? = null) : Splice() {
             override val persisted: PersistedCause get() = PersistedCause.AUTH_MISSING
         }
 

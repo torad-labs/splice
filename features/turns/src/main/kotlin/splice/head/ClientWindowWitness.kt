@@ -35,7 +35,10 @@ internal class ClientWindowWitness(private val posted: ClientWindows) {
         // sized from the client's own table, which only its status-line post reveals.
         val launched = headers[CLIENT_WINDOW_HEADER]?.trim()?.toLongOrNull()?.takeIf { it > 0L }
             ?.takeIf { catalog.envGoverned(meta.route.originalModel) }
-        return said ?: launched ?: posted.windowFor(meta.scope.sessionId)
+        // A gateway turn carries the window its gateway holds for the session, which is what a session's own posts
+        // taught it: so it sits where [posted] does, below what the request itself says (#706), never above it.
+        val handed = GatewayTurns.of(call)?.clientWindow?.takeIf { it > 0L }
+        return said ?: launched ?: handed ?: posted.windowFor(meta.scope.sessionId)
     }
 }
 

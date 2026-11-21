@@ -12,13 +12,19 @@ private const val SEAL_POLL_MS = 50L
  *  stopping the engine sooner cuts the tail of a finished turn. */
 internal class StopSeal(
     private val gate: InflightGate,
-    private val engine: HeadEngine,
+    private val calls: ActiveCalls,
     private val waiter: Waiter,
 ) {
     /** Waits, polling through the injected waiter, until the head is idle or [deadlineNs] (a nanoTime reading) passes. */
     suspend fun settle(deadlineNs: Long) {
-        while (gate.snapshot().inflight + engine.activeCalls > 0 && System.nanoTime() < deadlineNs) {
+        while (gate.snapshot().inflight + calls() > 0 && System.nanoTime() < deadlineNs) {
             waiter.wait(SEAL_POLL_MS)
         }
     }
+}
+
+/** How many calls are still inside a route handler: a head's engine counts its own ([HeadEngine]), and a gateway counts
+ *  the calls it hands a provider runtime ([ProviderRuntime]). */
+internal fun interface ActiveCalls {
+    operator fun invoke(): Int
 }

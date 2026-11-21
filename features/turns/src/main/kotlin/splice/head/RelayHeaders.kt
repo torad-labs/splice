@@ -3,6 +3,7 @@
 package splice.head
 
 import io.ktor.http.Headers
+import io.ktor.server.application.ApplicationCall
 import splice.core.client.AGENT_HEADER
 import splice.core.client.PARENT_AGENT_HEADER
 import splice.core.pool.PREFERRED_UPSTREAM_HEADER
@@ -25,6 +26,14 @@ internal object RelayHeaders {
         workedFor = headers[GATHERS_FOR_HEADER]?.takeIf { it.isNotBlank() },
         agent = TurnAgent(named(headers, AGENT_HEADER), named(headers, PARENT_AGENT_HEADER)),
     )
+
+    /** [of] [call]'s headers, with the door the gateway named for the turn where the gateway handed it over (it sets no
+     *  header on a call it already holds). */
+    fun of(call: ApplicationCall): TurnRelay {
+        val relay = of(call.request.headers)
+        val door = GatewayTurns.of(call)?.door?.takeIf { it in turnDoors } ?: return relay
+        return relay.copy(door = door)
+    }
 
     private fun named(headers: Headers, name: String): String? = headers[name]?.takeIf(String::isNotBlank)
 }

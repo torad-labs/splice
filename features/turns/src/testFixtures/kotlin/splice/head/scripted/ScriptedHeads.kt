@@ -341,7 +341,10 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
     public val provider: ScriptedProvider = ScriptedProvider(time)
 
     private val heads = CopyOnWriteArrayList<ScriptedHead>()
-    private val built = AtomicInteger()
+    internal val built = AtomicInteger()
+
+    /** Providers the gateway serves with no head at all (gateway-no-heads), in front of the same [provider]. */
+    public val headless: HeadlessProviders = HeadlessProviders(this, tmp)
 
     /** An Anthropic Messages passthrough head. [replies] is how it reads its own failures: a vendor's own reading
      *  (Kimi's, Claude's) where a test names one, and the Anthropic standard otherwise. [tracksQuota] gives it the
@@ -509,7 +512,7 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
         return head
     }
 
-    private fun tuning(
+    internal fun tuning(
         key: String,
         shape: HeadShape,
         baseUrl: String,

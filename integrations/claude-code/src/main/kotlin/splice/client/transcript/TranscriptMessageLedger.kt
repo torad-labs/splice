@@ -2,6 +2,8 @@
 // reads records and this owns turning what they said into numbered, redacted messages.
 package splice.client.transcript
 
+import kotlinx.serialization.json.JsonObject
+import splice.core.util.JsonScalars
 import splice.sessions.transcript.KIND_INTERRUPTED
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptRole
@@ -18,8 +20,29 @@ internal class PendingAssistant(val id: String?, val ts: Long?, val at: Long) {
     val texts = mutableListOf<String>()
     val calls = mutableListOf<RecordedCall>()
 
+    /** The text of the message's thinking blocks, in the order the client wrote them. */
+    private val thoughts = mutableListOf<String>()
+
+    /** Takes a text or thinking block of the message; its calls are read by the assembly, which knows their tools. */
+    fun read(block: JsonObject) {
+        when (JsonScalars.str(block, "type")) {
+            "text" -> JsonScalars.str(block, "text")
+                ?.takeUnless { it.trim() == THINKING_STAND_IN }
+                ?.let(texts::add)
+            // Thinking is the model's working, not its output: it rides on the reply's first message, never in its
+            // text, so the conversation shows what it said. Signatures and redacted_thinking are never read.
+            "thinking" -> JsonScalars.str(block, "thinking")
+                ?.takeUnless { it.isBlank() || it.trim() == THINKING_STAND_IN }
+                ?.let(thoughts::add)
+            else -> Unit
+        }
+    }
+
     /** The message's text blocks as one text, in the order the client wrote them. */
     fun joined(): String = texts.joinToString("\n\n")
+
+    /** The message's thinking as one text, joined as its text is; null when it had none. */
+    fun thought(): String? = thoughts.takeIf { it.isNotEmpty() }?.joinToString("\n\n")
 }
 
 /** The messages one page has made. [byOffset]: a message is numbered by where its record starts in the file, the offset
@@ -52,6 +75,12 @@ internal class MessageLedger(
         messages += TranscriptMessage(place(at), role, ts, redaction.shown(text))
     }
 
+    /** The summary Claude Code writes when it compacts the conversation: a system line, marked as one. */
+    fun compaction(at: Long, ts: Long?, text: String) {
+        val source = TranscriptSource(compact = true)
+        messages += TranscriptMessage(place(at), TranscriptRole.SYSTEM, ts, redaction.shown(text), source = source)
+    }
+
     /** A message another session sent, under the name it sends as. */
     fun received(at: Long, ts: Long?, from: String, text: String) {
         val source = TranscriptSource(from = from)
@@ -74,9 +103,12 @@ internal class MessageLedger(
         )
     }
 
-    /** A finished assistant message: its text as one message, then one per recorded call, all at its first record. */
+    /** A finished assistant message: its text as one message, then one per recorded call, all at its first record. The
+     *  first of them carries the message's thinking, the rest do not: a page that holds any of a reply holds all of it,
+     *  so its first message is on the page with the rest. */
     fun assistant(done: PendingAssistant) {
         val written = TranscriptSource(model = done.model)
+        var source = written.copy(thinking = done.thought()?.let(redaction::shown))
         if (done.texts.isNotEmpty()) {
             val text = redaction.shown(done.joined())
             messages += TranscriptMessage(
@@ -85,8 +117,9 @@ internal class MessageLedger(
                 done.ts,
                 text,
                 messageId = done.id,
-                source = written,
+                source = source,
             )
+            source = written
         }
         for (call in done.calls) {
             messages += TranscriptMessage(
@@ -96,8 +129,9 @@ internal class MessageLedger(
                 redaction.shown(call.input),
                 toolUse = TranscriptToolUse(call.name, result = false, id = call.id),
                 messageId = done.id,
-                source = written,
+                source = source,
             )
+            source = written
         }
     }
 

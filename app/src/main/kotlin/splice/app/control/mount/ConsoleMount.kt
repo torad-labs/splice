@@ -13,6 +13,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.request.queryString
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.cacheControl
 import io.ktor.server.response.header
@@ -41,14 +42,22 @@ private const val ROOT_ANSWER = "splice"
 // What a browser names in Accept.
 private const val HTML = "text/html"
 
+// why: the reply reader's folder and its own page; `/reply-view` and `/reply-view/` open that page, keeping the query.
+private const val READER_DIR = "reply-view"
+private const val READER_PAGE = "index.html"
+
 internal class ConsoleMount(
     private val guard: ControlGuard,
     private val env: EnvReader = EnvReader(System::getenv),
 ) {
 
     /** A page, a stylesheet, a script, a font or a brand image (the mark, the favicon, the app icon), by a plain name:
-     *  nothing else is served, and no name climbs out. */
+     *  nothing else is served, and no name climbs out. Nov 19, 2026: and the reply reader's own files (reply-view/,
+     *  the module, its stylesheet, its connector and its page), named directly in that folder: its README and anything
+     *  nested stay unserved. It ships in the jar beside the routes it reads, so a client that loads it from this splice
+     *  always gets the version that matches this splice's feed. */
     private val asset = Regex("""((fonts|brand)/)?[a-z0-9][a-z0-9-]*\.(html|css|js|woff2|svg|png)""")
+    private val readerAsset = Regex("""$READER_DIR/[a-z0-9][a-z0-9-]*\.(html|css|js)""")
     private val json = Json { ignoreUnknownKeys = true }
 
     /** The control port's root: a browser (it asks for HTML) lands on the console's first page; any other client gets
@@ -78,6 +87,11 @@ internal class ConsoleMount(
         }
         route.get("/{asset...}") {
             val name = call.parameters.getAll("asset").orEmpty().joinToString("/")
+            if (name == READER_DIR || name == "$READER_DIR/") {
+                val query = call.request.queryString()
+                call.respondRedirect("/$READER_DIR/$READER_PAGE" + if (query.isEmpty()) "" else "?$query")
+                return@get
+            }
             val type = typeOf(name)
             val bytes = type?.let { read(name) }
             if (type == null || bytes == null) {
@@ -97,8 +111,11 @@ internal class ConsoleMount(
         JsonReply(status, buildJsonObject { put(field, value) }.toString()).send(call)
     }
 
+    /** Whether [name] is one of the files served here: a console file, or one of the reply reader's own. */
+    private fun served(name: String): Boolean = asset.matches(name) || readerAsset.matches(name)
+
     private fun typeOf(name: String): ContentType? {
-        if (!asset.matches(name)) return null
+        if (!served(name)) return null
         return when (name.substringAfterLast('.')) {
             "html" -> ContentType.Text.Html
             "css" -> ContentType.Text.CSS

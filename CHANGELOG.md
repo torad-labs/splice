@@ -50,6 +50,14 @@
   as they come, each tool call as it starts, and how the turn ended. Joining in the middle of a reply shows all of it.
   It needs the management key, answers only on this machine, is read-only, and sends nothing but what Claude Code
   was sent as reply text, thinking and tool-call starts. `docs/live-reply.md` has the events.
+- **A reader for a session's conversation.** `/reply-view/` on the control plane opens a page that reads one session
+  the way a chat app does: the person's messages, each reply as Markdown with highlighted code and a copy button,
+  each tool call as one line that opens to its input and result, thinking behind a toggle, and a reply still being
+  written growing in place a whole block at a time. It shows none of what the harness wraps around a message for the
+  model. `GET /api/sessions/{id}/transcript` now gives a reply's messages their `message` id and `model`, a reply's
+  first message its `thinking`, and a compaction's summary `compact: true`. The reader is one ES module and one
+  stylesheet with no build step (`/reply-view/reply-view.js`, `/reply-view/reply-view.css`), which any page can embed
+  and dress through `--rv-*` custom properties; `app/src/main/resources/console/reply-view/README.md` says how.
 - **Modes: one folder gives the model a set of tools that splice answers.** A mode is a folder under `modes/`: its
   manifest, each tool's schema and description, optional guidance, and the code that answers its calls. It is built
   into the jar, and adding one changes no file outside its folder. splice offers a mode's tools to the model of every

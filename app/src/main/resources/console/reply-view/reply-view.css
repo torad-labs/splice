@@ -1,0 +1,391 @@
+/* reply-view: the reader's stylesheet. Every rule sits under .rv, and every colour, the code font and the radius come from
+   a --rv-* custom property READ here with a default and never declared here: a host sets any of them on its container (or
+   any ancestor) and wins. The defaults are made only of system colours (CanvasText, Canvas, LinkText, VisitedText,
+   ActiveText, Mark) mixed with color-mix() and light-dark(), so they follow the host's colour scheme: a host that sets
+   `color-scheme: light dark` (or `dark`, or `light`) gets the matching palette with no styling of its own, and the
+   reader brings no palette of its own. Text keeps the host's font. README.md in this folder lists every property. */
+
+/* ---------- the root ---------- */
+
+.rv {
+  color: var(--rv-text, CanvasText);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.rv .rv-history > :first-child { margin-top: 0; }
+.rv .rv-live:not(:empty) { margin-top: 0.75rem; }
+
+/* ---------- rows: generous between turns, tight within one ---------- */
+
+.rv .rv-row { margin-top: 0.5rem; min-width: 0; }
+.rv .rv-row-user { display: flex; flex-direction: column; align-items: flex-end; margin-top: 1.75rem; }
+.rv .rv-row-user + .rv-row { margin-top: 1.25rem; }
+.rv .rv-row-peer, .rv .rv-row-note { margin-top: 1rem; }
+.rv .rv-row-note + .rv-row-note { margin-top: 0.5rem; }
+.rv .rv-row-call + .rv-row-call { margin-top: 0.375rem; }
+
+.rv .rv-user {
+  max-width: 85%;
+  box-sizing: border-box;
+  padding: 0.55rem 0.95rem;
+  border-radius: var(--rv-radius, 18px);
+  background: var(--rv-bubble, light-dark(color-mix(in srgb, CanvasText 5%, Canvas), color-mix(in srgb, CanvasText 11%, Canvas)));
+  color: var(--rv-text, CanvasText);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.rv .rv-command { font-family: var(--rv-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 0.9em; }
+.rv .rv-taken { opacity: 0.55; }
+.rv .rv-tag { margin-top: 0.25rem; font-size: 0.75rem; color: var(--rv-muted, color-mix(in srgb, CanvasText 64%, Canvas)); }
+
+.rv .rv-model {
+  margin: 0.25rem 0 0.375rem;
+  font-family: var(--rv-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.75rem;
+  color: var(--rv-muted, color-mix(in srgb, CanvasText 64%, Canvas));
+}
+
+.rv .rv-note {
+  padding: 0.3rem 0 0.3rem 0.75rem;
+  border-left: 2px solid var(--rv-border, color-mix(in srgb, CanvasText 15%, Canvas));
+  font-size: 0.875em;
+  color: var(--rv-muted, color-mix(in srgb, CanvasText 64%, Canvas));
+  white-space: pre-wrap;
+}
+.rv .rv-row-user .rv-note { align-self: stretch; margin-top: 0.375rem; }
+.rv .rv-note.rv-error { color: var(--rv-error, color-mix(in oklab, ActiveText 78%, CanvasText)); border-left-color: var(--rv-error, color-mix(in oklab, ActiveText 78%, CanvasText)); }
+
+.rv .rv-peer {
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--rv-border, color-mix(in srgb, CanvasText 15%, Canvas));
+  border-radius: 12px;
+  font-size: 0.925em;
+}
+.rv .rv-peer-from { font-size: 0.8rem; font-weight: 600; color: var(--rv-muted, color-mix(in srgb, CanvasText 64%, Canvas)); }
+.rv .rv-peer-text { white-space: pre-wrap; }
+
+/* ---------- the model's text: Markdown ---------- */
+
+.rv .rv-assistant { color: var(--rv-text, CanvasText); min-width: 0; }
+.rv .rv-md > :first-child { margin-top: 0; }
+.rv .rv-md > :last-child { margin-bottom: 0; }
+.rv .rv-md p, .rv .rv-md ul, .rv .rv-md ol, .rv .rv-md blockquote, .rv .rv-md table { margin: 0.65em 0; }
+.rv .rv-md h1, .rv .rv-md h2, .rv .rv-md h3, .rv .rv-md h4, .rv .rv-md h5, .rv .rv-md h6 { margin: 1.1em 0 0.45em; line-height: 1.3; font-weight: 650; }
+.rv .rv-md h1 { font-size: 1.4em; }
+.rv .rv-md h2 { font-size: 1.22em; }
+.rv .rv-md h3 { font-size: 1.08em; }
+.rv .rv-md h4, .rv .rv-md h5, .rv .rv-md h6 { font-size: 1em; }
+.rv .rv-md ul, .rv .rv-md ol { padding-left: 1.5em; }
+.rv .rv-md li { margin: 0.2em 0; }
+.rv .rv-md li > ul, .rv .rv-md li > ol { margin: 0.2em 0; }
+.rv .rv-md li:has(> input[type="checkbox"]) { list-style: none; margin-left: -1.3em; }
+.rv .rv-md input[type="checkbox"] { margin: 0 0.45em 0 0; vertical-align: -0.1em; }
+.rv .rv-md a { color: var(--rv-link, LinkText); text-decoration: underline; text-underline-offset: 0.15em; }
+.rv .rv-md strong { font-weight: 650; }
+.rv .rv-md blockquote {
+  padding: 0.1em 0 0.1em 0.9em;
+  border-left: 3px solid var(--rv-border, color-mix(in srgb, CanvasText 15%, Canvas));
+  color: var(--rv-muted, color-mix(in srgb, CanvasText 64%, Canvas));
+}
+.rv .rv-md hr { border: 0; border-top: 1px solid var(--rv-border, color-mix(in srgb, CanvasText 15%, Canvas)); margin: 1.25em 0; }
+.rv .rv-md table {
+  display: block;
+  max-width: 100%;
+  width: max-content;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.925em;
+}
+.rv .rv-md th, .rv .rv-md td {
+  padding: 0.35em 0.75em;
+  border: 1px solid var(--rv-border, color-mix(in srgb, CanvasText 15%, Canvas));
+  text-align: left;
+  overflow-wrap: normal;
+}
+.rv .rv-md th { font-weight: 600; background: var(--rv-code-bg, light-dark(color-mix(in srgb, CanvasText 3.5%, Canvas), color-mix(in srgb, CanvasText 7%, Canvas))); }
+.rv .rv-md :not(pre) > code {
+  padding: 0.1em 0.35em;
+  border-radius: 5px;
+  background: var(--rv-code-bg, light-dark(color-mix(in srgb, CanvasText 3.5%, Canvas), color-mix(in srgb, CanvasText 7%, Canvas)));
+  font-family: var(--rv-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.875em;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- code blocks ---------- */
+
+.rv .rv-code {
+  margin: 0.8em 0;
+  border: 1px solid var(--rv-border, color-mix(in srgb, CanvasText 15%, Canvas));
+  border-radius: 10px;
+  background: var(--rv-code-bg, light-dark(color-mix(in srgb, CanvasText 3.5%, Canvas), color-mix(in srgb, CanvasText 7%, Canvas)));
+  overflow: hidden;
+}
+.rv .rv-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.3rem 0.4rem 0.3rem 0.85rem;
+  border-bottom: 1px solid var(--rv-border, color-mix(in srgb, CanvasText 15%, Canvas));
+}
+.rv .rv-code-lang {
+  font-family: var(--rv-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.75rem;
+  color: var(--rv-muted, color-mix(in srgb, CanvasText 64%, Canvas));
+}
+.rv .rv-copy {
+  appearance: none;
+  margin: 0;
+  padding: 0.2rem 0.65rem;
+  border: 1px solid var(--rv-border, color-mix(in srgb, CanvasText 15%, Canvas));
+  border-radius: 6px;
+  background: transparent;
+  color: var(--rv-muted, color-mix(in srgb, CanvasText 64%, Canvas));
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.rv .rv-copy:hover { color: var(--rv-text, CanvasText); background: var(--rv-hover, color-mix(in srgb, CanvasText 6%, transparent)); }
+.rv .rv-code pre {
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  overflow-x: auto;
+  font-family: var(--rv-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.85em;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.rv .rv-code code { color: var(--rv-code-text, CanvasText); background: none; font: inherit; }
+
+.rv .hljs-keyword, .rv .hljs-selector-tag, .rv .hljs-built_in, .rv .hljs-doctag { color: var(--rv-code-keyword, color-mix(in oklab, VisitedText 85%, CanvasText)); }
+.rv .hljs-string, .rv .hljs-regexp, .rv .hljs-addition, .rv .hljs-symbol, .rv .hljs-template-tag { color: var(--rv-code-string, color-mix(in oklab, color-mix(in oklch, LinkText, Mark) 72%, CanvasText)); }
+.rv .hljs-number, .rv .hljs-literal, .rv .hljs-bullet { color: var(--rv-code-number, color-mix(in oklab, color-mix(in oklch, ActiveText, Mark) 75%, CanvasText)); }
+.rv .hljs-comment, .rv .hljs-quote, .rv .hljs-meta { color: var(--rv-code-comment, color-mix(in srgb, CanvasText 55%, Canvas)); font-style: italic; }
+.rv .hljs-title, .rv .hljs-section, .rv .hljs-name, .rv .hljs-selector-id { color: var(--rv-code-title, color-mix(in oklab, LinkText 85%, CanvasText)); }
+.rv .hljs-type, .rv .hljs-title.class_, .rv .hljs-class .hljs-title, .rv .hljs-selector-class { color: var(--rv-code-type, color-mix(in oklab, Mark 50%, CanvasText)); }
+.rv .hljs-attr, .rv .hljs-attribute, .rv .hljs-variable, .rv .hljs-template-variable, .rv .hljs-params, .rv .hljs-property { color: var(--rv-code-attr, color-mix(in oklab, color-mix(in oklch, LinkText 35%, Mark) 65%, CanvasText)); }
+.rv .hljs-deletion { color: var(--rv-error, color-mix(in oklab, ActiveText 78%, CanvasText)); }
+.rv .hljs-emphasis { font-style: italic; }
+.rv .hljs-strong { font-weight: 650; }
+
+/* ---------- folds: one line that opens ---------- */
+
+.rv details > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  list-style: none;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+  border-radius: 8px;
+  user-select: none;
+}
+.rv details > summary::-webkit-details-marker { display: none; }
+.rv details > summary::before {
+  content: "";
+  flex: none;
+  width: 0.38em;
+  height: 0.38em;
+  margin: 0 0.2em 0 0.1em;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  opacity: 0.65;
+  transform: rotate(-45deg);
+  transition: transform 120ms ease;
+}
+.rv details[open] > summary::before { transform: rotate(45deg); }
+.rv details > summary:hover { background: var(--rv-hover, color-mix(in srgb, CanvasText 6%, transparent)); }
+.rv summary:focus-visible, .rv .rv-copy:focus-visible { outline: 2px solid var(--rv-focus, LinkText); outline-offset: 2px; }
+
+/* a tool call, a lone result */
+.rv .rv-tool, .rv .rv-lone {
+  border: 1px solid var(--rv-border, color-mix(in srgb, CanvasText 15%, Canvas));
+  border-radius: 10px;
+  font-size: 0.875em;
+}
+.rv .rv-tool > summary, .rv .rv-lone > summary { padding: 0.35rem 0.7rem; border-radius: 9px; }
+.rv .rv-tool[open] > summary, .rv .rv-lone[open] > summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.rv .rv-tool-name { flex: none; font-weight: 600; }
+.rv .rv-tool-arg {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--rv-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.92em;
+  color: var(--rv-muted, color-mix(in srgb, CanvasText 64%, Canvas));
+}
+.rv .rv-arg-dir, .rv .rv-arg-base { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv .rv-arg-dir { flex: 0 1 auto; }
+.rv .rv-arg-base { flex: 0 0 auto; max-width: 100%; color: var(--rv-text, CanvasText); }
+.rv .rv-tool-err { flex: none; margin-left: auto; font-size: 0.85em; color: var(--rv-error, color-mix(in oklab, ActiveText 78%, CanvasText)); }
+.rv .rv-tool-body, .rv .rv-lone > .rv-pre, .rv .rv-lone > .rv-fields, .rv .rv-lone > .rv-field-none {
+  border-top: 1px solid var(--rv-border, color-mix(in srgb, CanvasText 15%, Canvas));
+}
+.rv .rv-tool-body { padding: 0.6rem 0.75rem 0.7rem; min-width: 0; }
+.rv .rv-lone > .rv-pre, .rv .rv-lone > .rv-fields, .rv .rv-lone > .rv-field-none { display: block; margin: 0; padding: 0.6rem 0.75rem; border-radius: 0 0 9px 9px; }
+.rv .rv-lone > .rv-fields { display: grid; }
+.rv .rv-tool-result:not(:empty) { margin-top: 0.6rem; }
+.rv .rv-tool-input:empty + .rv-tool-result { margin-top: 0; }
+.rv .rv-label {
+  margin-bottom: 0.2rem;
+  font-size: 0.75rem;
+  color: var(--rv-muted, color-mix(in srgb, CanvasText 64%, Canvas));
+}
+.rv .rv-result-in { min-width: 0; }
+.rv .rv-tool-body .rv-result { border: 1px solid var(--rv-border, color-mix(in srgb, CanvasText 15%, Canvas)); border-radius: 8px; }
+.rv .rv-tool-body .rv-result > summary {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.92em;
+  color: var(--rv-muted, color-mix(in srgb, CanvasText 64%, Canvas));
+  border-radius: 7px;
+}
+.rv .rv-tool-body .rv-result > .rv-pre, .rv .rv-tool-body .rv-result > .rv-fields { margin: 0; border-radius: 0 0 7px 7px; }
+.rv .rv-tool-body .rv-result > .rv-fields { padding: 0.5rem 0.6rem; }
+
+/* fields: an input or a JSON result read as labelled rows */
+.rv .rv-fields {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  gap: 0.3rem 0.85rem;
+  margin: 0;
+  min-width: 0;
+}
+.rv .rv-field { display: contents; }
+.rv .rv-fields dt {
+  font-family: var(--rv-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.85em;
+  line-height: 1.85;
+  color: var(--rv-muted, color-mix(in srgb, CanvasText 64%, Canvas));
+  overflow-wrap: anywhere;
+}
+.rv .rv-fields dd { margin: 0; min-width: 0; }
+.rv .rv-field-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.rv .rv-field-none { color: var(--rv-muted, color-mix(in srgb, CanvasText 64%, Canvas)); font-style: italic; }
+.rv .rv-field-list { margin: 0; padding-left: 1.2em; }
+.rv .rv-pre {
+  margin: 0.15rem 0;
+  padding: 0.5rem 0.7rem;
+  max-height: 28rem;
+  overflow: auto;
+  border-radius: 7px;
+  background: var(--rv-code-bg, light-dark(color-mix(in srgb, CanvasText 3.5%, Canvas), color-mix(in srgb, CanvasText 7%, Canvas)));
+  color: var(--rv-code-text, CanvasText);
+  font-family: var(--rv-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.9em;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.rv .rv-pre.rv-error { color: var(--rv-error, color-mix(in oklab, ActiveText 78%, CanvasText)); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* an edit: removed and added lines, by sign as well as by colour */
+.rv .rv-diff {
+  margin: 0.5rem 0 0.15rem;
+  overflow-x: auto;
+  border: 1px solid var(--rv-border, color-mix(in srgb, CanvasText 15%, Canvas));
+  border-radius: 7px;
+  font-family: var(--rv-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+.rv .rv-diff > div { display: flex; min-width: max-content; padding: 0 0.6rem 0 0; }
+.rv .rv-diff-sign { flex: none; width: 1.6em; text-align: center; user-select: none; }
+.rv .rv-diff-text { white-space: pre; }
+.rv .rv-diff-same { color: var(--rv-muted, color-mix(in srgb, CanvasText 64%, Canvas)); }
+.rv .rv-diff-del { background: var(--rv-diff-del, color-mix(in srgb, ActiveText 13%, Canvas)); }
+.rv .rv-diff-add { background: var(--rv-diff-add, color-mix(in srgb, color-mix(in oklch, LinkText, Mark) 18%, Canvas)); }
+.rv .rv-diff-del .rv-diff-sign { color: var(--rv-error, color-mix(in oklab, ActiveText 78%, CanvasText)); }
+.rv .rv-diff-add .rv-diff-sign { color: var(--rv-code-string, color-mix(in oklab, color-mix(in oklch, LinkText, Mark) 72%, CanvasText)); }
+
+/* thinking: closed by default, quiet when open */
+.rv .rv-thinking { margin: 0 0 0.4rem; }
+.rv .rv-thinking > summary {
+  display: inline-flex;
+  padding: 0.1rem 0.45rem 0.1rem 0.2rem;
+  font-size: 0.85em;
+  color: var(--rv-muted, color-mix(in srgb, CanvasText 64%, Canvas));
+}
+.rv .rv-thinking-text {
+  margin: 0.3rem 0 0.5rem;
+  padding-left: 0.8rem;
+  border-left: 2px solid var(--rv-border, color-mix(in srgb, CanvasText 15%, Canvas));
+  font-size: 0.9em;
+  color: var(--rv-muted, color-mix(in srgb, CanvasText 64%, Canvas));
+  white-space: pre-wrap;
+}
+
+/* a compaction: a divider whose summary opens */
+.rv .rv-compaction { margin: 1.75rem 0 1rem; }
+.rv .rv-compaction > summary {
+  padding: 0.15rem 0.2rem;
+  font-size: 0.8rem;
+  color: var(--rv-muted, color-mix(in srgb, CanvasText 64%, Canvas));
+}
+.rv .rv-compaction > summary::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--rv-border, color-mix(in srgb, CanvasText 15%, Canvas));
+}
+.rv .rv-compaction-text {
+  margin: 0.4rem 0 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  background: var(--rv-code-bg, light-dark(color-mix(in srgb, CanvasText 3.5%, Canvas), color-mix(in srgb, CanvasText 7%, Canvas)));
+  font-size: 0.875em;
+  color: var(--rv-muted, color-mix(in srgb, CanvasText 64%, Canvas));
+  white-space: pre-wrap;
+}
+
+/* ---------- a reply being written ---------- */
+
+.rv .rv-turn { margin-top: 0.5rem; min-width: 0; }
+.rv .rv-turn .rv-assistant + .rv-assistant { margin-top: 0.65em; }
+.rv .rv-turn .rv-row-call { margin-top: 0.4rem; }
+.rv .rv-turn .rv-assistant + .rv-row-call, .rv .rv-turn .rv-row-call + .rv-assistant { margin-top: 0.65rem; }
+.rv .rv-thinking-live {
+  font-size: 0.85em;
+  color: var(--rv-muted, color-mix(in srgb, CanvasText 64%, Canvas));
+  animation: rv-pulse 1.6s ease-in-out infinite;
+}
+.rv .rv-turn-tail:not(:empty) { margin-top: 0.5rem; }
+.rv .rv-subagent, .rv details.rv-turn.rv-compaction {
+  border: 1px dashed var(--rv-border, color-mix(in srgb, CanvasText 15%, Canvas));
+  border-radius: 10px;
+}
+.rv details.rv-turn.rv-compaction { margin: 0.75rem 0 0; }
+.rv details.rv-turn.rv-compaction > summary::after { display: none; }
+.rv .rv-subagent > summary, .rv details.rv-turn.rv-compaction > summary {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.85em;
+  color: var(--rv-muted, color-mix(in srgb, CanvasText 64%, Canvas));
+  border-radius: 9px;
+}
+.rv .rv-turn-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.rv .rv-working {
+  flex: none;
+  width: 0.45em;
+  height: 0.45em;
+  border-radius: 50%;
+  background: currentColor;
+  animation: rv-pulse 1.6s ease-in-out infinite;
+}
+.rv .rv-turn-body { padding: 0.25rem 0.8rem 0.7rem; min-width: 0; }
+
+@keyframes rv-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rv .rv-thinking-live, .rv .rv-working { animation: none; }
+  .rv details > summary::before { transition: none; }
+}

@@ -18,6 +18,9 @@ import splice.sessions.transcript.TranscriptRole
 private const val API_ERROR = "API error"
 private const val UNTYPED = "untyped"
 
+/** The mark Claude Code puts on the record holding the summary it wrote when it compacted the conversation. */
+private const val COMPACT_SUMMARY = "isCompactSummary"
+
 /** The model Claude Code files on a reply it wrote itself, such as the "No response requested." it adds on resuming a
  *  turn nobody answered. Nobody said it, so it is counted, not shown; its real API errors are read before this. */
 private const val SYNTHETIC = "<synthetic>"
@@ -123,14 +126,7 @@ internal class PageAssembly(
         val into = pending?.takeIf { it.id == messageId } ?: PendingAssistant(messageId, ts, at).also { pending = it }
         if (into.model == null) into.model = records.model(message)
         for (block in records.blocks(message)) {
-            when (JsonScalars.str(block, "type")) {
-                "text" -> JsonScalars.str(block, "text")
-                    ?.takeUnless { it.trim() == THINKING_STAND_IN }
-                    ?.let(into.texts::add)
-                "tool_use" -> call(block, into)
-                // Thinking is the model's working, not its output; the conversation shows what it said.
-                else -> Unit
-            }
+            if (JsonScalars.str(block, "type") == "tool_use") call(block, into) else into.read(block)
         }
         return true
     }
@@ -143,7 +139,7 @@ internal class PageAssembly(
     }
 
     private fun user(record: JsonObject, message: JsonObject, ts: Long?): Boolean {
-        val meta = record["isMeta"] == JsonPrimitive(true) || record["isCompactSummary"] == JsonPrimitive(true)
+        val meta = record["isMeta"] == JsonPrimitive(true) || record[COMPACT_SUMMARY] == JsonPrimitive(true)
         val speaker = if (meta) TranscriptRole.SYSTEM else TranscriptRole.USER
         val content = message[CONTENT]
         if (content is JsonPrimitive && content.isString) {
@@ -167,6 +163,8 @@ internal class PageAssembly(
                     ledger.interrupted(at, ts, echo.text)
                 } else if (speaker == TranscriptRole.USER) {
                     person(record, ts, echo.text)
+                } else if (record[COMPACT_SUMMARY] == JsonPrimitive(true)) {
+                    ledger.compaction(at, ts, echo.text)
                 } else {
                     ledger.text(at, speaker, ts, echo.text)
                 }

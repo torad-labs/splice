@@ -30,6 +30,7 @@ import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptPage
 import splice.sessions.transcript.TranscriptRole
+import splice.sessions.transcript.TranscriptSource
 import splice.sessions.transcript.TranscriptToolUse
 import java.nio.file.Files
 import java.nio.file.Path
@@ -302,6 +303,47 @@ class SessionsConsoleRoutesTest {
         val roots = TranscriptRoots(vanilla = tmp.resolve(".claude"))
         val rows = rowsOf(SessionsRoutes(registry, transcripts, roots = roots))
         assertEquals("claude-opus-5-5", rows.getValue(ALPHA)["model"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `the transcript page names a reply's id, model and thinking, and marks a compaction`() {
+        val written = TranscriptSource(model = "claude-opus-5-5")
+        val messages = listOf(
+            TranscriptMessage(
+                0,
+                TranscriptRole.ASSISTANT,
+                null,
+                "Reading it.",
+                messageId = "msg_a",
+                source = written.copy(thinking = "The parser skips a column."),
+            ),
+            TranscriptMessage(
+                1,
+                TranscriptRole.ASSISTANT,
+                null,
+                "{}",
+                TranscriptToolUse("Read", false, "toolu_a"),
+                messageId = "msg_a",
+                source = written,
+            ),
+            TranscriptMessage(2, TranscriptRole.SYSTEM, null, "Summary.", source = TranscriptSource(compact = true)),
+            TranscriptMessage(3, TranscriptRole.USER, null, "go on"),
+        )
+        val transcripts = TestTranscripts(pages = { session, _, _, _ ->
+            TranscriptLookup.Found(TranscriptPage(session, "/synthetic/transcript", messages, null, emptyMap()))
+        })
+        val routes = SessionsRoutes(registry(), transcripts, roots = TranscriptRoots(vanilla = tmp.resolve(".claude")))
+        assertEquals(
+            Json.parseToJsonElement(
+                """[{"index":0,"role":"assistant","text":"Reading it.","message":"msg_a",""" +
+                    """"model":"claude-opus-5-5","thinking":"The parser skips a column."},""" +
+                    """{"index":1,"role":"assistant","text":"{}","tool":"Read","tool_use_id":"toolu_a",""" +
+                    """"message":"msg_a","model":"claude-opus-5-5"},""" +
+                    """{"index":2,"role":"system","text":"Summary.","compact":true},""" +
+                    """{"index":3,"role":"user","text":"go on"}]""",
+            ),
+            json(routes.transcript(ALPHA, null, null).body).getValue("messages"),
+        )
     }
 
     @Test

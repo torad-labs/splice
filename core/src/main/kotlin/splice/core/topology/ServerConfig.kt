@@ -17,7 +17,8 @@ import java.nio.file.Path
 @Serializable
 public data class ServerConfig(
     val listen: String = "",
-    /** The commands served to key holders, each by the name a head here runs as. */
+    /** The commands served to key holders, each by the name a head here runs as, or by the key of a provider (the
+     *  gateway serves it at the server's door with no head). */
     val commands: List<String> = emptyList(),
     /** The certificate chain and its private key, as PEM files. Both, or neither when a proxy terminates TLS. */
     @SerialName("tls_cert") val tlsCert: String? = null,

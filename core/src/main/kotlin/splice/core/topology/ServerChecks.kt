@@ -46,9 +46,11 @@ internal class ServerChecks(
         ).takeIf { topology.share.enabled },
     )
 
-    /** Decisions 2 and 3: every command is one a head here runs, on a provider that may serve a team. */
+    /** Decisions 2 and 3: every command is one a head here runs, or a provider of splice.toml (the gateway serves it at
+     *  the server's door with no head), on a provider that may serve a team. */
     private fun commands(): List<TopologyFinding> {
-        val offered = topology.heads.map { (key, head) -> head.claude.command ?: key }.distinct()
+        val ofHeads = topology.heads.map { (key, head) -> head.claude.command ?: key }
+        val offered = (ofHeads + topology.providers.keys).distinct()
         val has = offered.joinToString(", ").ifEmpty { "none" }
         val none = "list at least one command to serve; the commands here are $has".takeIf { server.commands.isEmpty() }
         val each = server.commands.mapNotNull { command ->
@@ -56,18 +58,31 @@ internal class ServerChecks(
             when {
                 command == SERVER_TABLE ->
                     "no served command may be named '$SERVER_TABLE': that path on the listener is the server's own API"
-                keys.isEmpty() -> "'$command' is not a command a head here runs; the commands here are $has"
+                keys.isEmpty() && command in topology.providers -> personalPlan(command, topology.providers[command])
+                keys.isEmpty() -> "'$command' is no command a head or provider here runs; the commands here are $has"
                 keys.size > 1 -> "'$command' names more than one head (${keys.joinToString(", ")}); name one"
-                else -> personalPlan(command, keys.single())
+                else -> headCommand(command, keys.single())
             }
         }
         return (listOfNotNull(none) + each).map { TopologyFinding(SERVER_COMMANDS, it) }
     }
 
-    /** Why [command], on head [key], may not be served to a team: its provider signs with a sign-in that is one
+    /** Why [command], which head [headKey] runs, may not be served: it is also another provider's key, so a grant naming it
+     *  would mean two providers (it keeps meaning the head's, and the other provider is reachable by no grant until one
+     *  of them is renamed), or its provider signs with a personal plan. */
+    private fun headCommand(command: String, headKey: String): String? {
+        val head = topology.heads[headKey] ?: return null
+        if (command in topology.providers && command != head.provider) {
+            return "'$command' is the command of head $headKey, which runs ${head.provider}, and also the key of " +
+                "another provider; rename one so that the name means one provider"
+        }
+        return personalPlan(command, topology.providers[head.provider])
+    }
+
+    /** Why [command], on [provider], may not be served to a team: its provider signs with a sign-in that is one
      *  person's plan. An API key or a self-hosted provider signs with nothing personal, and is served. */
-    private fun personalPlan(command: String, key: String): String? {
-        val kind = topology.heads[key]?.let { topology.providers[it.provider] }?.auth?.kind ?: return null
+    private fun personalPlan(command: String, provider: ProviderConfig?): String? {
+        val kind = provider?.auth?.kind ?: return null
         val registered = AuthKindRegistry.from(kind)
         if (registered == null && !AuthKindRegistry.isOAuth(kind)) return null
         val login = registered?.signInLabel ?: kind

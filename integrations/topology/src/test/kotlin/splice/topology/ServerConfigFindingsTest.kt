@@ -93,6 +93,40 @@ class ServerConfigFindingsTest {
     }
 
     @Test
+    fun `a provider with no head is a command served at the door, a personal plan one still refused`() {
+        val headless = head().substringBefore("[heads.box]")
+        val read = ConfigFindings.read(server(commands = "\"box\"") + headless, directory, configDir = directory)
+        val ready = assertInstanceOf(ConfigRead.Ready::class.java, read, read.toString())
+        assertEquals(listOf("box"), ready.topology.server.commands)
+        val plan = head("openai-responses", """{ kind = "chatgpt-oauth" }""").substringBefore("[heads.box]")
+        val finding = refused(server(commands = "\"box\"") + plan).single { it.path == "server.commands" }
+        assertTrue("one person" in finding.message, finding.message)
+    }
+
+    @Test
+    fun `a name that is a head's command and another provider's key is refused, never read as both`() {
+        val twice = head() + """
+            [providers.other]
+            dialect = "openai-chat"
+            base_url = "http://127.0.0.1:8081/v1"
+            auth = $API_KEY
+            [[providers.other.models]]
+            id = "other-model"
+            context_window = 131072
+
+            [heads.shadow]
+            provider = "box"
+            port = 3191
+            discovery_prefix = "claude-shadow--"
+            pinned_model = "team-model"
+            [heads.shadow.claude]
+            command = "other"
+        """.trimIndent() + "\n"
+        val finding = refused(server(commands = "\"other\"") + twice).single { it.path == "server.commands" }
+        assertTrue("which runs box" in finding.message && "another provider" in finding.message, finding.message)
+    }
+
+    @Test
     fun `a command signing with a ChatGPT or a Claude plan is refused, saying a plan is one person's`() {
         val plans = mapOf(
             "Codex (ChatGPT)" to head("openai-responses", """{ kind = "chatgpt-oauth" }"""),

@@ -11,29 +11,28 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.topology.ServerTeams
 import splice.core.util.LogSafe
-import splice.share.SharedHead
 
 /** The commands someone may use: every one the server serves when [all], else those [names] lists, each as
  *  `[server] commands` names it. */
 @Serializable
 public data class CommandGrant(val all: Boolean = false, val names: List<String> = emptyList()) {
-    /** Whether this grant lets its holder use [head], which `[server] commands` names by its command or its key. */
-    internal fun allows(head: SharedHead): Boolean = all || head.command in names || head.key in names
+    /** Whether this grant lets its holder use [command], by any name `[server] commands` may call it. */
+    internal fun allows(command: ServedCommand): Boolean = all || command.callableAs.any { it in names }
 
     /** The grant as the CLI and every answer say it: `all`, or the names. */
     internal val said: String get() = if (all) ALL_COMMANDS else names.joinToString(", ")
 }
 
 internal class CommandAccess(private val people: ServerPeople, private val teams: ServerTeams) {
-    /** Why [person] may not use [head], naming its command, or null when they may: their own grant where the operator
+    /** Why [person] may not use [command], naming it, or null when they may: their own grant where the operator
      *  set one, else their team's, else every command. */
-    fun refusal(person: String, head: SharedHead): String? {
+    fun refusal(person: String, command: ServedCommand): String? {
         val own = people.of(person).commands
         val team = people.team(person, teams)
         val grant = own ?: team?.let { people.ofTeam(it).commands }?.let { CommandGrant(names = it) } ?: return null
-        if (grant.allows(head)) return null
+        if (grant.allows(command)) return null
         val whose = if (own != null) "their own" else "team ${LogSafe.str(team.orEmpty())}'s"
-        return "$person may not use ${head.command} on this server: the commands they may use are ${grant.said} " +
+        return "$person may not use ${command.name} on this server: the commands they may use are ${grant.said} " +
             "($whose setting); ask the server's operator if they need it"
     }
 }

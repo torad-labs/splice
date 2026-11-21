@@ -78,8 +78,11 @@ public class ShareCatalog(
         }
     }
 
-    public suspend fun notRunning(call: ApplicationCall, head: SharedHead) {
-        val why = "${head.command} is not running on ${heads.machine}; `splice restart` there starts it again"
+    public suspend fun notRunning(call: ApplicationCall, head: SharedHead): Unit = notRunning(call, head.command)
+
+    /** Says [command] is not running here, in the route's own error shape. */
+    public suspend fun notRunning(call: ApplicationCall, command: String) {
+        val why = "$command is not running on ${heads.machine}; `splice restart` there starts it again"
         errors.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, why)
     }
 }

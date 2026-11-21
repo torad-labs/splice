@@ -1,5 +1,5 @@
 // NEW: server mode (docs/specs/server-mode.md, F5, ledger-rows). One turn as the listener follows it, from the moment
-// it arrives to the moment its row is written (TurnLedger): whose it is, the head it went to, and what became known of
+// it arrives to the moment its row is written (TurnLedger): whose it is, the command it went to, and what became known of
 // it on the way. Never a word of its prompt or its answer.
 package splice.server.ledger
 
@@ -7,8 +7,8 @@ import splice.core.server.ServedTurn
 import splice.core.turn.SERVED_TURN_HEADER
 import splice.server.ChatAsk
 import splice.server.ProviderWay
+import splice.server.ServedCommand
 import splice.server.ServerKey
-import splice.share.SharedHead
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
 
@@ -16,7 +16,7 @@ import java.util.concurrent.CompletableFuture
  *  it was admitted under: a person moved to another team while their turn runs leaves that turn where it began. */
 internal class LedgerTurn(
     val key: ServerKey,
-    val head: SharedHead,
+    val command: ServedCommand,
     val route: String,
     val startedMs: Long,
     val team: String?,

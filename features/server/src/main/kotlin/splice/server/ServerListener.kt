@@ -80,6 +80,7 @@ import splice.server.ledger.ROUTE_MESSAGES
 import splice.server.telemetry.OTLP_ROUTE
 import splice.server.telemetry.ResourceStamp
 import splice.server.telemetry.TelemetryRelay
+import splice.share.DOOR_SEGMENT
 import splice.share.HEAD_API_ROOT
 import splice.share.HEAD_LAUNCH_ROUTE
 import splice.share.HeadTurn
@@ -113,6 +114,7 @@ internal class ServerListener(
     private val admission = TurnAdmission(parts, voice, catalog, watched)
     private val bound = ProviderBound(parts.keys, log)
     private val minimum = ClientMinimum(server.client)
+    private val teamDoor = TeamDoorRoute(server, parts, minimum, admission, voice)
 
     /** How often a streamed turn's client is sent a keepalive while its answer is silent; null sends none. */
     private val keepalive = server.keepaliveSeconds.takeIf { it > 0 }?.seconds
@@ -181,7 +183,15 @@ internal class ServerListener(
             path.isEmpty() -> noSuchPath(call)
             profile.asks(call, path) -> profile.answer(call, key)
             path.take(2) == otlpRoute -> otlp(call, key, path.drop(2))
-            path.first() == SERVER_ROOT -> admin.answer(call, key, path.drop(1))
+            else -> beyond(call, key, path)
+        }
+    }
+
+    /** [path] is none of the listener's own routes: the server's admin API, the team's door, or one of its commands. */
+    private suspend fun beyond(call: ApplicationCall, key: ServerKey, path: List<String>) {
+        when (path.first()) {
+            SERVER_ROOT -> admin.answer(call, key, path.drop(1))
+            DOOR_SEGMENT -> teamDoor.answer(call, key, path.drop(1))
             else -> if (!openAi.answered(call, key, path)) command(call, key, path)
         }
     }
@@ -213,12 +223,12 @@ internal class ServerListener(
         if (!isTurn || notice != null) {
             if (!head.running()) return catalog.notRunning(call, head)
             val asked = headTurn(call, key, head, path, notice.orEmpty())
-            watched.turn(call, slot = null) { parts.relay.turn(call, asked) }
+            watched.turn(call, slot = null) { parts.carriers.relay.turn(call, asked) }
             return
         }
-        admission.served(call, key, head, ROUTE_MESSAGES) { turn ->
+        admission.served(call, key, HeadCommand(head), ROUTE_MESSAGES) { turn ->
             val asked = headTurn(call, key, head, path, mapOf(parts.books.turns.named(turn)))
-            parts.relay.turn(call, asked)
+            parts.carriers.relay.turn(call, asked)
         }
     }
 

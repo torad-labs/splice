@@ -18,7 +18,6 @@ import splice.core.wire.HttpStatus
 import splice.server.ledger.LedgerTurn
 import splice.share.RefusalVoice
 import splice.share.ShareCatalog
-import splice.share.SharedHead
 
 internal class TurnAdmission(
     private val parts: ServerParts,
@@ -27,17 +26,17 @@ internal class TurnAdmission(
     private val catalog: ShareCatalog,
     private val watched: WatchedRelay,
 ) {
-    /** A turn of [key]'s person on [head], arriving on [route]: it takes one of its person's slots or is refused, is
+    /** A turn of [key]'s person on [command], arriving on [route]: it takes one of its person's slots or is refused, is
      *  run by [relay] holding that slot until its answer ends or its client leaves, and however it ends, leaves its row
      *  in the ledger. */
     suspend fun served(
         call: ApplicationCall,
         key: ServerKey,
-        head: SharedHead,
+        command: ServedCommand,
         route: String,
         relay: AdmittedRelay,
     ) {
-        val turn = parts.books.turns.arrived(key, head, route)
+        val turn = parts.books.turns.arrived(key, command, route)
         try {
             val slot = slot(call, turn) ?: return
             turn.gone = watched.turn(call, slot) { relay.relay(turn) }
@@ -49,19 +48,19 @@ internal class TurnAdmission(
     /** The slot [turn] takes among those of its person, or null with it refused: first one on a command its person may
      *  not use (F12), then as [admitted] says. */
     private suspend fun slot(call: ApplicationCall, turn: LedgerTurn): TurnSlot? {
-        val forbidden = parts.limits.access.refusal(turn.key.person, turn.head) ?: return admitted(call, turn)
+        val forbidden = parts.limits.access.refusal(turn.key.person, turn.command) ?: return admitted(call, turn)
         voice.refuse(call, HttpStatus.FORBIDDEN, forbidden)
         return null
     }
 
     /** The slot [turn] takes, or null with it refused: one past a cap (a minute's tokens first, then the turns in flight
      *  and a minute's turns), before that one past a budget that blocks, before that one whose provider has no server
-     *  up, before that one splice cannot record, and first one whose head is not running. */
+     *  up, before that one splice cannot record, and first one whose command is not running. */
     private suspend fun admitted(call: ApplicationCall, turn: LedgerTurn): TurnSlot? {
-        if (!turn.head.running()) {
-            // A head of splice's own that is down is splice's failure, never the upstream's (F5).
+        if (!turn.command.running()) {
+            // A command of splice's own that is down is splice's failure, never the upstream's (F5).
             turn.failedOwn = true
-            catalog.notRunning(call, turn.head)
+            catalog.notRunning(call, turn.command.name)
             return null
         }
         val refused = refusal(turn)
@@ -83,7 +82,7 @@ internal class TurnAdmission(
     /** Why [turn] is refused before any cap is asked, in the order they are asked, or null when nothing refuses it. */
     private suspend fun refusal(turn: LedgerTurn): Refusal? =
         parts.books.turns.unwritable(turn)?.let { Refusal(HttpStatus.INTERNAL_SERVER_ERROR, it) }
-            ?: parts.upstreams.noneUp(turn.head.key)?.let { Refusal(HttpStatus.SERVICE_UNAVAILABLE, it) }
+            ?: parts.upstreams.noneUp(turn.command.key)?.let { Refusal(HttpStatus.SERVICE_UNAVAILABLE, it) }
             ?: spent(turn.key.person)?.let { Refusal(HttpStatus.BAD_REQUEST, it) }
 
     /** Why [person]'s budget, or their team's, refuses their next turn; null while none blocks. Their turns that ended

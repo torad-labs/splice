@@ -33,12 +33,12 @@ import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.wire.HttpStatus
+import splice.server.ServedCommand
 import splice.server.ServerKey
 import splice.server.ServerPeople
 import splice.server.UpstreamApi
 import splice.server.metrics.ServerMetrics
 import splice.share.AnsweredStatus
-import splice.share.SharedHead
 import splice.upstream.LifecycleScope
 import java.time.Clock
 import java.util.concurrent.CompletableFuture
@@ -71,9 +71,9 @@ internal class TurnLedger(private val parts: LedgerParts, io: CoroutineDispatche
     // Why the ledger last refused rows, while it does; the log says so once as it stops and once as it starts again.
     private val broken = AtomicReference<String?>(null)
 
-    /** A turn of [key]'s person on [head], arriving now on [route], for the team they are on now. */
-    fun arrived(key: ServerKey, head: SharedHead, route: String): LedgerTurn =
-        LedgerTurn(key, head, route, parts.clock.millis(), parts.people.team(key.person, parts.teams))
+    /** A turn of [key]'s person on [command], arriving now on [route], for the team they are on now. */
+    fun arrived(key: ServerKey, command: ServedCommand, route: String): LedgerTurn =
+        LedgerTurn(key, command, route, parts.clock.millis(), parts.people.team(key.person, parts.teams))
 
     /** The header that names [turn] to its head, which from now on is expected to say how it went. */
     fun named(turn: LedgerTurn): Pair<String, String> {

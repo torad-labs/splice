@@ -54,10 +54,7 @@ internal class ChatArm(
         val auth = accounts.takeIf { it.isNotEmpty() }
             ?.let(WiredAccounts::providerAccount)
             ?.auth
-            ?: ApiKeyAuthProvider(
-                envVar = providerCfg.auth.effectiveApiKeyEnv(key),
-                keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
-            )
+            ?: KeyAuth().of(ctx)
         if (providerCfg.isLocal) refuseContradictedRows(ctx)
         // A provider that is several servers: its turns go where its pool says, and each server's health check carries
         // what a turn carries (the provider's headers and its key as it stands at the check).
@@ -79,7 +76,7 @@ internal class ChatArm(
             quirks = overlay.chatQuirks(providerCfg, key, label),
             display = { ctx.cfg.current().showReasoning },
             affinity = slotAffinity(ctx, (auth as? ApiKeyAuthProvider)?.keyNow()),
-            replies = chatReplies(providerCfg),
+            replies = chatReplies(providerCfg).words(providerCfg.errorMessages).recording(ctx.head.provider),
             pool = pool,
         )
         val configured = providerCfg.staticHeaders.takeIf { it.isNotEmpty() }

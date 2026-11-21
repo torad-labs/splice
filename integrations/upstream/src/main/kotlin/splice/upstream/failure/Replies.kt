@@ -6,17 +6,47 @@ package splice.upstream.failure
 
 import splice.core.failure.FailureCause
 import splice.core.failure.LoginOwner
+import splice.core.failure.ProviderError
+import splice.core.failure.ProviderErrors
+import splice.core.failure.ProviderWordsFilter
 import splice.core.failure.ServerFault
+import splice.core.topology.ERROR_MESSAGES_WHOLE
 import splice.core.turn.Usage
 import splice.core.usage.PlanLimit
 import splice.core.wire.HttpStatus
 
-/** [standard] reads what [deviation] does not claim. */
-public class Replies(private val standard: ReplyReader, private val deviation: ProviderDeviation? = null) {
-    public fun http(reply: FailedReply): FailureCause.Provider =
-        foreignKey(reply) ?: deviation?.http(reply) ?: standard.http(reply)
+/** [standard] reads what [deviation] does not claim. [whole]: the provider's table sets `error_messages = "whole"`
+ *  (custom-provider, cp-errors), so each cause quotes the provider's own message as it wrote it, whatever its reader
+ *  would have kept of it. A provider setting read where the words are taken, never a vendor check. */
+public class Replies(
+    private val standard: ReplyReader,
+    private val deviation: ProviderDeviation? = null,
+    private val whole: Boolean = false,
+    /** custom-provider (cp-diagnostics): the provider whose last error each failed reply is recorded as. */
+    private val provider: String? = null,
+) {
+    /** This reading, quoting the provider's own words whole when [words] says so. */
+    public fun words(words: String?): Replies =
+        if (words == ERROR_MESSAGES_WHOLE) Replies(standard, deviation, whole = true, provider) else this
 
-    public fun event(event: FailedEvent): FailureCause.Provider = deviation?.event(event) ?: standard.event(event)
+    /** This reading, recording each failed reply as provider [key]'s last error (ProviderErrors). */
+    public fun recording(key: String): Replies = Replies(standard, deviation, whole, key)
+
+    public fun http(reply: FailedReply): FailureCause.Provider {
+        val message = ErrorMessage.of(reply.body) ?: reply.body
+        val cause = quoted(foreignKey(reply) ?: deviation?.http(reply) ?: standard.http(reply), message)
+        provider?.let { key ->
+            val said = cause.said?.text ?: ProviderWordsFilter.of(message)?.text.orEmpty()
+            ProviderErrors.record(key, ProviderError(reply.answeredAt, reply.status, said))
+        }
+        return cause
+    }
+
+    public fun event(event: FailedEvent): FailureCause.Provider =
+        quoted(deviation?.event(event) ?: standard.event(event), ErrorMessage.inObject(event.payload))
+
+    private fun quoted(cause: FailureCause.Provider, message: String?): FailureCause.Provider =
+        if (whole) ProviderWordsFilter.whole(message)?.let(cause::saying) ?: cause else cause
 
     /** Whether this provider names [reply] a dead credential though its status is not 401 (ProviderDeviation). */
     public fun deadCredential(reply: FailedReply): Boolean = deviation?.deadCredential(reply) == true

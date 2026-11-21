@@ -2,10 +2,14 @@
 // from the provider it talks to, so the lines a person reads say whom to pay or sign in with.
 package splice.app.head
 
+import splice.core.failure.ProviderVoice
 import splice.core.failure.VoiceFacts
 import splice.core.topology.ApiKeyProviderRegistry
+import splice.core.topology.ERROR_MESSAGES_WHOLE
 import splice.core.topology.ProviderConfig
 import splice.core.topology.ProviderFamilyRule
+import splice.core.util.Cancellables
+import java.net.URI
 
 /** What a head's lines name besides the head itself: the provider a person acts with (DeepSeek, xAI, Anthropic), by
  *  the family the console colours the head by, and whether its model server runs on this machine. A family no
@@ -19,6 +23,13 @@ internal class HeadVoiceFacts {
     fun of(providerKey: String, provider: ProviderConfig): VoiceFacts {
         val family = families.of(providerKey, provider)
         val named = family?.let { ApiKeyProviderRegistry.row(it)?.label ?: signInNames[it] }
-        return VoiceFacts(providerName = named, local = family == "local")
+        val whole = provider.errorMessages == ERROR_MESSAGES_WHOLE
+        // A base_url that names no host names none in a line: the line still says what to fix.
+        val host = Cancellables.runCatchingCancellable { URI(provider.baseUrl).host }.fold({ it }, { null })
+        return VoiceFacts(
+            named,
+            family == "local",
+            provider = ProviderVoice(providerKey, host, wholeWords = whole, commandLogin = provider.auth.isCommand),
+        )
     }
 }

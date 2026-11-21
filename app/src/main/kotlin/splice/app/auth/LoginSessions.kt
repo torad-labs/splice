@@ -207,7 +207,7 @@ internal class LoginSessions(
         OAuthLoginRefusal.DISK -> LoginFailure.FILE
         OAuthLoginRefusal.ALREADY_THERE -> LoginFailure.ALREADY_ADDED
         OAuthLoginRefusal.ACCOUNT -> LoginFailure.CONFIG
-        null -> if (result.refusal != null) LoginFailure.CONFIG else LoginFailure.NOT_COMPLETED
+        null -> if (result.refusal != null && !result.unfinished) LoginFailure.CONFIG else LoginFailure.NOT_COMPLETED
     }
 
     private fun announce(cell: AtomicReference<LoginStatus>, detail: LoginAnnouncement) {

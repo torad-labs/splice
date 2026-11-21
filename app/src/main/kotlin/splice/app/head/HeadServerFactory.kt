@@ -172,7 +172,7 @@ internal class HeadServerFactory(
      *  method-length ceiling. */
     private fun traffic(ctx: ProviderBuild, stores: HeadStores): HeadDeps.HeadTraffic = HeadDeps.HeadTraffic(
         watchdog = ctx.faultPlan.liveWatchdog,
-        upstream = upstreamFactory.upstreamFor(ctx, ctx.cfg, log, stores.providerHold),
+        upstream = upstreamFactory.upstreamFor(ctx, ctx.cfg, log, stores.providerHold, prompts.configDir),
         // Re-read per head on EVERY admission (still hot-resizable): the ceiling belongs to
         // the upstream ACCOUNT, not the gateway. One shared value meant a workflow fan-out
         // admitted 100 concurrent streams into a single account, 429'd, and armed the shared

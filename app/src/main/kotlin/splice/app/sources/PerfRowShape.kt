@@ -8,6 +8,7 @@ import kotlinx.serialization.json.booleanOrNull
 import splice.core.perf.LivenessProbe
 import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfTurnIds
+import splice.core.turn.TurnAgent
 import splice.core.util.JsonScalars
 import splice.usage.perf.PerfHeldLink
 import splice.usage.perf.PerfRow
@@ -47,6 +48,8 @@ private const val HELD_ON_KEY = "held_on"
 private const val SKIPPED_KEY = "capability_skipped"
 private const val FAILED_KEY = "capability_failed"
 private const val WORKED_FOR_KEY = "worked_for"
+private const val AGENT_ID_KEY = "agent_id"
+private const val PARENT_AGENT_ID_KEY = "parent_agent_id"
 
 /** What one parsed perf JSON object says about its turn, read by name. Split out of Scan. */
 internal class PerfRowShape {
@@ -76,6 +79,7 @@ internal class PerfRowShape {
                 door = text(obj, DOOR_KEY),
                 held = PerfHeldLink(text(obj, HELD_ON_KEY), text(obj, SKIPPED_KEY), text(obj, FAILED_KEY)),
                 workedFor = text(obj, WORKED_FOR_KEY),
+                agent = TurnAgent(text(obj, AGENT_ID_KEY), text(obj, PARENT_AGENT_ID_KEY)),
             ),
             turns = PerfTurnIds(trace = text(obj, TURN_KEY), request = text(obj, REQUEST_TURN_KEY)),
         )

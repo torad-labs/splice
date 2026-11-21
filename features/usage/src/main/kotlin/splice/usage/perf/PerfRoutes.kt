@@ -349,6 +349,10 @@ public class PerfRoutes(
         put("turn", row.turn)
         put("turn_id", row.turnId)
         put("session_id", row.transcript.sessionId)
+        // desktop-full (df-turn-headers): the Claude Code subagent that sent the turn and the agent that started it,
+        // null on a session's own turns
+        put("agent_id", row.transcript.agent.id)
+        put("parent_agent_id", row.transcript.agent.parent)
         // Requests links a request splice cut on a restart to the client's re-send: same session, same messages
         put("messages_hash", row.transcript.messagesHash)
         // desktop-door (decision 7): `desktop` on a turn that came through Claude Desktop's door, null on every other

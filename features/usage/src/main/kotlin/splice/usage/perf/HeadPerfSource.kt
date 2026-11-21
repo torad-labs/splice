@@ -5,6 +5,7 @@ package splice.usage.perf
 import splice.core.perf.PerfSessionTail
 import splice.core.perf.PerfSessionTotal
 import splice.core.perf.PerfTurnIds
+import splice.core.turn.TurnAgent
 
 /** Reads the head's per-turn perf rows (file truth, numeric fields only, newest last). */
 public fun interface HeadPerfSource {
@@ -134,6 +135,9 @@ public data class PerfTranscriptLink(
     /** The session a Context Getter's request worked for (docs/specs/harness.md, decision 10); null on every other row,
      *  and on a row a compact cache keeps. */
     val workedFor: String? = null,
+    /** The Claude Code subagent that sent the turn (`agent_id`) and the agent that started it (`parent_agent_id`); null
+     *  on a session's own turns and on a turn whose request named none (desktop-full, df-turn-headers). */
+    val agent: TurnAgent = TurnAgent(),
 )
 
 /** What a turn's capabilities did, as its row says it (docs/specs/harness.md, decisions 9 and 10). */

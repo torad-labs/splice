@@ -3,6 +3,7 @@ package splice.head.perf
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.put
 import splice.core.perf.PerfTurnIds
+import splice.core.turn.TurnAgent
 import splice.core.turn.TurnRelay
 import splice.upstream.transport.HeaderRedaction
 
@@ -45,11 +46,19 @@ public data class PerfRowMeta(
         failure.providerMessage?.let { into.put("provider_message", HeaderRedaction.redactText(it)) }
     }
 
+    /** The Claude Code subagent that sent the turn and the agent that started it, only where the request named them
+     *  (desktop-full, df-turn-headers): a session's own turns carry neither. */
+    private fun putAgent(into: JsonObjectBuilder, agent: TurnAgent) {
+        agent.id?.let { into.put("agent_id", it) }
+        agent.parent?.let { into.put("parent_agent_id", it) }
+    }
+
     /** These optional string facts never enter the row's numeric snapshot. */
     internal fun putTranscriptFacts(into: JsonObjectBuilder) {
         transcript.sessionId?.let { into.put("session_id", it) }
         transcript.responseMessageId?.let { into.put("response_message_id", it) }
         transcript.messagesHash?.let { into.put("messages_hash", it) }
+        putAgent(into, transcript.relay.agent)
         transcript.relay.door?.let { into.put("door", it) }
         // A Context Getter's request names the session it worked for, so the two can be joined (decision 10).
         transcript.relay.workedFor?.let { into.put("worked_for", it) }

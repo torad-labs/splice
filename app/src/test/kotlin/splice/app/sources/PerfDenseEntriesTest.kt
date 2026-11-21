@@ -11,6 +11,7 @@ import splice.app.sources.dense.PerfDenseEntries
 import splice.app.sources.dense.PerfGenerationRef
 import splice.app.sources.dense.PerfLinkedEntries
 import splice.core.turn.DESKTOP_DOOR
+import splice.core.turn.TurnAgent
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfTranscriptLink
 import splice.usage.perf.PerfTurnFacts
@@ -60,6 +61,7 @@ class PerfDenseEntriesTest {
                 transcript = PerfTranscriptLink(
                     sessionId = text(random, pool),
                     door = listOf(null, DESKTOP_DOOR)[random.nextInt(2)],
+                    agent = TurnAgent(text(random, pool), text(random, pool)),
                 ),
                 cause = text(random, pool),
             )
@@ -83,7 +85,7 @@ class PerfDenseEntriesTest {
             entry.line.probe,
             row?.ts, row?.outcome, row?.cause, row?.facts?.model, row?.facts?.session, row?.facts?.account,
             row?.facts?.cacheCold, row?.facts?.compact, row?.facts?.captured, row?.transcript?.sessionId,
-            row?.transcript?.door,
+            row?.transcript?.door, row?.transcript?.agent,
             row?.fields?.filterKeys { it != "ts" }?.toSortedMap(),
         )
     }

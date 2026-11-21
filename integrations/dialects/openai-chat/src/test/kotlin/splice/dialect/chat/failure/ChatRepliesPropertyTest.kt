@@ -205,7 +205,7 @@ private fun modelNamed(c: Case): String = (c.said as? Said.Model)?.name?.takeIf 
 /** The rows about the provider's own side. A capacity code is an overload on any 5xx: kept from the shared
  *  classifier, a row the table does not list. */
 private fun serverRow(c: Case, words: ProviderWords?): FailureCause.Provider = when {
-    c.status == 503 || CAPACITY.any(c::names) ->
+    isOverloaded(c) ->
         FailureCause.Provider.Overloaded(statedRetry(c) ?: Lift.Unstated, false, words)
     c.status == 500 -> FailureCause.Provider.ServerError(ServerFault.INTERNAL, words)
     c.status == 502 -> FailureCause.Provider.ServerError(ServerFault.BAD_GATEWAY, words)
@@ -213,9 +213,12 @@ private fun serverRow(c: Case, words: ProviderWords?): FailureCause.Provider = w
     else -> FailureCause.Provider.Unrecognized(false, words)
 }
 
+private fun isOverloaded(c: Case): Boolean =
+    c.status == 503 || CAPACITY.any(c::names) || (c.status == 529 && statedRetry(c) != null)
+
 /** Retry-After, then OpenAI's retry-after-ms. */
 private fun statedRetry(c: Case): Lift? =
-    (c.pushback.retryAfterS?.times(1_000) ?: c.pushback.retryAfterMs)
+    (c.pushback.retryAfterS?.times(1_000) ?: c.pushback.retryAfterMs?.let { (it + 999) / 1_000 * 1_000 })
         ?.let { Lift.At(c.answeredAt.plusMillis(it), true, LiftSource.RETRY_AFTER) }
 
 /** The reset of the buckets the reply says are spent, or of every bucket it states when it says none is. */
@@ -282,7 +285,11 @@ class ChatRepliesPropertyTest {
             val c = case(random, UNNAMED_STATUSES, UNKNOWN_CODES, listOf("", "requests", "gateway"))
             val words = ProviderWordsFilter.of(if (c.json) c.said.text else c.body)
             assertEquals(
-                FailureCause.Provider.Unrecognized(c.status in 400..499, words),
+                if (c.status == 529 && statedRetry(c) != null) {
+                    FailureCause.Provider.Overloaded(statedRetry(c)!!, false, words)
+                } else {
+                    FailureCause.Provider.Unrecognized(c.status in 400..499, words)
+                },
                 ChatReplies.http(c.reply()),
                 c.toString(),
             )

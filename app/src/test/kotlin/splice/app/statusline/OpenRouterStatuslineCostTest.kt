@@ -99,8 +99,12 @@ class OpenRouterStatuslineCostTest {
     private fun listing(config: String): String {
         val header = "[providers.openrouter]\n"
         require(header in config) { "the shipped provider header moved" }
-        val head = TopologyLoader.parse(config).heads.getValue("openrouter")
-        require(head.models == null && head.modelSlots.isNotEmpty()) { "the shipped tiers must not limit discovery" }
+        val topology = TopologyLoader.parse(config)
+        val head = topology.heads.getValue("openrouter")
+        val provider = topology.providers.getValue(head.provider)
+        require(head.models == null && provider.modelSlots.isNotEmpty()) {
+            "the shipped tiers must not limit discovery"
+        }
         return config.replaceFirst(header, header + "local = false\n")
     }
 

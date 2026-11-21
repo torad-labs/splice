@@ -42,11 +42,14 @@ private val CONFIG = """
     [heads.one]
     provider = "ex"
     port = 8801
-    discovery_prefix = "ex/"
+    discovery_prefix = "claude-ex--"
     pinned_model = "m1"
 
     [heads.one.overrides]
     upstreamRetries = "9173"
+    maxInflight = "4"
+
+    [providers.ex.overrides]
     maxInflight = "4"
 """.trimIndent() + "\n"
 

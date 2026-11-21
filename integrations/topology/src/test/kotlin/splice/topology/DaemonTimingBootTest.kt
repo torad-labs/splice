@@ -25,7 +25,7 @@ class DaemonTimingBootTest {
         [heads.test]
         provider = "test"
         port = 8801
-        discovery_prefix = "test/"
+        discovery_prefix = "claude-test--"
         pinned_model = "test-model"
     """.trimIndent()
 

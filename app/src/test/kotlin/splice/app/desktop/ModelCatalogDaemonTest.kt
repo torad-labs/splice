@@ -19,6 +19,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.Daemon
@@ -73,7 +74,12 @@ class ModelCatalogDaemonTest {
     )
     private val xai = ListingProvider(
         """{"data":[{"id":"grok-4.7","display_name":"Grok 4.7","description":"xAI's flagship",""" +
-            """"capabilities":{"reasoning_effort":["low","high"]}},{"id":"grok-mini","display_name":"Grok Mini"}]}""",
+            """"supports_reasoning":true,"default_reasoning_level":"high","extension":{"keep":false},""" +
+            """"capabilities":{"reasoning_effort":["low","high"],"pdf_input":{"supported":true}},""" +
+            """"thinking":{"type":"effort","always_on":true,"effort_options":[{"id":"low","name":"Low"},""" +
+            """{"id":"high","name":"High","badge":{"message":"Provider choice","variant":"neutral"}}]},""" +
+            """"runtime":{"default_effort":"high","provider_flag":true}},""" +
+            """{"id":"grok-mini","display_name":"Grok Mini"}]}""",
     )
 
     @TempDir
@@ -114,14 +120,27 @@ class ModelCatalogDaemonTest {
         assertEquals("opus", opus.str("anthropic_family_tier"))
         assertEquals("max", opus.str("max_effort_level"))
 
-        // Another lab's model: its provider's name, description and levels, under the name Claude's clients keep; it
-        // takes the newest Opus's Effort control, ended at the highest level its provider lists.
+        // Another lab's model keeps its own selector, description and published reasoning properties.
         val grok = rows.first { it.str("id") == "claude-xai--grok-4.7" }
         assertEquals("Grok 4.7", grok.str("display_name"))
         assertEquals("xAI's flagship", grok.str("description"))
         assertEquals("high", grok.str("max_effort_level"))
-        assertEquals("claude-opus-5-5", grok.str("behaves_as"))
+        assertNull(grok["behaves_as"])
         assertNull(grok["anthropic_family_tier"])
+        assertEquals("true", grok.getValue("supports_reasoning").jsonPrimitive.content)
+        assertEquals("false", grok.getValue("extension").jsonObject.getValue("keep").jsonPrimitive.content)
+        val capabilities = grok.getValue("capabilities").jsonObject
+        assertEquals("true", capabilities.getValue("pdf_input").jsonObject.getValue("supported").jsonPrimitive.content)
+        val effort = capabilities.getValue("effort").jsonObject
+        assertEquals("true", effort.getValue("supported").jsonPrimitive.content)
+        assertEquals("true", effort.getValue("high").jsonObject.getValue("supported").jsonPrimitive.content)
+        assertEquals(
+            listOf("low", "high"),
+            grok.getValue("thinking").jsonObject.getValue("effort_options").jsonArray.map { it.jsonObject.str("id") },
+        )
+        assertEquals("true", grok.getValue("thinking").jsonObject.getValue("always_on").jsonPrimitive.content)
+        assertEquals("true", grok.getValue("runtime").jsonObject.getValue("provider_flag").jsonPrimitive.content)
+        assertEquals("high", grok.getValue("runtime").jsonObject.getValue("default_effort").jsonPrimitive.content)
 
         // A model whose provider says nothing of its reasoning gets no effort and no Claude model to behave as.
         val mini = rows.first { it.str("id") == "claude-xai--grok-mini" }
@@ -138,7 +157,8 @@ class ModelCatalogDaemonTest {
 
         // `splice desktop` names Desktop's list; `splice claude`'s picker the same models by their selectors.
         val desktop = get(mgmt, "/api/desktop").getValue("models").jsonArray.map { it.jsonObject }
-        assertEquals(rows.map { it.str("id") }, desktop.map { it.str("model") })
+        assertEquals(rows.map { it.str("display_name") }, desktop.map { it.str("label") })
+        assertTrue(desktop.all { splice.core.model.ClientModelNames.kept(it.str("model")) })
         val picker = get(mgmt, "/api/claude").getValue("models").jsonArray.map { it.jsonObject }
         assertEquals(rows.map { it.str("display_name") }, picker.map { it.str("label") })
     }
@@ -154,7 +174,7 @@ class ModelCatalogDaemonTest {
         val file = json.parseToJsonElement(Files.readString(statePaths.modelCatalogFile)).jsonObject
         assertEquals(file.getValue("models"), get(mgmt, "/api/models").getValue("models"))
         val picker = get(mgmt, "/api/claude").getValue("models").jsonArray.map { it.jsonObject.str("label") }
-        assertEquals(listOf("Claude Opus 5.5", "claude-sonnet-5-5", "Grok 4.7 Fast", "Grok Mini"), picker)
+        assertEquals(listOf("Claude Opus 5.5", "Claude Sonnet 5 5", "Grok 4.7 Fast", "Grok Mini"), picker)
     }
 
     /** A daemon started on [toml] over this test's state, [checks] run against it, and stopped. */

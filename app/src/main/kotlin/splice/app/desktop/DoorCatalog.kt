@@ -32,9 +32,11 @@ internal data class ServedModel(
     val rows: List<DoorModel>,
     val claude: String?,
 ) {
-    /** The id Claude Desktop asks for it by: Claude's own id for Claude's models, whose effort levels Desktop finds by
-     *  that id alone, else the gateway's canonical selector for the provider's model. */
-    val desktopId: String get() = claude ?: provider.catalog.wrap(fact.id)
+    /** The id the gateway lists it under: Claude's own id for Claude's models, else the provider's selector. */
+    val gatewayId: String get() = claude ?: provider.catalog.wrap(fact.id)
+
+    /** The selector Desktop receives for this model. */
+    val desktopId: String get() = claude ?: provider.catalog.names.nameOf(fact.id)
 
     /** Whether it has a 1M variant: a row of it carries the `[1m]` hint, or its provider serves a million tokens. */
     val supports1m: Boolean get() = rows.any(::millionRow) || fact.contextWindow >= CLAUDE_CODE_ONE_MILLION
@@ -45,45 +47,68 @@ internal data class ServedModel(
     private fun millionRow(row: DoorModel): Boolean = row.upstream.endsWith(ONE_MILLION, ignoreCase = true)
 }
 
+internal enum class ModelDiscovery {
+    GATEWAY,
+    DESKTOP,
+    ;
+
+    fun id(model: ServedModel): String = when (this) {
+        GATEWAY -> model.gatewayId
+        DESKTOP -> model.desktopId
+    }
+}
+
 internal class DoorCatalog(private val lineup: DesktopLineup) {
     private val tiers = AnthropicTiers()
     private val digits = Regex("\\d+")
 
-    /** The levels of Claude Desktop's Effort control, lowest first. */
-    private val desktopEfforts = listOf("low", "medium", "high", "xhigh", "max")
+    /** Claude's tiers, the one listed first between two models of one version. */
+    private val tierOrder = listOf("fable", "opus", "sonnet", "haiku")
 
-    /** Each catalog model a provider in the door serves, in the catalog's order. */
-    val served: List<ServedModel> = lineup.catalog.models.mapNotNull(::served)
+    /** Each catalog model a provider in the door serves: Claude's models first, newest version to oldest (a tier's
+     *  order, fable, opus, sonnet, haiku, between two of one version), then every other model in the catalog's order.
+     *  Until Nov 21, 2026 all of them kept the catalog's order, and Claude's models sat in the middle of each list. */
+    val served: List<ServedModel> = lineup.catalog.models.mapNotNull(::served).let { all ->
+        val (claude, others) = all.partition { it.claude != null }
+        claude.sortedWith(::newestFirst) + others
+    }
 
     /** Each tier's newest Claude model served: the one that tier's alias runs. */
     private val newest: Map<String, String> = served.mapNotNull { it.claude }.distinct()
         .groupBy { tiers.tierOf(it) }
         .mapNotNull { (tier, ids) -> tier?.let { it to ids.maxWith(::newer) } }
         .toMap()
+    private val wire = DoorModelWire(tiers, newest)
 
     /** Claude Desktop's list: one per id it asks by, so a Claude model two providers serve is listed once, on the
      *  first. */
     private val desktop: List<ServedModel> = served.distinctBy { it.desktopId }
 
-    /** Gateway discovery's `/v1/models` answer, every model on one page. */
-    fun discovery(first: String? = null): JsonObject = buildJsonObject {
+    /** Both paths use the same model-list format, with each caller's selector for each model. */
+    fun discovery(
+        first: String? = null,
+        surface: ModelDiscovery = ModelDiscovery.GATEWAY,
+    ): JsonObject = buildJsonObject {
         val rows = ordered(first)
-        put("data", JsonArray(rows.map(::discovered)))
+        put("data", JsonArray(rows.map { wire.discovered(it, surface.id(it)) }))
         put("has_more", false)
-        put("first_id", rows.firstOrNull()?.desktopId)
-        put("last_id", rows.lastOrNull()?.desktopId)
+        put("first_id", rows.firstOrNull()?.let(surface::id))
+        put("last_id", rows.lastOrNull()?.let(surface::id))
     }
 
     /** Desktop's list as [discovery] gives it, each row's id and name: what its picker holds after this discovery. */
     fun desktopRead(first: String? = null): List<DesktopPickerRow> =
         ordered(first).map { DesktopPickerRow(it.desktopId, it.fact.label) }
 
-    /** Desktop's list with the model whose rows hold [first] (Desktop's own default, `splice desktop on --model`)
-     *  first: Desktop opens a new session on the first model it lists. The rest keep their order. */
+    /** Desktop's list: Claude's models first, newest to oldest, then the model whose rows hold [first] (Desktop's own
+     *  default, `splice desktop on --model`) when it is another lab's, then the rest in their order. Desktop opens a
+     *  new session on the first model it lists, so with a Claude model in the door that is the newest one. */
     private fun ordered(first: String?): List<ServedModel> {
         val lead = first?.let { picked -> desktop.firstOrNull { model -> model.rows.any { it.model == picked } } }
+            ?.takeIf { it.claude == null }
             ?: return desktop
-        return listOf(lead) + desktop.filterNot { it === lead }
+        val (claude, others) = desktop.partition { it.claude != null }
+        return claude + lead + others.filterNot { it === lead }
     }
 
     /** A terminal session's picker, and another machine's: each served model's rows under its provider's name for it,
@@ -124,32 +149,6 @@ internal class DoorCatalog(private val lineup: DesktopLineup) {
         return ServedModel(fact, provider, picker.filter { it.provider == provider.key }, tiers.modelOf(id))
     }
 
-    private fun discovered(model: ServedModel): JsonObject = buildJsonObject {
-        put("type", "model")
-        put("id", model.desktopId)
-        put("display_name", model.fact.label)
-        if (model.fact.description.isNotBlank()) put("description", model.fact.description)
-        // Only Claude's own models are a Claude tier: Desktop runs a tier, such as a sub-agent that asks for `sonnet`,
-        // on the model marked for it.
-        model.claude?.let(tiers::tierOf)?.let { tier ->
-            put("anthropic_family_tier", tier)
-            if (newest[tier] == model.claude) put("is_family_default", true)
-        }
-        put("supports_1m", model.supports1m)
-        if (model.prefer1m) put("prefer_1m", true)
-        behavesAs(model)?.let { put("behaves_as", it) }
-        maxEffort(model)?.let { put("max_effort_level", it) }
-        if (model.fact.contextWindow > 0) put("max_input_tokens", model.fact.contextWindow)
-    }
-
-    /** The Claude model whose Effort control another lab's model takes: the newest Opus served, for a model its
-     *  provider lists as reasoning. A model its provider says nothing of reasoning about gets none. */
-    private fun behavesAs(model: ServedModel): String? =
-        newest[OPUS].takeIf { model.claude == null && (model.fact.reasons || model.fact.reasoningLevels.isNotEmpty()) }
-
-    /** The highest of Desktop's Effort levels the provider lists for the model; none when it lists none. */
-    fun maxEffort(model: ServedModel): String? = desktopEfforts.lastOrNull { it in model.fact.reasoningLevels }
-
     /** [row]'s name: its provider's name for the model, with the window its hint names when the model has a row
      *  without one too, and its account's full window beside it. */
     private fun labelOf(model: ServedModel, row: DoorModel): String {
@@ -159,6 +158,15 @@ internal class DoorCatalog(private val lineup: DesktopLineup) {
         val mark = if (full.window == QuotaFullWindow.FIVE_HOUR) FIVE_HOUR_MARK else SEVEN_DAY_MARK
         return "${model.fact.label}$window · $mark 100%"
     }
+
+    /** Two of Claude's models, the newer version first; of one version, the higher tier first. */
+    private fun newestFirst(a: ServedModel, b: ServedModel): Int {
+        val (x, y) = a.claude.orEmpty() to b.claude.orEmpty()
+        return newer(y, x).takeIf { it != 0 } ?: (tierRank(x) - tierRank(y))
+    }
+
+    private fun tierRank(claude: String): Int =
+        tierOrder.indexOf(tiers.tierOf(claude)).let { if (it < 0) tierOrder.size else it }
 
     /** Which of two of Claude's models of one tier is newer, by the version numbers in their ids (`claude-opus-5-5`
      *  after `claude-opus-5`, `claude-opus-4-8`). */
@@ -175,10 +183,6 @@ private data class Listed(val model: String, val label: String, val provider: St
 
 /** The window hint Claude Code holds a million-token window for. */
 private const val ONE_MILLION = "[1m]"
-
-/** The tier whose newest Claude model lends its Effort control to another lab's reasoning model: the one with every
- *  level. */
-private const val OPUS = "opus"
 
 // The windows a picker row names as fully used, as `splice status` names them on its accounts lines.
 private const val FIVE_HOUR_MARK = "5h"

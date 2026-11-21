@@ -60,7 +60,7 @@ internal class DesktopFeatures(private val lineup: DesktopLineup) {
             .filter { it.fact.reasoningLevels.isNotEmpty() }
             .groupBy { it.provider.key }
             .mapNotNull { (provider, models) ->
-                val top = models.mapNotNull(catalog::maxEffort).maxByOrNull(EFFORTS::indexOf)
+                val top = models.mapNotNull(DesktopEffort::max).maxByOrNull(DesktopEffort.levels::indexOf)
                 "$provider tops out at ${top ?: "none of Desktop's levels"}".takeIf { top != MAX_EFFORT }
             }
         if (low.isEmpty()) return WORKS to null
@@ -136,7 +136,6 @@ private const val UNSETTLED = "the study of Desktop left it open with the Code t
     "test on the real app has not settled it"
 
 // Desktop's Effort levels, lowest first, and its highest.
-private val EFFORTS = listOf("low", "medium", "high", "xhigh", "max")
 private const val MAX_EFFORT = "max"
 
 // The wire dialects splice.toml names that decide what a provider carries.

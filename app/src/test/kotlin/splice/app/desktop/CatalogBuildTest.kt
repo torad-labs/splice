@@ -62,6 +62,102 @@ internal class CatalogBuildTest {
     }
 
     @Test
+    fun `a curated name replaces an id-shaped provider label but not a meaningful provider name`() {
+        val raw = ModelEntry(
+            id = "k3-256k",
+            label = "Kimi K3 (256k)",
+            contextWindow = 256_000,
+            listed = DiscoveredModel(id = "k3-256k", label = "K3-256k"),
+        )
+        val current = ModelEntry(
+            id = "kimi-for-coding",
+            label = "Kimi K2.7 Code",
+            contextWindow = 256_000,
+            listed = DiscoveredModel(id = "kimi-for-coding", label = "K2.8 Preview"),
+        )
+
+        val models = CatalogBuild().of(listOf(CatalogSource("kimi", catalogOf(raw, current)))).models
+
+        assertEquals(listOf("Kimi K3 (256k)", "K2.8 Preview"), models.map { it.label })
+    }
+
+    @Test
+    fun `a model with no published or configured label gets one readable name in the catalog`() {
+        val entry = ModelEntry(id = "grok-4.20-multi-agent", contextWindow = 256_000)
+        val model = CatalogBuild().of(listOf(CatalogSource("xai", catalogOf(entry)))).models.single()
+
+        assertEquals("Grok 4.20 Multi Agent", model.label)
+    }
+
+    @Test
+    fun `custom model file names become readable while a configured name is preserved`() {
+        val id = "/models/Inkling-2-Small-e4853745-Q3_K_M-imatrix.gguf"
+        val raw = ModelEntry(id = id, label = id.substringAfterLast('/'), contextWindow = 256_000)
+        val named = raw.copy(label = "Inkling 2 Small (local)")
+
+        assertEquals(
+            "Inkling 2 Small",
+            CatalogBuild().of(listOf(CatalogSource("local", catalogOf(raw)))).models.single().label,
+        )
+        assertEquals(
+            "Inkling 2 Small (local)",
+            CatalogBuild().of(listOf(CatalogSource("local", catalogOf(named)))).models.single().label,
+        )
+    }
+
+    @Test
+    fun `Meta's listed Muse models have names and descriptions without adding or removing models`() {
+        val ids = listOf(
+            "muse-wonder-full-1.0", "muse-spark-1.3", "muse-spark-1.2", "muse-ember-1.0",
+            "assetgen-nano-1.0", "assetgen-pro-1.0", "muse-wonder-full-1.0-contributor",
+            "muse-wonder-1.0-contributor", "muse-wonder-1.0", "muse-spark-1.3-contributor",
+            "muse-spark-1.2-contributor", "muse-spark-1.1",
+        )
+        val catalog = catalogOf(*ids.map { ModelEntry(it, contextWindow = 1_000_000) }.toTypedArray())
+            .copy(vendorBaseUrl = "https://api.meta.ai/v1")
+
+        val models = CatalogBuild().of(listOf(CatalogSource("muse", catalog))).models
+
+        assertEquals(ids, models.map { it.id })
+        assertTrue(models.all { it.label.isNotBlank() && it.description.isNotBlank() })
+        assertEquals("AssetGen Nano 1.0", models.first { it.id == "assetgen-nano-1.0" }.label)
+        assertTrue(models.filter { it.id.endsWith("-contributor") }.all { "train" in it.description })
+        val spark = models.first { it.id == "muse-spark-1.3" }
+        assertEquals(listOf("minimal", "low", "medium", "high", "xhigh", "max"), spark.reasoningLevels)
+        assertEquals("high", spark.defaultReasoningLevel)
+        assertEquals(emptyList<String>(), models.first { it.id == "assetgen-pro-1.0" }.reasoningLevels)
+    }
+
+    @Test
+    fun `provider and configured details win over the known model catalog and are scoped to the host`() {
+        val id = "muse-ember-1.0"
+        val entry = ModelEntry(
+            id,
+            label = "My Ember",
+            description = "Configured description",
+            contextWindow = 1_000_000,
+            listed = DiscoveredModel(
+                id = id,
+                label = "Provider Ember",
+                runtimeMetadata = ModelRuntimeMetadata(listing = ModelListing(description = "Provider description")),
+            ),
+        )
+        val catalog = catalogOf(entry).copy(vendorBaseUrl = "https://api.meta.ai/v1")
+        val published = CatalogBuild().of(listOf(CatalogSource("muse", catalog))).models.single()
+        assertEquals("Provider Ember", published.label)
+        assertEquals("Provider description", published.description)
+
+        val configuredCatalog = catalog.copy(models = listOf(entry.copy(listed = null)))
+        val configured = CatalogBuild().of(listOf(CatalogSource("muse", configuredCatalog))).models.single()
+        assertEquals("My Ember", configured.label)
+        assertEquals("Configured description", configured.description)
+
+        val other = catalogOf(ModelEntry(id, contextWindow = 1_000_000))
+            .copy(vendorBaseUrl = "https://other.example/v1")
+        assertEquals("", CatalogBuild().of(listOf(CatalogSource("other", other))).models.single().description)
+    }
+
+    @Test
     fun `one model two providers serve is listed once per provider, never collapsed across them`() {
         val a = catalogOf(ModelEntry(id = "claude-opus-5-5", contextWindow = 200_000))
         val b = catalogOf(ModelEntry(id = "claude-opus-5-5", contextWindow = 200_000))

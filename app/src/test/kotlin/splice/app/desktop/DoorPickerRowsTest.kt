@@ -13,10 +13,12 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.provider.ProviderLogin
 import splice.app.provider.ServedProvider
+import splice.client.models.AnthropicTiers
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.usage.QuotaFull
@@ -116,6 +118,69 @@ internal class DoorPickerRowsTest {
         assertEquals("true", discovered.getValue("supports_1m").jsonPrimitive.content)
     }
 
+    @Test
+    fun `Desktop discovery lists its working selector and routes it to the same provider model`() {
+        val id = "gpt-6.2-sol"
+        val row = ModelEntry(id, "GPT-6.2 Sol", contextWindow = 272_000)
+        val lineup = catalogued(
+            lineupOf(provider("claude-codex", rows = listOf(row)) to listOf(model("claude-codex", id))),
+        )
+        val catalog = DoorCatalog(lineup)
+        val gateway = catalog.discovery().getValue("data").jsonArray.single().jsonObject
+        val desktop = catalog.discovery(surface = ModelDiscovery.DESKTOP).getValue("data").jsonArray.single().jsonObject
+        val selector = desktop.getValue("id").jsonPrimitive.content
+
+        assertEquals("claude-codex--gpt-6.2-sol", gateway.getValue("id").jsonPrimitive.content)
+        assertTrue(splice.core.model.ClientModelNames.kept(selector))
+        assertEquals(gateway - "id", desktop - "id")
+        assertEquals(id, DoorRouting().of(lineup, ask(selector), null, named = true)?.upstream)
+    }
+
+    @Test
+    fun `Muse metadata reaches both discovery paths without changing its selector`() {
+        val id = "muse-spark-1.3-contributor"
+        val row = ModelEntry(id, contextWindow = 1_000_000)
+        val lineup = catalogued(
+            lineupOf(
+                provider("muse", rows = listOf(row), baseUrl = "https://api.meta.ai/v1") to
+                    listOf(model("muse", id)),
+            ),
+        )
+        val catalog = DoorCatalog(lineup)
+        val gateway = catalog.discovery().getValue("data").jsonArray.single().jsonObject
+        val desktop = catalog.discovery(surface = ModelDiscovery.DESKTOP).getValue("data").jsonArray.single().jsonObject
+
+        assertEquals("Muse Spark 1.3 Contributor", desktop.getValue("display_name").jsonPrimitive.content)
+        assertTrue("train Meta" in desktop.getValue("description").jsonPrimitive.content)
+        val thinking = desktop.getValue("thinking").jsonObject
+        assertEquals("effort", thinking.getValue("type").jsonPrimitive.content)
+        val options = thinking.getValue("effort_options").jsonArray.map { it.jsonObject }
+        assertEquals(
+            listOf("minimal", "low", "medium", "high", "xhigh"),
+            options.map { it.getValue("id").jsonPrimitive.content },
+        )
+        assertEquals(
+            "true",
+            options.single { it.getValue("id").jsonPrimitive.content == "high" }
+                .getValue("recommended").jsonPrimitive.content,
+        )
+        assertEquals(gateway - "id", desktop - "id")
+        val selector = desktop.getValue("id").jsonPrimitive.content
+        assertEquals(id, DoorRouting().of(lineup, ask(selector), null, named = true)?.upstream)
+    }
+
+    @Test
+    fun `reasoning without named effort levels does not invent an effort selector`() {
+        val fact = CatalogModel(provider = "work", id = "model", label = "Model", reasons = true)
+        val model = ServedModel(fact, provider("work"), listOf(model("work", "model")), claude = null)
+
+        val discovered = DoorModelWire(AnthropicTiers(), emptyMap()).discovered(model, "work--model")
+
+        assertEquals("true", discovered.getValue("supports_reasoning").jsonPrimitive.content)
+        assertNull(discovered["thinking"])
+        assertNull(discovered["capabilities"])
+    }
+
     private fun ask(model: String): DoorAsk = DoorAsk(
         buildJsonObject {
             put("model", model)
@@ -144,9 +209,15 @@ internal class DoorPickerRowsTest {
         key: String,
         login: Boolean = false,
         rows: List<ModelEntry> = listOf(ModelEntry("m", "M", contextWindow = 200_000)),
+        baseUrl: String = "",
     ): ServedProvider = FakeProvider(
         key,
-        ModelCatalog(discoveryPrefix = "$key--", models = rows, defaultContextWindow = 200_000),
+        ModelCatalog(
+            discoveryPrefix = "$key--",
+            models = rows,
+            defaultContextWindow = 200_000,
+            vendorBaseUrl = baseUrl,
+        ),
         login,
     )
 

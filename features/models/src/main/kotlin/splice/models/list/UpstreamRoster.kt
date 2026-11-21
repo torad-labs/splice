@@ -130,10 +130,17 @@ internal class UpstreamRosterParser(private val json: Json = Json { ignoreUnknow
 
     private fun model(row: JsonObject): UpstreamModel = UpstreamModel(
         id = JsonScalars.str(row, "id") ?: JsonScalars.str(row, "slug").orEmpty(),
-        label = JsonScalars.str(row, "display_name") ?: JsonScalars.str(row, "name").orEmpty(),
+        label = JsonScalars.str(row, "display_name")?.takeIf(String::isNotBlank)
+            ?: JsonScalars.str(row, "name").orEmpty(),
         window = UpstreamWindow(
-            context = JsonScalars.firstLong(row, "context_length", "context_window", "max_context_length"),
-            maxContext = JsonScalars.firstLong(row, "max_context_window"),
+            context = JsonScalars.firstLong(
+                row,
+                "context_length",
+                "context_window",
+                "max_context_length",
+                "max_input_tokens",
+            ),
+            maxContext = JsonScalars.firstLong(row, "max_context_window", "max_input_tokens"),
         ),
         aliases = strings(row["aliases"]),
         unusable = unusable(row),
@@ -156,17 +163,22 @@ internal class UpstreamRosterParser(private val json: Json = Json { ignoreUnknow
     private fun listing(row: JsonObject): ModelListing {
         val named = (row["supported_reasoning_levels"] as? JsonArray).orEmpty()
             .mapNotNull { JsonScalars.str(it as? JsonObject, "effort") ?: JsonScalars.str(it) }
+        val options = (under(row, "thinking.effort_options") as? JsonArray).orEmpty()
+            .mapNotNull { JsonScalars.str(it as? JsonObject, "id") }
         val capable = (under(row, "capabilities.effort") as? JsonObject).orEmpty()
             .filterValues { (it as? JsonObject)?.get("supported") == JsonPrimitive(true) }.keys.toList()
-        val efforts = (listOf(named, capable) + LEVEL_LISTS.map { strings(under(row, it)) })
+        val efforts = (listOf(named, capable, options) + LEVEL_LISTS.map { strings(under(row, it)) })
             .firstOrNull { it.isNotEmpty() }.orEmpty()
         val says = row["supports_reasoning"] == JsonPrimitive(true) ||
+            under(row, "capabilities.effort.supported") == JsonPrimitive(true) ||
             "reasoning" in strings(row["supported_parameters"])
         return ModelListing(
             description = JsonScalars.str(row, "description").orEmpty(),
             efforts = efforts,
             defaultEffort = DEFAULT_LEVELS.firstNotNullOfOrNull { JsonScalars.str(under(row, it)) },
             reasons = efforts.isNotEmpty() || says,
+            // The provider's model instructions are consumed by ModelMessagesInput, not model-list metadata.
+            source = JsonObject(row - setOf("model_messages", "base_instructions")),
         )
     }
 
@@ -374,7 +386,12 @@ internal class RosterDiff {
 private const val NO_TOOLS = "it takes no tools, and every Claude Code turn sends them"
 
 /** Where a row lists its reasoning levels as plain strings: xAI, Moonshot (Kimi) and DeepSeek, in that order. */
-private val LEVEL_LISTS = listOf("capabilities.reasoning_effort", "reasoning.effort.valid", "effort.supported_levels")
+private val LEVEL_LISTS = listOf(
+    "capabilities.reasoning_effort",
+    "reasoning.effort.valid",
+    "effort.supported_levels",
+    "runtime.effort_levels",
+)
 
 /** Where a row names the level it runs at when none is asked for: the ChatGPT backend, then the same three. */
 private val DEFAULT_LEVELS = listOf(
@@ -382,4 +399,5 @@ private val DEFAULT_LEVELS = listOf(
     "capabilities.default_reasoning_effort",
     "reasoning.effort.default",
     "effort.default_level",
+    "runtime.default_effort",
 )

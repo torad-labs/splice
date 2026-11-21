@@ -73,10 +73,10 @@ internal class DesktopDoor(
         val caller = admitted(call) ?: return
         val lineup = providers.lineup()
         val catalog = DoorCatalog(lineup)
-        val listed = catalog.discovery(caller.default(lineup))
-        if (windows.app(call.request.headers[APP_MODE_HEADER])) {
-            caller.discovered(catalog.desktopRead(caller.default(lineup)))
-        }
+        val default = caller.default(lineup)
+        val surface = if (caller is DesktopCaller) ModelDiscovery.DESKTOP else ModelDiscovery.GATEWAY
+        val listed = catalog.discovery(default, surface)
+        if (surface == ModelDiscovery.DESKTOP) caller.discovered(catalog.desktopRead(default))
         JsonReply(HttpStatusCode.OK, listed.toString()).send(call)
     }
 

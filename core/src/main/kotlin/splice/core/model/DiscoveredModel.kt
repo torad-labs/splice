@@ -60,6 +60,8 @@ public data class ModelListing(
     val efforts: List<String> = emptyList(),
     @SerialName("default_effort") val defaultEffort: String? = null,
     val reasons: Boolean = false,
+    /** The provider's model row, retained for clients that understand properties splice does not interpret. */
+    val source: kotlinx.serialization.json.JsonObject? = null,
 )
 
 /** The `tool_mode` the Codex backend publishes for a model it runs on the code-mode surface alone. */

@@ -6,10 +6,12 @@
 package splice.app.desktop
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
+import kotlinx.serialization.json.JsonObject
 
-/** One model as its provider publishes it. [label] is the provider's published name, else splice.toml's label for
- *  the row, else [id]. [description], [reasoningLevels], [defaultReasoningLevel] and [reasons] are the provider's own
- *  words (DiscoveredModel.listing); absent when the provider's list names nothing, never guessed. [contextWindow] is
+/** One model as its provider publishes it. [label] keeps a meaningful provider name, or the configured label, or a
+ *  known model name or readable form of [id]. [description] and reasoning fill missing provider and configured facts
+ *  from the known-model catalog. [contextWindow] is
  *  the serving ceiling (ModelServeWindows.forRow), independent of any compaction target. */
 @Serializable
 internal data class CatalogModel(
@@ -21,6 +23,7 @@ internal data class CatalogModel(
     val defaultReasoningLevel: String? = null,
     val reasons: Boolean = false,
     val contextWindow: Long = 0,
+    @Transient val source: JsonObject? = null,
 )
 
 /** The whole catalog: one entry per (provider, id), in the order [CatalogBuild] was given the signed-in providers. */

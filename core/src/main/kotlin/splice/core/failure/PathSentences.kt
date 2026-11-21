@@ -48,11 +48,10 @@ internal object PathSentences {
     /** cp-tls: a certificate no root splice trusts signed, said whole with the key that fixes it; never re-sent. */
     private fun untrusted(cause: FailureCause.Path.Unreachable, facts: LineFacts): Said {
         val provider = facts.provider.key ?: facts.head
-        val at = facts.provider.host?.let { host -> " at $host" }.orEmpty()
         val reason = cause.reason?.let { said -> " ($said)" }.orEmpty()
-        val fix = "Name the certificate authority that signed it in providers.$provider.ca_file, " +
-            "or add it to this machine's trust store."
-        val what = "$provider's server$at presented a certificate splice does not trust$reason"
+        val fix = "Name the certificate authority that signed it in its ca_file, or add it to this machine's trust " +
+            "store."
+        val what = "$provider's server presented a certificate splice does not trust$reason"
         return Said(what, next = Next.Then(fix), whole = true)
     }
 

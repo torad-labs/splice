@@ -100,6 +100,33 @@ class GatewayNoHeadsDaemonTest {
         }
 
     @Test
+    fun `a Code Mode provider stays on the gateway with a same-key legacy head`() = runBlocking {
+        try {
+            val config = responsesWithCodeMode()
+            val without = running(config) { listed() }
+            assertEquals(listOf("claude-gamma--gamma-1"), without)
+            val legacy = """
+                [heads.gamma]
+                provider = "gamma"
+                port = $headPort
+                discovery_prefix = "claude-gamma--"
+                pinned_model = "gamma-1"
+                claude = { command = "claude-gamma" }
+            """.trimIndent()
+            running("$config\n$legacy\n") {
+                assertEquals(without, listed())
+                val response = post("claude-gamma--gamma-1", stream = true)
+                val body = response.bodyAsText()
+                assertEquals(200, response.status.value, body)
+                assertTrue("gamma-ok" in body, body)
+                assertCredentials(gamma, gamma.turns.last())
+            }
+        } finally {
+            stop()
+        }
+    }
+
+    @Test
     fun `a provider that refuses a turn is answered honestly, and the others still serve`() = runBlocking {
         try {
             running(toml(heads = false)) {
@@ -223,6 +250,23 @@ class GatewayNoHeadsDaemonTest {
     /** A legacy head left in splice.toml: the gateway serves the same models, and never relays a turn to it. */
     private fun headBlock() = "[heads.claude-grok]\nprovider = \"xai\"\nport = $headPort\n" +
         "discovery_prefix = \"claude-grok--\"\npinned_model = \"grok-fast\"\nclaude = { command = \"claude-grok\" }"
+
+    private fun responsesWithCodeMode(): String {
+        val auth = tmp.resolve("gamma-oauth.json")
+        Files.writeString(auth, """{"tokens":{"access_token":"${keys.getValue("gamma")}","account_id":"fixture"}}""")
+        return """
+            [daemon]
+            control_port = $controlPort
+            [providers.gamma]
+            dialect = "openai-responses"
+            base_url = "${gamma.baseUrl}"
+            auth = { kind = "chatgpt-oauth", file = "${auth.toString().replace("\\", "/")}" }
+            quirks = { code_mode = true }
+            [[providers.gamma.models]]
+            id = "gamma-1"
+            context_window = 200000
+        """.trimIndent()
+    }
 
     private fun toml(heads: Boolean, down: Boolean = false): String {
         val files = keys.mapValues { (name, key) ->

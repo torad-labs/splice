@@ -83,7 +83,7 @@ internal class DaemonDesktop(
         val switch = DesktopSwitch(lineups, records, key, door, app, tidy, log)
         switch.tidy()
         this.door = door
-        publishModels(door, lineups.lineup())
+        publish(door, lineups.lineup())
         val (lane, terminal) = claude.open(lineups, door)
         headLane.open(lineups)
         val callers = listOf(DesktopCaller(key, records, log), terminal)
@@ -98,15 +98,17 @@ internal class DaemonDesktop(
     suspend fun republish() {
         val source = lineups ?: return
         source.publish()
-        door?.let { publishModels(it, source.lineup()) }
+        door?.let { publish(it, source.lineup()) }
     }
 
-    private suspend fun publishModels(door: String, lineup: DesktopLineup) {
+    /** The model list and splice's policy given to every Claude Desktop whose applied configuration points at [door]:
+     *  the person's own, and each one run beside it on a config folder of its own. */
+    private suspend fun publish(door: String, lineup: DesktopLineup) {
         val models = DoorCatalog(lineup).inferenceModels(records.get().defaultModel)
         withContext(io) {
             (listOf(library) + library.beside()).forEach { desktop ->
-                Cancellables.runCatchingCancellable { desktop.publishModels(door, models) }
-                    .onFailure { log("[desktop] the model list was not written: ${SafeFailureText.render(it)}\n") }
+                Cancellables.runCatchingCancellable { desktop.publish(door, models) }
+                    .onFailure { log("[desktop] the configuration was not written: ${SafeFailureText.render(it)}\n") }
             }
         }
     }

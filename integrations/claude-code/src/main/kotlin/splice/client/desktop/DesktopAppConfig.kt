@@ -29,6 +29,9 @@ public class DesktopAppConfig(private val env: EnvReader = EnvReader(System::get
         get() = env(XDG_CONFIG_HOME)?.takeIf(String::isNotBlank)?.let(Path::of)
             ?: UserHome.dir(env).resolve(DOT_CONFIG)
 
+    /** What makes and fills splice's policy, over the person's own Claude folder. */
+    private val policies: DesktopPolicy get() = DesktopPolicy(ClaudeCodeSetup(UserHome.claudeDir(env)))
+
     /** The library folder: `$XDG_CONFIG_HOME/Claude-3p/configLibrary`, `~/.config` when that is unset. */
     public val library: Path get() = home.resolve(APP_DATA).resolve(LIBRARY)
 
@@ -63,24 +66,31 @@ public class DesktopAppConfig(private val env: EnvReader = EnvReader(System::get
      *  whether it exists, and never opens it. */
     public val managed: Path get() = DesktopManagedPolicy.file
 
-    /** splice's configuration: Desktop's gateway provider at [door], the credential from the executable [helper]
-     *  (an absolute path), every request carrying [APP_MODE_HEADER], discovery on, and auto mode on with Claude
-     *  Code's own check, which the door runs as a model call on every head. No key, and no model list here: the door's
+    /** splice's configuration: the [policy] it was made with, and over that Desktop's gateway provider at [door], the
+     *  credential from the executable [helper] (an absolute path), every request carrying [APP_MODE_HEADER], and what
+     *  every configuration on the door holds (DesktopPolicy.standing). No key, and no model list here: the door's
      *  models are written into it as they stand ([withModels]). */
-    public fun config(door: String, helper: String): JsonObject = buildJsonObject {
-        put("inferenceProvider", "gateway")
-        // The live test (Nov 19, 2026, Desktop 5.11492.5): unset, Desktop first shows its chooser (Continue, or sign in
-        // with claude.ai) and asks the door only once a person picks; "3p" opens it straight on splice
-        put("deploymentMode", "3p")
-        put(GATEWAY_BASE_URL, door)
-        put("inferenceGatewayAuthScheme", "bearer")
-        put("inferenceCredentialHelper", helper)
-        put("inferenceCredentialHelperTtlSec", HELPER_TTL_SEC)
-        putJsonObject("inferenceCustomHeaders") { put(APP_MODE_HEADER, APP_MODE) }
-        put(MODEL_DISCOVERY, true)
-        put("autoModeEnabled", true)
-        put("inferenceGatewayAutoModeServerChecks", false)
+    public fun config(door: String, helper: String, policy: JsonObject = JsonObject(emptyMap())): JsonObject {
+        val connection = buildJsonObject {
+            put("inferenceProvider", "gateway")
+            put(GATEWAY_BASE_URL, door)
+            put("inferenceGatewayAuthScheme", "bearer")
+            put("inferenceCredentialHelper", helper)
+            put("inferenceCredentialHelperTtlSec", HELPER_TTL_SEC)
+            putJsonObject(APP_HEADERS) { put(APP_MODE_HEADER, APP_MODE) }
+        }
+        return JsonObject(policy + policies.standing() + connection)
     }
+
+    /** splice's policy for Desktop: [defaults], the policy the build ships, with what the person already set up in
+     *  Claude Code laid over it (the effort their sessions run at, the marketplaces they added), so Desktop on splice
+     *  starts out matching their Claude Code. */
+    public fun policy(defaults: JsonObject): JsonObject = policies.generated(defaults)
+
+    /** [config], a configuration that points Desktop at the door, given what it leaves unset of [policy] and of what
+     *  every configuration on the door holds, the marketplaces of [policy] its list lacks, and [APP_MODE_HEADER]
+     *  among its own headers. A key it sets stays as the person set it. */
+    public fun withPolicy(config: JsonObject, policy: JsonObject): JsonObject = policies.filled(config, policy)
 
     /** The door address configuration [config] gives Desktop, or null when it gives none. */
     public fun door(config: JsonObject): String? = JsonScalars.str(config, GATEWAY_BASE_URL)
@@ -172,8 +182,11 @@ private const val LIBRARY = "configLibrary"
 private const val JSON_SUFFIX = ".json"
 private const val MANAGED = "/etc/claude-desktop/managed-settings.json"
 private const val GATEWAY_BASE_URL = "inferenceGatewayBaseUrl"
+
+/** Desktop's key for the headers every request of its carries, [APP_MODE_HEADER] among them. */
+internal const val APP_HEADERS: String = "inferenceCustomHeaders"
 private const val INFERENCE_MODELS = "inferenceModels"
-private const val MODEL_DISCOVERY = "modelDiscoveryEnabled"
+internal const val MODEL_DISCOVERY: String = "modelDiscoveryEnabled"
 private const val APPLIED_ID = "appliedId"
 private const val ENTRIES = "entries"
 private const val ID = "id"

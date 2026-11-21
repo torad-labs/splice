@@ -83,13 +83,100 @@ class DesktopSetupTest {
         val desktop = DesktopAppLibrary(DesktopAppConfig(env))
         val models = buildJsonArray { add(buildJsonObject { put("name", "claude-oai--6.2-sol") }) }
 
-        assertTrue(desktop.publishModels(door, models))
+        assertTrue(desktop.publish(door, models))
         val file = library.resolve("${records.get().appId}.json")
         val updated = Json.parseToJsonElement(Files.readString(file)).jsonObject
         assertEquals("true", updated.getValue("modelDiscoveryEnabled").jsonPrimitive.content)
         assertEquals(models, updated.getValue("inferenceModels").jsonArray)
-        assertFalse(desktop.publishModels(door, models))
-        assertFalse(desktop.publishModels("http://127.0.0.1:3096/other", models))
+        assertFalse(desktop.publish(door, models))
+        assertFalse(desktop.publish("http://127.0.0.1:3096/other", models))
+    }
+
+    @Test
+    fun `on gives Desktop splice's default policy with what the person set up in Claude Code over it`() = managedHere {
+        val door = "http://127.0.0.1:3096/door"
+        val claude = Files.createDirectories(tmp.resolve("home/.claude/plugins")).parent
+        Files.writeString(
+            claude.resolve("settings.json"),
+            """{"effortLevel":"xhigh","permissions":{"deny":["Bash"]}}""",
+        )
+        Files.writeString(
+            claude.resolve("plugins/known_marketplaces.json"),
+            """{"official":{"source":{"source":"github","repo":"Anthropics/claude-plugins-official"}},""" +
+                """"team":{"source":{"source":"github","repo":"acme/tools","ref":"v2"}},""" +
+                """"local":{"source":{"source":"directory","path":"/srv/mods"}},""" +
+                """"big":{"source":{"source":"github","repo":"acme/mono","sparsePaths":[".claude-plugin"]}}}""",
+        )
+
+        app.putIn(door)
+        val config = read(library.resolve("${records.get().appId}.json"))
+        assertEquals("xhigh", config.getValue("defaultModelEffort").jsonPrimitive.content, "their effort")
+        assertEquals(
+            """[{"source":"github","repo":"anthropics/claude-plugins-official"},""" +
+                """{"source":"github","repo":"acme/tools","ref":"v2"}]""",
+            config.getValue("allowedPluginMarketplaces").toString(),
+            "the default's marketplace once, then theirs that Desktop can reach",
+        )
+        assertEquals("""["*"]""", config.getValue("coworkEgressAllowedHosts").toString(), "the default policy is in it")
+        assertEquals(door, config.getValue("inferenceGatewayBaseUrl").jsonPrimitive.content)
+        assertEquals("true", config.getValue("disableDeploymentModeChooser").jsonPrimitive.content)
+        assertFalse("managedMcpServers" in config, "their MCP servers stay Claude Code's own")
+        assertFalse("disabledBuiltinTools" in config, "and so do their permission rules")
+    }
+
+    @Test
+    fun `a configuration the person made on the door is filled where it says nothing and kept where it speaks`() =
+        managedHere {
+            val door = "http://127.0.0.1:3096/door"
+            val theirs = "5a5a5a5a-2222-4c2d-9e8f-123456789abc"
+            Files.createDirectories(library)
+            Files.writeString(
+                library.resolve("$theirs.json"),
+                """{"inferenceProvider":"gateway","inferenceGatewayBaseUrl":"$door","defaultModelEffort":"low",""" +
+                    """"keepAwakeEnabled":false,"inferenceCustomHeaders":{"X-Team":"a"},""" +
+                    """"allowedPluginMarketplaces":[{"source":"github","repo":"their/own"}]}""",
+            )
+            Files.writeString(
+                library.resolve("_meta.json"),
+                """{"appliedId":"$theirs","entries":[{"id":"$theirs","name":"Mine"}]}""",
+            )
+            val desktop = DesktopAppLibrary(DesktopAppConfig(env))
+            val models = buildJsonArray { add(buildJsonObject { put("name", "claude-oai--6.2-sol") }) }
+
+            assertTrue(desktop.publish(door, models))
+            val config = read(library.resolve("$theirs.json"))
+            assertEquals("low", config.getValue("defaultModelEffort").jsonPrimitive.content, "what they set stays")
+            assertEquals("false", config.getValue("keepAwakeEnabled").jsonPrimitive.content, "off stays off")
+            assertEquals(
+                """{"X-Team":"a","x-splice-desktop":"app"}""",
+                config.getValue("inferenceCustomHeaders").toString(),
+                "their header, and the one the door reads a Desktop request by",
+            )
+            assertEquals(
+                """[{"source":"github","repo":"their/own"},""" +
+                    """{"source":"github","repo":"anthropics/claude-plugins-official"}]""",
+                config.getValue("allowedPluginMarketplaces").toString(),
+            )
+            assertEquals("""["*"]""", config.getValue("coworkEgressAllowedHosts").toString(), "what it left unset")
+            assertEquals("3p", config.getValue("deploymentMode").jsonPrimitive.content, "no claude.ai sign-in here")
+            assertFalse(desktop.publish(door, models), "nothing is left to give")
+        }
+
+    @Test
+    fun `the default policy ships no address, credential, model list, managed server or sign-in organization`() {
+        val shipped = DesktopPolicyDefaults().read()
+        assertTrue(shipped.isNotEmpty(), "the build ships a default policy")
+        val never = listOf(
+            "inferenceProvider",
+            "inferenceGatewayBaseUrl",
+            "inferenceGatewayApiKey",
+            "inferenceCredentialHelper",
+            "inferenceModels",
+            "managedMcpServers",
+            "deploymentOrganizationUuid",
+        )
+        assertEquals(emptyList<String>(), never.filter { it in shipped })
+        assertFalse("allowedOrganizationUuids" in shipped.getValue("claudeAiImport").jsonObject)
     }
 
     @Test
@@ -127,4 +214,6 @@ class DesktopSetupTest {
         DesktopManagedPolicy.within(tmp.resolve("etc/managed-settings.json"), block)
 
     private fun compact(file: Path): String = Files.readString(file).replace(Regex("\\s"), "")
+
+    private fun read(file: Path) = Json.parseToJsonElement(Files.readString(file)).jsonObject
 }

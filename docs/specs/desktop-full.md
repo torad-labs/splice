@@ -28,6 +28,12 @@ Code-tab launch on the door the desktop key Desktop stripped (Mantle's bearer, o
 never writes the managed file. Each turn's perf row names its subagent and parent agent (df-turn-headers). Not built:
 the gateway answer fields of df-wire-answers.
 
+Outcome 9 (desktop-policy) is built: the configuration is generated, the build's default policy
+(`claude-code-desktop-policy/ccd-policy.json`, DesktopPolicyDefaults) with what the person set up in Claude Code laid
+over it (ClaudeCodeSetup, DesktopPolicy), written whole by `on` and given, where it is unset, to every applied
+configuration that points at the door at each daemon start and catalog change (DesktopAppLibrary.publish). Not yet
+checked on the real app in the sandbox of outcome 8.
+
 ## Who it is for and why
 
 Someone who uses Claude Desktop (Chat, Cowork and the Code tab) and runs splice. Asked for on Nov 18, 2026: Desktop
@@ -207,6 +213,47 @@ building on it.
      `Xephyr` window and asks once, through the lead.
    - **The record:** findings, including every Unknown above that the run settles, go into this spec. The screenshots
      judged are attached to the PR, after checking that none shows a key, an account name or a private path.
+9. **Desktop starts out matching the person's Claude Code (desktop-policy, added Nov 21, 2026, at the founder's
+   direction).** The configuration splice gives Desktop is generated, never filled in by hand: splice's default policy
+   with what the person already set up in Claude Code laid over it, so nothing is entered again in Desktop's own
+   configuration window.
+   - **The default** ships in the build as `claude-code-desktop-policy/ccd-policy.json`, in the flat keys Anthropic's
+     configuration reference documents (https://claude.com/docs/third-party/claude-desktop/configuration), with
+     everything useful on: Chat and Cowork, the built-in browser, extensions, projects, scheduled tasks, skills, keep
+     awake, Developer Mode, plugins a person adds and their marketplaces, local MCP servers and tool search; every host
+     reachable from the workspace (unset, Desktop gives Chat and Cowork none); MCP tool calls allowed 30 minutes (unset,
+     three); a stream that sends only pings waited on 15 minutes longer. It holds no address, credential or model list:
+     the door's address and the helper are the daemon's to give, and the models are written as they stand.
+   - **Taken from Claude Code:** the effort the person's sessions run at (`effortLevel` in `settings.json`), as
+     Desktop's default effort; and the marketplaces they added (`plugins/known_marketplaces.json`) that Desktop can
+     reach, after the default's: a GitHub repository, a git remote or a hosted marketplace file, with its branch and
+     folder. splice reads both files and writes neither.
+   - **Left in Claude Code, each for a reason Desktop gives** (read from the bundle of Desktop 6.28899.2):
+     - MCP servers. One managed server that is not `policy-only` makes Desktop start its Code sessions with
+       `strictPluginOnlyCustomization: ["mcp"]`, so MCP loads from plugins and policy only and the person's own
+       servers are gone there. The Code tab already reads them from `~/.claude.json`.
+     - Permission rules. Code sessions read them already; as `disabledBuiltinTools` they would also bind Cowork and
+       Chat, which a person did not ask for by setting them in Claude Code.
+     - The status line: Desktop runs one only from a root-owned file outside the home folder.
+     - A launcher (`processWrapper`): Desktop then passes no credential, so only a launcher that gives splice's key
+       works, which is `desktop-launch` and a managed file's to name.
+     - A marketplace read from a folder on this computer, which Desktop's configuration cannot name, and one Claude
+       Code clones only in part, which Desktop would clone whole.
+   - **No Claude login in gateway mode.** The configuration opens Desktop straight on splice (`deploymentMode: "3p"`,
+     and `disableDeploymentModeChooser` for a Desktop older than 4.16336) and takes nothing from the person's Claude
+     account. A person who wants their Claude account and splice runs a second Desktop beside their own, on a config
+     folder of its own.
+   - **Filled, never overruled.** `on` writes splice's configuration whole. At each daemon start and catalog change,
+     every applied configuration that points at the door (splice's own, or one a person made, in their own library or
+     in one beside it) is given what it leaves unset, the marketplaces its list lacks and the app-mode header among its
+     own headers. A key it sets stays as the person set it, `false` included.
+   - **Sessions.** The Code tab runs Claude Code over the same `~/.claude` as the terminal, so its sessions write
+     their transcripts where the terminal's are and see every other session on the computer as a peer. Desktop's own
+     list holds the sessions it started. Desktop 6.28899.2 brings terminal sessions into that list only through its
+     import (a scan of the terminal's transcripts, each copied under a new id, for folders Desktop trusts), so the
+     default leaves the import on and has Desktop offer it when it finds sessions. No key makes that list follow the
+     terminal's as it changes, and `automatic3pImport` copies an earlier Desktop profile, never the terminal's
+     sessions.
 
 ## Constraints
 

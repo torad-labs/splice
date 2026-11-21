@@ -6,9 +6,14 @@
 // which case their choice stays; a `_meta.json` that splice found is written back byte for byte where nothing else in
 // it changed, and one splice made is removed, with the folder when splice made it and it is empty. splice never opens
 // the managed file, the keyring or any of Desktop's encrypted stores.
+//
+// desktop-policy (outcome 9): the configuration splice writes carries its policy for Desktop, the default the build
+// ships with what the person set up in Claude Code laid over it, and a daemon start gives the same to any applied
+// configuration that points Desktop at the door, filling what it leaves unset and changing nothing it sets.
 package splice.app.desktop
 
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import splice.client.desktop.DesktopAppConfig
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
@@ -16,7 +21,11 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 
-internal class DesktopAppLibrary(private val config: DesktopAppConfig = DesktopAppConfig()) {
+internal class DesktopAppLibrary(
+    private val config: DesktopAppConfig = DesktopAppConfig(),
+    /** The policy the build ships, which what the person set up in Claude Code is laid over. */
+    private val defaults: DesktopPolicyDefaults = DesktopPolicyDefaults(),
+) {
     private val files = DesktopLibraryFiles()
 
     /** Why splice's configuration can't be put in now, or null when it can: a managed configuration exists (which
@@ -81,20 +90,21 @@ internal class DesktopAppLibrary(private val config: DesktopAppConfig = DesktopA
 
     /** The library of each Claude Desktop started on a config folder of its own beside this one
      *  (DesktopAppConfig.beside). */
-    fun beside(): List<DesktopAppLibrary> = config.beside().map(::DesktopAppLibrary)
+    fun beside(): List<DesktopAppLibrary> = config.beside().map { DesktopAppLibrary(it, defaults) }
 
-    /** [models] written as the model list of the configuration this library applies, when that configuration points
-     *  Desktop at [door]; whether anything was written. A library that applies none, or one that points elsewhere, is
-     *  left as it is: this never applies a configuration, and never opens the managed file. Desktop reads the list at
+    /** [models] written as the model list of the configuration this library applies, and splice's policy given to it
+     *  where it says nothing (DesktopAppConfig.withPolicy), when that configuration points Desktop at [door]; whether
+     *  anything was written. A library that applies none, or one that points elsewhere, is left as it is: this never
+     *  applies a configuration, never changes a key one sets, and never opens the managed file. Desktop reads it at
      *  its next launch. */
-    fun publishModels(door: String, models: JsonArray): Boolean {
+    fun publish(door: String, models: JsonArray): Boolean {
         val id = files.read(config.meta)?.let(config::applied) ?: return false
         val file = config.file(id).normalize()
         val current = file.takeIf { it.parent == config.library.normalize() }
             ?.takeIf { Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) }
             ?.let(files::read)
             ?.takeIf { config.door(it)?.trimEnd('/') == door.trimEnd('/') } ?: return false
-        val updated = config.withModels(current, models)
+        val updated = config.withPolicy(config.withModels(current, models), policy())
         return if (updated == current) {
             false
         } else {
@@ -103,9 +113,12 @@ internal class DesktopAppLibrary(private val config: DesktopAppConfig = DesktopA
         }
     }
 
-    /** splice's configuration [id] written for [door] and [helper]. */
+    /** splice's configuration [id] written for [door] and [helper], with its policy for Desktop. */
     fun rewrite(id: String, door: String, helper: Path) =
-        files.write(config.file(id), config.config(door, helper.toString()))
+        files.write(config.file(id), config.config(door, helper.toString(), policy()))
+
+    /** splice's policy for Desktop now: the build's default, with what the person set up in Claude Code over it. */
+    private fun policy(): JsonObject = config.policy(defaults.read())
 
     /** Why [library] can't be read: it can't be listed, a file in it can't be read, or its `_meta.json` holds no JSON
      *  object. Null when it can. */

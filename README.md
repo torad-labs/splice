@@ -411,6 +411,27 @@ settings and sessions are shared, and splice changes nothing in `~/.claude/setti
 environment. A model you pick runs on its head, with that head's logins, cooldowns and failures. Desktop reads its
 model list only at launch, so a sign-in or a head added while it is open shows at its next launch.
 
+The configuration also carries splice's policy for Desktop, so Desktop starts out matching your Claude Code with nothing
+to set up again in its own configuration window. splice takes the default policy its build ships
+(`claude-code-desktop-policy/ccd-policy.json`: Chat and Cowork, the built-in browser, extensions, projects, scheduled
+tasks, skills, plugins you add and their marketplaces, local MCP servers and tool search on, every host reachable from
+the workspace, and MCP tool calls allowed 30 minutes) and lays over it what you set up in Claude Code: the effort your
+sessions run at (`effortLevel` in `~/.claude/settings.json`) and the marketplaces you added that Desktop can reach
+(`~/.claude/plugins/known_marketplaces.json`: a GitHub repository, a git remote or a hosted file; one in a folder on
+this computer, or one Claude Code clones only in part, is left out). splice reads those two files and writes neither.
+Your MCP servers, permission rules and status line stay in Claude Code, where the Code tab already reads them: given to
+Desktop as policy, one MCP server would make it start Code sessions with MCP from plugins and policy only, and your own
+servers would be gone there. `on` writes the configuration whole. After that, a daemon start only gives it what it
+leaves unset and the marketplaces its list lacks, so a setting you change in Desktop stays as you set it. The same is
+given to a configuration of your own that points Desktop at the door, such as one in a second Desktop you run beside
+your own (`XDG_CONFIG_HOME=~/.config/<name>`).
+
+Desktop on splice has no claude.ai sign-in: the configuration opens it straight on splice. To keep your Claude account
+in Desktop and use splice too, run that second Desktop beside your own. Sessions the Code tab starts are Claude Code
+sessions like the terminal's, with their transcripts in the same place and each visible to the others as a peer.
+Desktop's own list holds the sessions it started; its import (Settings, Import & export), which the policy leaves on,
+copies your terminal sessions into that list.
+
 `splice desktop off` takes out exactly what `on` put in: splice's configuration and its library entry, and the
 credential program; a configuration you had applied before (or applied in Desktop since) is applied again, and a library
 folder splice made is removed. `splice uninstall --all` does the same. A managed configuration
@@ -873,7 +894,7 @@ Each of these is password-equivalent. See [credential locations](#credential-loc
 | `~/.splice/state/claude-lane.json` | Where the terminal's `claude` runs (splice's door or its head), the `--model` named with `splice claude door`, and the window its sessions declare | Only you (0600) | Kept; rewritten by `splice claude door` and `splice claude head` | `StateRecords.kt` |
 | `~/.splice/state/door-login/splice-login-hook.sh` | The hook that answers `/login` in a `claude` session on the door: it opens splice's accounts page with `splice console` and stops the turn before the model | Only you (0700) | Rewritten at each launch on the door | `DoorLogin.kt` |
 | `~/.claude/commands/login.md` | splice's bare `/login` in a `claude` session on the door, described as opening splice's accounts page. Its text says what it is and names both ways on, `splice console` for splice's accounts and `claude auth login` for Claude Code's own sign-in, for a session with no hook to catch it, such as a Claude Code splice did not start, which runs the file for its own `/login` too | Only you (0600) | Laid by `splice claude door` and each launch on the door where no `/login` is there; one you wrote, as a command or a skill, is never replaced, and `splice claude` says it is in the way. `splice claude head` and `splice uninstall` take splice's out, and only splice's | `DoorLogin.kt` |
-| `~/.config/Claude-3p/configLibrary/<id>.json` and its entry in `_meta.json` | Desktop's gateway configuration and the model settings derived from splice's provider catalog. Gateway discovery supplies descriptions. No key is stored here | Yours, as Desktop made the folder (a file splice makes is 0600) | The applied configuration pointing at splice's door follows the catalog at startup and when it changes. `splice desktop off` and `splice uninstall` remove splice's configuration and restore the prior selection | `DesktopAppLibrary.kt`, `DesktopLibraryFiles.kt` |
+| `~/.config/Claude-3p/configLibrary/<id>.json` and its entry in `_meta.json` | Desktop's gateway configuration, splice's policy for Desktop (the build's default with your Claude Code effort and marketplaces over it) and the model settings derived from splice's provider catalog. Gateway discovery supplies descriptions. No key is stored here | Yours, as Desktop made the folder (a file splice makes is 0600) | The applied configuration pointing at splice's door follows the catalog at startup and when it changes, and is given what it leaves unset of the policy; a key it sets is never changed. `splice desktop off` and `splice uninstall` remove splice's configuration and restore the prior selection | `DesktopAppLibrary.kt`, `DesktopLibraryFiles.kt` |
 | `~/.claude/settings.json` | A legacy Desktop door setting written by an older splice is removed; other settings are kept | The existing file's permissions, or its original creation mode when an older splice made it owner-only | Rewritten only when removing those legacy settings | `DesktopSettingsFile.kt` |
 | `~/.config/splice/peers/<name>/peer.key` | A peer's own key, which opens only that peer's `/api/peers/self` routes; the daemon keeps only its SHA-256, in `peer.json` | Only you (0600, in a 0700 folder) | Until `splice peer rotate` replaces it or `splice peer revoke` deletes the folder | `PeerStore.kt` |
 | `~/.config/splice/peers/<name>/webhook.secret` and `webhook.bearer` | The secret a peer's webhook pushes are signed with, and the optional bearer copied from `--bearer-file` for the receiver | Only you (0600) | Until the webhook is set again, cleared, or the peer revoked | `PeerStore.kt` |

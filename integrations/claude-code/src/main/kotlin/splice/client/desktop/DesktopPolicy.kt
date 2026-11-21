@@ -1,0 +1,88 @@
+// NEW: desktop-policy (docs/specs/desktop-full.md, outcome 9). What splice gives Claude Desktop beyond its connection
+// to the door: splice's default policy, in the flat keys of Anthropic's configuration reference as Desktop's library
+// holds them (https://claude.com/docs/third-party/claude-desktop/configuration), with what the person already set up
+// in Claude Code laid over it (ClaudeCodeSetup). Desktop on splice then starts out matching their Claude Code, with
+// nothing to enter again in Desktop's own Setup window.
+//
+// A configuration is filled, never overruled: a key it sets is the person's, whether they set it in Setup or by hand,
+// so it stays, and only what it leaves unset is given. Its marketplace list gains the ones it lacks, and its headers
+// the one the door reads a Desktop request by.
+package splice.client.desktop
+
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import splice.core.util.JsonScalars
+
+internal class DesktopPolicy(private val setup: ClaudeCodeSetup) {
+    /** The policy: [defaults], with the effort the person's Claude Code sessions run at in place of the default's, and
+     *  the marketplaces they added after the default's own. */
+    fun generated(defaults: JsonObject): JsonObject {
+        val effort = setup.effort()?.let { mapOf(POLICY_EFFORT to JsonPrimitive(it)) }.orEmpty()
+        val added = setup.marketplaces()
+        val markets = both(defaults[POLICY_MARKETPLACES], added).takeIf { added.isNotEmpty() }
+            ?.let { mapOf(POLICY_MARKETPLACES to it) }
+            .orEmpty()
+        return JsonObject(defaults + effort + markets)
+    }
+
+    /** What every configuration on the door holds, whoever made it. Gateway mode has no claude.ai sign-in: a person
+     *  who wants their Claude account and splice runs a second Desktop beside their own (DesktopAppConfig.beside), so
+     *  Desktop opens straight on splice and offers no sign-in. Auto mode is on with Claude Code's own check, which the
+     *  door runs as a model call on every provider, since it can't answer the provider's. Discovery is on, so each
+     *  listed model gets its description from the door. */
+    fun standing(): JsonObject = buildJsonObject {
+        // The live test (Nov 19, 2026, Desktop 5.11492.5): unset, Desktop first shows its chooser (Continue, or sign in
+        // with claude.ai) and asks the door only once a person picks; "3p" opens it straight on splice. The second key
+        // is the same choice as a Desktop older than 4.16336 reads it.
+        put("deploymentMode", "3p")
+        put("disableDeploymentModeChooser", true)
+        put(MODEL_DISCOVERY, true)
+        put("autoModeEnabled", true)
+        put("inferenceGatewayAutoModeServerChecks", false)
+    }
+
+    /** [config], a configuration that points Desktop at the door, given what it leaves unset of [policy] and of
+     *  [standing], the marketplaces of [policy] its own list lacks, and [APP_MODE_HEADER] among its own headers. A key
+     *  it sets stays as the person set it; a list or headers it holds in a form that is no JSON (a managed profile's
+     *  string) are left as they are. */
+    fun filled(config: JsonObject, policy: JsonObject): JsonObject {
+        val unset = (policy + standing()).filterKeys { it !in config }
+        val wanted = (policy[POLICY_MARKETPLACES] as? JsonArray).orEmpty()
+        val markets = (config[POLICY_MARKETPLACES] as? JsonArray)
+            ?.let { mapOf(POLICY_MARKETPLACES to both(it, wanted)) }
+            .orEmpty()
+        return JsonObject(config + unset + markets + marked(config))
+    }
+
+    /** [config]'s custom headers with [APP_MODE_HEADER] among them, which is how the door counts a turn against the
+     *  window Desktop gave that session; empty where they already carry it or are no JSON object. */
+    private fun marked(config: JsonObject): Map<String, JsonElement> {
+        val headers = (config[APP_HEADERS] ?: JsonObject(emptyMap())) as? JsonObject
+        if (headers == null || APP_MODE_HEADER in headers) return emptyMap()
+        return mapOf(APP_HEADERS to JsonObject(headers + (APP_MODE_HEADER to JsonPrimitive(APP_MODE))))
+    }
+
+    /** [listed], then each of [more] that is fetched from a place none before it is. */
+    private fun both(listed: JsonElement?, more: List<JsonElement>): JsonArray {
+        val held = (listed as? JsonArray).orEmpty()
+        val places = held.mapTo(mutableSetOf(), ::place)
+        return JsonArray(held + more.filter { places.add(place(it)) })
+    }
+
+    /** Where a marketplace is fetched from, which is what makes two entries the same one: GitHub reads a repository's
+     *  name without regard to case. */
+    private fun place(entry: JsonElement): String {
+        val named = entry as? JsonObject
+        val kind = JsonScalars.str(named, MARKETPLACE_SOURCE).orEmpty()
+        val at = marketplaceAddressOf[kind]?.let { JsonScalars.str(named, it) }.orEmpty()
+        return "$kind $at".lowercase()
+    }
+}
+
+// Desktop's keys for the effort a new conversation starts at and for the marketplaces its Directory lists.
+private const val POLICY_EFFORT = "defaultModelEffort"
+private const val POLICY_MARKETPLACES = "allowedPluginMarketplaces"

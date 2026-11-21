@@ -26,6 +26,9 @@ internal abstract class DoorCaller(
     /** The window this caller's sessions hold, which every count the door reports is a share of; null for none. */
     abstract fun window(): Long?
 
+    /** The window [ask]'s session holds: the caller's own ([window]) unless the request says otherwise. */
+    open fun windowOf(ask: DoorAsk): Long? = window()
+
     /** What a turn is refused with while no head is in the door. */
     abstract val noHead: String
 
@@ -39,4 +42,11 @@ internal abstract class DoorCaller(
 
     /** A turn on its way to its head, as the door sends it. Nothing by default. */
     open fun sending(turn: DesktopLastTurn) = Unit
+
+    /** A turn or a count this caller asked, before it is routed. Nothing by default. */
+    open fun asked(ask: DoorAsk) = Unit
+
+    /** The door's model list, as Claude Desktop's app mode was answered it ([rows], id and label, in order). Nothing
+     *  by default. */
+    open fun discovered(rows: List<DesktopPickerRow>) = Unit
 }

@@ -6,6 +6,7 @@ package splice.app
 
 import splice.app.cli.AdminSupport
 import splice.app.desktop.ClaudeLaneLook
+import splice.app.desktop.DesktopLook
 import splice.app.provider.JdkLocalHttp
 import splice.app.provider.LocalProbeInputs
 import splice.core.config.RunningJar
@@ -33,7 +34,9 @@ internal object DoctorWiring {
             JdkLocalHttp(probeInputs.headers(provider, probeInputs.bearer(key, provider, env)))
         },
         lane = ClaudeLaneRead { topology, env ->
-            ClaudeLaneLook(topology, TopologyStatePaths(env).of(topology), LogSink { System.err.print(it) }).reading()
+            val paths = TopologyStatePaths(env).of(topology)
+            val log = LogSink { System.err.print(it) }
+            ClaudeLaneLook(topology, paths, log).reading().copy(desktop = DesktopLook(paths, env, log).reading())
         },
     )
 

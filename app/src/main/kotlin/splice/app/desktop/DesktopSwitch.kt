@@ -1,23 +1,24 @@
-// NEW: desktop-door (docs/specs/desktop-door.md, decisions 4, 6 and 8). What `splice desktop on`, `off` and
-// `rotate-key` do to the door's record, and what each tells the person to set in Claude Desktop.
+// NEW: desktop-door (docs/specs/desktop-door.md, decisions 4, 6 and 8); desktop-full (docs/specs/desktop-full.md,
+// df-app-on). What `splice desktop on`, `off` and `rotate-key` do.
 //
-// splice writes nothing into `~/.claude/settings.json`, which every terminal session hot-reloads: the Code tab is
-// pointed at the door by variables the person sets once in Desktop's own environment store (DesktopEnvironment), which
-// no terminal session reads. `on` refuses, changing nothing, when no head is in the door, when `--model` is not in it,
-// or when the settings file would send the Code tab past the door; it names what it found. It opens the door, and
-// says what to set and its values. `off` closes the door, so it refuses every turn, and says which variables to remove
-// to put the Code tab back on the person's own Claude login. What an older splice's `on` wrote into the settings file
-// is taken out at each start, and by `on` and `off`.
+// `on` sets Claude Desktop up itself, with nothing to paste: it puts splice's configuration in Desktop's 3P library
+// (DesktopAppMode), pointing all of Desktop (Chat, Cowork and the Code tab) at the door as its gateway, with the
+// desktop key from a credential helper Desktop runs, and opens the door. `--model` is Desktop's own default, the model
+// it lists first and opens a new session on; the terminal's `claude` keeps its own. `on` refuses, changing nothing, when
+// no head is in the door, when `--model` is not in it, or when Desktop's library can't take splice's configuration; it
+// names what it found. `off` takes out exactly what `on` put in and closes the door. Until Nov 21, 2026 `on` printed
+// five variables for the person to paste into Desktop's environment store (the Code tab alone); a door opened that way
+// is still answered until `on` or `off` replaces it.
+//
+// splice writes nothing into `~/.claude/settings.json`, which every terminal session hot-reloads, and changes nothing
+// in the terminal's environment. What an older splice's `on` wrote into the settings file is taken out at each start,
+// and by `on` and `off`.
 package splice.app.desktop
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.json.JsonObject
 import splice.client.desktop.DESKTOP_ENV_PLACE
 import splice.client.desktop.DesktopEnvironment
-import splice.client.desktop.DesktopSettings
-import splice.client.desktop.DoorSelectors
-import splice.client.desktop.SettingsRead
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -25,13 +26,8 @@ import splice.core.wire.HttpStatus
 
 /** What one of the switch's acts ended in. */
 internal sealed class DesktopAct {
-    /** Done: [said] is what changed, in words, [default] which model a session starts on and why it is that one, and
-     *  [env] what to set in Desktop's environment store, with its values. */
-    data class Done(
-        val said: String,
-        val default: String? = null,
-        val env: List<Pair<String, String>>? = null,
-    ) : DesktopAct()
+    /** Done: [said] is what changed, in words, and [default] which model a session starts on and why it is that one. */
+    data class Done(val said: String, val default: String? = null) : DesktopAct()
 
     /** Refused with nothing changed: [status], and [reason], which [why] says with that. */
     data class Refused(val status: Int, val reason: String) : DesktopAct() {
@@ -43,44 +39,46 @@ internal class DesktopSwitch(
     private val heads: DesktopHeads,
     private val records: DesktopRecords,
     private val key: DesktopKey,
-    private val file: DesktopSettingsFile,
-    /** The door's address, which Desktop's environment store gives the Code tab's Claude Code. */
+    /** The door's address, which splice's configuration gives Desktop. */
     val door: String,
-    private val selectors: DoorSelectors,
+    /** splice's configuration in Desktop's library, and the mode Desktop is in. */
+    val app: DesktopAppMode,
+    /** What an older splice's `on` wrote into `~/.claude/settings.json`, taken out. */
+    private val settingsTidy: DesktopSettingsTidy,
     private val log: LogSink,
 ) {
-    private val settings = DesktopSettings()
-    private val environment = DesktopEnvironment()
     private val lock = Mutex()
     private val starting = StartingModel({ records.get().defaultModel }, picker = false)
 
     suspend fun on(model: String?): DesktopAct = lock.withLock {
         val lineup = heads.lineup()
-        refusal(lineup, model)?.let { return@withLock it }
-        val (chosen, why) = starting.of(lineup, model)
-        val found = chosen?.let(lineup::find) ?: return@withLock DesktopAct.Refused(HttpStatus.CONFLICT, NO_MODEL)
-        val (head, picked) = found
-        // The window Desktop is told is set once and kept, so what the person set stays right: the head scales each
-        // session's counts to it, whichever model the door runs.
-        val window = records.get().window ?: head.catalog.contextWindowFor(picked.upstream)
-        val tidied = tidied()
-        records.update { it.copy(on = true, defaultModel = chosen, window = window, replaced = null) }
-        val said = "Desktop is on: the door answers at $door. Your ${file.path} is not changed, so terminal " +
-            "sessions stay as they are$tidied"
-        DesktopAct.Done(said, "$chosen ($why)", environment.of(door, key.get(), window))
+        val named = model?.let { picked(lineup, it) ?: it }
+        refusal(lineup, named)?.let { return@withLock it }
+        val (chosen, why) = starting.of(lineup, named)
+        chosen?.let(lineup::find) ?: return@withLock DesktopAct.Refused(HttpStatus.CONFLICT, NO_MODEL)
+        val tidied = settingsTidy.tidied()
+        val replaced = app.putIn(door)
+        records.update { it.copy(on = true, defaultModel = chosen, replaced = null) }
+        val said = "Claude Desktop is set up on splice: all of it (Chat, Cowork and the Code tab) runs on the door " +
+            "at $door, with nothing to paste.$replaced $REOPEN$tidied"
+        DesktopAct.Done(said, "$chosen ($why)")
     }
 
-    /** Why `on` must change nothing: no head in the door, a `--model` not in it, or a settings file it can't read or
-     *  that would send the Code tab past the door. Null when it may go on. */
+    /** The selector [model] stands for when it is the id Claude Desktop lists a model under (a Claude model's own id,
+     *  or the name Claude's clients keep for another lab's): the person's own pick from Desktop's list, never dropped
+     *  for not being spelled as a selector. Null when it is no id Desktop lists. */
+    private fun picked(lineup: DesktopLineup, model: String): String? =
+        lineup.find(model)?.second?.model
+            ?: DoorCatalog(lineup).served.firstOrNull { it.desktopId == model }?.rows?.firstOrNull()?.model
+
+    /** Why `on` must change nothing: no head in the door, a `--model` not in it, or Desktop's library can't take
+     *  splice's configuration. Null when it may go on. */
     private fun refusal(lineup: DesktopLineup, model: String?): DesktopAct? {
-        val read = file.read()
         val notServed = starting.refusal(lineup, model)
         val found = when {
             lineup.models.isEmpty() -> HttpStatus.CONFLICT to "no head is in the door (${leftOut(lineup)})"
             notServed != null -> HttpStatus.BAD_REQUEST to notServed
-            read is SettingsRead.Unreadable -> HttpStatus.CONFLICT to read.why
-            read is SettingsRead.Held -> settings.refusal(read.file)?.let { HttpStatus.CONFLICT to "${file.path}: $it" }
-            else -> null
+            else -> app.refusal()?.let { HttpStatus.CONFLICT to it }
         }
         return found?.let { (status, why) -> DesktopAct.Refused(status, why) }
     }
@@ -88,64 +86,43 @@ internal class DesktopSwitch(
     private fun leftOut(lineup: DesktopLineup): String =
         lineup.leftOut.joinToString("; ") { "${it.command}: ${it.reason}" }.ifEmpty { "splice runs no head" }
 
+    /** The door closed, and what `on` put in Desktop's library taken out. A door an older splice opened through
+     *  Desktop's environment store is closed too, and the variables to remove there are named: splice can't write that
+     *  store. */
     suspend fun off(): DesktopAct = lock.withLock {
         val was = records.get().on
-        val tidied = tidied()
+        val tidied = settingsTidy.tidied()
+        val tookOut = app.takeOut()
         records.update { it.copy(on = false, replaced = null) }
-        val said = if (was) "Desktop is off: the door refuses the Code tab's turns" else "Desktop is already off"
-        DesktopAct.Done("$said. $LEAVE ${environment.names.joinToString()} in $DESKTOP_ENV_PLACE$tidied")
+        val said = when {
+            tookOut -> "Desktop is off: splice's configuration was taken out of Claude Desktop. $OFF_APP"
+            was -> "$OFF_OLD $LEAVE ${DesktopEnvironment().names.joinToString()} in $DESKTOP_ENV_PLACE"
+            else -> "Desktop is already off"
+        }
+        DesktopAct.Done("$said$tidied")
     }
 
-    /** A new desktop key; the old one is refused from now on, so the person sets the new one in Desktop. */
+    /** A new desktop key; the old one is refused from now on. Desktop's credential helper reads the new one. */
     suspend fun rotate(): DesktopAct = lock.withLock {
-        val fresh = key.replace()
+        key.replace()
         val record = records.get()
-        val window = record.window
-        if (!record.on || window == null) {
-            return@withLock DesktopAct.Done(
-                "the desktop key was replaced and the old one is refused. Desktop is off; `splice desktop on` says " +
-                    "what to set in $DESKTOP_ENV_PLACE",
-            )
+        val said = when {
+            record.appLibrary != null -> ROTATED_APP
+            record.on -> "$ROTATED; run `splice desktop on` to set Claude Desktop up with it"
+            else -> ROTATED
         }
-        val env = environment.of(door, fresh, window)
-        DesktopAct.Done("the desktop key was replaced and the old one is refused", env = env)
+        DesktopAct.Done(said)
     }
 
     /** At each start, before the routes serve: what an older splice's `on` wrote into the settings file taken out,
-     *  said in the log. A file splice can't read or write is said in the log too, and the door still opens. */
+     *  and splice's configuration in Desktop's library kept current (its helper laid again for this splice, and the
+     *  door's address in it corrected), each said in the log. A file splice can't read or write is said in the log
+     *  too, and the door still opens. */
     fun tidy() {
-        Cancellables.runCatchingCancellable { tidied() }
-            .onSuccess { if (it.isNotEmpty()) log("[desktop] ${it.removePrefix(". ")}\n") }
-            .onFailure { log("[desktop] ${file.path} could not be tidied: ${SafeFailureText.render(it)}\n") }
-    }
-
-    /** What an older splice's `on` wrote into the settings file taken out, and a sentence saying so, empty when there
-     *  was none. A file splice can't read is said in the sentence and left as it is, and so is one Claude Code wrote
-     *  each time splice looked. */
-    private fun tidied(): String = (1..LOOKS).firstNotNullOfOrNull { looked() }
-        ?: ". ${file.path} changed each time splice looked, so what an older splice wrote there may still be in it"
-
-    /** One look at the settings file: the sentence, or null when Claude Code wrote the file while the old door was
-     *  being taken out of it, so it is looked at again. */
-    private fun looked(): String? = when (val read = file.read()) {
-        is SettingsRead.Unreadable -> ". The old door's values could not be looked for: ${read.why}"
-        SettingsRead.Absent -> "".also { spent() }
-        is SettingsRead.Held -> tidied(read.file)
-    }
-
-    /** [held], the settings file, with what an older splice's `on` wrote taken out, and a sentence saying so; null
-     *  when the file changed before it could be written. */
-    private fun tidied(held: JsonObject): String? {
-        val restored = settings.withoutDoor(held, records.get().replaced, selectors)
-        if (restored != held && !file.replace(held, restored)) return null
-        spent()
-        return if (restored == held) "" else ". What an older splice wrote into ${file.path} for Desktop was taken out"
-    }
-
-    /** The record of what an older `on` replaced is spent once the file was looked at: it is put back, or the file
-     *  holds none of that door. Kept past that, it would take a selector the person picks later for the old door's. */
-    private fun spent() {
-        if (records.get().replaced != null) records.update { it.copy(replaced = null) }
+        settingsTidy.atStart()
+        Cancellables.runCatchingCancellable { app.refreshed(door) }
+            .onSuccess { if (it) log("[desktop] $REWRITTEN\n") }
+            .onFailure { log("[desktop] $NOT_CURRENT: ${SafeFailureText.render(it)}\n") }
     }
 
     /** The model a Code tab session starts on in [lineup]: the one chosen the last time, or the pinned model of the
@@ -156,9 +133,25 @@ internal class DesktopSwitch(
 // What `on` answers when the default it chose has left the door between two reads.
 private const val NO_MODEL = "no model is in the door"
 
-// why: Claude Code writes its settings file at a pick or a setting, seconds apart at the quickest, so a second look
-// finds it still; the third is for a write that lands between the first two.
-private const val LOOKS = 3
-
 // How `off` tells the person to leave the door, before the variables' names.
 private const val LEAVE = "To put the Code tab back on your own Claude login, remove"
+
+// Desktop reads its configuration only at launch.
+private const val REOPEN = "Quit and reopen Claude Desktop for it to take effect"
+
+// What `off` says once splice's configuration is out of Desktop's library.
+private const val OFF_APP = "Quit and reopen Claude Desktop: it opens on your claude.ai login again"
+
+// What `rotate-key` says.
+private const val ROTATED = "the desktop key was replaced and the old one is refused"
+private const val ROTATED_APP = "$ROTATED; Claude Desktop's credential helper gives it the new key within five minutes"
+
+// What a start says when it corrected the door's address in splice's configuration.
+private const val REWRITTEN = "splice's configuration in Claude Desktop now names this door's address; quit and " +
+    "reopen Claude Desktop to use it"
+
+// What a start says when splice's configuration in Claude Desktop could not be kept current, before why.
+private const val NOT_CURRENT = "Claude Desktop's configuration could not be kept current"
+
+// What `off` says of a door an older splice opened through Desktop's environment variables.
+private const val OFF_OLD = "Desktop is off: the door refuses the Code tab's turns."

@@ -10,6 +10,7 @@ package splice.client.desktop
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -50,6 +51,14 @@ class DesktopSettingsTest {
         val left = file("""{"model":"claude-astra--astra-large","env":{$doorEnv},$doorPicker}""")
         val out = settings.withoutDoor(left, replaced, selectors)!!
         assertNull(out["model"])
+    }
+
+    @Test
+    fun `a Claude model the person picked stays when the older door's picker listed it too`() {
+        val picker = """"modelPicker":{"options":[{"model":"claude-astra--astra-large"},{"model":"claude-opus-5-5"}]}"""
+        val left = file("""{"model":"claude-opus-5-5","env":{$doorEnv},$picker}""")
+        val kept = settings.withoutDoor(left, replaced, selectors)!!
+        assertEquals("claude-opus-5-5", kept["model"]?.jsonPrimitive?.content)
     }
 
     // Rewritten for the door as the terminal's `claude`: a selector in a file with no door used to be taken out as an

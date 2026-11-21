@@ -3,6 +3,22 @@
 Goal handed to the campaign on Nov 18, 2026. It follows `desktop-door.md`, whose door is built but has never run in
 the real app.
 
+## Built (Nov 21, 2026)
+
+`splice desktop on` is outcome 1 with nothing to paste: it writes splice's configuration into Desktop's 3P library and
+applies it (DesktopAppMode, the one owner of what splice changes in Desktop), with `inferenceCredentialHelper` naming
+`<state>/desktop-credential`, which runs `splice desktop credential`. There is no `--app`: the environment-store paste
+path (standard mode) is removed, and a door an older splice opened that way is still answered until `on` or `off`
+replaces it. `--model` is Desktop's own default, listed first. `off` and `splice uninstall --all` take out exactly what
+`on` put in. The picker is the model catalog's (docs/specs/door-default.md): discovery at `/door/v1/models` (and
+`/desktop/v1/models`), each row under the id Claude's clients keep (ClientModelNames), with the provider's own name,
+description, effort levels and window; Desktop 5.11492.5's discovery reads `behaves_as`, `max_effort_level` and
+`prefer_1m` too (read from its bundle Nov 21, 2026), so no `inferenceModels` list is written. The door takes the key as
+`x-api-key`, answers `GET`/`HEAD /` with `splice` for a client that asks for no HTML, and scales an app-mode request's
+counts to the 200,000 (or 1M) window Desktop gives its Code tab. `splice desktop` and `splice doctor` say the mode and
+whether Desktop was reopened since splice changed it. Not built: the processWrapper launcher (it needs the managed file,
+which splice never writes), the features list (df-features) and the gateway answer fields of df-wire-answers.
+
 ## Who it is for and why
 
 Someone who uses Claude Desktop (Chat, Cowork and the Code tab) and runs splice. Asked for on Nov 18, 2026: Desktop

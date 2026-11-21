@@ -30,7 +30,7 @@ internal class DoorRelay(private val clock: WallClock) {
     /** [ask] relayed for [caller] to [route]'s head as the model it runs there, and a count scaled to the window the
      *  caller's sessions hold. */
     suspend fun send(call: ApplicationCall, caller: DoorCaller, route: DoorRoute, ask: DoorAsk, counting: Boolean) {
-        val window = caller.window()
+        val window = caller.windowOf(ask)
         if (!counting) {
             if (window != null) route.head.windows?.record(ask.session, window)
             val at = Instant.ofEpochMilli(clock()).toString()

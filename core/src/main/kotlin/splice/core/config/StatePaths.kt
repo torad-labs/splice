@@ -158,7 +158,9 @@ internal sealed class RootProbe {
 
 public class StatePaths(
     baseOverride: Path? = null,
-    envReader: EnvReader = EnvReader(System::getenv),
+    /** The environment these paths were resolved under: the daemon's, read again by what lives beside splice's state,
+     *  such as Claude Desktop's configuration. */
+    public val envReader: EnvReader = EnvReader(System::getenv),
     homeDir: Path = UserHome.dir(envReader),
 ) {
     private val fromEnv: Path? =

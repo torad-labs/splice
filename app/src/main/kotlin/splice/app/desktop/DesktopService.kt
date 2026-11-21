@@ -4,8 +4,11 @@
 package splice.app.desktop
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
@@ -29,10 +32,23 @@ internal class DesktopService(
         val lineup = heads.lineup()
         val record = records.get()
         return buildJsonObject {
+            val catalog = DoorCatalog(lineup)
+            val default = switch.defaultOf(lineup)
+            val mode = switch.app.mode()
             put("on", record.on)
+            val other = switch.app.other(record)
+            put("mode", mode.wire)
+            put("mode_said", mode.said(other))
+            put("other", other)
+            put("relaunched", switch.app.relaunched(record))
             put("door", switch.door)
-            put("default_model", switch.defaultOf(lineup))
-            put("models", DoorCatalog(lineup).desktopJson())
+            put("default_model", default)
+            put("models", catalog.desktopJson())
+            // What Desktop's picker holds, and whether it is still what the door would list now: Desktop discovers
+            // models only at launch, so a sign-in or an added head reaches it at the next one.
+            val picker = catalog.desktopRead(default)
+            put("picker", pickerJson(picker))
+            put("picker_current", record.pickerRead?.rows?.let { it == picker }?.takeIf { mode == DesktopMode.APP })
             put("left_out", lineupJson.leftOut(lineup.leftOut))
             val last = record.lastTurn
             if (last == null) {
@@ -60,6 +76,7 @@ internal class DesktopService(
                 put("lane", lane)
                 put("models", DoorCatalog(lineup).pickerJson())
                 put("left_out", lineupJson.leftOut(lineup.leftOut.filterNot { it.command == CLAUDE_COMMAND }))
+                put("heads", lineupJson.heads(lineup))
             }
         }
         val lineup = heads.lineup()
@@ -71,6 +88,7 @@ internal class DesktopService(
             put("default_from", why)
             put("models", DoorCatalog(lineup).pickerJson())
             put("left_out", lineupJson.leftOut(lineup.leftOut))
+            put("heads", lineupJson.heads(lineup))
             claude.login.theirs()?.let { put("own_login", it.toString()) }
         }
     }
@@ -78,4 +96,14 @@ internal class DesktopService(
     /** The model catalog published last, as `model-catalog.json` holds it, for `/api/models`. */
     fun catalog(): JsonObject =
         catalogJson.encodeToJsonElement(ProviderCatalog.serializer(), heads.catalog()).jsonObject
+
+    /** Desktop's picker rows, each `{id, label}`, in order. */
+    private fun pickerJson(rows: List<DesktopPickerRow>): JsonArray = buildJsonArray {
+        rows.forEach { row ->
+            addJsonObject {
+                put("id", row.id)
+                put("label", row.label)
+            }
+        }
+    }
 }

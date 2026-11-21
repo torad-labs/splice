@@ -1,19 +1,16 @@
 // NEW: desktop-door (docs/specs/desktop-door.md, decision 4). `splice desktop` in words: what the daemon says of the
-// door, a line for each thing a person asks of it.
+// door, a line for each thing a person asks of it, the mode Claude Desktop is in first.
 package splice.app.cli.desktop
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import splice.app.control.DESKTOP_ENV
-import splice.client.desktop.DESKTOP_ENV_PLACE
 import splice.core.terminal.TerminalOutput
 import splice.core.util.JsonScalars
 
 /** `splice desktop` in words. */
 internal class DesktopSaid(private val out: TerminalOutput) : DoorSaid {
     override fun state(state: JsonObject) {
-        val on = JsonScalars.str(state, "on") == "true"
-        out.line("Desktop: ${if (on) "on" else "off"}")
+        out.line("Desktop: ${JsonScalars.str(state, "mode_said") ?: "off"}${reopen(state)}")
         out.line("Door: ${JsonScalars.str(state, "door").orEmpty()}")
         out.line("Default model: ${JsonScalars.str(state, "default_model") ?: "none: no head is in the door"}")
         val models = (state["models"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
@@ -37,13 +34,12 @@ internal class DesktopSaid(private val out: TerminalOutput) : DoorSaid {
         }
     }
 
-    /** What to set in Desktop's environment store, when the act's answer carries it: one `NAME=value` line each. */
-    override fun acted(state: JsonObject) {
-        val env = (state[DESKTOP_ENV] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
-        if (env.isEmpty()) return
-        out.line("splice: set these in $DESKTOP_ENV_PLACE, then start a new Code tab session:")
-        env.forEach { out.line("  ${text(it, "name")}=${text(it, "value")}") }
-        out.line("splice: they stay set until you remove them there; `splice desktop off` says which.")
+    /** What to do for Desktop to read what splice changed, when it has not yet. */
+    private fun reopen(state: JsonObject): String = when {
+        JsonScalars.str(state, "relaunched") == "false" -> "; quit and reopen Claude Desktop to apply it"
+        JsonScalars.str(state, "picker_current") == "false" ->
+            "; the picker changed since Claude Desktop last read it, so quit and reopen Claude Desktop to see it"
+        else -> ""
     }
 
     private fun text(from: JsonObject, key: String): String = JsonScalars.str(from, key).orEmpty()

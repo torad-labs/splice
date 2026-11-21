@@ -6,7 +6,6 @@
 // can't be used is said in the log before a new key is made), is [FileHeldKey], shared with the management key.
 package splice.app.desktop
 
-import splice.client.desktop.DESKTOP_ENV_PLACE
 import splice.client.desktop.DESKTOP_KEY_PREFIX
 import splice.core.config.FileHeldKey
 import splice.core.util.LogSink
@@ -17,8 +16,8 @@ internal class DesktopKey(file: Path, log: LogSink) {
         file = file,
         prefix = DESKTOP_KEY_PREFIX,
         tag = "desktop",
-        consequence = "the desktop key set in $DESKTOP_ENV_PLACE is refused at the door until the new one is set " +
-            "there; `splice desktop rotate-key` (or `splice desktop on`) says it",
+        consequence = "the desktop key Claude Desktop held is refused; its credential helper gives it the new one " +
+            "within five minutes",
         log = log,
     )
 

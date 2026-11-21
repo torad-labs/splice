@@ -1,7 +1,7 @@
 // NEW: 2026-11-20 — every list of models the door gives, read from the one model catalog published last
-// (PublishedCatalog) and the door as it stands: Claude Desktop's gateway discovery (`GET /door/v1/models`) and its
-// `inferenceModels` setting, the terminal's picker and another machine's (the same rows), and the models `splice
-// desktop` and `splice claude` name. What a model is (its name, description, reasoning levels, window) is its
+// (PublishedCatalog) and the door as it stands: Claude Desktop's gateway discovery (`GET /door/v1/models`), which fills
+// its picker in Chat, Cowork and the Code tab, the terminal's picker and another machine's (the same rows), and the
+// models `splice desktop` and `splice claude` name. What a model is (its name, description, reasoning levels, window) is its
 // provider's, from the catalog; which head runs it, under which id a client asks for it and whether its account is spent
 // are the door's. A catalog model no head in the door serves now is in none of them.
 //
@@ -66,34 +66,32 @@ internal class DoorCatalog(private val lineup: DesktopLineup) {
     private val desktop: List<ServedModel> = served.distinctBy { it.desktopId }
 
     /** Gateway discovery's `/v1/models` answer, every model on one page. */
-    fun discovery(): JsonObject = buildJsonObject {
-        put("data", JsonArray(desktop.map(::discovered)))
+    fun discovery(first: String? = null): JsonObject = buildJsonObject {
+        val rows = ordered(first)
+        put("data", JsonArray(rows.map(::discovered)))
         put("has_more", false)
-        put("first_id", desktop.firstOrNull()?.desktopId)
-        put("last_id", desktop.lastOrNull()?.desktopId)
+        put("first_id", rows.firstOrNull()?.desktopId)
+        put("last_id", rows.lastOrNull()?.desktopId)
     }
 
-    /** Claude Desktop's `inferenceModels` setting. Desktop knows Claude's own models by their ids, so they carry no
-     *  name of the door's. */
-    fun inference(): JsonArray = JsonArray(
-        desktop.map { model ->
-            buildJsonObject {
-                put("name", model.desktopId)
-                if (model.claude == null) put("labelOverride", model.fact.label)
-                behavesAs(model)?.let { put("behavesAs", it) }
-                maxEffort(model)?.let { put("maxEffort", it) }
-                put("supports1m", model.supports1m)
-                if (model.prefer1m) put("prefer1m", true)
-            }
-        },
-    )
+    /** Desktop's list as [discovery] gives it, each row's id and name: what its picker holds after this discovery. */
+    fun desktopRead(first: String? = null): List<DesktopPickerRow> =
+        ordered(first).map { DesktopPickerRow(it.desktopId, it.fact.label) }
+
+    /** Desktop's list with the model whose rows hold [first] (Desktop's own default, `splice desktop on --model`)
+     *  first: Desktop opens a new session on the first model it lists. The rest keep their order. */
+    private fun ordered(first: String?): List<ServedModel> {
+        val lead = first?.let { picked -> desktop.firstOrNull { model -> model.rows.any { it.model == picked } } }
+            ?: return desktop
+        return listOf(lead) + desktop.filterNot { it === lead }
+    }
 
     /** A terminal session's picker, and another machine's: each served model's rows under its provider's name for it,
      *  a row with a window hint beside one without named for its window too. A model whose account reads a plan window
      *  fully used stays listed, with the window marked beside its name as `splice status` writes it (`7d 100%`, Nov 17,
      *  2026): its provider still serves it, and the person sees before picking it that the account is spent. */
     fun picker(): List<DoorPickerRow> = served.flatMap { model ->
-        model.rows.map { row -> DoorPickerRow(row.model, labelOf(model, row), row.command) }
+        model.rows.map { row -> DoorPickerRow(row.model, labelOf(model, row), row.command, model.fact.description) }
     }
 
     /** Claude Desktop's list as `splice desktop --json` gives it: each model's id there, name, head and command. */

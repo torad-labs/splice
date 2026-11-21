@@ -125,6 +125,7 @@ public sealed class Command {
             val removed = InstallWiring.command().uninstall(target, env)
             if (removed) InstallWiring.retireUnits(target, env)
             if (removed) InstallWiring.retireLogin(target, env)
+            if (removed) InstallWiring.retireDesktop(target, env)
             return outcomeExitCode(removed)
         }
     }

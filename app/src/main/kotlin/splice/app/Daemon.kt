@@ -21,6 +21,7 @@ import splice.app.daemon.BootedTopology
 import splice.app.daemon.HeadCatalogs
 import splice.app.daemon.TopologyWindows
 import splice.app.desktop.DaemonDesktop
+import splice.app.desktop.DesktopAppLibrary
 import splice.app.head.HEAD_STOP_BUDGET_MS
 import splice.app.head.HeadBoot
 import splice.app.head.HeadCapabilities
@@ -38,6 +39,7 @@ import splice.app.head.QuotaPollSeams
 import splice.app.probe.LocalWindowRefresh
 import splice.app.server.DaemonServer
 import splice.app.share.DaemonShare
+import splice.client.desktop.DesktopAppConfig
 import splice.client.mcp.McpShareChoice
 import splice.client.resume.originals.TranscriptOriginals
 import splice.codemode.WorkerArtifacts
@@ -263,7 +265,14 @@ public class Daemon(
     )
 
     /** Claude Desktop's Code tab (docs/specs/desktop-door.md): its door on the control port, and `splice desktop`. */
-    private val desktop = DaemonDesktop(topology, config, TurnKey(mgmtKey), statePaths, log)
+    private val desktop = DaemonDesktop(
+        topology,
+        config,
+        TurnKey(mgmtKey),
+        statePaths,
+        log,
+        DesktopAppLibrary(DesktopAppConfig(statePaths.envReader)),
+    )
     private val stopLock = Mutex()
     private var stopped = false
 

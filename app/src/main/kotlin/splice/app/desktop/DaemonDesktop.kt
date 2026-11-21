@@ -31,9 +31,14 @@ internal class DaemonDesktop(
     private val turnKey: TurnKey,
     private val statePaths: StatePaths,
     private val log: LogSink,
+    /** Where Claude Desktop keeps its 3P configuration (desktop-full): the person's own, but a test's fixture home. */
+    private val library: DesktopAppLibrary = DesktopAppLibrary(),
 ) {
     private val key = DesktopKey(statePaths.desktopKeyFile, log)
     private val records = DesktopRecords(statePaths.desktopFile, log)
+
+    /** What splice changes in Claude Desktop: its configuration in Desktop's library and the helper that names. */
+    private val app = DesktopAppMode(records, library, DesktopCredentialHelper(statePaths.stateDir))
 
     /** The terminal's `claude` on this door. */
     val claude = TerminalDoor(topology, statePaths, log)
@@ -76,7 +81,8 @@ internal class DaemonDesktop(
             tiers.tierOf(model) == null &&
                 topology.heads.values.any { it.discoveryPrefix.isNotEmpty() && model.startsWith(it.discoveryPrefix) }
         }
-        val switch = DesktopSwitch(lineups, records, key, DesktopSettingsFile(), door, selectors, log)
+        val tidy = DesktopSettingsTidy(DesktopSettingsFile(), records, selectors, log)
+        val switch = DesktopSwitch(lineups, records, key, door, app, tidy, log)
         switch.tidy()
         val (lane, terminal) = claude.open(terminalRelay, lineups, door)
         val headLaneVoice = RelaySpeaker(terminalVoice.errors, HEAD_LANE_TAG)

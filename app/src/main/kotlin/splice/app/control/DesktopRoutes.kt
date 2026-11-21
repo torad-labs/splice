@@ -8,10 +8,10 @@
 //   ... /desktop/v1/...                                 the same three routes at the door's path before it had two
 //                                                       callers, for a Desktop set up then
 //   GET  /api/desktop                                   what `splice desktop` says, behind the management key
-//   POST /api/desktop/on                                {"model"?}: `splice desktop on [--model]`, answered with
-//                                                       what to set in Desktop's environment store (desktop_env)
+//   POST /api/desktop/on                                {"model"?}: `splice desktop on [--model]`, which puts
+//                                                       splice's configuration in Claude Desktop (desktop-full)
 //   POST /api/desktop/off                               `splice desktop off`
-//   POST /api/desktop/rotate-key                        `splice desktop rotate-key`, with desktop_env while on
+//   POST /api/desktop/rotate-key                        `splice desktop rotate-key`
 //   GET  /api/claude                                    what `splice claude` says (docs/specs/door-default.md)
 //   POST /api/claude/door                               {"model"?}: `splice claude door [--model]`, linking
 //                                                       `claude` to splice where it is not yet (ClaudeLink)
@@ -27,12 +27,8 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.addJsonObject
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.put
 import splice.app.control.api.ControlBodies
 import splice.app.control.mount.ControlGuard
 import splice.app.desktop.DESKTOP_ERROR_PREFIX
@@ -111,18 +107,7 @@ internal class DesktopRoutes(
                 JsonReply(HttpStatusCode.fromValue(done.status), ControlBodies.errorJson(done.why)).send(call)
             is DesktopAct.Done -> {
                 val said = mapOf("said" to JsonPrimitive(done.said), "default_from" to JsonPrimitive(done.default))
-                val env = done.env?.let { mapOf(DESKTOP_ENV to envJson(it)) }.orEmpty()
-                JsonReply(HttpStatusCode.OK, JsonObject(of(desktop) + said + env).toString()).send(call)
-            }
-        }
-    }
-
-    /** What to set in Desktop's environment store, each variable as `{name, value}`, in order. */
-    private fun envJson(env: List<Pair<String, String>>): JsonArray = buildJsonArray {
-        env.forEach { (name, value) ->
-            addJsonObject {
-                put("name", name)
-                put("value", value)
+                JsonReply(HttpStatusCode.OK, JsonObject(of(desktop) + said).toString()).send(call)
             }
         }
     }
@@ -158,9 +143,6 @@ private val CLAUDE = DoorState { it.claudeState() }
 internal fun interface DesktopDoing {
     suspend operator fun invoke(desktop: DesktopService): DesktopAct
 }
-
-/** The key an act's answer carries what to set in Desktop's environment store under. */
-internal const val DESKTOP_ENV = "desktop_env"
 
 // What the routes answer before the daemon has opened the door: its heads are still starting.
 private const val NOT_OPEN = "splice desktop: the door opens once the daemon's heads are up"

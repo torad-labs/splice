@@ -144,7 +144,7 @@ internal class DesktopHeads(
                 models += DoorModel(row.id, row.displayName, relay.key, relay.command, upstream, full, discovered)
             }
         }
-        return DesktopLineup(heads, models, leftOut, providers.filterKeys { key -> heads.any { it.key == key } })
+        return DesktopLineup(heads, models, leftOut, providers)
     }
 
     /** A head's login as the door reads it: a login splice holds (a sign-in it keeps, not a key), and why the head is

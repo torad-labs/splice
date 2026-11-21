@@ -390,15 +390,43 @@ A session on the door:
 
 `splice claude head` puts `claude` back on its head, when `splice.toml` has one, and replaces the terminal's key, so a session started on the door is refused from then on. Heads are deprecated, and it says so.
 
-## Claude Desktop's Code tab on splice
+## Claude Desktop on splice
 
-`splice desktop on` points Claude Desktop's Code tab at splice. From its next session, the tab's model picker lists every model of every head splice holds a login for, each with the command it belongs to, and a model you pick runs on its head, with that head's logins, cooldowns and failures. Chat, Cowork and the terminal stay as they were, and the tab keeps its sessions where the terminal's `claude` keeps its own.
+`splice desktop on` puts Claude Desktop on splice, with nothing to paste. splice writes its own configuration into
+Desktop's third-party configuration library (`~/.config/Claude-3p/configLibrary/`, under `$XDG_CONFIG_HOME` when it is
+set) and applies it: Desktop's gateway is splice's door (`http://127.0.0.1:<control_port>/door`), and its credential
+comes from a small program splice lays in its state folder (`desktop-credential`), which Desktop runs and which prints
+the desktop key. No key is written into Desktop's files. Quit and reopen Desktop for it to take effect.
 
-`on` writes Claude Code's Mantle switch, splice's door (`http://127.0.0.1:<control_port>/desktop`), the desktop key and the default model into the `env` of `~/.claude/settings.json`, which the tab reads, and a `modelPicker` listing the lineup. It never writes `model`, which holds your pick. `--model <id>` names the model a session starts on; without it, splice keeps the last one chosen, or takes the first head's pinned model, and says which. It refuses, and changes nothing, when no head can serve the tab, when the model isn't one of the tab's, or when the file already points Claude Code at Bedrock, Vertex, Foundry or another Mantle address.
+All of Desktop then runs on splice: Chat and Cowork as well as the Code tab. Your conversations are kept on this
+computer, not in your claude.ai account; Remote Control and Anthropic's cloud environments are not offered; and SSH
+sessions can't reach splice, which listens on this computer only. `on` says so and asks before it changes anything;
+`--yes` goes on without asking, and with no terminal to ask on it changes nothing unless you pass `--yes`.
 
-While Desktop is on, the picker follows splice: a head or a login added, removed, signed in or signed out shows in the next session's picker with no command run. A head that forwards your own Claude login is left out, since the tab doesn't send that login through splice, and so is a head whose login is missing or expired, until you run its `login`. `splice desktop` says what is so, `--json` as data: whether it is on, the door, the default model, the lineup, each head left out and why, and the last turn through the door. Each turn through the door is its head's row on `/api/perf/turns`, with the model that ran and `door` set to `"desktop"`; no other row carries a `door`.
+Desktop's picker lists every model of the providers you are signed in to, in Chat, Cowork and the Code tab, from the
+model catalog splice builds at each start (`model-catalog.json`): each provider's own name, description, reasoning
+levels and window. `--model <id>` is Desktop's own default, the model it lists first and opens a new session on; the
+terminal's `claude` keeps its own. The Code tab runs Claude Code over the same `~/.claude` as the terminal, so its
+settings and sessions are shared, and splice changes nothing in `~/.claude/settings.json` or in the terminal's
+environment. A model you pick runs on its head, with that head's logins, cooldowns and failures. Desktop reads its
+model list only at launch, so a sign-in or a head added while it is open shows at its next launch.
 
-The door opens only with the desktop key, kept in splice's state folder, and the management and turn keys don't open it. `splice rotate-key` leaves it alone; `splice desktop rotate-key` replaces it, and writes the new one into the file while Desktop is on. `splice desktop off` takes out what `on` put in and puts back what it replaced. The terminal's `claude`, launched through splice, lays its own settings over the file meanwhile, so it runs as it did; a model picked in the tab that only the tab serves makes it start on its own default, and say so.
+`splice desktop off` takes out exactly what `on` put in: splice's configuration and its library entry, and the
+credential program; a configuration you had applied before (or applied in Desktop since) is applied again, and a library
+folder splice made is removed. `splice uninstall --all` does the same. A managed configuration
+(`/etc/claude-desktop/managed-settings.json`) decides Desktop's provider over any local one, so `on` refuses while one
+exists; splice never reads or writes it, the keyring or Desktop's encrypted stores.
+
+`splice desktop` says what is so, `--json` as data: the mode Desktop is in (`off`, `app`, `other` while another
+configuration decides its provider, or `standard` for a Code tab an older splice set up through Desktop's environment
+variables), whether Desktop has been reopened since splice changed its configuration, the door, the default model, the
+picker, each head left out and why, and the last turn through the door. `splice doctor` names the mode too, and warns
+while Desktop has not been reopened. Each turn through the door is its head's row on `/api/perf/turns`, with the model
+that ran and `door` set to `"desktop"`.
+
+The door opens only with the desktop key, kept in splice's state folder, presented as a bearer or as `x-api-key`; the
+management and turn keys don't open it. `splice rotate-key` leaves it alone; `splice desktop rotate-key` replaces it,
+and Desktop's credential program gives it the new one within five minutes.
 
 ## Serve a team from one machine
 
@@ -763,9 +791,8 @@ Topology, API keys and subscription sign-ins normally live in `~/.config/splice`
 key, runtime settings, config backups and saved Claude logins live in the state directory.
 Every credential splice writes is 0600. splice also writes into the Claude Code config directories it launches
 (`~/.claude-<head>/`), and the install lives in `~/.local/share/splice` and `~/.local/bin`. Each head keeps to its own
-folder, with one stated exception: `splice desktop on` writes Claude Code's switch, splice's door and the desktop key into
-the `claude` command's `~/.claude/settings.json`, so Claude Desktop's Code tab runs on splice, and `splice desktop off`
-takes them out. It is the one settings file of the `claude` command splice writes, and only at your command.
+folder. Outside them, `splice desktop on` writes one configuration of splice's into Claude Desktop's configuration
+library, at your command, and `splice desktop off` takes it out; it holds no key.
 
 "Only you" below means owner-only: the file is 0600, or it sits inside an owner-only state or log directory.
 The tables use new-install defaults, with the state root at `~/.splice/state`. On an install upgraded from
@@ -837,13 +864,14 @@ Each of these is password-equivalent. See [credential locations](#credential-loc
 | `~/.splice/state/console-open.html` | The page `splice console` opens; its address carries a single-use sign-in code after `#`, never a key. The code signs one browser in within two minutes and then opens nothing | Only you (0600) | Replaced by each `splice console` | `ConsoleCommand.kt` |
 | `~/.splice/state/turn-auth-header` | A launched session's turn key, derived one way from the management key | Only you (0600) | Rewritten when the management key changes | `TurnKey.kt` |
 | `~/.splice/state/retired-keys` | The SHA-256 of each management key `splice rotate-key` replaced and of the turn key made from it, one per line, so splice still knows them as its own; a digest opens nothing | Only you (0600) | Kept; each rotation adds two lines | `RetiredKeys.kt` |
-| `~/.splice/state/desktop-key` | The key Claude Desktop's Code tab presents at splice's door. It opens the door and nothing else, and is never logged or sent upstream | Only you (0600) | Kept; minted when missing, minted again when blank or unreadable (said in splice's log first), replaced by `splice desktop rotate-key` and never by `splice rotate-key` | `FileHeldKey.kt` |
-| `~/.splice/state/desktop.json` | Whether Desktop is on, its default model and declared window, the values `splice desktop on` replaced in `~/.claude/settings.json` (so `off` can put them back), and the last turn through the door: when, the session id, the head, the model asked for and the model that ran | Only you (0600) | Kept; rewritten by `splice desktop on`, `off` and each turn through the door | `StateRecords.kt` |
+| `~/.splice/state/desktop-key` | The key Claude Desktop presents at splice's door. It opens the door and nothing else, and is never logged, sent upstream or written into Desktop's files | Only you (0600) | Kept; minted when missing, minted again when blank or unreadable (said in splice's log first), replaced by `splice desktop rotate-key` and never by `splice rotate-key` | `FileHeldKey.kt` |
+| `~/.splice/state/desktop.json` | Whether Desktop is on, its default model, splice's configuration in Desktop's library (its id, and what it replaced there so `off` can put it back), when splice last changed it and when Desktop last asked the door since, the picker Desktop last read, and the last turn through the door: when, the session id, the head, the model asked for and the model that ran | Only you (0600) | Kept; rewritten by `splice desktop on`, `off`, a start that corrects the door's address, and Desktop's requests | `StateRecords.kt` |
+| `~/.splice/state/desktop-credential` | The program Claude Desktop runs for its credential: it runs `splice desktop credential`, which prints the desktop key to it. It holds no key | Only you (0700) | Laid by `splice desktop on` and at each start while Desktop is on; removed by `off` and `splice uninstall` | `DesktopCredentialHelper.kt` |
 | `~/.splice/state/terminal-key` | The key a `claude` session on splice's door presents there. It opens the door and nothing else, and is never logged or sent upstream | Only you (0600) | Kept; minted when missing, minted again when blank or unreadable (said in splice's log first), replaced by `splice claude head` so a session started on the door is refused from then on | `FileHeldKey.kt` |
 | `~/.splice/state/claude-lane.json` | Where the terminal's `claude` runs (splice's door or its head), the `--model` named with `splice claude door`, and the window its sessions declare | Only you (0600) | Kept; rewritten by `splice claude door` and `splice claude head` | `StateRecords.kt` |
 | `~/.splice/state/door-login/splice-login-hook.sh` | The hook that answers `/login` in a `claude` session on the door: it opens splice's accounts page with `splice console` and stops the turn before the model | Only you (0700) | Rewritten at each launch on the door | `DoorLogin.kt` |
 | `~/.claude/commands/login.md` | splice's bare `/login` in a `claude` session on the door, described as opening splice's accounts page. Its text says what it is and names both ways on, `splice console` for splice's accounts and `claude auth login` for Claude Code's own sign-in, for a session with no hook to catch it, such as a Claude Code splice did not start, which runs the file for its own `/login` too | Only you (0600) | Laid by `splice claude door` and each launch on the door where no `/login` is there; one you wrote, as a command or a skill, is never replaced, and `splice claude` says it is in the way. `splice claude head` and `splice uninstall` take splice's out, and only splice's | `DoorLogin.kt` |
-| `~/.claude/settings.json` (only its `env` and `modelPicker` keys) | While Desktop is on: Claude Code's Mantle switch, splice's door address and the desktop key, the declared window, auto mode's server off, the default model, and a picker listing the models of splice's heads. Written only at your command | Only you (0600 from the first write, since it holds the desktop key) | `splice desktop off` takes out what `on` put in and puts back what it replaced, deleting the file when `on` created it. While on, the picker follows the heads splice serves | `DesktopSettingsFile.kt` |
+| `~/.config/Claude-3p/configLibrary/<id>.json` and its entry in `_meta.json` | splice's configuration for Claude Desktop: its gateway is splice's door, its credential the program above, discovery fills its picker. No key. Written only at your command | Yours, as Desktop made the folder (a file splice makes is 0600) | `splice desktop off` and `splice uninstall` take out what `on` put in and apply again what it replaced | `DesktopAppLibrary.kt` |
 | `~/.config/splice/peers/<name>/peer.key` | A peer's own key, which opens only that peer's `/api/peers/self` routes; the daemon keeps only its SHA-256, in `peer.json` | Only you (0600, in a 0700 folder) | Until `splice peer rotate` replaces it or `splice peer revoke` deletes the folder | `PeerStore.kt` |
 | `~/.config/splice/peers/<name>/webhook.secret` and `webhook.bearer` | The secret a peer's webhook pushes are signed with, and the optional bearer copied from `--bearer-file` for the receiver | Only you (0600) | Until the webhook is set again, cleared, or the peer revoked | `PeerStore.kt` |
 | `~/.claude/sessions/<helper pid>.<sha256 of its socket path>.key` | A running peer helper's `peerToken`, which a sender presents on its socket, minted fresh at each helper start | Only you (0600) | Until the helper exits; a killed helper's file is skipped because its pid is dead | `PeerRegistryRecord.kt` |
@@ -942,7 +970,7 @@ These files hold settings and statistics. Custom compaction instructions and tea
 
 | File | What it holds | Who can read it | How long it stays | Written by |
 | --- | --- | --- | --- | --- |
-| `~/.claude-<head>/settings.json` and `.claude.json` | The head's settings: its models, status line and hooks. `.claude.json` carries Claude Code's own keys forward. The `claude` head has no such folder: it runs over `~/.claude`, which splice does not rewrite (save `settings.json` while `splice desktop` is on, below), and carries its settings on the command line | Only you (0600) | Rewritten at each launch | `ClaudeConfigMaterializer.kt` |
+| `~/.claude-<head>/settings.json` and `.claude.json` | The head's settings: its models, status line and hooks. `.claude.json` carries Claude Code's own keys forward. The `claude` head has no such folder: it runs over `~/.claude`, which splice does not rewrite, and carries its settings on the command line | Only you (0600) | Rewritten at each launch | `ClaudeConfigMaterializer.kt` |
 | `~/.claude-<head>/.splice-hook-origins.json` | Hook settings before and after the last materialization, with only the inherited entries splice actually appended; no callback IDs or launch owner | Only you (0600) | Rewritten at each launch, before the atomic settings swap | `ClaudeConfigMaterializer.kt` |
 | `~/.claude-<head>/.credentials.json` of a second Claude command, and the account in its `.claude.json` | Written by `splice login <head> --label <name>` only when it switches the head to a saved login: the saved copy, and its account's id and email. Adding an account signs the head out, which deletes the file. Claude Code writes both itself on `/login` | Only you (0600) | Until the next switch, `/login` or `/logout` | `ClaudeLogins.kt`, `ClaudeLoginFiles.kt` |
 | Links in `~/.claude-<head>/` to `~/.claude/` | The config a head shares: agents, commands, skills, hooks, plugins, `CLAUDE.md`, and, when shared, `sessions` and `projects`, whose existing files are merged into `~/.claude` the first time | Links only | Until you change what the head shares | `ClaudeConfigMaterializer.kt`, `SessionRegistryLink.kt`, `ProjectsLink.kt` |

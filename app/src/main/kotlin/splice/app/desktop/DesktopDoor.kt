@@ -16,6 +16,9 @@ import io.ktor.server.application.ApplicationCall
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.client.desktop.ANTHROPIC_BETA_HEADER
+import splice.client.desktop.APP_MODE_HEADER
+import splice.client.desktop.DesktopAppWindow
 import splice.core.client.SESSION_HEADER
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
@@ -24,8 +27,14 @@ import splice.core.wire.HttpStatus
 import splice.http.JsonReply
 import splice.share.RefusalVoice
 
-/** What a door turn asks: its body, the model it names and the session it is a turn of. */
-internal data class DoorAsk(val request: JsonObject, val model: String, val session: String?) {
+/** What a door turn asks: its body, the model it names, the session it is a turn of, and, for a request of Claude
+ *  Desktop's app mode, the window Desktop gave its Code tab for that model ([appWindow], null for any other request). */
+internal data class DoorAsk(
+    val request: JsonObject,
+    val model: String,
+    val session: String?,
+    val appWindow: Long? = null,
+) {
     /** Whether this is Claude Code's start-up check: one token, not streamed (desktop-door.md's table), whose answer
      *  no one reads. */
     val probe: Boolean
@@ -46,6 +55,7 @@ internal class DesktopDoor(
     private val json = Json { ignoreUnknownKeys = true }
     private val routing = DoorRouting()
     private val toHead = DoorRelay(clock)
+    private val windows = DesktopAppWindow()
 
     /** `POST /door/v1/messages`, with or without `?beta=true`. */
     suspend fun messages(call: ApplicationCall) = answer(call, counting = false)
@@ -56,8 +66,14 @@ internal class DesktopDoor(
     /** `GET /door/v1/models`: the door's models as Claude Desktop's gateway discovery reads them, from the model
      *  catalog published last (DoorCatalog), for a caller whose key it presents. */
     suspend fun models(call: ApplicationCall) {
-        admitted(call) ?: return
-        JsonReply(HttpStatusCode.OK, DoorCatalog(heads.lineup()).discovery().toString()).send(call)
+        val caller = admitted(call) ?: return
+        val lineup = heads.lineup()
+        val catalog = DoorCatalog(lineup)
+        val listed = catalog.discovery(caller.default(lineup))
+        if (windows.app(call.request.headers[APP_MODE_HEADER])) {
+            caller.discovered(catalog.desktopRead(caller.default(lineup)))
+        }
+        JsonReply(HttpStatusCode.OK, listed.toString()).send(call)
     }
 
     /** [call] answered for the caller whose key it presents; refused 401 in Anthropic's shape, with nothing sent
@@ -67,7 +83,10 @@ internal class DesktopDoor(
         val lineup = heads.lineup()
         val request = read(call, caller, lineup) ?: return
         val model = JsonScalars.str(request, REQUEST_MODEL).orEmpty()
-        val ask = DoorAsk(request, model, call.request.headers[SESSION_HEADER])
+        val headers = call.request.headers
+        val window = windows.of(headers[APP_MODE_HEADER], headers[ANTHROPIC_BETA_HEADER], model)
+        val ask = DoorAsk(request, model, headers[SESSION_HEADER], window)
+        caller.asked(ask)
         val route = routing.of(lineup, ask, caller.default(lineup), caller.runsNamedModels)
             ?: return caller.voice.refuse(call, HttpStatus.BAD_REQUEST, "model \"${ask.model}\" ${caller.notInDoor}")
         toHead.send(call, caller, route, ask, counting)
@@ -76,7 +95,10 @@ internal class DesktopDoor(
     /** The caller whose key [call] presents, while its switch is on; null once [call] has been refused: 401 with no
      *  key it knows, 403 saying how to open a caller's door that is shut. */
     private suspend fun admitted(call: ApplicationCall): DoorCaller? {
-        val presented = call.request.headers[HttpHeaders.Authorization]
+        // A gateway client sends its key as `x-api-key` unless told bearer, as Claude Desktop's own process does
+        // (desktop-full, df-wire-door). Authorization decides when both are there.
+        val headers = call.request.headers
+        val presented = headers[HttpHeaders.Authorization] ?: headers[API_KEY_HEADER]?.let { "Bearer $it" }
         val caller = callers.firstOrNull { it.presents(presented) }
         if (caller == null) {
             voice.refuse(call, HttpStatus.UNAUTHORIZED, NO_DOOR_KEY)
@@ -105,6 +127,10 @@ internal const val DESKTOP_ERROR_PREFIX = "splice desktop: "
 private const val NO_DOOR_KEY =
     "no door key, or one that was replaced; `splice desktop on` says Desktop's, and a new `claude` session carries " +
         "the terminal's"
+
+// The header a gateway client may present its key in, in place of Authorization.
+private const val API_KEY_HEADER = "x-api-key"
+
 private const val NOT_JSON = "the request body is not a JSON object"
 
 private const val REQUEST_MODEL = "model"

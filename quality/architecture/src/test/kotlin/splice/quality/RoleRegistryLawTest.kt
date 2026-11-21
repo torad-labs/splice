@@ -57,7 +57,6 @@
 // and the entries are checked-in text precisely so a reviewer sees them in a diff.
 package splice.quality
 
-import com.lemonappdev.konsist.api.Konsist
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -671,7 +670,7 @@ class RoleRegistryLawTest {
         val ast = map.modules
             .filter { module -> map.mainSources(module).isDirectory }
             .sumOf { module ->
-                Konsist.scopeFromDirectory("${map.relativeDir(module)}/src/main/kotlin")
+                LawScopes.main(map, module)
                     .interfaces(includeNested = true)
                     .count { it.hasFunModifier }
             }

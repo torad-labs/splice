@@ -10,6 +10,7 @@ package splice.app.desktop
 import splice.app.provider.ProviderLogin
 import splice.app.provider.ServedProvider
 import splice.app.provider.ServingProviders
+import splice.core.model.ModelTierSuffix
 import splice.core.usage.QuotaFull
 
 /** One model in the door: its selector, its own label, its provider and the ID the provider runs it as. */
@@ -85,6 +86,7 @@ internal data class DesktopLineup(
      *  id Claude Desktop lists another lab's model under, find the row of the selector they stand for. */
     fun find(selector: String): Pair<ServedProvider, DoorModel>? {
         val model = models.firstOrNull { it.model == selector }
+            ?: models.firstOrNull { ModelTierSuffix.strip(it.model) == selector }
             ?: return standingFor(selector)?.takeIf { it != selector }?.let(::find)
         return providers.firstOrNull { it.key == model.provider }?.let { it to model }
     }

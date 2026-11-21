@@ -37,7 +37,7 @@ internal class GatewayMoveChecks(private val topology: Topology) {
     private fun prefix(key: String, head: HeadConfig): List<TopologyFinding> {
         val said = head.discoveryPrefix
         if (said.isBlank()) return emptyList()
-        val explicit = topology.door.selectorAliases[said]
+        val explicit = topology.door.selectorPrefixes[said]
         val canonical = topology.providers.keys.firstOrNull { GatewaySelectorPrefixes.canonical(it) == said }
         val routed = explicit ?: canonical ?: GatewaySelectorPrefixes.legacy[said]
         if (routed == head.provider) return emptyList()

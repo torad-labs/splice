@@ -28,7 +28,7 @@ class ConfigFixSessionTest {
             [heads.one]
             provider = "missing"
             port = 3101
-            discovery_prefix = "claude-one--"
+            discovery_prefix = "claude-demo--"
             pinned_model = "m"
             """.trimIndent() + "\n",
         )

@@ -33,8 +33,8 @@ internal data class ServedModel(
     val claude: String?,
 ) {
     /** The id Claude Desktop asks for it by: Claude's own id for Claude's models, whose effort levels Desktop finds by
-     *  that id alone, else the provider's name for it that Claude's clients keep (ReadableNames). */
-    val desktopId: String get() = claude ?: provider.catalog.names.nameOf(fact.id)
+     *  that id alone, else the gateway's canonical selector for the provider's model. */
+    val desktopId: String get() = claude ?: provider.catalog.wrap(fact.id)
 
     /** Whether it has a 1M variant: a row of it carries the `[1m]` hint, or its provider serves a million tokens. */
     val supports1m: Boolean get() = rows.any(::millionRow) || fact.contextWindow >= CLAUDE_CODE_ONE_MILLION

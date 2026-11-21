@@ -14,8 +14,15 @@ public data class DoorConfig(
     /** `[door.selector_aliases]`: an old selector prefix (`claude-ollama--`) read as the provider it stood for
      *  (`ollama`), so a selector a caller holds under a head's custom `discovery_prefix` keeps working once that head
      *  is gone. The gateway's own legacy prefixes need no entry. */
-    @SerialName("selector_aliases") val selectorAliases: Map<String, String> = emptyMap(),
-)
+    @SerialName("selector_aliases") private val selectorAliases: Map<String, String> = emptyMap(),
+) {
+    /** Prefixes without the key quotes the TOML decoder preserves. */
+    public val selectorPrefixes: Map<String, String>
+        get() {
+            val keys = TomlKeys()
+            return selectorAliases.mapKeys { (prefix, _) -> keys.unquote(prefix) }
+        }
+}
 
 /** One `[door.commands.<name>]`: the provider whose pinned model a session of the command starts on, and whose models
  *  its /model lists ([models] = "head", the default) or the door's whole picker ("door"). An older file names a `head`
@@ -52,7 +59,7 @@ public class DoorChecks(private val topology: Topology) {
     /** An alias is a prefix a selector begins with, which ends where the model id starts (`--`), for a provider
      *  splice.toml declares: the `claude-ollama--` a head gave, or any other old nonempty prefix (`zeta--`). It may not
      *  be another provider's own `claude-<provider>--`, which that provider's models are listed under. */
-    private fun aliasFindings(): List<TopologyFinding> = topology.door.selectorAliases.mapNotNull { (prefix, to) ->
+    private fun aliasFindings(): List<TopologyFinding> = topology.door.selectorPrefixes.mapNotNull { (prefix, to) ->
         val why = when {
             !prefix.endsWith(ALIAS_END) || prefix == ALIAS_END ->
                 "must end with \"$ALIAS_END\", where the model id starts, after something: claude-ollama-- or zeta--"

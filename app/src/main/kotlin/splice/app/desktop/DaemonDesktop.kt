@@ -44,7 +44,7 @@ internal class DaemonDesktop(
 
     /** What reads an old selector as a provider's: the gateway's own table, built from splice.toml. */
     private val aliases =
-        SelectorAliases(topology.providers.keys, topology.door.selectorAliases, topology.heads.values)
+        SelectorAliases(topology.providers.keys, topology.door.selectorPrefixes, topology.heads.values)
 
     /** `claude` on its head, which hands the door's models to the door (door-default, decision 9). */
     val headLane = ClaudeHeadLane(topology, aliases)

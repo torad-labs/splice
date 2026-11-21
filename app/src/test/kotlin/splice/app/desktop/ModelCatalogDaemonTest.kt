@@ -104,7 +104,10 @@ class ModelCatalogDaemonTest {
         val discovery = get(terminal, "/door/v1/models")
         assertEquals(discovery, get(terminal, "/desktop/v1/models"))
         val rows = discovery.getValue("data").jsonArray.map { it.jsonObject }
-        assertEquals(listOf("claude-opus-5-5", "claude-xai--4.7", "claude-xai--mini"), rows.map { it.str("id") })
+        assertEquals(
+            listOf("claude-opus-5-5", "claude-xai--grok-4.7", "claude-xai--grok-mini"),
+            rows.map { it.str("id") },
+        )
 
         val opus = rows.first { it.str("id") == "claude-opus-5-5" }
         assertEquals("Claude Opus 5.5", opus.str("display_name"))
@@ -113,7 +116,7 @@ class ModelCatalogDaemonTest {
 
         // Another lab's model: its provider's name, description and levels, under the name Claude's clients keep; it
         // takes the newest Opus's Effort control, ended at the highest level its provider lists.
-        val grok = rows.first { it.str("id") == "claude-xai--4.7" }
+        val grok = rows.first { it.str("id") == "claude-xai--grok-4.7" }
         assertEquals("Grok 4.7", grok.str("display_name"))
         assertEquals("xAI's flagship", grok.str("description"))
         assertEquals("high", grok.str("max_effort_level"))
@@ -121,7 +124,7 @@ class ModelCatalogDaemonTest {
         assertNull(grok["anthropic_family_tier"])
 
         // A model whose provider says nothing of its reasoning gets no effort and no Claude model to behave as.
-        val mini = rows.first { it.str("id") == "claude-xai--mini" }
+        val mini = rows.first { it.str("id") == "claude-xai--grok-mini" }
         assertNull(mini["max_effort_level"])
         assertNull(mini["behaves_as"])
         assertNull(mini["description"])
@@ -144,10 +147,10 @@ class ModelCatalogDaemonTest {
     private suspend fun afterEdits() {
         val rows = get(terminal, "/door/v1/models").getValue("data").jsonArray.map { it.jsonObject }
         assertEquals(
-            listOf("claude-opus-5-5", "claude-sonnet-5-5", "claude-xai--4.7", "claude-xai--mini"),
+            listOf("claude-opus-5-5", "claude-sonnet-5-5", "claude-xai--grok-4.7", "claude-xai--grok-mini"),
             rows.map { it.str("id") },
         )
-        assertEquals("Grok 4.7 Fast", rows.first { it.str("id") == "claude-xai--4.7" }.str("display_name"))
+        assertEquals("Grok 4.7 Fast", rows.first { it.str("id") == "claude-xai--grok-4.7" }.str("display_name"))
         val file = json.parseToJsonElement(Files.readString(statePaths.modelCatalogFile)).jsonObject
         assertEquals(file.getValue("models"), get(mgmt, "/api/models").getValue("models"))
         val picker = get(mgmt, "/api/claude").getValue("models").jsonArray.map { it.jsonObject.str("label") }

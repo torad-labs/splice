@@ -57,7 +57,7 @@ describe("the committed allowlist", () => {
       `42:    const val CUSTOM_API${K}_RESPONSES${EQ}"customApiKeyResponses"`,
       `48:        base_url${EQ}"https://user:hunter2${UIT}chatgpt.example.invalid/backend-api/codex"`,
       `312:                "runtime at https://user:hunter2${UIT}chatgpt.example.invalid/backend-api/codex answered; " +`,
-      `26:        val secret${EQ}"API${K}=".toByteArray() + junk + "!".toByteArray()`,
+      `127:        val block${EQ}"API${K}=".toByteArray() + junk + byteArrayOf(0) + "SPLICEX=1".toByteArray()`,
       `55:private const val UPSTREAM${S}${EQ}"splice-held-upstream-secret"`,
     ];
     for (const hit of mustExempt) expect(reported(hit, allowPath), `intended exemption no longer applies: ${hit}`).toBe(false);

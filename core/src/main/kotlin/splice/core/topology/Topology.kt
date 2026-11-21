@@ -264,6 +264,10 @@ public data class ProviderConfig(
     @SerialName("system_prompt") val systemPrompt: String? = null,
     @SerialName("system_prompt_file") val systemPromptFile: String? = null,
     @SerialName("system_prompt_mode") val systemPromptMode: SystemPromptMode? = null,
+    /** gateway-no-heads: knobs the gateway reads for this provider, as a head's `[heads.KEY.overrides]` are read for its head
+     *  (upstreamTimeoutMs and the like). A head on this provider takes them beneath its own, so one value written here
+     *  serves every head on it. Each key is checked at `providers.KEY.overrides` by the knobs the daemon knows. */
+    val overrides: Map<String, String> = emptyMap(),
 ) {
     /** Whether this provider is a local runtime: what the operator said, else the loopback rule. */
     public val isLocal: Boolean

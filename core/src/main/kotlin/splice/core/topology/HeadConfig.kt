@@ -78,6 +78,22 @@ public data class HeadConfig(
      *  its own `picker = true`, else its [provider]'s. */
     public fun listsEvery(provider: ProviderConfig): Boolean = (picker ?: provider.picker) == true
 
+    /** This head as it is served, with what its [provider] says where the head says nothing: the window, the tiers'
+     *  models and the standing prompt (the same values the gateway serves the provider with), so a value written once
+     *  on the provider serves the head too and one the head states wins. A head that names its tiers on its models
+     *  carries its own. */
+    public fun servedOn(provider: ProviderConfig): HeadConfig {
+        val ownTiers = modelSlots.isNotEmpty() || models.orEmpty().any { it.slot != null }
+        val ownPrompt = systemPrompt != null || systemPromptFile != null
+        return copy(
+            contextWindow = contextWindow ?: provider.contextWindow,
+            modelSlots = if (ownTiers) modelSlots else provider.modelSlots,
+            systemPrompt = if (ownPrompt) systemPrompt else provider.systemPrompt,
+            systemPromptFile = if (ownPrompt) systemPromptFile else provider.systemPromptFile,
+            systemPromptMode = systemPromptMode ?: provider.systemPromptMode,
+        )
+    }
+
     /** The tier-to-id map the launcher consumes, independent of the provider's discovered roster.
      *  Several tiers may name one model; each keeps the same allowlisted client selector. */
     public fun tierModels(): Map<String, String> = if (modelSlots.isNotEmpty()) {

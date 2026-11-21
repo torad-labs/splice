@@ -11,7 +11,12 @@ internal fun interface ConfigRevisionChanged {
     operator fun invoke()
 }
 
-public class HeadOverrideLayer(boot: Map<String, Map<String, String>>) {
+/** [boot] is each layer's own knobs. [inherited] is what a head takes from its provider beneath its own: the layer a head
+ *  reads is its provider's with its own over it, so a value written once on the provider serves every head on it. */
+public class HeadOverrideLayer(
+    boot: Map<String, Map<String, String>>,
+    private val inherited: Map<String, Map<String, String>> = emptyMap(),
+) {
     private val held = AtomicReference(
         boot.mapValues { (_, values) -> Collections.unmodifiableMap(LinkedHashMap(values)) }
             .let(Collections::unmodifiableMap),
@@ -22,8 +27,15 @@ public class HeadOverrideLayer(boot: Map<String, Map<String, String>>) {
         changed = listener
     }
 
-    /** Every command's own knob values, as last read or written. */
-    public fun all(): Map<String, Map<String, String>> = held.get()
+    /** Every layer as it is read: its own knobs over what it inherits. */
+    public fun all(): Map<String, Map<String, String>> {
+        val own = held.get()
+        if (inherited.isEmpty()) return own
+        return (inherited.keys + own.keys).associateWith { inherited[it].orEmpty() + own[it].orEmpty() }
+    }
+
+    /** Every layer's own knob values, as last read or written, without what it inherits. */
+    public fun own(): Map<String, Map<String, String>> = held.get()
 
     /** [head] now declares exactly [overrides]; an empty map is the command with none. */
     public fun set(head: String, overrides: Map<String, String>) {
@@ -34,3 +46,7 @@ public class HeadOverrideLayer(boot: Map<String, Map<String, String>>) {
         changed()
     }
 }
+
+/** The layer name a provider's `[providers.<key>.overrides]` is held under, apart from every head key: the gateway reads
+ *  a provider's own knobs through it, and a head takes them beneath its own. */
+public const val PROVIDER_LAYER_PREFIX: String = "providers."

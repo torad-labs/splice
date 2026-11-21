@@ -156,6 +156,8 @@ providers.*.models[].rates.ultrafast_output
 providers.*.models_url	
 providers.*.overrides	
 providers.*.overrides.*	
+providers.*.overrides	
+providers.*.overrides.*	
 providers.*.picker	
 providers.*.pinned_model	
 providers.*.quirks	

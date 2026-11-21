@@ -7,6 +7,7 @@ import splice.core.perf.OutcomeTag
 import splice.core.turn.Usage
 import splice.core.util.Cancellables
 import splice.core.util.WallClock
+import java.util.UUID
 
 /** One Compare send's Requests row and budget spend, written once: the first way out writes them, any later one is a
  *  no-op. Past admit() the provider may already be charging, so every way out of [around] leaves them: an answer
@@ -20,12 +21,15 @@ public class CompareSendRecord(
     private val clock: WallClock,
 ) {
     private val startedAt = clock()
+
+    /** The id the send's row carries as its `turn_id`, named in the playground reply so the console opens that row. */
+    public val id: String = "compare-" + UUID.randomUUID().toString()
     private var written = false
 
     public fun write(outcome: String, usage: Usage?) {
         if (written) return
         written = true
-        sends?.answered(CompareAnswer(model, account, outcome, clock() - startedAt, usage))
+        sends?.answered(CompareAnswer(model, account, outcome, clock() - startedAt, usage, id))
     }
 
     /** Runs [send]; a failure other than cancellation is recorded and handed to [failed] for the caller's answer. */

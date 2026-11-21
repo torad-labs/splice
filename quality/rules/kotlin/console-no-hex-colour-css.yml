@@ -1,20 +1,18 @@
-# THE LAW (the Splice brand kit). Every colour the console draws comes from
-# app/src/main/resources/console/tokens.css, which is the kit's .design/brandkit/tokens/splice.css. A hex colour anywhere else
-# in the console's CSS, JS or HTML is a second palette, and it is how a console ended up with its own cream, its own red and a
-# review panel in magenta. Use a token (var(--splice-...)) or one of the console's aliases of one (var(--wall), var(--claude)).
-# A colour the kit has no token for is added to the kit's tokens first, with its contrast measured, then copied to tokens.css.
+# THE LAW (the console's kit). Every colour the console draws comes from the Night Deck kit's tokens, the custom
+# properties in app/src/main/resources/console/deck.css's :root (night) and :root[data-theme="day"] (day). A hex colour
+# anywhere in the console's CSS, JS or HTML is a second palette, and it is how a console ended up with its own cream, its
+# own red and a review panel in magenta. Use a token (var(--ink), var(--verdigris), ...). A colour the kit has no token
+# for is added to the kit's tokens first, with its contrast measured in both themes.
 #
 # This file sits in quality/rules/kotlin because sgconfig.yml names that one rule directory; it scopes itself to the console by
 # files:. console-no-hex-colour-js.yml and console-no-hex-colour-html.yml are the same law for the other two languages.
-# rgb() and rgba() literals are not covered.
+# rgb() and rgba() literals are not covered; tools/console/deck-raw.ts holds a page's own CSS and JS to the kit's tokens.
 id: console-no-hex-colour-css
 language: css
 severity: error
-message: A hex colour in the console CSS outside tokens.css is a second palette.
-note: Use var(--splice-...) from tokens.css, or the console alias of it (var(--wall), var(--text), var(--claude)). A new colour goes into the kit's tokens first.
+message: A hex colour in the console CSS is a second palette.
+note: Use a token from the kit (deck.css's :root, e.g. var(--ink) or var(--verdigris)). A new colour goes into the kit's tokens first.
 files:
   - app/src/main/resources/console/*.css
-ignores:
-  - app/src/main/resources/console/tokens.css
 rule:
   kind: color_value

@@ -222,8 +222,8 @@ describe("the console's Chromium tests run when the console changes", () => {
   const direct = (path: string) => scope([path], ladder.legs).legs.map((leg) => leg.task);
 
   test("a console script, page or test selects the console row", () => {
-    for (const path of ["app/src/main/resources/console/kit.js", "app/src/main/resources/console/settings.html",
-      "app/src/main/resources/console/console.css", "tools/console/pages-load.test.ts",
+    for (const path of ["app/src/main/resources/console/deck.js", "app/src/main/resources/console/settings.html",
+      "app/src/main/resources/console/deck.css", "tools/console/pages-load.test.ts",
       // every console test finds the repo through it (PR 456's review, round 1)
       "tools/gate/src/lib/repo.ts"]) {
       expect(direct(path), path).toContain("consoleTests");

@@ -3,43 +3,66 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sessions · splice</title>
+<title>Splice · Sessions</title>
 <link rel="icon" href="brand/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="brand/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="brand/splice-app-256.png">
-<link rel="stylesheet" href="tokens.css">
-<link rel="stylesheet" href="console.css">
-<link rel="stylesheet" href="sessions.css">
-<link rel="stylesheet" href="composer.css">
+<link rel="stylesheet" href="deck.css">
+<link rel="stylesheet" href="deck-sessions.css">
 </head>
-<body>
-<div class="app">
-  <aside class="side">
-    <div class="mark"><img class="lockup night" src="brand/splice-horizontal-night.svg" alt="splice" width="380" height="128"><img class="lockup day" src="brand/splice-horizontal-day.svg" alt="splice" width="380" height="128"></div>
-    <!-- The nav is drawn by kit.js from its one PAGES list. -->
-
-    <div class="foot">
-      <button class="icon" data-act="theme" aria-label="Day or night">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
-      </button>
-    </div>
-  </aside>
-  <main class="page">
+<body class="no-rail-l">
+<main class="field" id="field">
+  <section class="centre" id="centre" aria-label="Sessions">
     <header class="head">
-      <h1>Sessions</h1>
-      <label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><input class="field" id="q" type="search" placeholder="Search" aria-label="Search" aria-keyshortcuts="/" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">/</kbd><button class="clr" type="button" data-clears aria-label="Clear the search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></label>
+      <div class="head-l">
+        <div class="eyebrow" id="kick">Sessions · Teams</div>
+        <h1 id="title">Teams</h1>
+        <p class="sub" id="sub"></p>
+      </div>
+      <div class="head-r">
+        <div class="qwrap" id="qwrap"><input type="search" id="q" placeholder="Search names, projects, what they are on" aria-label="Search sessions"></div>
+        <button class="btn quiet press" id="back" type="button" hidden>Back to teams</button>
+        <div class="status"><span class="lamp live status-lamp"></span><span>Live</span><span class="faint">·</span><span id="clock"></span></div>
+      </div>
     </header>
-    <div class="sessions" id="sessions" aria-live="polite"></div>
-  </main>
-</div>
-<script src="kit.js"></script>
+    <div class="board" id="board"></div>
+    <div class="conv" id="conv" hidden>
+      <div class="bd" id="band" aria-label="Live lanes, last 30 minutes">
+        <div class="bd-head">
+          <span class="eyebrow" id="bdTitle">Live · last 30 min</span>
+          <span class="faint small mono" id="bdCount"></span>
+        </div>
+        <div class="bd-axis" id="bdAxis"></div>
+        <div class="bd-lanes" id="bdLanes"></div>
+      </div>
+      <div class="cv-steer" id="steer">
+        <button class="btn quiet press" id="stMsg" type="button">Message</button>
+        <button class="btn quiet press" id="stRedir" type="button" aria-expanded="false">Redirect</button>
+        <button class="btn quiet press" id="stModel" type="button">Continue on…</button>
+        <button class="btn quiet press" id="stAcct" type="button">Switch account…</button>
+        <button class="btn quiet press" id="stStop" type="button">Stop</button>
+      </div>
+      <form class="cv-redir" id="redir" hidden>
+        <input type="text" id="redirIn" placeholder="Stop and tell it…" aria-label="Stop and tell this session what to do">
+        <button class="btn quiet press" type="submit">Send</button>
+      </form>
+      <ol class="cv-thread" id="thread"></ol>
+      <div class="cv-end">
+        <div class="cv-dock" id="dock"></div>
+      </div>
+    </div>
+    <div class="endview" id="endview" hidden></div>
+  </section>
+</main>
+<aside class="glass rail rail-r" data-lens aria-label="The fleet as instruments, or the open session as instruments and actions">
+  <div class="rail-body" id="railR"></div>
+</aside>
 <script src="api.js"></script>
-<script src="reqview.js"></script>
-<script src="knobs.js"></script>
-<script src="perf-heads.js"></script>
-<script src="console.js"></script>
-<script src="composer.js"></script>
+<script src="deck-lens.js"></script>
+<script src="deck.js"></script>
+<script src="deck-composer.js"></script>
+<script src="deck-common.js"></script>
 <script src="pilot.js"></script>
-<script src="sessions.js"></script>
+<script src="deck-sessions.js"></script>
 </body>
 </html>

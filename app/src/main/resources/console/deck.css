@@ -1,0 +1,838 @@
+/* The Night Deck kit: every token and shared rule of the console (the room, glass, bars, parts, panel rows, wires,
+   search, controls, both themes). Ported from the approved prototype kit (shell.css) on Nov 19, 2026. A page keeps only
+   its own rules in deck-<page>.css, and never redefines a token declared here (tools/console/deck-raw.ts holds that). */
+
+/* the approved faces, served from the console's own fonts/ (SIL OFL 1.1, the licences beside them) */
+@font-face { font-family: "Barlow"; font-weight: 300; font-display: swap; src: url(fonts/barlow-300.woff2) format("woff2"); }
+@font-face { font-family: "Barlow"; font-weight: 400; font-display: swap; src: url(fonts/barlow-400.woff2) format("woff2"); }
+@font-face { font-family: "Barlow"; font-weight: 500; font-display: swap; src: url(fonts/barlow-500.woff2) format("woff2"); }
+@font-face { font-family: "DM Mono"; font-weight: 400; font-display: swap; src: url(fonts/dm-mono-400.woff2) format("woff2"); }
+@font-face { font-family: "DM Mono"; font-weight: 500; font-display: swap; src: url(fonts/dm-mono-500.woff2) format("woff2"); }
+
+:root {
+  --root-size: clamp(15px, 0.78125vw, 30px);
+
+  /* ground */
+  --ground: rgb(17 20 26);
+  /* the room: a lit space the deck floats in (light from the upper right, a cool pool low left, two orbits, a floor) */
+  --room-base: linear-gradient(155deg, rgb(21 25 32), rgb(24 29 37) 58%, rgb(10 12 16));
+  --room-wash-a: radial-gradient(ellipse at 80% 26%, rgb(96 96 104 / 0.34), transparent 48%);
+  --room-wash-b: radial-gradient(ellipse at 16% 74%, rgb(44 80 104 / 0.46), transparent 56%);
+  --room-wash-c: radial-gradient(ellipse at 50% 108%, rgb(150 120 90 / 0.16), transparent 50%);
+  --orbit-a: rgb(212 228 255 / 0.16);
+  --orbit-b: rgb(231 192 105 / 0.13);
+  --orbit-glow: rgb(167 213 238 / 0.03);
+  --floor-line: rgb(178 214 243 / 0.075);
+  --floor-step-x: 8rem;
+  --floor-step-y: 6.6rem;
+  --beam: rgb(198 231 225 / 0.16);
+  --beam-glow: rgb(177 227 221 / 0.04);
+  --room-rate: 0.12;
+  --room-drift-max: 18rem;
+  --room-persp: 900px;
+  --floor-persp: 600px;
+  --room-glow-r: 6rem;
+  --beam-spread: 2rem;
+  --orbit-a-w: 130vw; --orbit-a-h: 78vw; --orbit-a-x: -15%; --orbit-a-y: 16%; --orbit-a-rx: 64deg; --orbit-a-rz: -18deg;
+  --orbit-b-w: 100vw; --orbit-b-h: 60vw; --orbit-b-x: 10%; --orbit-b-y: 33%; --orbit-b-rx: 66deg; --orbit-b-rz: 16deg;
+  --floor-inset: 58% -20% -40%; --floor-rx: 62deg; --floor-mask: 65%; --floor-dir-x: 90deg; --floor-dir-y: 0deg;
+  --beam-w: 46%; --beam-x: -4%; --beam-y: 86%; --beam-rz: -14deg;
+  --far-light-a: radial-gradient(80rem 52rem at 18% 10%, rgb(120 140 170 / 0.07), rgb(120 140 170 / 0.035) 30%, rgb(120 140 170 / 0.012) 60%, transparent);
+  --far-light-b: radial-gradient(90rem 60rem at 86% 96%, rgb(170 140 110 / 0.05), rgb(170 140 110 / 0.025) 30%, rgb(170 140 110 / 0.008) 60%, transparent);
+  --stage-light: radial-gradient(80rem 46rem at 52% 58%, rgb(255 255 255 / 0.03), transparent 70%);
+  --edge-dark: radial-gradient(140% 120% at 50% 50%, transparent 55%, rgb(0 0 0 / 0.45));
+  --far-1: radial-gradient(95rem 60rem at 24% 26%, rgb(196 210 236 / 0.05), rgb(196 210 236 / 0.028) 30%, rgb(196 210 236 / 0.01) 60%, transparent);
+  --far-2: radial-gradient(110rem 70rem at 78% 70%, rgb(226 214 198 / 0.04), rgb(226 214 198 / 0.022) 30%, rgb(226 214 198 / 0.008) 60%, transparent);
+  --far-3: radial-gradient(80rem 50rem at 50% 115%, rgb(200 216 226 / 0.045), rgb(200 216 226 / 0.024) 30%, rgb(200 216 226 / 0.008) 60%, transparent);
+  --far-4: linear-gradient(transparent, transparent);
+  --grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.045 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");  --far-rate: 0.3;
+  --far-overscan: 40rem;
+  --scroll-y: 0px;
+  --pool-w: 22rem;
+  --pool-h: 3.4rem;
+  --pool-a: 0.13;
+  --glint-w: 30rem;
+  --glint-a: 0.55;
+  --ease-1: 0.62;
+  --ease-2: 0.32;
+  --ease-3: 0.13;
+  --ease-4: 0.035;
+  --stop-1: 18%;
+  --stop-2: 38%;
+  --stop-3: 60%;
+  --stop-4: 82%;
+  --float-y: 0.7rem;
+  --float-blur: 0.9rem;
+  --float-shadow: rgb(0 0 0 / 0.6);
+
+  /* ink */
+  --ink: rgb(255 255 255 / 0.96);
+  --ink-quiet: rgb(255 255 255 / 0.7);
+  --ink-faint: rgb(255 255 255 / 0.54);
+
+  /* field marks: what the glass bends */
+  --mark-hour: rgb(255 255 255 / 0.07);
+  --mark-day: rgb(255 255 255 / 0.18);
+  --mark-lane: rgb(255 255 255 / 0.09);
+  --mark-past: rgb(111 168 207 / 0.22);
+  --past-h: 34rem;
+  --mark-now: rgb(91 181 156 / 0.55);
+  --mark-zone: rgb(231 192 105 / 0.05);
+
+  /* pigments: each means one thing */
+  --verdigris: rgb(91 181 156);
+  --vermilion: rgb(226 86 59);
+  --ormolu: rgb(231 192 105);
+  --prussian: rgb(111 168 207);
+
+  /* provider colour: dot and meters only */
+  --p-claude: rgb(232 132 86);
+  --p-chatgpt: rgb(52 196 190);
+  --p-grok: rgb(128 150 245);
+  --p-muse: rgb(184 148 236);
+  --p-kimi: rgb(176 204 96);
+  --p-deepseek: rgb(236 130 168);
+  --p-openrouter: rgb(200 168 132);
+  /* a provider with no colour of its own (a local server, a family the kit does not know) draws in none */
+  --p-local: var(--ink-quiet);
+
+  /* glass: tint is graphite, dense in the middle and thin at the rim so the bent field shows at the edge */
+  --tint-core: rgb(26 28 32);
+  --tint-rim: rgb(44 47 53);
+  --tint-core-a: 0.62;
+  --tint-rim-a: 0.16;
+  --glass-shadow: rgb(0 0 0 / 0.5);
+  --glass-shadow-y: 1.4rem;
+  --glass-shadow-blur: 3.6rem;
+  --glass-glow: rgb(255 255 255 / 0.045);
+  --glass-glow-r: 16rem;
+  --vol-top: rgb(255 255 255 / 0.05);
+  --vol-bot: rgb(0 0 0 / 0.28);
+  --vol-top-y: 1.1rem;
+  --vol-bot-y: 1.3rem;
+  --vol-blur: 2.2rem;
+  --vol-spread: -1.4rem;
+  --marks-blur: 0.12rem;
+  --fade-len: 9rem;
+  --side-mask: rgb(0 0 0 / 0.45);
+  --fade-top: 0px;
+  --fade-bot: 100%;
+  --c-left: 0px;
+  --c-right: 100%;
+  --press-lift: rgb(255 255 255 / 0.07);
+  --press-r: 9rem;
+  --fallback-frost: 1.2rem;
+  --fallback-sat: 1.2;
+  --opaque-glass: rgb(26 27 31);
+
+  /* surface optics: bezel, depth and frost grow with the size of the surface */
+  --nav-bezel: 2.2rem;  --nav-depth: 1.5rem;  --nav-frost: 0.36rem;  --nav-core-a: 0.5;
+  --rail-bezel: 2.6rem; --rail-depth: 2.2rem; --rail-frost: 0.55rem; --rail-core-a: 0.66;
+  --lens-bezel-i: 3rem; --lens-depth-i: 2.8rem; --lens-frost-i: 0.45rem; --lens-zoom-i: 1.06; --lens-core-a: 0.6;
+  --menu-bezel: 1.6rem; --menu-depth: 1.4rem; --menu-frost: 0.6rem; --menu-core-a: 0.76;
+  --comp-bezel: 2rem;   --comp-depth: 1.7rem; --comp-frost: 0.45rem; --comp-core-a: 0.58; --comp-open-a: 0.8;
+  --lens-sat: 1.14;
+
+  /* fills on glass (never glass on glass) */
+  --fill: rgb(255 255 255 / 0.07);
+  --fill-hover: rgb(255 255 255 / 0.11);
+  --fill-on: rgb(255 255 255 / 0.15);
+  --tab-on: rgb(255 255 255 / 0.09);
+  --hairline: rgb(255 255 255 / 0.08);
+  --track: rgb(255 255 255 / 0.1);
+  --primary-bg: rgb(226 86 59 / 0.86);
+  --primary-ink: rgb(255 255 255 / 0.98);
+  --focus-ring: rgb(111 168 207);
+
+  /* type: no light weights */
+  --font-text: "Barlow", system-ui, sans-serif;
+  --font-data: "DM Mono", ui-monospace, monospace;
+  --w-reg: 400;
+  --w-med: 500;
+  --fs-micro: 0.76rem;
+  --fs-small: 0.9rem;
+  --fs-body: 1.02rem;
+  --fs-nav: 1.08rem;
+  --fs-name: 1.32rem;
+  --fs-figure: 1.6rem;
+  --fs-big: 2.4rem;
+  --fs-title: 2.3rem;
+  --fs-brand: 1.28rem;
+  --lh-tight: 1.15;
+  --lh: 1.5;
+  --track-eyebrow: 0.16em;
+  --track-brand: 0.3em;
+
+  /* space */
+  --sp-1: 0.4rem;
+  --sp-2: 0.7rem;
+  --sp-3: 1rem;
+  --sp-4: 1.4rem;
+  --sp-5: 2rem;
+  --sp-6: 2.8rem;
+  --sp-7: 3.8rem;
+  --edge: 1.6rem;
+  --gap: 1.4rem;
+
+  /* shape: capsules are half their height, nested corners are concentric */
+  --bar-h: 5.6rem;
+  --bar-pad: 0.7rem;
+  --tab-pad: 1.3rem;
+  --tab-h: 3.4rem;
+  --switch-w: 15rem;
+  --switch-pad: 0.7rem;
+  --r-thumb: calc(var(--r-bar) - var(--switch-pad));
+  --rule-h: 2rem;
+  --r-bar: calc(var(--bar-h) / 2);
+  --r-tab: calc(var(--tab-h) / 2);
+  --r-rail: 2.2rem;
+  --rail-pad: 1.6rem;
+  --r-inner: calc(var(--r-rail) - var(--rail-pad));
+  --r-lens: 2.2rem;
+  --r-menu: 1.4rem;
+  --menu-pad: 0.5rem;
+  --r-item: calc(var(--r-menu) - var(--menu-pad));
+  --btn-h: 2.9rem;
+  --r-btn: calc(var(--btn-h) / 2);
+  --hit: 2.9rem;
+  --hair: 1px;
+  --focus-w: 2px;
+
+  /* layout */
+  --rail-w: 19.5rem;
+  --lens-w: 27rem;
+  --lens-w-wide: 38rem;
+  --lens-w-xwide: 52rem;
+  --menu-max-h: 60vh;
+  /* shared by the pages: small dots, a row flash, panel rows, wires, the search glass */
+  --dot-s: 0.55rem;
+  --flash: rgb(111 168 207 / 0.16);
+  --lr-pad: 1.1rem;
+  --lr-gap: 0.7rem;
+  --wire: rgb(255 255 255 / 0.16);
+  --wire-live: rgb(91 181 156 / 0.55);
+  --wire-w: 1.5;
+  --wire-dash: 3 6;
+  --wire-dot: 0.17rem;
+  --find-w: 34rem;
+  --find-neg: calc(-1 * var(--find-w) / 2);
+  --find-list-h: 26rem;
+  /* a pressable part on the field (Settings, Teams, Providers, Activity) */
+  --pt-pad: 1.2rem;
+  --pt-rest: rgb(255 255 255 / 0.028);
+  --pt-hover: rgb(255 255 255 / 0.07);
+  --pt-lift: -0.18rem;
+  --pt-shadow: 0 1.4rem 2.6rem -1.4rem rgb(0 0 0 / 0.55), 0 0.2rem 0.6rem rgb(0 0 0 / 0.18);
+  --go-s: 1.2rem;
+  --go-a: 0.45;
+  --menu-w: 17rem;
+  --comp-w: 50rem;
+  --comp-h: 4.4rem;
+  --lane-h: 5.6rem;
+  --scale-h: 3rem;
+  --label-gap: 1rem;
+  --lamp: 0.9rem;
+  --lamp-ring: 0.2rem;
+  --meter-w: 5.2rem;
+  --lbl-w: 3.6rem;
+  --pct-w: 2.8rem;
+  --meter-h: 0.32rem;
+  --bars-h: 4.6rem;
+  --bar-gap: 0.18rem;
+  --edge-fade-h: 3.2rem;
+  --edge-fade-blur: 0.3rem;
+  --top-clear: calc(var(--edge) + var(--bar-h) + var(--gap));
+  --comp-clear: 13rem;
+  --nocomp-clear: var(--sp-7);
+  --nocomp-edge-h: var(--sp-6);
+
+  /* motion */
+  --dur-fast: 140ms;
+  --dur: 320ms;
+  --dur-mat: 380;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --spring: cubic-bezier(0.34, 1.32, 0.5, 1);
+  --morph-from: 0.86;
+  --pulse: 2.4s;
+
+  --viewport-h: 100vh;
+  --z-drag: 2;
+  --dim: 0.4;
+  --lamp-half: calc(var(--lamp) / 2);
+  --pulse-min: 0.45;
+  --underline-off: 0.3em;
+  --fade-stop: 70%;
+  --ico: 1.15rem;
+  --ico-stroke: 1.6;
+  --tint-shape: 120% 110% at 50% 42%;
+  --tint-mid-k: 0.86;
+  --tint-mid-stop: 58%;
+  --light-x0: 30%;
+  --brand-dot: 0.5rem;
+  --edge-fade-a: 0.7;
+  --edge-fade-mid: 55%;
+  --edge-mask-stop: 60%;
+  --hours: 24;
+  --bar-op: 0.85;
+  --lamp-nudge: 0.55em;
+  --lh-figure: 1.1;
+  --check-w: 1.2rem;
+  --side-clear: calc(var(--edge) + var(--rail-w) + var(--gap));
+  --r-comp: calc(var(--comp-h) / 2);
+  --comp-inner-h: calc(var(--comp-h) - var(--bar-pad) - var(--bar-pad));
+  --r-comp-inner: calc(var(--r-comp) - var(--bar-pad));
+  --comp-text-h: 6.5rem;
+  --r-card: 1.7rem;
+  --card-pad: 0.6rem;
+  --r-ctl: calc(var(--r-card) - var(--card-pad));
+  --cbtn-h: 2.6rem;
+  --send-d: 2.6rem;
+  --send-hover: 1.05;
+  --send-ico: 1rem;
+  --send-stroke: 2;
+  --fs-comp: 1.1rem;
+  --comp-line: 2.6rem;
+  --comp-text-max: 14rem;
+  --pdot: 0.55rem;
+  --chev: 0.85rem;
+  --chev-op: 0.6;
+  --glyph-w: 0.85rem;
+  --glyph-h: 1rem;
+  --glyph-off: 0.22;
+  --chip-h: 2.2rem;
+  --chip-max: 16rem;
+  --chip-x: 1.6rem;
+  --chip-ico: 0.8rem;
+  --ctx-h: 1.6rem;
+  --picker-w: 46rem;
+  --picker-h: 24rem;
+  --pk-rail-w: 4rem;
+  --pk-effort-w: 13rem;
+  --pk-prov-s: 2.8rem;
+  --pk-dot: 0.8rem;
+  --suggest-w: 26rem;
+  --suggest-h: 22rem;
+  --comp-stack-h: 10.5rem;
+  --dur-mat-s: 900ms;
+  --opt-h: 3.1rem;
+  --kbd-s: 1.7rem;
+  --spark-h: 3.4rem;
+  /* round three: settings controls */
+  --seg-pad: 0.3rem;
+  --seg-h: 2.6rem;
+  --seg-outer: calc(var(--seg-h) + var(--seg-pad) + var(--seg-pad));
+  --notch-h: 4.2rem;
+  --notch-dot: 0.55rem;
+  --notch-thumb: 1.25rem;
+  --notch-line: 0.15rem;
+  --notch-mark: 1.1rem;
+  --sv-w: 9.5rem;
+  --ta-h: 6.6rem;
+  --setting-h: 4.4rem;
+  --setting-name-w: 22rem;
+  --chev: 1rem;
+  --notch-l-h: 1.3rem;
+  --notch-half: calc(var(--notch-thumb) / 2);
+  --spark-area-a: 0.16;
+  --spark-dash: 400;
+  --strip-h: 0.5rem;
+  --strip-gap: 0.12rem;
+  --ask-pad: 1.4rem;
+  --say-h: 2.6rem;
+  --bottom-edge-h: calc(var(--comp-stack-h) + var(--edge) + var(--sp-6));
+  --phone-comp-clear: 16rem;
+  --phone-switch-w: 10rem;
+
+  --z-field: 0;
+  --z-edge: 4;
+  --z-rail: 10;
+  --z-lens: 20;
+  --z-comp: 30;
+  --z-bar: 40;
+  --z-menu: 50;
+}
+:root[data-theme="day"] {
+  --ground: rgb(234 234 230);
+  --room-base: linear-gradient(155deg, rgb(240 240 236), rgb(232 233 230) 58%, rgb(220 222 220));
+  --room-wash-a: radial-gradient(ellipse at 80% 26%, rgb(255 255 255 / 0.7), transparent 48%);
+  --room-wash-b: radial-gradient(ellipse at 16% 74%, rgb(150 180 205 / 0.3), transparent 56%);
+  --room-wash-c: radial-gradient(ellipse at 50% 108%, rgb(220 200 170 / 0.25), transparent 50%);
+  --orbit-a: rgb(40 60 90 / 0.12);
+  --orbit-b: rgb(160 120 50 / 0.12);
+  --orbit-glow: rgb(0 0 0 / 0.02);
+  --floor-line: rgb(40 60 90 / 0.06);
+  --beam: rgb(60 90 110 / 0.18);
+  --beam-glow: rgb(255 255 255 / 0.2);
+  --far-light-a: radial-gradient(60rem 40rem at 18% 12%, rgb(255 255 255 / 0.6), transparent 70%);
+  --far-light-b: radial-gradient(70rem 50rem at 84% 92%, rgb(210 200 185 / 0.4), transparent 70%);
+  --stage-light: radial-gradient(80rem 46rem at 52% 58%, rgb(255 255 255 / 0.5), transparent 70%);
+  --edge-dark: radial-gradient(140% 120% at 50% 50%, transparent 55%, rgb(0 0 0 / 0.06));
+  --pool-a: 0.1;
+  --glint-a: 0.4;
+  --float-shadow: rgb(40 44 50 / 0.14);
+  --ink: rgb(14 16 18 / 0.94);
+  --ink-quiet: rgb(14 16 18 / 0.68);
+  --ink-faint: rgb(14 16 18 / 0.52);
+  --mark-hour: rgb(0 0 0 / 0.06);
+  --mark-day: rgb(0 0 0 / 0.14);
+  --mark-lane: rgb(0 0 0 / 0.07);
+  --tint-core: rgb(250 250 248);
+  --tint-rim: rgb(240 240 236);
+  --tint-rim-a: 0.24;
+  --glass-shadow: rgb(40 44 50 / 0.18);
+  --glass-glow: rgb(255 255 255 / 0.3);
+  --vol-top: rgb(255 255 255 / 0.4);
+  --vol-bot: rgb(0 0 0 / 0.08);
+  --press-lift: rgb(255 255 255 / 0.4);
+  --opaque-glass: rgb(248 248 246);
+  --fill: rgb(0 0 0 / 0.05);
+  --fill-hover: rgb(0 0 0 / 0.08);
+  --fill-on: rgb(0 0 0 / 0.1);
+  --tab-on: rgb(0 0 0 / 0.06);
+  --hairline: rgb(0 0 0 / 0.08);
+  --track: rgb(0 0 0 / 0.1);
+}
+@property --mat { syntax: "<number>"; inherits: false; initial-value: 1; }
+html { font-size: var(--root-size); background: var(--ground); color: var(--ink); color-scheme: dark; }
+:root[data-theme="day"] { color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: var(--font-text); font-weight: var(--w-reg); font-size: var(--fs-body); line-height: var(--lh); -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: var(--focus-w) solid var(--focus-ring); outline-offset: var(--focus-w); }
+.mono { font-family: var(--font-data); }
+.eyebrow { font-family: var(--font-data); font-size: var(--fs-micro); letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--ink-faint); }
+[hidden] { display: none !important; }
+/* ============ the field: the deck itself, full bleed, scrolls under the glass ============ */
+.deck-light { position: fixed; inset: 0; z-index: var(--z-field); pointer-events: none; background: var(--grain), var(--stage-light), var(--far-light-a), var(--far-light-b), var(--edge-dark); }
+/* the far plane: out-of-focus lights well behind the deck, drifting slower than the page when it scrolls */
+.deck-far { position: fixed; top: 0; left: 0; right: 0; bottom: calc(-1 * var(--far-overscan)); z-index: var(--z-field); pointer-events: none; background: var(--far-1), var(--far-2), var(--far-3), var(--far-4); transform: translate3d(0, max(calc(var(--scroll-y) * var(--far-rate)), calc(-1 * var(--far-overscan))), 0); will-change: transform; }
+.field { position: relative; z-index: var(--z-field); min-height: var(--viewport-h); padding: var(--top-clear) 0 var(--comp-clear); }
+/* the centre column sits between the rails; the time axis lives inside it */
+.centre { position: relative; margin: 0 calc(var(--edge) + var(--rail-w) + var(--gap)); }
+.head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--sp-5); padding: var(--sp-5) 0 var(--sp-5); }
+.head h1 { margin: var(--sp-2) 0 0; font-weight: var(--w-reg); font-size: var(--fs-title); line-height: var(--lh-tight); }
+.head .sub { margin: var(--sp-2) 0 0; color: var(--ink-quiet); }
+.status { display: flex; align-items: center; gap: var(--sp-2); color: var(--ink-quiet); font-family: var(--font-data); font-size: var(--fs-small); white-space: nowrap; }
+/* ============ lanes: one per account, tall ============ */
+.lamp { flex: none; width: var(--lamp); height: var(--lamp); border-radius: 50%; background: var(--c); }
+.lamp.ring { background: transparent; box-shadow: inset 0 0 0 var(--lamp-ring) var(--c); }
+.lamp.live { animation: pulse var(--pulse) ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: var(--pulse-min); } }
+.meter { position: relative; width: var(--meter-w); height: var(--meter-h); border-radius: var(--meter-h); background: var(--track); overflow: hidden; }
+.meter i { position: absolute; inset: 0 auto 0 0; width: calc(var(--u) * 100%); background: var(--pc, var(--p-claude)); border-radius: inherit; transition: width var(--dur) var(--ease); }
+/* ============ controls ============ */
+.btn { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2); min-height: var(--btn-h); min-width: var(--hit); padding: 0 var(--sp-4); border: 0; border-radius: var(--r-btn); background: var(--fill); color: var(--ink); font-size: var(--fs-body); font-weight: var(--w-med); white-space: nowrap; cursor: pointer; overflow: hidden; transition: background var(--dur-fast); }
+/* a link drawn as a button reads as a button: no link underline */
+a.btn { text-decoration: none; }
+.btn:hover { background: var(--fill-hover); }
+.btn.quiet { background: transparent; }
+.btn.quiet:hover { background: var(--fill); }
+.btn.icon { padding: 0; width: var(--hit); }
+.btn.primary { background: var(--primary-bg); color: var(--primary-ink); }
+.btn kbd { font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-faint); background: var(--fill); padding: 0 var(--sp-1); border-radius: var(--sp-1); }
+/* press: illumination from the contact point */
+.press::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: radial-gradient(circle var(--press-r) at var(--px, 50%) var(--py, 50%), var(--press-lift), transparent var(--fade-stop)); opacity: 0; transition: opacity var(--dur) var(--ease); }
+.press.is-pressed::after { opacity: 1; transition-duration: var(--dur-fast); }
+.ico { width: var(--ico); height: var(--ico); fill: none; stroke: currentColor; stroke-width: var(--ico-stroke); stroke-linecap: round; stroke-linejoin: round; }
+/* ============ glass ============ */
+.glass {
+  --mat: 1;
+  --core-a: var(--tint-core-a);
+  position: fixed;
+  isolation: isolate;
+  border: 0;
+  color: var(--ink);
+  background: radial-gradient(var(--tint-shape),
+    rgb(from var(--tint-core) r g b / calc(var(--core-a) * var(--mat))) 0,
+    rgb(from var(--tint-core) r g b / calc(var(--core-a) * var(--tint-mid-k) * var(--mat))) var(--tint-mid-stop),
+    rgb(from var(--tint-rim) r g b / calc(var(--tint-rim-a) * var(--mat))) 100%);
+  backdrop-filter: var(--lens, blur(calc(var(--fallback-frost) * var(--mat))) saturate(var(--fallback-sat)));
+  transition: --mat var(--dur) var(--ease);
+}
+.glass::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none; box-shadow: 0 var(--glass-shadow-y) var(--glass-shadow-blur) rgb(from var(--glass-shadow) r g b / calc(alpha * var(--mat))); }
+.glass::after { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none; box-shadow: inset 0 var(--vol-top-y) var(--vol-blur) var(--vol-spread) var(--vol-top), inset 0 calc(-1 * var(--vol-bot-y)) var(--vol-blur) var(--vol-spread) var(--vol-bot); background: radial-gradient(circle var(--glass-glow-r) at var(--lx, var(--light-x0)) var(--ly, 0), var(--glass-glow), transparent var(--fade-stop)); }
+/* top: two separate glasses, both capsules. Wordmark is a title: it sits on the field, not on glass. */
+.brand { flex: none; display: flex; align-items: center; gap: var(--sp-3); padding: 0 var(--sp-2) 0 var(--sp-4); color: var(--ink); text-decoration: none; }
+.brand b { font-weight: var(--w-med); font-size: var(--fs-brand); letter-spacing: var(--track-brand); }
+.brand i { width: var(--brand-dot); height: var(--brand-dot); border-radius: 50%; background: var(--ink); }
+.brand span { font-family: var(--font-data); font-size: var(--fs-micro); letter-spacing: var(--track-eyebrow); color: var(--ink-quiet); }
+.bar-rule { flex: none; width: var(--hair); height: var(--rule-h); background: var(--hairline); margin: 0 var(--sp-4); }
+.bar { z-index: var(--z-bar); top: var(--edge); height: var(--bar-h); border-radius: var(--r-bar); padding: var(--bar-pad); display: flex; align-items: center; gap: var(--sp-1);
+  --lens-bezel: var(--nav-bezel); --lens-depth: var(--nav-depth); --lens-frost: var(--nav-frost); --core-a: var(--nav-core-a); }
+.nav { left: var(--edge); }
+.tab { flex: none; position: relative; height: var(--tab-h); padding: 0 var(--tab-pad); border: 0; border-radius: var(--r-tab); background: transparent; color: var(--ink-quiet); font-size: var(--fs-nav); font-weight: var(--w-med); text-decoration: none; display: inline-flex; align-items: center; cursor: pointer; overflow: hidden; transition: background var(--dur-fast), color var(--dur-fast); }
+.tab:hover { color: var(--ink); background: var(--fill); }
+.tab[aria-current="page"] { color: var(--ink); background: var(--tab-on); }
+.need-float { position: fixed; z-index: var(--z-bar); top: var(--edge); right: calc(var(--edge) + var(--switch-w) + var(--gap)); height: var(--bar-h); display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-4); border: 0; border-radius: var(--r-bar); background: transparent; color: var(--ink); font-size: var(--fs-nav); font-weight: var(--w-med); cursor: pointer; overflow: hidden; transition: background var(--dur-fast); }
+.need-float:hover { background: var(--fill); }
+.need-float[aria-pressed="true"] { background: var(--fill-on); }
+.need-float .lamp { --c: var(--vermilion); }
+/* the appearance switch is itself the glass; its thumb is a fill that slides */
+.switch { z-index: var(--z-bar); top: var(--edge); right: var(--edge); width: var(--switch-w); height: var(--bar-h); border-radius: var(--r-bar); padding: var(--switch-pad); display: grid; grid-template-columns: 1fr 1fr;
+  --lens-bezel: var(--nav-bezel); --lens-depth: var(--nav-depth); --lens-frost: var(--nav-frost); --core-a: var(--nav-core-a); }
+.switch .thumb { position: absolute; top: var(--switch-pad); bottom: var(--switch-pad); left: var(--switch-pad); width: calc(50% - var(--switch-pad)); border-radius: var(--r-thumb); background: var(--tab-on); transition: transform var(--dur) var(--spring); }
+.switch[data-on="day"] .thumb { transform: translateX(100%); }
+.switch:active .thumb { background: var(--fill-on); }
+.switch button { position: relative; border: 0; background: transparent; border-radius: var(--r-thumb); color: var(--ink-quiet); font-size: var(--fs-nav); font-weight: var(--w-med); cursor: pointer; overflow: hidden; transition: color var(--dur-fast); }
+.switch button[aria-checked="true"] { color: var(--ink); }
+/* soft scroll edge under the bars: a fade and a slight blur, never a band */
+.scroll-edge { position: fixed; z-index: var(--z-edge); left: 0; right: 0; top: 0; height: calc(var(--top-clear) + var(--edge-fade-h)); pointer-events: none; backdrop-filter: blur(var(--edge-fade-blur)); background: linear-gradient(var(--ground), rgb(from var(--ground) r g b / var(--edge-fade-a)) var(--edge-fade-mid), transparent); mask-image: linear-gradient(black var(--edge-mask-stop), transparent); }
+.scroll-edge.bottom { top: auto; bottom: 0; height: var(--bottom-edge-h); background: linear-gradient(to top, var(--ground), rgb(from var(--ground) r g b / var(--edge-fade-a)) var(--edge-fade-mid), transparent); mask-image: linear-gradient(to top, black var(--edge-mask-stop), transparent); }
+/* rails: one glass each, sections divided by space and hairlines */
+.rail { z-index: var(--z-rail); top: calc(var(--edge) + var(--bar-h) + var(--gap)); bottom: var(--edge); width: var(--rail-w); border-radius: var(--r-rail); padding: var(--rail-pad); overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; gap: var(--sp-5);
+  --lens-bezel: var(--rail-bezel); --lens-depth: var(--rail-depth); --lens-frost: var(--rail-frost); --core-a: var(--rail-core-a); }
+.rail-l { left: var(--edge); top: calc(var(--edge) + var(--bar-h) + var(--gap)); }
+.rail-r { right: var(--edge); }
+.sec { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }   /* a row that keeps one line gives way inside the rail, never widens it */
+.sec + .sec { padding-top: var(--sp-5); border-top: var(--hair) solid var(--hairline); }
+.sec h2 { margin: 0; }
+.big { font-family: var(--font-data); font-size: var(--fs-big); line-height: 1; }
+.lede { font-size: var(--fs-name); font-weight: var(--w-med); line-height: var(--lh-tight); display: flex; align-items: center; gap: var(--sp-2); }
+.quiet { color: var(--ink-quiet); }
+.faint { color: var(--ink-faint); }
+.small { font-size: var(--fs-small); }
+.lim { display: grid; gap: var(--sp-1); }
+.lim .top { display: flex; justify-content: space-between; align-items: baseline; }
+.lim .top .mono { font-size: var(--fs-small); }
+.lim .meter { width: 100%; }
+.lim.full .top .mono { color: var(--vermilion); }
+.lim.full .meter i { background: var(--vermilion); }
+.bars { display: grid; grid-template-columns: repeat(var(--hours), 1fr); gap: var(--bar-gap); align-items: end; height: var(--bars-h); }
+.bars i { display: block; height: calc(var(--v) * 100%); min-height: var(--hair); background: var(--prussian); border-radius: var(--hair); opacity: var(--bar-op); transition: height var(--dur) var(--ease); }
+.kv { display: flex; justify-content: space-between; align-items: baseline; padding: var(--sp-1) 0; }
+.kv .mono { font-size: var(--fs-small); }
+.prov { display: grid; gap: var(--sp-3); }
+.prov .hd { display: flex; align-items: center; gap: var(--sp-2); }
+.prov .hd .lamp { --c: var(--pc); }
+.prov .hd b { font-size: var(--fs-name); font-weight: var(--w-med); }
+.prov .hd .cmd { margin-left: auto; font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-faint); }
+.prov .meter i { background: var(--pc); }
+.acct { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-2); }
+.acct .st { font-family: var(--font-data); font-size: var(--fs-small); color: var(--c); }
+/* a row never wraps: the state keeps its line whole, and a long name gives way with an ellipsis (its title holds it whole) */
+.acct > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct .st { flex: none; white-space: nowrap; }
+/* inspection lens: grows out of the account that opened it */
+.lens { position: absolute; z-index: var(--z-lens); width: var(--lens-w); border-radius: var(--r-lens); padding: var(--sp-5); display: grid; gap: var(--sp-4);
+  --lens-bezel: var(--lens-bezel-i); --lens-depth: var(--lens-depth-i); --lens-frost: var(--lens-frost-i); --lens-zoom: var(--lens-zoom-i); --core-a: var(--lens-core-a);
+  transform-origin: var(--ox, 0) var(--oy, 50%); transition: transform var(--dur) var(--ease), --mat var(--dur) var(--ease); }
+.lens.is-entering { transform: scale(var(--morph-from)); }
+.lens > * { transition: opacity var(--dur) var(--ease); }
+.lens.is-entering > * { opacity: 0; }
+.lens .hd { display: flex; align-items: flex-start; gap: var(--sp-3); }
+.lens .hd .lamp { margin-top: var(--lamp-nudge); }
+.lens .hd h3 { margin: 0; font-size: var(--fs-figure); font-weight: var(--w-med); line-height: var(--lh-tight); }
+.lens .hd .btn { margin-left: auto; }
+.lens .login { font-family: var(--font-data); font-size: var(--fs-small); color: var(--ink-quiet); overflow-wrap: anywhere; }
+.lens .two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
+.lens .fig2 .v { font-family: var(--font-data); font-size: var(--fs-figure); line-height: var(--lh-figure); }
+.lens .fig2.full .v { color: var(--vermilion); }
+.lens ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
+.lens li { font-family: var(--font-data); font-size: var(--fs-small); color: var(--ink-quiet); display: flex; justify-content: space-between; gap: var(--sp-2); }
+.lens li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lens .acts { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+/* menus: pop open out of their button */
+.menu { z-index: var(--z-menu); width: var(--menu-w); border-radius: var(--r-menu); padding: var(--menu-pad); display: grid;
+  --lens-bezel: var(--menu-bezel); --lens-depth: var(--menu-depth); --lens-frost: var(--menu-frost); --core-a: var(--menu-core-a);
+  transform-origin: var(--ox, 100%) var(--oy, 0); transition: transform var(--dur) var(--ease), --mat var(--dur) var(--ease); }
+.menu.is-entering { transform: scale(var(--morph-from)); }
+.menu > * { transition: opacity var(--dur-fast); }
+.menu.is-entering > * { opacity: 0; }
+.menu button { position: relative; overflow: hidden; display: grid; grid-template-columns: var(--check-w) 1fr auto; align-items: center; gap: var(--sp-2); min-height: var(--btn-h); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-item); background: transparent; text-align: left; font-size: var(--fs-body); cursor: pointer; }
+.menu button:hover, .menu button:focus-visible { background: var(--fill-hover); outline: none; }
+.menu button .sub { font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-faint); }
+.menu button.danger { color: var(--vermilion); }
+.menu hr { border: 0; height: var(--hair); background: var(--hairline); margin: var(--sp-1) var(--sp-3); }
+/* composer, after T3 Code's: always open, one control for model and effort, permissions, and a round send */
+.comp-wrap { position: fixed; z-index: var(--z-comp); left: 50%; bottom: var(--edge); width: min(var(--comp-w), calc(100% - var(--side-clear) - var(--side-clear))); transform: translateX(calc(-1 * 50%)); display: grid; gap: var(--sp-2); }
+.comp { position: relative; border-radius: var(--r-card); padding: var(--card-pad); display: grid; gap: var(--sp-1);
+  --lens-bezel: var(--comp-bezel); --lens-depth: var(--comp-depth); --lens-frost: var(--comp-frost); --core-a: var(--comp-core-a);
+  transition: --mat var(--dur) var(--ease); }
+.comp:focus-within, .comp.is-drop { --core-a: var(--comp-open-a); }
+.comp textarea { width: 100%; min-height: var(--comp-line); max-height: var(--comp-text-max); resize: none; border: 0; outline: none; background: transparent; color: var(--ink); font: inherit; font-size: var(--fs-comp); line-height: var(--lh); padding: var(--sp-3) var(--sp-3) var(--sp-1); overflow-y: auto; scrollbar-width: none; }
+.comp textarea::placeholder { color: var(--ink-faint); }
+.comp-foot { display: flex; align-items: center; gap: var(--sp-1); }
+.comp-ctrls { margin-left: auto; display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
+.cbtn { position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: var(--sp-2); height: var(--cbtn-h); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--ink-quiet); font-size: var(--fs-small); font-weight: var(--w-med); white-space: nowrap; cursor: pointer; transition: background var(--dur-fast), color var(--dur-fast); }
+.cbtn:hover, .cbtn[aria-expanded="true"], .cbtn[aria-pressed="true"] { background: var(--fill); color: var(--ink); }
+.cbtn.icon { width: var(--cbtn-h); padding: 0; justify-content: center; }
+.cbtn .pdot { width: var(--pdot); height: var(--pdot); border-radius: 50%; background: var(--pc); flex: none; }
+.cbtn .chev { width: var(--chev); height: var(--chev); fill: none; stroke: currentColor; stroke-width: var(--ico-stroke); opacity: var(--chev-op); }
+#micBtn[aria-pressed="true"] { color: var(--vermilion); }
+#micBtn[aria-pressed="true"] .ico { animation: pulse var(--pulse) ease-in-out infinite; }
+.glyph { width: var(--glyph-w); height: var(--glyph-h); flex: none; fill: currentColor; }
+.glyph .off { opacity: var(--glyph-off); }
+.send { flex: none; position: relative; overflow: hidden; display: grid; place-items: center; width: var(--send-d); height: var(--send-d); margin-left: var(--sp-1); border: 0; border-radius: 50%; background: var(--primary-bg); color: var(--primary-ink); cursor: pointer; transition: transform var(--dur-fast) var(--ease), background var(--dur-fast); }
+.send:hover:not(:disabled) { transform: scale(var(--send-hover)); }
+.send:disabled { background: var(--fill); color: var(--ink-faint); cursor: default; }
+.send.is-running { background: var(--fill-on); color: var(--ink); }
+.send svg { width: var(--send-ico); height: var(--send-ico); fill: none; stroke: currentColor; stroke-width: var(--send-stroke); stroke-linecap: round; stroke-linejoin: round; }
+.send.is-running svg { fill: currentColor; stroke: none; }
+.chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); padding: var(--sp-1) var(--sp-1) 0; }
+.chip { display: inline-flex; align-items: center; gap: var(--sp-2); height: var(--chip-h); padding: 0 var(--sp-1) 0 var(--sp-3); border-radius: var(--r-ctl); background: var(--fill); font-size: var(--fs-small); max-width: var(--chip-max); }
+.chip .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip .size { font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-faint); }
+.chip button { display: grid; place-items: center; width: var(--chip-x); height: var(--chip-x); border: 0; border-radius: 50%; background: transparent; color: var(--ink-faint); cursor: pointer; }
+.chip button:hover { background: var(--fill-hover); color: var(--ink); }
+.chip button .ico { width: var(--chip-ico); height: var(--chip-ico); }
+.drop-hint { position: absolute; inset: 0; display: grid; place-items: center; border-radius: inherit; background: var(--fill); color: var(--ink); font-weight: var(--w-med); opacity: 0; pointer-events: none; transition: opacity var(--dur-fast); }
+.comp.is-drop .drop-hint { opacity: 1; }
+/* the context strip sits on the field under the card: where the prompt runs, and how to send */
+.comp-context { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); padding: 0 var(--sp-4); font-size: var(--fs-small); color: var(--ink-faint); min-height: var(--ctx-h); }
+.comp-context .where { display: flex; align-items: center; gap: var(--sp-2); color: var(--ink-quiet); min-width: 0; }
+.comp-context .where span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.comp-context kbd { font-family: var(--font-data); font-size: var(--fs-micro); }
+.comp-context .keys { white-space: nowrap; }
+/* model and effort picker: providers, models, effort, side by side; grows out of its button */
+.picker { z-index: var(--z-menu); width: var(--picker-w); height: var(--picker-h); border-radius: var(--r-menu); display: grid; grid-template-columns: var(--pk-rail-w) 1fr var(--pk-effort-w); overflow: hidden;
+  --lens-bezel: var(--menu-bezel); --lens-depth: var(--menu-depth); --lens-frost: var(--menu-frost); --core-a: var(--menu-core-a);
+  transform-origin: var(--ox, 0) var(--oy, 100%); transition: transform var(--dur) var(--ease), --mat var(--dur) var(--ease); }
+.picker.is-entering, .suggest.is-entering { transform: scale(var(--morph-from)); }
+.picker > *, .suggest > * { transition: opacity var(--dur-fast); }
+.picker.is-entering > *, .suggest.is-entering > * { opacity: 0; }
+.pk-rail { display: grid; align-content: start; justify-items: center; gap: var(--sp-1); padding: var(--sp-2) 0; background: var(--fill); overflow-y: auto; scrollbar-width: none; }
+.pk-prov { position: relative; display: grid; place-items: center; width: var(--pk-prov-s); height: var(--pk-prov-s); border: 0; border-radius: var(--r-item); background: transparent; cursor: pointer; }
+.pk-prov:hover { background: var(--fill-hover); }
+.pk-prov[aria-pressed="true"] { background: var(--fill-on); }
+.pk-prov .lamp { --c: var(--pc); width: var(--pk-dot); height: var(--pk-dot); }
+.pk-models { display: grid; grid-template-rows: auto 1fr; min-height: 0; border-right: var(--hair) solid var(--hairline); }
+.pk-search { border: 0; border-bottom: var(--hair) solid var(--hairline); background: transparent; color: var(--ink); font: inherit; font-size: var(--fs-body); padding: var(--sp-3) var(--sp-4); outline: none; }
+.pk-search::placeholder { color: var(--ink-faint); }
+.pk-list, .pk-effort { min-height: 0; overflow-y: auto; scrollbar-width: none; padding: var(--sp-2); display: grid; align-content: start; }
+.pk-effort .eyebrow { padding: var(--sp-2) var(--sp-3) var(--sp-1); }
+.pk-group { padding: var(--sp-2) var(--sp-3) var(--sp-1); }
+.pk-row, .sg-row { position: relative; overflow: hidden; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: var(--sp-2); min-height: var(--btn-h); padding: var(--sp-1) var(--sp-3); border: 0; border-radius: var(--r-item); background: transparent; color: var(--ink); text-align: left; font: inherit; cursor: pointer; }
+.pk-row:hover, .pk-row:focus-visible, .sg-row:hover, .sg-row.is-active { background: var(--fill-hover); outline: none; }
+.pk-row .nm, .sg-row .nm { font-size: var(--fs-body); line-height: var(--lh-tight); }
+.pk-row .sub, .sg-row .sub { display: block; font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-faint); }
+.pk-row .lead { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.pk-row .ico, .sg-row .ico { width: var(--chev); height: var(--chev); }
+.pk-empty { padding: var(--sp-3); color: var(--ink-faint); font-size: var(--fs-small); }
+/* @ and / suggestions */
+.suggest { z-index: var(--z-menu); width: var(--suggest-w); max-height: var(--suggest-h); overflow-y: auto; scrollbar-width: none; border-radius: var(--r-menu); padding: var(--menu-pad); display: grid; align-content: start;
+  --lens-bezel: var(--menu-bezel); --lens-depth: var(--menu-depth); --lens-frost: var(--menu-frost); --core-a: var(--menu-core-a);
+  transform-origin: var(--ox, 0) var(--oy, 100%); transition: transform var(--dur) var(--ease), --mat var(--dur) var(--ease); }
+.sg-row .lead { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.sg-row .key { font-family: var(--font-data); color: var(--ink-quiet); }
+/* fallbacks: opaque surfaces when transparency is reduced or contrast is raised */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .glass { background: var(--opaque-glass); backdrop-filter: none; }
+  .scroll-edge { backdrop-filter: none; background: var(--ground); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root { --far-rate: 0; }
+  .lens, .menu, .lane, .meter i, .bars i { transition: none; }
+  .lamp.live { animation: none; }
+}
+/* narrower screens: the rails fold under the bars, the field keeps the time axis */
+@media (max-width: 70rem) {
+  .rail-r { display: none; }
+  .centre { margin-right: var(--edge); }
+}
+@media (max-width: 48rem) {
+  :root { --side-clear: var(--edge); --comp-clear: var(--phone-comp-clear); --tab-pad: var(--sp-3); --switch-w: var(--phone-switch-w); }
+  .need-float, .switch button { font-size: var(--fs-small); }
+  .need-float { padding: 0 var(--sp-2); }
+  .rail-l, .brand, .bar-rule { display: none; }
+  .centre { margin: 0 var(--edge); }
+  .nav { left: var(--edge); right: var(--edge); overflow-x: auto; scrollbar-width: none; }
+  .head { flex-direction: column; align-items: flex-start; }
+  .switch { top: auto; bottom: calc(var(--edge) + var(--comp-stack-h) + var(--gap)); }
+  .need-float { top: auto; right: auto; left: var(--edge); bottom: calc(var(--edge) + var(--comp-stack-h) + var(--gap)); }
+  .figs, .scale span.zone-label { display: none; }
+  .lens { width: calc(100% - var(--side-clear) - var(--side-clear)); }
+  #modeBtn .label, #micBtn, .comp-context .keys { display: none; }
+  .picker { width: calc(100% - var(--edge) - var(--edge)); grid-template-columns: var(--pk-rail-w) 1fr; }
+  .pk-effort { display: none; }
+}
+.no-t, .no-t > * { transition: none !important; }
+/* pages without a rail give its column back to the field */
+body.no-rail-l .centre { margin-left: var(--edge); }
+body.no-rail-r .centre { margin-right: var(--edge); }
+body.no-rail-l .nav { left: var(--edge); }
+
+/* answering: the question, the command it wants to run, and its options as a numbered list (Claude Code's way) */
+.ask { display: grid; gap: var(--sp-3); outline: none; }
+.ask-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-3); }
+.ask-head .eyebrow { color: var(--vermilion); }
+.ask-wait { font-family: var(--font-data); font-size: var(--fs-small); color: var(--ink-quiet); }
+.ask-q { font-size: var(--fs-name); font-weight: var(--w-med); line-height: var(--lh-tight); }
+.ask-cmd { margin: 0; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-inner); background: var(--fill); font-family: var(--font-data); font-size: var(--fs-small); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; line-height: var(--lh); }
+.opts { list-style: none; margin: 0; padding: 0; display: grid; }
+.opts li + li { border-top: var(--hair) solid var(--hairline); }
+.opt { position: relative; overflow: hidden; width: 100%; display: grid; grid-template-columns: var(--kbd-s) 1fr auto; align-items: center; gap: var(--sp-3); min-height: var(--opt-h); padding: var(--sp-1) var(--sp-2); border: 0; border-radius: var(--r-inner); background: transparent; color: var(--ink); font-size: var(--fs-body); text-align: left; cursor: pointer; transition: background var(--dur-fast), color var(--dur-fast), opacity var(--dur); }
+.opt:hover, .opt:focus-visible { background: var(--fill-hover); outline: none; }
+.opt kbd { display: grid; place-items: center; width: var(--kbd-s); height: var(--kbd-s); border-radius: var(--r-item); background: var(--fill); font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-quiet); }
+.opt:hover kbd { background: var(--fill-on); color: var(--ink); }
+.opt-mark { opacity: 0; color: var(--verdigris); transition: opacity var(--dur); }
+.opt-mark .ico { width: var(--ico); height: var(--ico); }
+.ask.is-answered .opt { opacity: var(--dim); cursor: default; }
+.ask.is-answered .opt.is-picked { opacity: 1; background: var(--fill-on); }
+.ask.is-answered .opt.is-picked .opt-mark { opacity: 1; }
+.opt-say { display: flex; gap: var(--sp-2); padding: var(--sp-2) 0 var(--sp-2) calc(var(--kbd-s) + var(--sp-3) + var(--sp-2)); }
+.opt-say input { flex: 1; min-width: 0; height: var(--say-h); border: 0; border-radius: var(--r-inner); background: var(--fill); color: var(--ink); font: inherit; padding: 0 var(--sp-3); outline: none; }
+.opt-say input:focus { background: var(--fill-hover); }
+.ask.compact { gap: var(--sp-2); }
+.ask.compact .ask-q { font-size: var(--fs-body); }
+.ask.compact .opt { min-height: var(--btn-h); font-size: var(--fs-small); }
+
+/* instruments: a sparkline, a strip of states, numbers that roll */
+.spark { display: block; width: 100%; height: var(--spark-h); color: var(--pc, var(--prussian)); overflow: visible; }
+.spark-line { fill: none; stroke: currentColor; stroke-width: var(--ico-stroke); stroke-linejoin: round; stroke-linecap: round; stroke-dasharray: var(--spark-dash); stroke-dashoffset: 0; transition: stroke-dashoffset var(--dur-mat-s) var(--ease); }
+.spark-area { fill: currentColor; opacity: var(--spark-area-a); transition: opacity var(--dur-mat-s) var(--ease); }
+.spark-dot { fill: currentColor; }
+.spark.is-drawing .spark-line { stroke-dashoffset: var(--spark-dash); transition: none; }
+.spark.is-drawing .spark-area { opacity: 0; transition: none; }
+.strip { display: flex; gap: var(--strip-gap); height: var(--strip-h); border-radius: var(--strip-h); overflow: hidden; }
+.strip i { flex: var(--share) 1 0; background: var(--c); min-width: var(--hair); }
+.inst { display: grid; gap: var(--sp-2); }
+.inst-top { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-3); }
+.inst-v { font-family: var(--font-data); font-size: var(--fs-figure); line-height: var(--lh-figure); }
+.inst-cap { font-size: var(--fs-small); color: var(--ink-faint); }
+.inst-top > *, .ask-head > * { white-space: nowrap; }
+.inst-top > :first-child, .ask-head > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ask, .inst, .opts { grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.rail > .sec { min-width: 0; }
+
+/* round three: settings. A value is picked on the field (no glass), and its row says what the change did */
+.seg { position: relative; display: inline-flex; gap: 0; padding: var(--seg-pad); border-radius: var(--r-btn); background: var(--fill); max-width: 100%; }
+.seg-thumb { position: absolute; top: var(--seg-pad); bottom: var(--seg-pad); left: 0; border-radius: var(--r-btn); background: var(--fill-on); transition: transform var(--dur) var(--spring), width var(--dur) var(--spring); }
+.seg-o { position: relative; min-height: var(--seg-h); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-btn); background: transparent; color: var(--ink-quiet); font: inherit; font-size: var(--fs-small); font-weight: var(--w-med); white-space: nowrap; cursor: pointer; transition: color var(--dur-fast); }
+.seg-o:hover { color: var(--ink); }
+.seg-o[aria-checked="true"] { color: var(--ink); }
+.seg-o:focus-visible { outline: var(--focus-w) solid var(--focus-ring); outline-offset: calc(-1 * var(--focus-w)); }
+.pickbtn { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: var(--seg-outer); padding: 0 var(--sp-3) 0 var(--sp-4); border: 0; border-radius: var(--r-btn); background: var(--fill); color: var(--ink); font: inherit; font-size: var(--fs-small); font-weight: var(--w-med); cursor: pointer; position: relative; overflow: hidden; }
+.pickbtn:hover { background: var(--fill-hover); }
+.pickbtn-chev .ico { width: var(--chev); height: var(--chev); color: var(--ink-quiet); }
+.notch { position: relative; display: grid; width: 100%; flex: 1 1 auto; gap: var(--sp-1); min-width: 0; padding-top: var(--notch-mark); outline: none; --at: 0; }
+.notch:focus-visible .notch-thumb { box-shadow: 0 0 0 var(--focus-w) var(--focus-ring); }
+.notch-track { position: relative; height: var(--notch-thumb); margin: 0 var(--notch-half); cursor: pointer; touch-action: none; }
+.notch-line, .notch-run { position: absolute; left: 0; top: 50%; height: var(--notch-line); transform: translateY(calc(-1 * 50%)); border-radius: var(--notch-line); }
+.notch-line { right: 0; background: var(--hairline); }
+.notch-run { width: calc(var(--at) * 100%); background: var(--ink-faint); transition: width var(--dur) var(--spring); }
+.notch-stop { position: absolute; top: 50%; left: calc(var(--x) * 100%); width: var(--notch-dot); height: var(--notch-dot); padding: 0; border: 0; border-radius: 50%; background: var(--ink-faint); transform: translate(calc(-1 * 50%), calc(-1 * 50%)); cursor: pointer; }
+.notch-stop::after { content: ""; position: absolute; inset: calc(-1 * var(--sp-2)); }
+.notch-thumb { position: absolute; top: 50%; left: calc(var(--at) * 100%); width: var(--notch-thumb); height: var(--notch-thumb); border-radius: 50%; background: var(--ink); transform: translate(calc(-1 * 50%), calc(-1 * 50%)); transition: left var(--dur) var(--spring); pointer-events: none; }
+.notch-labels { position: relative; height: var(--notch-l-h); margin: 0 var(--notch-half); }
+.notch-l { position: absolute; left: calc(var(--x) * 100%); transform: translateX(calc(-1 * 50%)); font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-faint); white-space: nowrap; transition: color var(--dur-fast); }
+.notch-l:first-child { transform: none; }
+.notch-l:last-child { transform: translateX(calc(-1 * 100%)); }
+.notch-l.is-on { color: var(--ink); }
+.notch-marks { position: absolute; top: 0; left: var(--notch-half); right: var(--notch-half); height: calc(var(--notch-mark) + var(--notch-half)); pointer-events: none; }
+.notch-mark { position: absolute; left: calc(var(--x) * 100%); top: 0; bottom: 0; color: var(--c); }
+.notch-mark i { position: absolute; left: 0; bottom: 0; width: var(--notch-line); height: 100%; background: var(--c); transform: translateX(calc(-1 * 50%)); border-radius: var(--notch-line); }
+.notch-mark-w { position: absolute; bottom: 100%; left: 0; transform: translateX(calc(-1 * 50%)); font-family: var(--font-data); font-size: var(--fs-micro); white-space: nowrap; opacity: 0; transition: opacity var(--dur-fast); }
+.notch-mark.is-shown .notch-mark-w { opacity: 1; }
+.sv { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); min-width: var(--sv-w); max-width: var(--sv-w); font-size: var(--fs-small); color: var(--ink-quiet); }
+.sv .lamp { transition: background var(--dur), box-shadow var(--dur); }
+.sv-w { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv[data-s="idle"] { color: var(--ink-faint); }
+.sv[data-s="idle"] .lamp { display: none; }
+.sv[data-s="refused"] { color: var(--vermilion); }
+.sv[data-s="restart"] { color: var(--ormolu); }
+.setting { display: grid; grid-template-columns: minmax(0, var(--setting-name-w)) minmax(0, 1fr) var(--sv-w); align-items: center; column-gap: var(--sp-5); row-gap: var(--sp-2); min-height: var(--setting-h); padding: var(--sp-2) 0; }
+.setting + .setting { border-top: var(--hair) solid var(--hairline); }
+.setting-nm { display: grid; gap: var(--sp-1); min-width: 0; }
+.setting-name { font-size: var(--fs-body); font-weight: var(--w-med); }
+.setting-sub { font-size: var(--fs-small); color: var(--ink-faint); line-height: var(--lh); }
+.setting-ctl { min-width: 0; display: flex; align-items: center; gap: var(--sp-3); }
+.setting-under { grid-column: 1 / -1; min-width: 0; }
+/* a page without a composer ("composer": false in page.json) */
+body.no-comp .comp-wrap { display: none; }
+body.no-comp .field { padding-bottom: var(--nocomp-clear); }
+body.no-comp .scroll-edge.bottom { height: var(--nocomp-edge-h); }
+.notch-l.is-thin { visibility: hidden; }
+.lens.wide { width: var(--lens-w-wide); }
+
+/* the room the deck floats in: lit, with orbits and a floor in perspective, so nothing sits on a flat ground */
+.deck-room { position: fixed; inset: 0; z-index: var(--z-field); overflow: hidden; pointer-events: none; background: var(--room-wash-a), var(--room-wash-b), var(--room-wash-c), var(--room-base); }
+.deck-room i { position: absolute; display: block; --drift: max(calc(var(--scroll-y) * var(--room-rate)), calc(-1 * var(--room-drift-max))); }
+.room-orbit { border: var(--hair) solid var(--orbit-a); border-radius: 50%; box-shadow: 0 var(--sp-5) var(--room-glow-r) var(--orbit-glow), inset 0 var(--hair) var(--hair) var(--orbit-glow); }
+.room-orbit.a { width: var(--orbit-a-w); height: var(--orbit-a-h); left: var(--orbit-a-x); top: var(--orbit-a-y); transform: perspective(var(--room-persp)) rotateX(var(--orbit-a-rx)) rotateZ(var(--orbit-a-rz)) translateY(var(--drift)); }
+.room-orbit.b { width: var(--orbit-b-w); height: var(--orbit-b-h); left: var(--orbit-b-x); top: var(--orbit-b-y); border-color: var(--orbit-b); transform: perspective(var(--room-persp)) rotateX(var(--orbit-b-rx)) rotateZ(var(--orbit-b-rz)) translateY(var(--drift)); }
+.room-floor { inset: var(--floor-inset); background: repeating-linear-gradient(var(--floor-dir-x), transparent 0 calc(var(--floor-step-x) - var(--hair)), var(--floor-line) calc(var(--floor-step-x) - var(--hair)) var(--floor-step-x)), repeating-linear-gradient(var(--floor-dir-y), transparent 0 calc(var(--floor-step-y) - var(--hair)), var(--floor-line) calc(var(--floor-step-y) - var(--hair)) var(--floor-step-y)); transform: perspective(var(--floor-persp)) rotateX(var(--floor-rx)); mask-image: radial-gradient(ellipse, black, transparent var(--floor-mask)); }
+.room-beam { width: var(--beam-w); height: var(--hair); left: var(--beam-x); top: var(--beam-y); background: var(--beam); transform: rotate(var(--beam-rz)) translateY(var(--drift)); box-shadow: 0 var(--sp-5) var(--room-glow-r) var(--beam-spread) var(--beam-glow); }
+@media (prefers-reduced-motion: reduce) { .deck-room i { --drift: 0; } }
+.lens.xwide { width: var(--lens-w-xwide); }
+/* a long menu scrolls instead of running off the screen */
+.menu.is-long { max-height: var(--menu-max-h); overflow-y: auto; overscroll-behavior: contain; }
+
+/* a part: content on the field you press to grow its glass. It rests on a faint fill, lifts on hover, and carries an
+   open mark (Deck.ICON.open) in its corner, so it reads as pressable before it is pressed. */
+.pt { position: relative; display: grid; align-content: start; gap: var(--sp-2); min-width: 0; padding: var(--pt-pad); border: 0; border-radius: var(--r-inner); background: var(--pt-rest); color: var(--ink); text-align: left; font: inherit; cursor: pointer; overflow: hidden; transition: background var(--dur-fast), transform var(--dur) var(--spring), box-shadow var(--dur) var(--ease); }
+.pt:hover, .pt[aria-expanded="true"] { background: var(--pt-hover); transform: translateY(var(--pt-lift)); box-shadow: var(--pt-shadow); }
+.pt:focus-visible { outline: var(--focus-w) solid var(--focus-ring); outline-offset: var(--focus-w); }
+.pt-name { display: flex; align-items: center; gap: var(--sp-2); font-family: var(--font-data); font-size: var(--fs-micro); letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--ink-faint); white-space: nowrap; }
+.pt-fig { font-family: var(--font-data); font-size: var(--fs-big); line-height: var(--lh-figure); white-space: nowrap; }
+.pt-fig small { font-size: var(--fs-name); color: var(--ink-quiet); }
+.pt-cap { font-size: var(--fs-small); color: var(--ink-quiet); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pt-vis { margin-top: var(--sp-2); min-width: 0; }
+.pt-go { position: absolute; top: var(--pt-pad); right: var(--pt-pad); width: var(--go-s); height: var(--go-s); color: var(--ink); opacity: var(--go-a); transition: opacity var(--dur-fast), transform var(--dur) var(--spring); }
+.pt-go .ico { width: 100%; height: 100%; }
+.pt:hover .pt-go, [aria-expanded="true"] > .pt-go { opacity: 1; transform: translate(var(--hair), calc(-1 * var(--hair))); }
+.need-float span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* panel rows inside a lens (name, state, control under it), the "/" search glass, and wires between parts */
+.lens .fill { flex: 1; min-width: 0; }
+.lens .changes { display: grid; gap: var(--sp-2); }
+.lens .lr { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--sp-3); row-gap: var(--lr-gap); padding: var(--lr-pad) 0; min-width: 0; }
+.lens .lr + .lr { border-top: var(--hair) solid var(--hairline); }
+.lens .lr-nm { font-size: var(--fs-body); font-weight: var(--w-med); min-width: 0; }
+.lens .lr-nm small { display: block; margin-top: var(--sp-1); font-size: var(--fs-small); font-weight: var(--w-reg); color: var(--ink-faint); }
+.lens .lr-ctl { grid-column: 1 / -1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); }
+.lens .lr-ctl .notch { flex: 1 1 100%; }
+.lens .lr .sv { min-width: 0; max-width: var(--sv-w); }
+.lens .lr.is-flash { background: var(--flash); border-radius: var(--r-inner); }
+.lens .lr-sub { grid-column: 1 / -1; display: grid; gap: var(--sp-2); }
+.lens .lr-acts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.lens .lr-ask { grid-column: 1 / -1; display: flex; align-items: center; gap: var(--sp-3); font-family: var(--font-data); font-size: var(--fs-small); color: var(--vermilion); }
+.lens .lr-ask span { flex: 1; }
+.lens .lr-why { grid-column: 1 / -1; font-size: var(--fs-small); color: var(--vermilion); }
+.lens .kvs { display: grid; gap: var(--sp-2); }
+.lens .kvs div { display: flex; justify-content: space-between; gap: var(--sp-3); font-size: var(--fs-small); color: var(--ink-quiet); }
+.lens .kvs b { font-family: var(--font-data); font-weight: var(--w-reg); color: var(--ink); text-align: right; overflow-wrap: anywhere; }
+.lens .lr-in { flex: 1; min-width: 0; min-height: var(--btn-h); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-btn); background: var(--fill); color: var(--ink); font: inherit; font-family: var(--font-data); font-size: var(--fs-small); outline: none; }
+.lens .lr-in:focus-visible { background: var(--fill-hover); }
+.lens .sign-code { font-family: var(--font-data); font-size: var(--fs-figure); letter-spacing: var(--track-eyebrow); }
+.lens .sign-why { color: var(--ink-quiet); font-size: var(--fs-small); overflow-wrap: anywhere; }
+.lens .sign-word { color: var(--vermilion); }
+.lens textarea.lr-in { width: 100%; min-height: var(--ta-h); padding: var(--sp-2) var(--sp-3); resize: vertical; line-height: var(--lh); }
+.lens .vbig { font-family: var(--font-data); font-size: var(--fs-big); line-height: var(--lh-figure); }
+.lens .ch { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--sp-3); font-size: var(--fs-small); }
+.lens .ch b { font-family: var(--font-data); font-weight: var(--w-reg); color: var(--ink-quiet); white-space: nowrap; }
+.lens .lr-sec { padding-top: var(--sp-5); }
+.lens .lr-sec:first-child { padding-top: 0; }
+.lens .lr-cons { grid-column: 1 / -1; display: grid; gap: var(--sp-1); font-family: var(--font-data); font-size: var(--fs-small); color: var(--ink-quiet); }
+.find { position: fixed; z-index: var(--z-lens); top: var(--top-clear); left: 50%; width: var(--find-w); margin-left: var(--find-neg); border-radius: var(--r-lens); padding: var(--sp-3); display: grid; gap: var(--sp-2); }
+.find input { min-height: var(--btn-h); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-btn); background: var(--fill); color: var(--ink); font: inherit; font-size: var(--fs-body); outline: none; }
+.find .find-list { display: grid; max-height: var(--find-list-h); overflow-y: auto; }
+.find .find-list button { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-3); align-items: center; min-height: var(--btn-h); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-item); background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.find .find-list button:hover, .find .find-list button.is-on { background: var(--fill-hover); }
+.find .find-list b { font-family: var(--font-data); font-weight: var(--w-reg); font-size: var(--fs-small); color: var(--ink-faint); }
+.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.wires path { fill: none; stroke: var(--wire); stroke-width: var(--wire-w); vector-effect: non-scaling-stroke; }
+.wires path.back, .wires path.side { stroke-dasharray: var(--wire-dash); }
+.wires path.live { stroke: var(--wire-live); }
+.wires circle { fill: var(--wire); r: var(--wire-dot); }
+.pt.is-flash { background: var(--flash); }
+.full-w { width: 100%; }
+.span-all { grid-column: 1 / -1; }
+
+/* ---------- locked: this browser holds no key splice takes (a read answered 401) ----------
+   api.js sets the page's own content aside and puts the one way back on the field, in the inspect glass's own optics:
+   the state with its lamp, then the three steps in a row. The header stays, so the page says where it is. */
+body.locked .centre > :not(.head):not(.lock-glass), body.locked .rail, body.locked .comp-wrap, body.locked .need-float { display: none; }
+.lock-glass { position: relative; display: grid; grid-template-columns: auto 1fr; align-items: center; gap: var(--sp-7); padding: var(--sp-6); border-radius: var(--r-lens);
+  --lens-bezel: var(--lens-bezel-i); --lens-depth: var(--lens-depth-i); --lens-frost: var(--lens-frost-i); --lens-zoom: var(--lens-zoom-i); --core-a: var(--lens-core-a); }
+.lock-state { display: flex; align-items: center; gap: var(--sp-4); }
+.lock-state .lamp { --c: var(--ormolu); }
+.lock-word { margin: 0; font-size: var(--fs-title); line-height: var(--lh-tight); }
+.lock-wait { margin: var(--sp-1) 0 0; color: var(--ink-quiet); white-space: nowrap; }
+.lock-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-5); }
+.lock-step { display: grid; align-content: start; gap: var(--sp-2); padding-left: var(--sp-5); border-left: var(--hair) solid var(--hairline); }
+.lock-way { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3); }
+.lock-cmd { font-family: var(--font-data); font-size: var(--fs-figure); color: var(--ink); white-space: nowrap; }
+.lock-say { color: var(--ink-quiet); }
+.lock-said { font-family: var(--font-data); font-size: var(--fs-small); color: var(--verdigris); }
+.lock-said[data-tone="bad"] { color: var(--vermilion); }
+@media (max-width: 70rem) { .lock-glass, .lock-steps { grid-template-columns: 1fr; } }

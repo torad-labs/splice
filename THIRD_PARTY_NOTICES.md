@@ -95,17 +95,33 @@ Forked at upstream commit `d66dd54d7baed0059d2fc34280b409ee6c6730df`
 
 ## Console fonts
 The fonts the console's pages load (`app/src/main/resources/console/fonts/`), by family, each with its license text beside the font files.
+- Barlow (`barlow-300.woff2`, `barlow-400.woff2`, `barlow-500.woff2`)
+  - Copyright 2017 The Barlow Project Authors (https://github.com/jpt/barlow)
+  - License: SIL Open Font License, Version 1.1
+  - Full license text: `app/src/main/resources/console/fonts/OFL-Barlow.txt`
+- DM Mono (`dm-mono-400.woff2`, `dm-mono-500.woff2`)
+  - Copyright 2020 The DM Mono Project Authors (https://www.github.com/googlefonts/dm-mono)
+  - License: SIL Open Font License, Version 1.1
+  - Full license text: `app/src/main/resources/console/fonts/OFL-DM-Mono.txt`
+- The session reader at `/reply-view/` keeps the three faces it was set in, which the Night Deck pages do not load:
+  - Fraunces (`fraunces-400.woff2`): Copyright 2018 The Fraunces Project Authors (https://github.com/undercasetype/Fraunces); SIL Open Font License, Version 1.1; full license text `app/src/main/resources/console/fonts/OFL-Fraunces.txt`
+  - IBM Plex Mono (`ibm-plex-mono-400.woff2`, `ibm-plex-mono-500.woff2`, `ibm-plex-mono-600.woff2`): SIL Open Font License, Version 1.1; full license text `app/src/main/resources/console/fonts/OFL-IBM-Plex.txt`
+  - Source Serif 4 (`source-serif-4-400.woff2`): Copyright 2014 - 2023 Adobe (http://www.adobe.com/), with Reserved Font Name ‘Source’. All Rights Reserved.; SIL Open Font License, Version 1.1; full license text `app/src/main/resources/console/fonts/OFL-Source-Serif-4.txt`
+
+## Downloads website fonts
+The fonts the splice.torad.ai page loads (`tools/release/downloads/website/console/fonts/`), the console's faces before
+the Night Deck kit, by family, each with its license text beside the font files.
 - Fraunces (`fraunces-400.woff2`)
   - Copyright 2018 The Fraunces Project Authors (https://github.com/undercasetype/Fraunces)
   - License: SIL Open Font License, Version 1.1
-  - Full license text: `app/src/main/resources/console/fonts/OFL-Fraunces.txt`
+  - Full license text: `tools/release/downloads/website/console/fonts/OFL-Fraunces.txt`
 - IBM Plex Mono (`ibm-plex-mono-400.woff2`, `ibm-plex-mono-500.woff2`, `ibm-plex-mono-600.woff2`)
   - License: SIL Open Font License, Version 1.1
-  - Full license text: `app/src/main/resources/console/fonts/OFL-IBM-Plex.txt`
+  - Full license text: `tools/release/downloads/website/console/fonts/OFL-IBM-Plex.txt`
 - Source Serif 4 (`source-serif-4-400.woff2`)
   - Copyright 2014 - 2023 Adobe (http://www.adobe.com/), with Reserved Font Name ‘Source’. All Rights Reserved.
   - License: SIL Open Font License, Version 1.1
-  - Full license text: `app/src/main/resources/console/fonts/OFL-Source-Serif-4.txt`
+  - Full license text: `tools/release/downloads/website/console/fonts/OFL-Source-Serif-4.txt`
 
 ## reply-view (console reader)
 The session reader splice serves at `/reply-view/` pastes two libraries whole, each inside a function scope of its own, into `app/src/main/resources/console/reply-view/reply-view.js`, with their license banners kept.

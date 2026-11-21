@@ -22,7 +22,7 @@ import { MEDIA } from "../downloads/website/build.ts";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 const BUILD = join(REPO, "tools/release/downloads/website/build.ts");
-const CONSOLE = join(REPO, "app/src/main/resources/console");
+const SHEETS = join(REPO, "tools/release/downloads/website/console");
 const KEEP = JSON.parse(readFileSync(join(REPO, "tools/release/downloads/website/keep.json"), "utf8")) as Record<string, string[]>;
 
 /** A fresh folder under the system's temp folder, removed when the file's tests end. */
@@ -140,13 +140,15 @@ describe("splice.torad.ai's website", () => {
     expect(words(page)).toContain(command!);
   });
 
-  test("the page draws on the console's current stylesheets, byte for byte", () => {
+  // (Rewritten Nov 2026: the console moved to the Night Deck kit, and the bands' console markup kept its own copies of
+  // the stylesheets it was drawn on, beside the page in console/.)
+  test("the page draws on its copies of the console's stylesheets, byte for byte", () => {
     for (const name of ["tokens.css", "console.css"]) {
       expect(page).toContain(`href="/console/${name}"`);
-      expect(readFileSync(join(out, "console", name), "utf8")).toBe(readFileSync(join(CONSOLE, name), "utf8"));
+      expect(readFileSync(join(out, "console", name), "utf8")).toBe(readFileSync(join(SHEETS, name), "utf8"));
     }
     for (const css of files(join(out, "console")).filter((f) => f.endsWith(".css"))) {
-      expect(readFileSync(join(out, "console", css), "utf8")).toBe(readFileSync(join(CONSOLE, css), "utf8"));
+      expect(readFileSync(join(out, "console", css), "utf8")).toBe(readFileSync(join(SHEETS, css), "utf8"));
     }
   });
 
@@ -198,7 +200,7 @@ describe("splice.torad.ai's website", () => {
   // A phone's browser bar takes the page's colour: the console's own ground in each theme, so the bar and the page meet
   // without a seam.
   test("the browser bar wears the page's own ground in each theme", () => {
-    const tokens = readFileSync(join(CONSOLE, "tokens.css"), "utf8");
+    const tokens = readFileSync(join(SHEETS, "tokens.css"), "utf8");
     const token = (name: string) => new RegExp(`--splice-${name}:\\s*(#[0-9A-Fa-f]{6})`).exec(tokens)?.[1]?.toLowerCase();
     const bar = (scheme: string) => headEntries(page).find((e) => e.startsWith(`theme-color (prefers-color-scheme: ${scheme}) = `))?.split(" = ")[1]?.toLowerCase();
     expect(bar("light")).toBe(token("paper"));

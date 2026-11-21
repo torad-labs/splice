@@ -30,49 +30,55 @@ const API = (() => {
   // one way back, `splice console` with Copy, which signs this browser in again whatever lost it.
   // THE LOCK SHOWS WHAT IS HAPPENING, IN ORDER (Oct 29): the lock and its state, a ring turning beside "Waiting for sign-in"
   // while no key has arrived, the command to run with Copy, and the three things that follow it as three cards in a row, so
-  // the page needs no sentence. Copy says what it did beside itself (DRAW.result) instead of renaming the button, and stays
+  // the page needs no sentence. Copy says what it did beside itself instead of renaming the button, and stays
   // pressable after a failure. The moment this browser's key is kept (the tab the command opens trades its code and stores
   // the key, which every other tab of this browser hears as a storage event) the lock lifts and the page reads again where it
   // stood, with no reload.
-  const GLYPH = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
-  const LOCK_PATH = '<rect x="5" y="10.8" width="14" height="9.7" rx="2.2"/><path d="M8.2 10.8V8a3.8 3.8 0 0 1 7.6 0v2.8"/>';
-  const STEP_ICON = {
-    run: GLYPH('<rect x="3" y="4.5" width="18" height="15" rx="2.2"/><path d="M7.5 9.5l3 2.5-3 2.5M12.8 14.8h4"/>'),
-    tab: GLYPH('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9.5h18M7 5v4.5"/>'),
-    lift: GLYPH('<rect x="5" y="10.8" width="14" height="9.7" rx="2.2"/><path d="M8.2 10.8V7.6a3.8 3.8 0 0 1 7.6 0"/>'),
-  };
+  // The page is read again in place: it hears splice:signed-in and reads, as it does on its own clock (deck-common.js
+  // reads its providers again on it). A page with no field (none of the console's) reloads.
   function unlock(box) {
     box.remove();
     document.body.classList.remove("locked");
-    if (typeof CONSOLE !== "undefined") CONSOLE.navigate(location.href, { restore: true }); else location.reload();
+    if (document.querySelector("main.field")) dispatchEvent(new CustomEvent("splice:signed-in"));
+    else location.reload();
   }
-  function lock() {
-    const main = document.querySelector("main.page");
-    if (!main || main.querySelector(".lockedby")) return;
-    document.body.classList.add("locked");
+  /** The lock, in the kit's glass on the field, under the page's own header. */
+  function deckLock(field) {
     const box = document.createElement("section");
-    box.className = "lockedby";
+    box.className = "glass lock-glass";
+    box.setAttribute("data-lens", "");
     box.setAttribute("role", "alert");
-    // one row across the plate: the lock with its word and what it waits on, then the three steps joined by dashed arrows
-    box.innerHTML = `<div class="shl-hero"><svg class="shl-ring" viewBox="0 0 120 120" aria-hidden="true"><circle class="shl-r0" cx="60" cy="60" r="56"/><circle class="shl-arc" cx="60" cy="60" r="56"/>`
-      + `<g class="shl-glyph" transform="translate(60 60) scale(3.6) translate(-12 -12)">${LOCK_PATH}</g></svg>`
-      + `<div><p class="shl-word">Locked</p><p class="shl-wait">Waiting for sign-in</p></div></div>`
-      + `<div class="shl-path"><div class="shl-node"><div class="way shl-row">${STEP_ICON.run}<p class="kicker">Run in a terminal</p><code>splice console</code>`
-      // the one act left on the page stands at the console's own act height, never the small one
-      + `<button class="act quiet" type="button">Copy</button></div></div><span class="shl-link" aria-hidden="true"></span>`
-      + `<div class="shl-node"><div class="shl-row">${STEP_ICON.tab}<p class="kicker">A tab opens</p></div><p class="shl-say">Signs this browser in</p></div><span class="shl-link" aria-hidden="true"></span>`
-      + `<div class="shl-node"><div class="shl-row">${STEP_ICON.lift}<p class="kicker">The lock lifts</p></div><p class="shl-say pending">Page reads again</p></div></div>`;
-    const copy = box.querySelector("button"), way = box.querySelector(".way");
+    box.innerHTML = `<div class="lock-state"><span class="lamp ring live"></span><div><p class="lock-word">Locked</p><p class="lock-wait">Waiting for sign-in</p></div></div>`
+      + `<ol class="lock-steps"><li class="lock-step"><span class="eyebrow">Run in a terminal</span><span class="lock-way"><code class="lock-cmd">splice console</code>`
+      + `<button class="btn press" type="button">Copy</button></span></li>`
+      + `<li class="lock-step"><span class="eyebrow">A tab opens</span><span class="lock-say">Signs this browser in</span></li>`
+      + `<li class="lock-step"><span class="eyebrow">The lock lifts</span><span class="lock-say">Page reads again</span></li></ol>`;
+    const copy = box.querySelector("button"), way = box.querySelector(".lock-way");
     copy.addEventListener("click", async (e) => {
       e.stopPropagation();
-      let said = DRAW.result("Copied", "good");
+      const said = document.createElement("span");
+      said.className = "lock-said";
+      said.textContent = "Copied";
       // one phrase for a copy that did not land, the one the request pane uses
-      try { await navigator.clipboard.writeText("splice console"); } catch { said = DRAW.result("Could not copy", "bad"); }
-      way.querySelector(".result")?.remove();
-      copy.insertAdjacentHTML("afterend", said);
-      setTimeout(() => way.querySelector(".result")?.remove(), 1600);
+      try { await navigator.clipboard.writeText("splice console"); } catch { said.textContent = "Could not copy"; said.dataset.tone = "bad"; }
+      way.querySelector(".lock-said")?.remove();
+      way.append(said);
+      setTimeout(() => said.remove(), 1600);
     });
-    (main.querySelector(":scope > .head") || main.firstChild)?.after(box);
+    const centre = field.querySelector(".centre") || field;
+    const head = centre.querySelector(":scope > .head");
+    if (head) head.after(box); else centre.prepend(box);
+    if (typeof DeckLens !== "undefined") { DeckLens.add(box); DeckLens.redraw(box); }
+    return box;
+  }
+  function lock() {
+    const field = document.querySelector("main.field");
+    if (!field || field.querySelector(".lock-glass")) return;
+    document.body.classList.add("locked");
+    held(deckLock(field));
+  }
+  /** The lock lifts the moment another tab of this browser stores the console key. */
+  function held(box) {
     addEventListener("storage", function lifted(e) {
       if (e.key !== STORE || !e.newValue) return;
       removeEventListener("storage", lifted);
@@ -83,7 +89,7 @@ const API = (() => {
   // it did. The pilot's own calls are not counted: its ask is always open.
   let pending = 0;
   // WHAT THE SHELL READS, IT READS ONCE WITH THE PAGE (Oct 27). The top bar's links carry what waits behind them
-  // (kit.js markNav), which takes the sessions and the commands' live turns, and the page beside it often has just
+  // (the need float), which takes the sessions and the commands' live turns, and the page beside it often has just
   // read the same. The newest answer to each of those reads is kept here, and any of them landing is announced, so the
   // bar redraws off the page's own read the moment it lands, and reads for itself only when no page has lately.
   const KEPT = /^\/api\/(?:sessions|heads|heads\/[^/]+\/turns\/live)$/;
@@ -205,7 +211,6 @@ const API = (() => {
       if (res.status === 401 && !signal?.aborted) lock();
       const answer = { ok: res.ok, status: res.status, body: parsed };
       if (method === "GET") hear(path, answer);
-      if (method === "GET" && res.ok && path === "/api/accounts" && typeof DRAW !== "undefined") DRAW.loginRoster(parsed?.accounts);
       return answer;
     } catch {
       return { ok: false, status: 0, body: null };

@@ -35,7 +35,7 @@ function lock() {
   if (document.body.dataset.locked) return;
   document.body.dataset.locked = "1";
   const p = document.createElement("p");
-  p.className = "locked";
+  p.className = "rvp-locked";
   const code = document.createElement("code");
   code.textContent = "splice console";
   p.append(LOCKED, code, " in a terminal, then reload.");

@@ -1,6 +1,7 @@
 # splice.torad.ai's website
 
-One page whose product parts are the console's own markup, on the console's own stylesheets, with made-up data. The
+One page whose product parts are the console's markup, on copies of the console's stylesheets kept beside it in
+`console/` (the stylesheets the console had before it moved to the Night Deck kit in November 2026), with made-up data. The
 worker beside this folder (`../worker.ts`) serves what the build writes at every path but `/download`.
 
 ```sh

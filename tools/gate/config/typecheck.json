@@ -11,6 +11,7 @@
     "tools/probes/tsconfig.json",
     "tools/screen-review/tsconfig.json",
     "tools/console/tsconfig.json",
+    "tools/console-own/tsconfig.json",
     ".claude/hooks/tsconfig.json",
     "tools/instrumentation-bench/tsconfig.json",
     ".campaign/checks/server/tsconfig.json",

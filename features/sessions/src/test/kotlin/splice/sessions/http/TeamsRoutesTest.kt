@@ -17,6 +17,7 @@ import splice.core.session.ActivityAction
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import splice.sessions.activity.MessageEdge
+import splice.sessions.query.SessionAccountPlans
 import splice.sessions.query.SessionHead
 import splice.sessions.transcript.SentTexts
 import java.nio.file.Path
@@ -291,11 +292,37 @@ class TeamsRoutesTest {
                     """"tokens":{"input":1600000,"cache_read":400000,"cache_write":0,"output":1000010},""" +
                     """"plan_turns":0,"moved_turns":2,"priced_moved_turns":2}""",
             ),
-            JsonObject(builder - "cost_usd"),
+            JsonObject(builder - "cost_usd" - "week"),
         )
         // 1.6M input at 1.0, 0.4M cache reads at 0.1, 1,000,010 output at 2.0, per million.
         assertEquals(3.64002, builder.getValue("cost_usd").jsonPrimitive.double, 1e-9)
         val lead = rig.find(body, "slots", "slot", "lead")
         assertEquals("null", lead.getValue("cost_usd").toString(), "a turn with no rate card leaves no dollar figure")
+    }
+
+    @Test
+    fun `a member's week counts its last 7 days since joining, priced at API prices even where a plan paid`() {
+        val id = rig.team().id
+        val now = AT + 8 * DAY
+        val codex = rig.head(
+            "codex",
+            listOf(rig.row(AT, BUILDER, input = 1_000_000), rig.row(now - DAY, BUILDER, input = 1_000_000, out = 0)),
+        ).copy(plans = SessionAccountPlans { true })
+        val routes = TeamsRoutes(
+            teams = TeamSource { rig.store },
+            heads = mapOf("codex" to codex),
+            registry = rig.registry,
+            activity = ActivitySource { rig.stores },
+            texts = texts,
+            clock = WallClock { now },
+        )
+        val builder = rig.find(rig.json(routes.economics(id).body), "slots", "slot", "b1")
+        assertEquals(2, builder.getValue("turns").jsonPrimitive.content.toInt(), "the lifetime keeps both requests")
+        assertEquals("null", builder.getValue("cost_usd").toString(), "a plan paid both, so the lifetime has no cost")
+        val week = builder.getValue("week").jsonObject
+        val weekTurns = week.getValue("turns").jsonPrimitive.content.toInt()
+        assertEquals(1, weekTurns, "the request 8 days back is outside the week")
+        // 1M input at 1.0 per million: what the week's request comes to at API prices
+        assertEquals(1.0, week.getValue("cost_usd").jsonPrimitive.double, 1e-9)
     }
 }

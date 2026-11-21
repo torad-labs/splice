@@ -2,7 +2,7 @@
 // "done" for a press the page ignored (pilot.js's header), and a line made only of figures and their units ("52k / 200k",
 // "3s ago", "13 min") changes as time passes, not because of an act: a Sessions row reads "12 min" before the press and
 // "13 min" after it, and that is not a change the act made. The rule is PILOT.ticking, read here through the real page in
-// Chromium, since pilot.js loads on every console page. Review of PR 450, round 2: the regex's replacement (CodeQL
+// Chromium, since pilot.js loads on every console page (Activity, a deck page, since the old Requests page went). Review of PR 450, round 2: the regex's replacement (CodeQL
 // js/redos, alert 31) dropped the units the old pattern spelled from two ("min" from "m" and "in"), so a minutes line
 // became new words.
 import { afterAll, beforeAll, expect, test } from "bun:test";
@@ -27,7 +27,7 @@ let page: Page;
 beforeAll(async () => {
   browser = await chromium.launch({ executablePath: process.env.SCREEN_REVIEW_BROWSER || undefined, args: ["--no-sandbox"] });
   page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-  await page.goto(`http://127.0.0.1:${server.port}/requests.html`, { waitUntil: "load" });
+  await page.goto(`http://127.0.0.1:${server.port}/activity.html`, { waitUntil: "load" });
 }, 30_000);
 afterAll(async () => {
   await browser.close();

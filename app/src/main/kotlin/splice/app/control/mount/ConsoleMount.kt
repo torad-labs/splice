@@ -68,6 +68,17 @@ internal class ConsoleMount(
         if (browser) call.respondRedirect("/$FIRST_PAGE") else call.respondText(ROOT_ANSWER, ContentType.Text.Plain)
     }
 
+    /** Nov 2026 (the Night Deck console): the pages whose content moved into another page, and where it went. An old
+     *  link or bookmark lands on the same thing there, its query kept: Requests and Usage on Activity, which reads the
+     *  same session, project, account, model and win names; Models on Providers, which opens ?cmd=<command>; Compare on
+     *  Providers' Compare models. */
+    private val moved = mapOf(
+        "requests.html" to "activity.html",
+        "usage.html" to "activity.html",
+        "models.html" to "providers.html",
+        "compare.html" to "providers.html?open=compare",
+    )
+
     fun register(route: Route) {
         route.get("/") { root(call) }
         route.head("/") { root(call) }
@@ -87,11 +98,7 @@ internal class ConsoleMount(
         }
         route.get("/{asset...}") {
             val name = call.parameters.getAll("asset").orEmpty().joinToString("/")
-            if (name == READER_DIR || name == "$READER_DIR/") {
-                val query = call.request.queryString()
-                call.respondRedirect("/$READER_DIR/$READER_PAGE" + if (query.isEmpty()) "" else "?$query")
-                return@get
-            }
+            if (redirected(call, name)) return@get
             val type = typeOf(name)
             val bytes = type?.let { read(name) }
             if (type == null || bytes == null) {
@@ -109,6 +116,17 @@ internal class ConsoleMount(
     private suspend fun secret(call: ApplicationCall, status: HttpStatusCode, field: String, value: String) {
         call.response.cacheControl(CacheControl.NoStore(null))
         JsonReply(status, buildJsonObject { put(field, value) }.toString()).send(call)
+    }
+
+    /** [name] answered with the redirect it asks for, query kept: the session reader's folder (reply-view) to its page,
+     *  or a page that moved (the Night Deck); false when it is neither. */
+    private suspend fun redirected(call: ApplicationCall, name: String): Boolean {
+        val to = if (name == READER_DIR || name == "$READER_DIR/") "$READER_DIR/$READER_PAGE" else moved[name]
+        if (to == null) return false
+        val query = call.request.queryString()
+        val sep = if ('?' in to) "&" else "?"
+        call.respondRedirect(if (query.isEmpty()) "/$to" else "/$to$sep$query")
+        return true
     }
 
     /** Whether [name] is one of the files served here: a console file, or one of the reply reader's own. */

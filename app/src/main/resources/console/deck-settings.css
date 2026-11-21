@@ -1,0 +1,131 @@
+:root {
+  --mc-max: 100rem;
+  --crv-h: 8rem;
+  --crv-area: rgb(111 168 207 / 0.14);
+  --crv-line: rgb(111 168 207 / 0.85);
+  --crv-m-w: 0.12rem;
+  --gates-fr: 1.25fr;
+  --back-span: 1 / -1;
+  --two: 2;
+  --sys-cols: 3;
+  --flow-gap: 4.4rem;
+  --col-cc: 15rem;
+  --col-step: 10.5rem;
+  --back-h: 7.5rem;
+  --pt-min-h: 11rem;
+  --wire-bend: 2.7rem;
+  --wire-anchor-max: 4rem;
+  --gl-h: 3.4rem;
+  --gl-name-w: 9rem;
+  --gl-val-w: 7.5rem;
+  --gl-bar-h: 0.32rem;
+  --sw-h: 6.4rem;
+  --sw-tick-h: 1.6rem;
+  --sw-tick-neg: calc(-1 * var(--sw-tick-h) / 2);
+  --sw-mark-w: 0.14rem;
+  --stk-h: 0.9rem;
+  --stk-gap: 0.18rem;
+  --srv-s: 0.62rem;
+  --srv-gap: 0.32rem;
+  --mtr-h: 0.32rem;
+  --sys-gap: 2.4rem;
+  --sys-row-gap: 3.2rem;
+  --seg-a: 1;
+  --seg-b: 0.62;
+  --seg-c: 0.36;
+  --seg-d: 0.2;
+  --wait-ring: 0.16rem;
+}
+
+/* the machine, framed: a wide screen draws the same machine larger */
+.mc { position: relative; max-width: var(--mc-max); margin: 0 auto; display: grid; gap: var(--sp-7); }
+.mc-head { padding-top: var(--sp-5); display: flex; justify-content: space-between; align-items: flex-end; gap: var(--sp-4); }
+.mc-head h1 { margin: var(--sp-2) 0 0; font-size: var(--fs-title); font-weight: var(--w-med); line-height: var(--lh-tight); }
+
+/* a part: content on the field, a button you press to open its glass */
+.pt { position: relative; display: grid; align-content: start; gap: var(--sp-2); min-width: 0; padding: var(--pt-pad); border: 0; border-radius: var(--r-inner); background: transparent; color: var(--ink); text-align: left; font: inherit; cursor: pointer; overflow: hidden; transition: background var(--dur-fast); }
+.pt { background: var(--pt-rest); transition: background var(--dur-fast), transform var(--dur) var(--spring), box-shadow var(--dur) var(--ease); }
+.pt-changed { width: var(--dot-s); height: var(--dot-s); border-radius: 50%; background: var(--ink-quiet); }
+.pt-wait { width: var(--lamp); height: var(--lamp); border-radius: 50%; box-shadow: inset 0 0 0 var(--wait-ring) var(--ormolu); }
+
+/* the flow: Claude Code, intake, line, gates, stall watch, and reasoning back */
+.mc-flow { position: relative; display: grid; grid-template-columns: var(--col-cc) minmax(0, var(--gates-fr)) minmax(0, 1fr); grid-template-rows: auto var(--back-h); column-gap: var(--flow-gap); row-gap: var(--sp-4); align-items: start; }
+.pt-cc, .pt-intake, .pt-line { min-height: var(--pt-min-h); }
+.pt-back { grid-column: var(--back-span); grid-row: var(--two); justify-self: center; align-self: center; display: flex; align-items: center; gap: var(--sp-4); }
+.pt-back .pt-fig { font-size: var(--fs-figure); }
+/* a part laid out as one line keeps its arrow in the line, after the figure, never over its last letters */
+.pt-back .pt-go { position: static; order: 1; flex: none; align-self: flex-start; }
+
+/* gates: one lane per command with traffic, each its peak against its limit */
+.pt-gates { display: grid; gap: var(--sp-1); min-width: 0; }
+.pt-gates > .pt { padding-bottom: var(--sp-2); }
+.gl { position: relative; display: grid; grid-template-columns: var(--gl-name-w) minmax(0, 1fr) var(--gl-val-w) var(--go-s); align-items: center; gap: var(--sp-3); min-height: var(--gl-h); padding: 0 var(--pt-pad); border: 0; border-radius: var(--r-inner); background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; overflow: hidden; transition: background var(--dur-fast); }
+.gl { background: var(--pt-rest); }
+.gl:hover, .gl[aria-expanded="true"] { background: var(--pt-hover); }
+.gl-nm { display: flex; align-items: center; gap: var(--sp-2); font-family: var(--font-data); font-size: var(--fs-small); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gl-nm i { flex: none; width: var(--dot-s); height: var(--dot-s); border-radius: 50%; background: var(--pc); }
+.gl-bar { position: relative; height: var(--gl-bar-h); border-radius: var(--gl-bar-h); background: var(--hairline); }
+.gl-bar i { position: absolute; inset: 0 auto 0 0; width: calc(var(--u) * 100%); border-radius: inherit; background: var(--pc); transition: width var(--dur) var(--spring); }
+.gl-val { font-family: var(--font-data); font-size: var(--fs-small); color: var(--ink-quiet); text-align: right; white-space: nowrap; }
+.gl-val b { color: var(--ink); font-weight: var(--w-reg); }
+.gl.is-idle { color: var(--ink-quiet); }
+
+/* stall watch: the four timers and the week's longest silence on one time line */
+.sw { position: relative; height: var(--sw-h); margin: 0 var(--sp-2); }
+.sw-line { position: absolute; left: 0; right: 0; top: 50%; height: var(--hair); background: var(--wire); }
+.sw-t { position: absolute; top: 50%; left: calc(var(--x) * 100%); transform: translateX(calc(-1 * 50%)); display: grid; justify-items: center; }
+.sw-t::before { content: ""; display: block; width: var(--sw-mark-w); height: var(--sw-tick-h); margin-top: var(--sw-tick-neg); background: var(--c); border-radius: var(--sw-mark-w); }
+.sw-t span { margin-top: var(--sp-1); font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-quiet); white-space: nowrap; }
+.sw-t.up { top: auto; bottom: 50%; }
+.sw-t.up::before { order: var(--two); margin-top: 0; margin-bottom: var(--sw-tick-neg); }
+.sw-t.up span { order: 1; margin: 0 0 var(--sp-1); }
+.sw-ends { display: flex; justify-content: space-between; font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-faint); margin: var(--sp-1) var(--sp-2) 0; }
+
+/* systems under the flow */
+.mc-sys { display: grid; grid-template-columns: repeat(var(--sys-cols), minmax(0, 1fr)); column-gap: var(--sys-gap); row-gap: var(--sys-row-gap); padding-top: var(--sp-5); border-top: var(--hair) solid var(--hairline); }
+.stk { display: flex; gap: var(--stk-gap); height: var(--stk-h); }
+.stk i { flex: var(--share) 1 0; min-width: var(--hair); border-radius: var(--stk-gap); background: var(--prussian); opacity: var(--a); }
+.stk-k { display: flex; gap: var(--sp-4); margin-top: var(--sp-2); font-size: var(--fs-small); color: var(--ink-quiet); white-space: nowrap; overflow: hidden; }
+.stk-k span { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.stk-k i { width: var(--dot-s); height: var(--dot-s); border-radius: var(--stk-gap); background: var(--prussian); opacity: var(--a); }
+.stk-k b { font-family: var(--font-data); font-weight: var(--w-reg); color: var(--ink); }
+.mtr { display: grid; grid-template-columns: var(--gl-val-w) minmax(0, 1fr); align-items: center; gap: var(--sp-3); font-family: var(--font-data); font-size: var(--fs-small); color: var(--ink-quiet); }
+.mtr + .mtr { margin-top: var(--sp-2); }
+.mtr-bar { position: relative; height: var(--mtr-h); border-radius: var(--mtr-h); background: var(--hairline); }
+.mtr-bar i { position: absolute; inset: 0 auto 0 0; width: calc(var(--u) * 100%); border-radius: inherit; background: var(--c, var(--prussian)); transition: width var(--dur) var(--spring); }
+.mtr-bar em { position: absolute; top: calc(-1 * var(--sp-1)); bottom: calc(-1 * var(--sp-1)); left: calc(var(--x) * 100%); width: var(--sw-mark-w); background: var(--ink); }
+.srv { display: flex; flex-wrap: wrap; gap: var(--srv-gap); margin-top: var(--sp-3); }
+.srv i { width: var(--srv-s); height: var(--srv-s); border-radius: 50%; background: var(--ink-faint); }
+.srv i.own { background: transparent; box-shadow: inset 0 0 0 var(--hair) var(--ink-faint); }
+.outs { display: flex; flex-wrap: wrap; gap: var(--sp-4); margin-top: var(--sp-3); font-size: var(--fs-small); color: var(--ink-quiet); }
+.outs span { display: inline-flex; align-items: center; gap: var(--sp-2); white-space: nowrap; }
+
+/* inside a lens: rows of label, state and control; nothing else */
+.lens .lr-cmd { display: grid; grid-template-columns: var(--gl-name-w) minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); }
+.lens .lr-cmd > span:first-child { display: flex; align-items: center; gap: var(--sp-2); font-family: var(--font-data); font-size: var(--fs-small); color: var(--ink-quiet); }
+.lens .lr-cmd > span:first-child i { width: var(--dot-s); height: var(--dot-s); border-radius: 50%; background: var(--pc); }
+/* a mode's switch for one command keeps its own width: the line's middle column is the room, never the switch's size */
+.lens .lr-cmd[data-mode] > .seg { justify-self: start; }
+.lens .adv { justify-self: start; }
+
+/* finding a setting: "/" opens a glass with a field and the matches */
+
+/* what you can press says so: a small open mark that brightens on hover */
+.gl .pt-go { position: static; }
+.pt:hover .pt-go, .gl:hover .pt-go, [aria-expanded="true"] > .pt-go { opacity: 1; transform: translate(var(--hair), calc(-1 * var(--hair))); }
+.pt-sys { min-height: var(--pt-min-h); }
+
+/* inside a lens: section heads in the internals door, the consequence of a value, the measured curve */
+.lens .crv { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-2); }
+.crv-plot { position: relative; height: var(--crv-h); }
+.crv-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.crv-a { fill: var(--crv-area); }
+.crv-l { fill: none; stroke: var(--crv-line); stroke-width: var(--wire-w); }
+.crv-v { position: absolute; left: calc(var(--x) * 100%); top: calc(var(--y) * 100%); transform: translate(calc(-1 * 100%), calc(-1 * 100%)); padding: 0 var(--sp-1) var(--sp-1) 0; font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-quiet); white-space: nowrap; }
+.crv-m { position: absolute; top: 0; bottom: 0; left: calc(var(--x) * 100%); width: var(--crv-m-w); background: var(--ink); transition: left var(--dur) var(--spring); }
+.crv-m.peak { background: var(--c); }
+.crv-ax { position: relative; height: var(--notch-l-h); font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-faint); }
+.crv-ax span { position: absolute; left: calc(var(--x) * 100%); transform: translateX(calc(-1 * 50%)); }
+.crv-ax span:first-child { transform: none; }
+.crv-ax span:last-child { transform: translateX(calc(-1 * 100%)); }
+.mc-live { --c: var(--verdigris); }

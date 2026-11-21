@@ -216,6 +216,8 @@ internal class UpstreamPlaygroundProbe(
         posted.row.write(read.outcome, read.usage)
         val requestJson = buildJsonObject {
             sender.login?.let { put("account", it.label) }
+            // the id the send's Requests row carries, so the console opens this send on Activity
+            put("turn_id", posted.row.id)
             put("url", url)
             putJsonObject("headers") { redacted(replySender.requestHeaders, creds).forEach { (k, v) -> put(k, v) } }
             put("body", turn.requestBody)

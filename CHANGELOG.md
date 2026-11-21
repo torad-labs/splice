@@ -26,6 +26,15 @@
   `splice add provider` installs a definition a team publishes, and `[door.commands.<name>]` gives a team's wrapper
   a command of its own on the door.
 
+- **The console is rebuilt: six pages on one design.** Sessions shows teams as columns of their sessions, and a
+  session opens into its conversation. Accounts sets each Claude account on a time axis at the moment it is usable
+  again, with the order splice moves through them; the other providers' logins stand beside it, and each opens the
+  same glass to use it now, rename it, sign it out or sign it in, with Add login for a provider that signs in with
+  one. Teams draws each team as its goal and members. Providers holds every provider, each command's own settings
+  and sign-in, and Compare models. Activity holds the window's requests and where they went, and a request opens
+  whole. Settings draws splice as what it is, each part opening its own controls, Modes among them. It has a night
+  and a day look, and its type and layout grow with the screen up to a 3840 px desk screen.
+
 ### Upgrading
 - **A value only a head holds stops the daemon from starting, and the fix session offers the move.** A head's
   window, tier models, standing prompt, an older selector prefix or an override that its provider does not say the
@@ -43,6 +52,11 @@
   splice too, run a second Desktop beside your own, on a config folder of its own.
 - Another lab's model is listed under an id Claude's clients keep, such as `claude-xai--4.7`. The selectors of
   today keep working.
+
+- **Four console pages moved into others, and their addresses follow.** Requests and Usage are in Activity, Models
+  is in Providers, and Compare is Providers' Compare models. An old link or bookmark lands on the page that took its
+  content with its query kept: `requests.html` and `usage.html` on `activity.html`, `models.html` on
+  `providers.html`, `compare.html` on `providers.html?open=compare`.
 
 ### Added
 - **A session's reply can be followed while it is being written.** `GET /api/sessions/{id}/live` on the control

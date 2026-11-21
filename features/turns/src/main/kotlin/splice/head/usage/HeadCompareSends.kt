@@ -9,6 +9,7 @@ import splice.core.model.TurnBill
 import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
+import splice.core.perf.PerfTurnIds
 import splice.core.perf.TurnPerf
 import splice.core.turn.Usage
 import splice.core.turn.noRequestUsage
@@ -17,14 +18,18 @@ import splice.core.util.FileIoTask
 import splice.head.HeadDeps
 import splice.head.perf.PerfAccount
 import splice.head.perf.PerfRowMeta
+import splice.head.perf.PerfTranscriptIds
 
-/** What one Compare models send was and how it ended. [usage] is null where the stream said nothing about tokens. */
+/** What one Compare models send was and how it ended. [usage] is null where the stream said nothing about tokens.
+ *  [request] is the id the send's row carries as its `turn_id` and its playground reply names, so the console opens the
+ *  send's row on Activity (activity.html#request=<id>); a send has no trace, so the row carries no `turn`. */
 public data class CompareAnswer(
     val model: String,
     val account: String?,
     val outcome: String,
     val elapsedMs: Long,
     val usage: Usage?,
+    val request: String? = null,
 )
 
 /** The head's side of a Compare models send: the budget's answer before the send, and the record after it. */
@@ -47,7 +52,7 @@ internal class HeadCompareSends(private val deps: HeadDeps) : CompareSends {
         perf.setCount(PerfKeys.ATTEMPTS, 0)
         perf.setCount(PerfKeys.COMPARE, 1)
         TurnBill.counters(noRequestUsage).forEach { (key, value) -> perf.setCount(key, value) }
-        write(model, account, OutcomeTag.BUDGET_BLOCKED.wire, perf.snapshot(), spend = false)
+        write(CompareAnswer(model, account, OutcomeTag.BUDGET_BLOCKED.wire, 0L, null), perf.snapshot(), spend = false)
         return block
     }
 
@@ -57,14 +62,22 @@ internal class HeadCompareSends(private val deps: HeadDeps) : CompareSends {
         perf.setCount(PerfKeys.ATTEMPTS, 1)
         perf.setCount(PerfKeys.COMPARE, 1)
         answer.usage?.let { TurnBill.counters(it).forEach { (key, value) -> perf.setCount(key, value) } }
-        write(answer.model, answer.account, answer.outcome, perf.snapshot(), spend = true)
+        write(answer, perf.snapshot(), spend = true)
     }
 
     /** A refused send leaves its row only: no rollup entry and no spend, as a refused turn leaves none, so the live hour
      *  agrees with the hour EconomicsFromRows rebuilds from the rows, which skips a refusal. */
-    private fun write(model: String, account: String?, outcome: String, snap: PerfSnapshot, spend: Boolean) {
+    private fun write(send: CompareAnswer, snap: PerfSnapshot, spend: Boolean) {
+        val (model, account, outcome) = send
         val ts = deps.stores.perfStats.record(
-            PerfRowMeta(model, outcome, compact = false, session = null, account = PerfAccount(account)),
+            PerfRowMeta(
+                model,
+                outcome,
+                compact = false,
+                session = null,
+                account = PerfAccount(account),
+                transcript = PerfTranscriptIds(turns = PerfTurnIds(trace = null, request = send.request)),
+            ),
             snap,
             whole = if (spend) FileIoTask { economics(snap, model, account, outcome) } else FileIoTask { },
         )

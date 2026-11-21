@@ -1,6 +1,8 @@
 // A page still reading draws its own shape, never the lone word "Reading" (Oct 12: the plain reading indicator
-// was to be improved). With every daemon read held open, Requests, Teams, Usage and Settings each draw striped bars where
-// their figures will land, and Settings draws its own cards, each with a ghost where its figure will land.
+// was to be improved). With every daemon read held open, the Night Deck pages stand in their own frame: Activity its
+// figures and its list, Teams its board, Settings its parts, and none of them says Reading. (Rewritten for the Night
+// Deck pages: the old Requests and Usage pages went into Activity, and the striped ghost bars, Settings' job cards and
+// Teams' Read again went with the old pages' own drawing.)
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -31,56 +33,23 @@ afterAll(async () => {
   server.stop(true);
 });
 
-async function reading(page: string, check?: (p: import("@playwright/test").Page) => Promise<void>) {
+async function reading(page: string, frame: string, least: number) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } }); // its own connections: held reads stay its own
   const p = await context.newPage();
+  const errors: string[] = [];
+  p.on("pageerror", (e) => errors.push(e.message));
   try {
-    await p.goto(`http://127.0.0.1:${server.port}/${page}.html`, { waitUntil: "domcontentloaded" });
-    await p.locator("main .ghost").first().waitFor({ timeout: 15_000 });
-    expect(await p.locator("main .ghost").count()).toBeGreaterThan(3);
+    await p.goto(`http://127.0.0.1:${server.port}/${page}.html`, { waitUntil: "load" });
+    await p.locator(frame).first().waitFor({ timeout: 15_000 });
+    expect(await p.locator(frame).count()).toBeGreaterThanOrEqual(least);
+    await p.waitForTimeout(1_000);
     expect(await p.locator("main").innerText()).not.toMatch(/\bReading\b/);
-    await check?.(p);
+    expect(errors).toEqual([]);
   } finally {
     await context.close();
   }
 }
 
-for (const page of ["requests", "teams", "usage"] as const) {
-  test(`${page} draws its shape while it reads`, () => reading(page), 30_000);
-}
-
-test("settings draws its own cards while it reads, each with a ghost where its figure will land", () => reading("settings", async (p) => {
-  expect(await p.locator(".card.job .jname").allInnerTexts()).toContain("Stalled answers");
-  // a card's figure lands under its name, in the card's state slot: the ghost stands there, inside the card and below its
-  // name, in the slot's own box, so nothing moves when the figure arrives
-  const cards = await p.locator(".card.job").evaluateAll((els) => els.map((c) => {
-    const slot = c.querySelector(".jstate")!.getBoundingClientRect(), name = c.querySelector(".jname")!.getBoundingClientRect();
-    const ghost = c.querySelector(".jstate .ghost")?.getBoundingClientRect(), box = c.getBoundingClientRect();
-    const inSlot = ghost ? ghost.left >= slot.left - 1 && ghost.right <= slot.right + 1 && ghost.top >= slot.top - 1 && ghost.bottom <= slot.bottom + 1 : false;
-    return {
-      drawn: Boolean(ghost),
-      below: ghost ? ghost.top >= name.bottom - 1 : false,
-      inside: ghost ? ghost.left >= box.left - 1 && ghost.right <= box.right + 1 && ghost.bottom <= box.bottom + 1 : false,
-      inSlot,
-    };
-  }));
-  expect(cards.length).toBeGreaterThan(5);
-  expect(cards.filter((c) => !c.drawn).length).toBe(0);
-  expect(cards.filter((c) => !c.below || !c.inside).length).toBe(0);
-  expect(cards.filter((c) => !c.inSlot).length).toBe(0);
-}), 30_000);
-
-test("teams keeps Read again off while its read is out", () => reading("teams", async (p) => {
-  expect(await p.locator('.head [data-act="read"]').isDisabled()).toBe(true);
-}), 30_000);
-
-// Breakdown is the "Where it went" band now and Results by command its own band (the Usage rebuild, Oct 26): each draws
-// its own table in stripes, in the band its rows land in. Results by command lives in #band-results again (b64e9f989,
-// as approved Oct 29); Performance under it stays folded to one line and draws no card until it is opened.
-test("usage draws Breakdown and Commands in the frames they land in, one card each", () => reading("usage", async (p) => {
-  expect(await p.locator("#band-by .card .ghost").count()).toBeGreaterThan(3);
-  expect(await p.locator("#band-by .card.ghosted").count()).toBe(1);
-  await p.locator("#band-results .card.ghosted").first().waitFor({ timeout: 15_000 });
-  expect(await p.locator("#band-results .card.ghosted").count()).toBe(1);
-  expect(await p.locator("#band-perf .card").count()).toBe(0);
-}), 30_000);
+test("activity stands in its figures and its list while it reads", () => reading("activity", "#figs, #rows", 1), 30_000);
+test("teams stands in its board while it reads", () => reading("teams", "#tm", 1), 30_000);
+test("settings stands in its parts while it reads", () => reading("settings", "[data-part]", 9), 30_000);

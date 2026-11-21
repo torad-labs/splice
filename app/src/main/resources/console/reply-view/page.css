@@ -1,161 +1,148 @@
-/* The reader's own page: a plain one-column reading page in the console's brand. Every colour comes from /tokens.css
-   (night and day through its [data-theme] blocks); this file sets the reader's --rv-* properties from those tokens, so
-   what splice draws comes from the brand kit, and loads the console's fonts. */
+/* The reader's own page: a plain one-column reading page in the console's dress. Every colour, face and size comes from
+   the Night Deck kit (/deck.css, night and day through its [data-theme] blocks, and its type that grows with the
+   screen); this file sets the reader's --rv-* properties from the kit's tokens and lays out the page's own few parts.
+   Nov 21, 2026: it was dressed from /tokens.css, the stylesheet the Night Deck replaced. Its classes carry rvp- so
+   that none meets a kit class of the same name (the kit's .bar is the nav, its .picker the model picker). */
 
-@font-face { font-family: "Fraunces"; font-weight: 100 900; src: url(/fonts/fraunces-400.woff2) format("woff2"); }
-@font-face { font-family: "Source Serif 4"; font-weight: 200 900; src: url(/fonts/source-serif-4-400.woff2) format("woff2"); }
-@font-face { font-family: "IBM Plex Mono"; font-weight: 400; src: url(/fonts/ibm-plex-mono-400.woff2) format("woff2"); }
-@font-face { font-family: "IBM Plex Mono"; font-weight: 500; src: url(/fonts/ibm-plex-mono-500.woff2) format("woff2"); }
-@font-face { font-family: "IBM Plex Mono"; font-weight: 600; src: url(/fonts/ibm-plex-mono-600.woff2) format("woff2"); }
-
-/* Nov 21, 2026: a wide desktop reads the page as a laptop does. The type and the column grow with the screen from
-   about 2050 px, to twice their size at 3840 px (the rate the console's redesigned kit scales at); below that
-   nothing changes. The type and the spacing here and in the reader are in rem or em, so the root's size carries them. */
-:root { color-scheme: dark; overflow-anchor: none; font-size: clamp(16px, 0.78125vw, 30px); }
-[data-theme="day"] { color-scheme: light; }
+:root { overflow-anchor: none; }
 
 body {
-  margin: 0;
-  background: var(--splice-ground);
-  color: var(--splice-text);
-  font-family: var(--splice-font-name);
-  font-size: 1rem;
-  line-height: 1.6;
+  /* the page is its own ground in both themes, whatever stands behind it */
+  background: var(--ground);
+  color: var(--ink);
   -webkit-text-size-adjust: 100%;
 
-  --rv-text: var(--splice-text);
-  --rv-muted: var(--splice-text-mute);
-  --rv-border: var(--splice-track-line);
-  --rv-bubble: var(--splice-track);
-  --rv-hover: var(--splice-track);
-  --rv-code-bg: var(--splice-card-sunk);
-  --rv-code-text: var(--splice-text-body);
-  --rv-link: var(--splice-text);
-  --rv-focus: var(--splice-key-ink);
-  --rv-error: var(--splice-status-limit);
-  --rv-code-keyword: var(--splice-chart-4);
-  --rv-code-string: var(--splice-code-str);
-  --rv-code-number: var(--splice-chart-1);
-  --rv-code-comment: var(--splice-text-mute);
-  --rv-code-title: var(--splice-chart-2);
-  --rv-code-type: var(--splice-chart-6);
-  --rv-code-attr: var(--splice-chart-5);
-  --rv-diff-del: color-mix(in srgb, var(--splice-status-limit) 18%, transparent);
-  --rv-diff-add: color-mix(in srgb, var(--splice-status-live) 18%, transparent);
-  --rv-mono: var(--splice-font-data);
+  --rv-text: var(--ink);
+  --rv-muted: var(--ink-quiet);
+  --rv-border: var(--hairline);
+  --rv-bubble: var(--fill);
+  --rv-hover: var(--fill-hover);
+  --rv-code-bg: var(--fill);
+  --rv-code-text: var(--ink);
+  --rv-link: var(--ink);
+  --rv-focus: var(--focus-ring);
+  --rv-error: var(--vermilion);
+  /* code is coloured with the kit's four pigments and its inks, never a provider's colour */
+  --rv-code-keyword: var(--prussian);
+  --rv-code-string: var(--verdigris);
+  --rv-code-number: var(--ormolu);
+  --rv-code-comment: var(--ink-faint);
+  --rv-code-title: var(--ink);
+  --rv-code-type: var(--ormolu);
+  --rv-code-attr: var(--verdigris);
+  --rv-diff-del: color-mix(in srgb, var(--vermilion) 18%, transparent);
+  --rv-diff-add: color-mix(in srgb, var(--verdigris) 18%, transparent);
+  --rv-mono: var(--font-data);
+  --rv-radius: var(--r-menu);
 }
-@media (min-width: 900px) { body { font-size: 1.0625rem; } }
 
 a { color: inherit; }
 
 /* the slim header: the session, its project and head, and the way back */
-.bar {
+.rvp-bar {
   position: sticky;
   top: 0;
   z-index: 1;
   display: flex;
   align-items: center;
-  gap: var(--splice-space-4);
-  max-width: 47.5rem;
+  gap: var(--sp-4);
+  max-width: var(--rvp-col);
   margin: 0 auto;
-  padding: var(--splice-space-3) var(--splice-space-4);
-  background: var(--splice-ground);
-  border-bottom: 1px solid var(--splice-track-line);
-  box-sizing: border-box;
+  padding: var(--sp-3) var(--sp-5);
+  background: var(--ground);
+  border-bottom: var(--hair) solid var(--hairline);
 }
-.back {
+.rvp-back {
   flex: none;
-  font-family: var(--splice-font-data);
-  font-size: 0.8rem;
-  color: var(--splice-text-mute);
+  font-family: var(--font-data);
+  font-size: var(--fs-small);
+  color: var(--ink-quiet);
   text-decoration: none;
 }
-.back::before { content: "‹ "; }
-.back:hover, .back:focus-visible { color: var(--splice-text); }
-.who { min-width: 0; }
-.name {
+.rvp-back::before { content: "‹ "; }
+.rvp-back:hover, .rvp-back:focus-visible { color: var(--ink); }
+.rvp-who { min-width: 0; }
+.rvp-name {
   margin: 0;
-  font-family: var(--splice-font-lead);
-  font-size: 1.1rem;
-  font-weight: 500;
-  line-height: 1.3;
+  font-size: var(--fs-name);
+  font-weight: var(--w-med);
+  line-height: var(--lh);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.meta {
+.rvp-meta {
   margin: 0;
-  font-family: var(--splice-font-data);
-  font-size: 0.75rem;
-  color: var(--splice-text-mute);
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--ink-quiet);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* the column */
-.column {
-  max-width: 47.5rem;
+/* the column: wide enough for a line of code, narrow enough to read, in the kit's own measure */
+:root { --rvp-col: 52rem; }
+.rvp-column {
+  max-width: var(--rvp-col);
   margin: 0 auto;
-  padding: var(--splice-space-4) var(--splice-space-4) var(--splice-space-16);
-  box-sizing: border-box;
+  padding: var(--sp-4) var(--sp-5) var(--sp-7);
 }
-@media (min-width: 900px) { .column { padding-left: var(--splice-space-6); padding-right: var(--splice-space-6); } .bar { padding-left: var(--splice-space-6); padding-right: var(--splice-space-6); } }
-.edge {
-  margin: 0 0 var(--splice-space-6);
+.rvp-edge {
+  margin: 0 0 var(--sp-5);
   text-align: center;
-  font-family: var(--splice-font-data);
-  font-size: 0.75rem;
-  color: var(--splice-text-mute);
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--ink-quiet);
 }
 
-.jump {
+.rvp-jump {
   position: fixed;
-  bottom: var(--splice-space-4);
+  bottom: var(--sp-4);
   left: 50%;
   transform: translateX(-50%);
-  padding: var(--splice-space-2) var(--splice-space-4);
-  border: 1px solid var(--splice-track-line);
-  border-radius: 999px;
-  background: var(--splice-card-high);
-  color: var(--splice-text);
-  font-family: var(--splice-font-data);
-  font-size: 0.8rem;
+  min-height: var(--btn-h);
+  padding: 0 var(--sp-4);
+  border: var(--hair) solid var(--hairline);
+  border-radius: var(--r-btn);
+  background: var(--opaque-glass);
+  color: var(--ink);
+  font-family: var(--font-data);
+  font-size: var(--fs-small);
   cursor: pointer;
 }
-.jump[hidden] { display: none; }
-.jump:focus-visible, .back:focus-visible, .picker a:focus-visible { outline: 2px solid var(--splice-key-ink); outline-offset: 2px; }
+.rvp-jump[hidden] { display: none; }
 
 /* with no session: the sessions to open */
-.picker { list-style: none; margin: 0; padding: 0; }
-.picker li + li { border-top: 1px solid var(--splice-track-line); }
-.picker a {
+.rvp-list { list-style: none; margin: 0; padding: 0; }
+.rvp-list li + li { border-top: var(--hair) solid var(--hairline); }
+.rvp-list a {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: var(--splice-space-3) var(--splice-space-2);
+  gap: var(--sp-1);
+  padding: var(--sp-3) var(--sp-2);
   text-decoration: none;
-  border-radius: 8px;
+  border-radius: var(--r-inner);
 }
-.picker a:hover { background: var(--splice-track); }
-.pick-name { font-family: var(--splice-font-lead); font-size: 1.05rem; overflow-wrap: anywhere; }
-.pick-meta { font-family: var(--splice-font-data); font-size: 0.75rem; color: var(--splice-text-mute); }
+.rvp-list a:hover { background: var(--fill); }
+.pick-name { font-size: var(--fs-name); overflow-wrap: anywhere; }
+.pick-meta { font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-quiet); }
 
 /* not signed in: only how to sign in */
-.locked {
+.rvp-locked {
   max-width: 34rem;
   margin: 20vh auto 0;
-  padding: 0 var(--splice-space-6);
-  font-size: 1.05rem;
-  line-height: 1.6;
+  padding: 0 var(--sp-5);
+  font-size: var(--fs-nav);
+  line-height: var(--lh);
   text-align: center;
   overflow-wrap: anywhere;
 }
-.locked code {
+.rvp-locked code {
   padding: 0.1em 0.4em;
-  border-radius: 5px;
-  background: var(--splice-card-sunk);
-  font-family: var(--splice-font-data);
+  border-radius: var(--r-item);
+  background: var(--fill);
+  font-family: var(--font-data);
   font-size: 0.9em;
   white-space: nowrap;
 }

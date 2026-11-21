@@ -6,6 +6,10 @@
 // and 7 days, the two windows Usage reads a plan over, by command and account. These count from the perf session
 // tag as the lifetime does, and from before the team was made too, since a window is the plan's and not the team's.
 // The console puts the provider's own used percent for that account beside them; splice never divides one by the other.
+//
+// THE WEEK (Nov 19, 2026; console-night-deck, the Teams page's 7-day figures). Each slot also carries `week`: its
+// requests over the trailing 7 days since its session joined, the tokens they moved and what they come to at API
+// prices, a plan's requests priced too, since the page reads it as the work's API value and never as money paid.
 package splice.sessions.http
 
 import kotlinx.serialization.json.JsonArray
@@ -63,6 +67,7 @@ internal class TeamEconomics(
         .distinctBy { it.tag }
         .associateBy { it.tag }
     private val bySlot = members.associate { it.id to PerfTally() }
+    private val weekBySlot = members.associate { it.id to PerfTally() }
     private val planUse = LinkedHashMap<PlanUseKey, PlanUse>()
     private var oldest: Long? = null
 
@@ -85,6 +90,7 @@ internal class TeamEconomics(
                                 team.left.firstOrNull { gone -> gone.slot.id == slot }?.at
                                     ?.let { at -> it.put("left_epoch_millis", at) }
                                 it.put("plan_windows", windowsOf(slot))
+                                it.put("week", weekBySlot.getValue(slot).json { })
                             },
                         )
                     }
@@ -118,6 +124,9 @@ internal class TeamEconomics(
     private fun count(key: String, head: SessionHead, held: Held, row: SessionPerfRow) {
         val slot = held.slot
         if (row.ts >= held.joined) bySlot.getValue(slot.id).add(row, head.catalog, head.plans)
+        // priced as if no plan held it: the week's API value, whoever paid
+        val weekFrom = maxOf(held.joined, now - PlanWindow.SEVEN_DAYS.millis)
+        if (row.ts >= weekFrom) weekBySlot.getValue(slot.id).add(row, head.catalog)
         if (!head.plans(row.account)) return
         val moved = TurnBill.total(row.fields).let { it.input + it.cacheRead + it.cacheWrite + it.output }
         PlanWindow.entries.filter { row.ts >= now - it.millis }.forEach { window ->

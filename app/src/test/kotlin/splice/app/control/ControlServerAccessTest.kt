@@ -195,8 +195,8 @@ class ControlServerAccessTest {
         // A client that asks for no HTML reads that it reached splice; a browser is sent to the console.
         assertEquals(200, rawStatus("/", "localhost:$port"))
         assertEquals(200, rawStatus("/accounts.html", "localhost:$port"))
-        assertEquals(200, rawStatus("/fonts/fraunces-400.woff2", "localhost:$port"))
-        for (path in listOf("/dashboard", "/fonts/OFL-Fraunces.txt", "/..%2fmgmt-key", "/nope.html")) {
+        assertEquals(200, rawStatus("/fonts/barlow-400.woff2", "localhost:$port"))
+        for (path in listOf("/dashboard", "/fonts/OFL-Barlow.txt", "/..%2fmgmt-key", "/nope.html")) {
             assertEquals(404, rawStatus(path, "localhost:$port"), path)
         }
         assertEquals(401, rawStatus("/api/accounts", "localhost:$port"), "the numbers still need the key")

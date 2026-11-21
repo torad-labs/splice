@@ -635,7 +635,7 @@ weighing SQLite (sqlite-jdbc) against the daemon's existing pattern:
   WAL files that a plain `cp` backup gets wrong, and buys indexed queries the volume does not
   need. Revisit only if a query cannot be served by scanning a day's files.
 
-Optional, later: `GET /api/codemode` for the worker pool; remote provider catalog listing for the Models page (today the catalog is declared models only).
+Optional, later: `GET /api/codemode` for the worker pool; remote provider catalog listing for Providers (today the catalog is declared models only).
 
 ## 7. How "complete" is proven
 

@@ -31,6 +31,10 @@ export const MEDIA: readonly string[] = ["splice-0.4.0.mp4", "splice-0.4.0.en.vt
 const HERE = import.meta.dir;
 const REPO = resolve(HERE, "../../../..");
 const CONSOLE = join(REPO, "app/src/main/resources/console");
+// The console's stylesheets and fonts as they stood when the page's bands were drawn from them, kept beside the page:
+// the console itself moved to the Night Deck kit (Nov 2026), whose markup these bands do not use. Served at /console/,
+// where the bands name them; the brand images still come from the console's own brand/ folder.
+const SHEETS = join(HERE, "console");
 const MEDIA_PATH = "/landing/products/splice/assets/";
 const HOST = "https://splice.torad.ai";
 // <out> carries this file, so a rebuild replaces only a folder a build wrote. Wrangler reads it as the list of files not
@@ -84,7 +88,7 @@ function page(only?: readonly string[]): { html: string; bands: string[] } {
 
 /** A band names the console page stylesheets its parts need on a line `<!-- console: accounts.css teams.css -->`.
  *  Those not already linked are linked once each where page.html's `<!-- console sheets -->` line stands, after the
- *  console's own tokens.css and console.css, so the page's head lists every sheet without a band editing it. */
+ *  page's copies of the console's tokens.css and console.css, so the page's head lists every sheet without a band editing it. */
 function linkConsoleSheets(html: string): string {
   const linked = new Set([...html.matchAll(/href="\/console\/([a-z0-9-]+\.css)"/g)].map((m) => m[1]!));
   const wanted: string[] = [];
@@ -171,7 +175,10 @@ function rootFiles(): { made: Array<[string, Uint8Array | string]>; copied: Arra
 /** Where a path on this host comes from, or null when nothing has it. */
 function source(path: string, media: string): string | null {
   const file = (p: string) => (existsSync(p) && statSync(p).isFile() ? p : null);
-  if (path.startsWith("/console/")) return file(join(CONSOLE, path.slice("/console/".length)));
+  if (path.startsWith("/console/")) {
+    const name = path.slice("/console/".length);
+    return name.startsWith("brand/") ? file(join(CONSOLE, name)) : file(join(SHEETS, name));
+  }
   if (path.startsWith(MEDIA_PATH)) {
     const name = path.slice(MEDIA_PATH.length);
     return MEDIA.includes(name) ? file(join(media, name)) : null;

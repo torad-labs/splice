@@ -96,6 +96,13 @@
 - **`splice desktop launch`** is what a managed `processWrapper` starts the Code tab through, and `splice desktop`
   says each Desktop feature that depends on the backend, working or why not.
 - **A command-auth provider signs in from the terminal or the console**, and `splice doctor` reports on it.
+- **A provider's declared effort vocabulary names its models' reasoning levels.** An openai-chat provider whose
+  endpoint lists nothing about reasoning (a team gateway, a llama.cpp server) had no effort control in Claude Desktop's
+  picker: the catalog reads levels from the endpoint's own list and from the built-in vendor facts, and a gateway that
+  publishes neither left the row without any. The levels the provider's `[providers.*.quirks.chat_effort_vocabulary]`
+  maps to — the words the wire actually sends — now stand in when the endpoint names none, with the vocabulary's
+  default as the recommended one, so Desktop's reasoning control and the door's `thinking` options follow what the
+  model takes.
 
 ### Fixed
 - **A provider keyed by a lab's other name no longer repeats the lab in its model ids.** A provider called `xai`

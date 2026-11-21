@@ -7,16 +7,17 @@ package splice.head
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
 import io.ktor.util.AttributeKey
+import splice.head.wire.NATIVE_CLIENT_PING_MS
 
 /** One turn as the gateway hands it to a [ProviderRuntime]: [body] is the client's body with `model` already set to
  *  the provider's own id, [door] is what the perf row's `door` says (`desktop`, `claude` or `network`), and
  *  [clientWindow] is the window this session's client holds, which counts are scaled to; null when the gateway does
  *  not know it, which leaves the window to what the request and the session's own posts say.
  *
- *  The three that follow are what an authenticated listener in front of the gateway (the team server) says of a turn it
- *  relays: the server its person prefers, the id it named the turn by, and the notice it sends in place of the turn.
- *  They are typed values the gateway fills, never read from the call's headers: a header on a gateway call is the
- *  caller's, and a caller must not name a ledger row it does not own or pick the upstream. A plain door turn has none.
+ *  [listener] is what an authenticated listener in front of the gateway (the team server) says of a turn it relays. It is
+ *  typed values the gateway fills, never read from the call's headers: a header on a gateway call is the caller's, and a
+ *  caller must not name a ledger row it does not own, pick the upstream or set how often it is pinged. A plain door turn
+ *  says nothing.
  *
  *  [withheldHeaders] are the lowercase names of the caller's headers the gateway found carrying one of its own keys: a
  *  provider's `forward_headers` may name them, and they must never ride upstream with a key in them. */
@@ -24,9 +25,7 @@ public class GatewayTurn(
     public val body: ByteArray,
     public val door: String,
     public val clientWindow: Long?,
-    public val preferredUpstream: String? = null,
-    public val servedTurn: String? = null,
-    public val notice: String? = null,
+    public val listener: ListenerSays = ListenerSays(),
     public val withheldHeaders: Set<String> = emptySet(),
 ) {
     /** [body] as a bounded read of it, the same answer a head's own read of a call's body gives: the body, or the cap
@@ -38,6 +37,16 @@ public class GatewayTurn(
             BodyRead.Received(ReceivedBody(body.decodeToString(), body.size))
         }
 }
+
+/** What the authenticated listener in front of the gateway says of a turn: the server its person prefers, the id it named
+ *  the turn by, the notice it sends in place of the turn, and [keepaliveMs], how often it asks a streamed turn's client
+ *  be sent a keepalive while the answer is silent (null or zero asks for none beyond the native disconnect probe). */
+public data class ListenerSays(
+    val preferredUpstream: String? = null,
+    val servedTurn: String? = null,
+    val notice: String? = null,
+    val keepaliveMs: Long? = null,
+)
 
 /** A gateway turn rides on its call, so every reader of the pipeline that takes the call sees it and a head's own
  *  entry, which attaches none, is read exactly as it always was. Only [ProviderRuntime] attaches one. */
@@ -53,6 +62,11 @@ internal object GatewayTurns {
     }
 
     fun of(call: ApplicationCall): GatewayTurn? = call.attributes.getOrNull(key)
+
+    /** How often [call]'s streamed client is pinged: the native disconnect probe, or the shorter keepalive its listener
+     *  asked for. */
+    fun clientPingMs(call: ApplicationCall): Long =
+        minOf(NATIVE_CLIENT_PING_MS, of(call)?.listener?.keepaliveMs?.takeIf { it > 0L } ?: NATIVE_CLIENT_PING_MS)
 }
 
 /** Where a request's body comes from: the gateway's, when it handed one over, else the call's own bounded read. The

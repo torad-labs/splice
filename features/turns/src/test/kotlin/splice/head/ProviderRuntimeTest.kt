@@ -233,7 +233,7 @@ class ProviderRuntimeTest {
                 body("claude-scripted-headless-chat--scripted-model").toByteArray(),
                 "network",
                 null,
-                servedTurn = "the-servers-row",
+                listener = ListenerSays(servedTurn = "the-servers-row"),
             )
 
             post(headless.runtime, turn, relayHeaders)

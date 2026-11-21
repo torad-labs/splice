@@ -37,8 +37,8 @@ internal object RelayHeaders {
                 agent = agentOf(headers),
             )
         return TurnRelay(
-            preferredUpstream = turn.preferredUpstream,
-            servedTurn = turn.servedTurn,
+            preferredUpstream = turn.listener.preferredUpstream,
+            servedTurn = turn.listener.servedTurn,
             door = turn.door.takeIf { it in turnDoors },
             workedFor = workedFor(headers),
             agent = agentOf(headers),
@@ -49,7 +49,7 @@ internal object RelayHeaders {
      *  gateway's own value for a gateway turn. */
     fun notice(call: ApplicationCall): String? {
         val turn = GatewayTurns.of(call)
-        val said = if (turn == null) call.request.headers[SERVED_NOTICE_HEADER] else turn.notice
+        val said = if (turn == null) call.request.headers[SERVED_NOTICE_HEADER] else turn.listener.notice
         return said?.takeIf(String::isNotBlank)
     }
 

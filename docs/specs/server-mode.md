@@ -277,9 +277,11 @@ What is the server's holds on that *selected provider*, never on the selector th
   old prefix of beta's, and `GET /door/v1/models` lists only what they may use. Each name means one provider: a name that
   is a head's command and also another provider's key keeps the head's meaning, and boot reports the clash;
 - the minimum client: an older laptop's turn is answered in the conversation and takes no slot;
-- a streamed turn is kept alive by the gateway's own client channel, the one every provider turn writes through: it
-  sends an SSE keepalive every two seconds while the answer is silent, so `keepalive_seconds` (which paces the legacy
-  `/<command>/...` relay) is always met and `0` does not switch it off;
+- a streamed turn is kept alive by the gateway's own client channel, the one every provider turn writes through, which
+  pings its client every two seconds while the answer is silent to learn whether it left. `[server] keepalive_seconds`
+  shortens that tick when it is below two (`1` pings every second), the listener passing the cadence as typed turn
+  metadata, not a header; the heartbeat and progress line keep their own timing. `0`, or any value from two up, adds
+  nothing: the two-second tick is the floor. A response that is not streamed is not pinged;
 - the upstream the person prefers and the id the ledger names the turn by travel to the provider as metadata this
   listener authors, never as a header a caller could set.
 

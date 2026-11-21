@@ -27,6 +27,9 @@ internal class TeamDoorRoute(
     private val countPath = turnPath + "count_tokens"
     private val modelsPath = listOf(HEAD_API_ROOT, "models")
 
+    /** `[server] keepalive_seconds` as the cadence a streamed turn's client is pinged at; none when it is 0. */
+    private val keepaliveMs = server.keepaliveSeconds.takeIf { it > 0 }?.let { it * MILLIS }
+
     /** [rest], the path after `/door`, asked by [key]'s person. */
     suspend fun answer(call: ApplicationCall, key: ServerKey, rest: List<String>) {
         val gateway = parts.carriers.gateway ?: return voice.refuse(call, HttpStatus.NOT_FOUND, NO_DOOR)
@@ -48,7 +51,8 @@ internal class TeamDoorRoute(
         val provider = ProviderCommand(routed.provider, routed.names)
         admission.served(call, key, provider, ROUTE_MESSAGES) { turn ->
             val preferred = parts.people.of(key.person).preferred
-            routed.serve(TeamTurnMeta(preferredUpstream = preferred, servedTurn = parts.books.turns.named(turn).second))
+            val named = parts.books.turns.named(turn).second
+            routed.serve(TeamTurnMeta(preferred, named, keepaliveMs = keepaliveMs))
         }
     }
 
@@ -72,5 +76,7 @@ internal class TeamDoorRoute(
     /** The providers this server serves: those `[server] commands` names, by key or by a head that runs one. */
     private fun served(): ProviderFilter = ProviderFilter { _, names -> names.any { it in server.commands } }
 }
+
+private const val MILLIS = 1_000L
 
 private const val NO_DOOR = "this server's door is not open: no provider is up to serve it"

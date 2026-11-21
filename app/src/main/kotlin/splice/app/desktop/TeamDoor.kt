@@ -17,6 +17,7 @@ import splice.core.turn.TERMINAL_DOOR
 import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus
 import splice.head.GatewayTurn
+import splice.head.ListenerSays
 import splice.http.JsonReply
 import splice.server.ProviderFilter
 import splice.server.RoutedTeamTurn
@@ -107,9 +108,7 @@ internal class TeamDoor : TeamGateway {
                 ask.asking(route.upstream),
                 TERMINAL_DOOR,
                 null,
-                preferredUpstream = meta.preferredUpstream,
-                servedTurn = meta.servedTurn,
-                notice = meta.notice,
+                listener = ListenerSays(meta.preferredUpstream, meta.servedTurn, meta.notice, meta.keepaliveMs),
             )
             if (counting) route.provider.countTokens(call, turn) else route.provider.serve(call, turn)
         }

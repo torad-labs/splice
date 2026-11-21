@@ -120,8 +120,9 @@ internal class HeadBuildInputs(
         head: HeadConfig,
         providerCfg: ProviderConfig,
         legacyKnobsGovern: Boolean = true,
+        configKey: String? = key,
     ): ProviderBuild {
-        val headCfg = config.getConfig(key)
+        val headCfg = config.getConfig(configKey)
         val resolvedHead = if (legacyKnobsGovern) resolveHeadConfig(head, providerCfg, headCfg) else head
         val resolvedProvider = if (legacyKnobsGovern) resolveProviderConfig(providerCfg, headCfg) else providerCfg
         val localRows = if (resolvedProvider.isLocal) {
@@ -146,10 +147,10 @@ internal class HeadBuildInputs(
             // cp-window: the provider with its served window, so every catalog built from it later
             // (LiveRosterCatalog) keeps the window it really serves
             providerCfg = servedWindows.applied(head.provider, key, resolvedProvider),
-            catalog = catalogFor(key, head, providerCfg, legacyKnobsGovern),
+            catalog = catalogFor(key, head, providerCfg, legacyKnobsGovern, configKey),
             faultPlan = UpstreamFaultPlan(
                 watchdog = built,
-                liveWatchdog = LiveWatchdogBudget { liveBudget(key, resolvedProvider, built) },
+                liveWatchdog = LiveWatchdogBudget { liveBudget(configKey, resolvedProvider, built) },
                 loginCommand = signInPlanner.signInPlan(resolvedProvider, resolvedHead, key).credentialFix,
             ),
             cfg = headCfg,
@@ -160,8 +161,8 @@ internal class HeadBuildInputs(
     /** [built] with the three live tiers, firstByteTimeoutMs, streamIdleMs and stallReanchorMs, read from head [key]'s own
      *  config as it stands now: a turn asks this when it starts, so a PATCH governs the next turn and no restart. The
      *  no-progress limit (upstreamTimeoutMs) stays as built: it is also the connection's read timeout, restartRequired. */
-    private fun liveBudget(key: String, provider: ProviderConfig, built: WatchdogBudget): WatchdogBudget {
-        val now = config.getConfig(key)
+    private fun liveBudget(configKey: String?, provider: ProviderConfig, built: WatchdogBudget): WatchdogBudget {
+        val now = config.getConfig(configKey)
         return built.copy(
             firstByteTimeout = now.firstByteTimeoutMs.milliseconds,
             streamIdle = now.streamIdleMs.milliseconds,
@@ -178,8 +179,9 @@ internal class HeadBuildInputs(
         head: HeadConfig,
         providerCfg: ProviderConfig,
         legacyKnobsGovern: Boolean = true,
+        configKey: String? = key,
     ): ModelCatalog {
-        val headCfg = config.getConfig(key)
+        val headCfg = config.getConfig(configKey)
         val resolvedHead = if (legacyKnobsGovern) resolveHeadConfig(head, providerCfg, headCfg) else head
         val effective = effectiveProvider(key, providerCfg, legacyKnobsGovern)
         val resolvedProvider = servedWindows.applied(head.provider, key, effective)

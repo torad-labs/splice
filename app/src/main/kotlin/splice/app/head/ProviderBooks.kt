@@ -5,6 +5,8 @@
 // copies and write each other's hours over, so the books are built once per key and asked for by key.
 package splice.app.head
 
+import splice.app.provider.Wired
+import splice.head.ProviderRuntime
 import splice.head.compaction.FileCompactionRecordings
 import splice.head.usage.QuotaTracker
 import splice.usage.quota.QuotaPoller
@@ -26,4 +28,12 @@ internal data class BooksQuota(
     val accounts: Map<String, QuotaTracker>,
     val pollers: List<QuotaPoller>,
     val polling: HeadQuotaPolling,
+)
+
+/** One provider as the gateway serves it: [wired] (the provider and its credential), the [books] it accounts into, and
+ *  the [runtime] a gateway turn runs through. */
+internal data class AssembledRoute(
+    val wired: Wired,
+    val books: ProviderBooks,
+    val runtime: ProviderRuntime,
 )

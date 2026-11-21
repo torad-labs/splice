@@ -36,6 +36,7 @@ import splice.core.topology.DialectWires
 import splice.core.usage.QuotaReadFailures
 import splice.core.util.LogSink
 import splice.diagnostics.logs.LogFileSource
+import splice.head.ProviderRuntime
 import splice.head.compact.CompactStats
 import splice.head.compaction.FileCompactionRecordings
 import splice.head.compaction.KeepingRecordings
@@ -152,6 +153,18 @@ internal class HeadServing(
         recordings: FileCompactionRecordings,
     ) = headServerFactory.headServerFor(ctx, wired.provider, stores, forwardClientAuth, recordings)
         .also { playgroundProviders.bind(ctx.key, wired, stores.accounts.pool, it.providerReplies, it.compareSends) }
+
+    /** gateway-no-heads: [ctx]'s provider as the gateway serves it, over [books]' stores. It reads the global config layer
+     *  (it holds no head block) and registers with the console's per-key registries only where [registers] says no head
+     *  already has. It is not bound into the Playground, which is a head's. */
+    fun runtimeFor(ctx: ProviderBuild, wired: Wired, books: ProviderBooks, registers: Boolean): ProviderRuntime =
+        headServerFactory.runtimeFor(
+            ctx,
+            wired.provider,
+            books.stores,
+            books.recordings,
+            RouteScope(configKey = null, registers = registers, forwardClientAuth = wired.auth is ClientAuthProvider),
+        )
 }
 
 internal class ManagedHeadFactory(
@@ -218,6 +231,25 @@ internal class ManagedHeadFactory(
             BooksQuota(primaryQuota, accountQuotas, pollers, polling),
             recordings(ctx),
         )
+    }
+
+    /** gateway-no-heads: [ctx]'s provider assembled for the gateway, with no head to serve it: the provider and its
+     *  credential, the books it accounts into (the same books a head of the same identity has), and the runtime a gateway
+     *  turn runs through. [registers] is whether the runtime takes the console's per-key registries, which a head of
+     *  the same key already holds. */
+    internal fun assembleRoute(ctx: ProviderBuild, registers: Boolean): AssembledRoute {
+        val key = ctx.key
+        if (swept.add(key)) {
+            keptFiles.atStart(
+                key,
+                codeMode = ctx.providerCfg.codeModeEnabled,
+                trace = ctx.cfg.trace,
+                traceWritten = null,
+            )
+        }
+        val wired = providerAssembly.buildProvider(ctx)
+        val shared = booksOf(ctx, wired)
+        return AssembledRoute(wired, shared, serving.runtimeFor(ctx, wired, shared, registers))
     }
 
     // Common assembly shared by every provider: stores, the generic HeadServer, launch spec.

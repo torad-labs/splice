@@ -19,6 +19,7 @@ import splice.upstream.local.LocalRowVerdict
 import splice.upstream.local.LocalRuntime
 import splice.upstream.local.LocalRuntimeKind
 import splice.upstream.local.LocalRuntimeProbe
+import splice.upstream.local.ServedWindowProbe
 
 private const val FIX_START = "start it (Ollama / LM Studio / vLLM), then re-run"
 private const val FIX_TOOLS = "a model without tool calls cannot drive Claude Code's tools"
@@ -50,6 +51,27 @@ internal class DoctorLocalRuntime(
     internal fun localChecks(topology: Topology, live: Boolean): List<DoctorCheck> =
         topology.providers.filterValues { it.isLocal }.flatMap { (key, provider) ->
             checks(key, provider, effectiveRows(topology, key), live)
+        }
+
+    /** custom-provider (cp-window): each provider's `served_window`, read as the daemon reads it at start: the
+     *  window it serves, or what happened and that the declared window is in force. */
+    internal fun servedWindowChecks(topology: Topology): List<DoctorCheck> =
+        topology.providers.mapNotNull { (key, provider) ->
+            val served = provider.servedWindow ?: return@mapNotNull null
+            val name = "window:$key"
+            when (val read = ServedWindowProbe(transport.http(key, provider, env)).read(served)) {
+                is ServedWindowProbe.Read.Window -> DoctorCheck(
+                    name,
+                    CheckStatus.OK,
+                    "providers.$key.served_window: ${served.url} serves ${read.tokens} tokens",
+                )
+                is ServedWindowProbe.Read.Failed -> DoctorCheck(
+                    name,
+                    CheckStatus.WARN,
+                    read.said(key, provider),
+                    "make ${served.url} answer with the window at ${served.field}, or remove served_window",
+                )
+            }
         }
 
     /** Every head on the provider contributes its effective rows — the head's TOML window under the

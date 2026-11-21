@@ -107,7 +107,8 @@ internal class DoctorConfigChecks(
                 DoctorTierChecks.checks(unmappedTiers, configPath) + ignoredSettingChecks(topology, configPath) +
                 stateDirChecks(topology, configPath) + systemPromptChecks(topology) +
                 projectPrompts.projectPromptChecks(topology) + wireTaps.wireTapChecks(topology) +
-                traces.traceChecks(topology, runningTrace) + localRuntime.localChecks(topology, live)
+                traces.traceChecks(topology, runningTrace) + localRuntime.localChecks(topology, live) +
+                localRuntime.servedWindowChecks(topology)
         }
     }
 

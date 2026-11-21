@@ -231,6 +231,9 @@ public class DoctorCommand(
             null
         }
         val read = (pools as? AccountPoolsRead.Read)?.pools.orEmpty()
+        // custom-provider (cp-diagnostics): what `splice claude` says of each head, for the command-auth providers
+        val commandProviders = DoctorCommandProviders(envReader)
+        val heads = if (snapshot.unanswered == null) commandProviders.heads(port) else emptyList()
         val authChecks = guarded {
             val refusals = (pools as? AccountPoolsRead.Read)?.lastRefusals.orEmpty()
             auth.authChecks(topo, envReader, snapshot, reads, refusals)
@@ -248,12 +251,14 @@ public class DoctorCommand(
             CHECK_DAEMON to guarded { daemon.daemonChecks(snapshot, envReader, topology, configPath) },
             "auth" to authChecks,
             // v0.4.0 (FEATURES.md §11): which account each pooled head is on, and when every one is out.
-            "accounts" to guarded { accountChecks(pools, snapshot, authRefusals) },
+            "accounts" to guarded {
+                accountChecks(pools, snapshot, authRefusals) + commandProviders.checks(topology, heads)
+            },
             // JW-05: what actually HAPPENED — every section above reads configuration and presence;
             // this one reads the runtime instruments (health counters + perf outcome tail).
             "runtime" to guarded { doctorRuntime.runtimeChecks(snapshot, envReader, reads, topology) },
         )
-        return DoctorRun(topology, sections, read)
+        return DoctorRun(topology, sections, read, heads)
     }
 
     // Null only when /health did not answer, which the snapshot names; an unread projection says why,

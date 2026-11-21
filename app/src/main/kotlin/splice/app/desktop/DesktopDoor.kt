@@ -1,6 +1,7 @@
 // NEW: desktop-door (docs/specs/desktop-door.md, decisions 1, 2, 5 and 7). A turn of Claude Code in Mantle mode,
 // answered under /door on the control port, which a restart does not move (and under /desktop, its path before the
-// door had two callers, for a Desktop set up then).
+// door had two callers, for a Desktop set up then), and under /door on the share listener for another machine
+// (door-network).
 //
 // door-default (docs/specs/door-default.md, decision 3): the door admits two callers, Claude Desktop's Code tab and the
 // terminal's `claude`, each by its own key (DoorCaller), and no other key opens it. While a caller's switch is off the
@@ -51,7 +52,9 @@ internal class DesktopDoor(
     private val heads: DesktopHeads,
     clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
-    private val voice = RefusalVoice(DESKTOP_ERROR_PREFIX)
+    /** The door's own voice, for a key it holds for no caller: it can't tell whose session that is, so its words name
+     *  splice alone and say where each caller's key comes from. */
+    private val voice = RefusalVoice("")
     private val json = Json { ignoreUnknownKeys = true }
     private val routing = DoorRouting()
     private val toHead = DoorRelay(clock)
@@ -76,10 +79,35 @@ internal class DesktopDoor(
         JsonReply(HttpStatusCode.OK, listed.toString()).send(call)
     }
 
-    /** [call] answered for the caller whose key it presents; refused 401 in Anthropic's shape, with nothing sent
-     *  upstream, when it presents none, a wrong one or one that was replaced. */
+    /** [call] answered for the caller whose key it presents; refused in Anthropic's shape, with nothing sent upstream,
+     *  when it presents none, a wrong one or one that was replaced. */
     private suspend fun answer(call: ApplicationCall, counting: Boolean) {
         val caller = admitted(call) ?: return
+        routed(call, caller, counting)
+    }
+
+    /** [call], which something other than a key admitted (the share listener, by where the machine is: door-network),
+     *  answered for the caller whose key it presents all the same, so Desktop's Code tab is Desktop at either
+     *  listener, and for [caller] when it presents none the door knows. Refused as that caller's door refuses while it
+     *  is shut. */
+    suspend fun answerAs(call: ApplicationCall, caller: DoorCaller, counting: Boolean) {
+        val from = keyed(call) ?: caller
+        val shut = from.closed()
+        if (shut != null) return from.voice.refuse(call, DOOR_REFUSAL_STATUS, shut)
+        routed(call, from, counting)
+    }
+
+    /** The caller whose key [call] presents; null when it presents none the door knows. A gateway client sends its
+     *  key as `x-api-key` unless told bearer, as Claude Desktop's own process does (desktop-full, df-wire-door).
+     *  Authorization decides when both are there. */
+    private fun keyed(call: ApplicationCall): DoorCaller? {
+        val headers = call.request.headers
+        val presented = headers[HttpHeaders.Authorization] ?: headers[API_KEY_HEADER]?.let { "Bearer $it" }
+        return callers.firstOrNull { it.presents(presented) }
+    }
+
+    /** [call], from [caller], read and sent to the head the model it names picks. */
+    private suspend fun routed(call: ApplicationCall, caller: DoorCaller, counting: Boolean) {
         val lineup = heads.lineup()
         val request = read(call, caller, lineup) ?: return
         val model = JsonScalars.str(request, REQUEST_MODEL).orEmpty()
@@ -92,20 +120,16 @@ internal class DesktopDoor(
         toHead.send(call, caller, route, ask, counting)
     }
 
-    /** The caller whose key [call] presents, while its switch is on; null once [call] has been refused: 401 with no
-     *  key it knows, 403 saying how to open a caller's door that is shut. */
+    /** The caller whose key [call] presents, while its switch is on; null once [call] has been refused
+     *  ([DOOR_REFUSAL_STATUS]): with no key it knows, or saying how to open a caller's door that is shut. */
     private suspend fun admitted(call: ApplicationCall): DoorCaller? {
-        // A gateway client sends its key as `x-api-key` unless told bearer, as Claude Desktop's own process does
-        // (desktop-full, df-wire-door). Authorization decides when both are there.
-        val headers = call.request.headers
-        val presented = headers[HttpHeaders.Authorization] ?: headers[API_KEY_HEADER]?.let { "Bearer $it" }
-        val caller = callers.firstOrNull { it.presents(presented) }
+        val caller = keyed(call)
         if (caller == null) {
-            voice.refuse(call, HttpStatus.UNAUTHORIZED, NO_DOOR_KEY)
+            voice.refuse(call, DOOR_REFUSAL_STATUS, NO_DOOR_KEY)
             return null
         }
         val shut = caller.closed() ?: return caller
-        caller.voice.refuse(call, HttpStatus.FORBIDDEN, shut)
+        caller.voice.refuse(call, DOOR_REFUSAL_STATUS, shut)
         return null
     }
 
@@ -124,9 +148,15 @@ internal class DesktopDoor(
  *  look. */
 internal const val DESKTOP_ERROR_PREFIX = "splice desktop: "
 
+/** The status the door refuses a key it doesn't hold, or a shut door, with. Claude Code reads a 401 or a 403 from a
+ *  Mantle endpoint as AWS's and puts "AWS credentials expired or invalid" or "AWS authentication failed" before
+ *  splice's words (seen on 2.1.328), which sent people to AWS for a key splice holds. That branch reads only those two
+ *  statuses, so a 400 shows splice's words without it. Until Nov 18, 2026 the door answered 401 and 403. */
+private const val DOOR_REFUSAL_STATUS = HttpStatus.BAD_REQUEST
+
 private const val NO_DOOR_KEY =
-    "no door key, or one that was replaced; `splice desktop on` says Desktop's, and a new `claude` session carries " +
-        "the terminal's"
+    "Splice credentials expired or invalid · this session's key is not one the door holds: a new `claude` session " +
+        "carries the terminal's, and `splice desktop on` gives Claude Desktop its own"
 
 // The header a gateway client may present its key in, in place of Authorization.
 private const val API_KEY_HEADER = "x-api-key"

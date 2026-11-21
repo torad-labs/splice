@@ -56,14 +56,22 @@ public class RemoteLaunches(
     io: CoroutineDispatcher,
     /** What `splice login` keeps of the servers this laptop signed in to (F2). */
     private val logins: ServerLogins? = null,
+    /** splice's launch mark, which a launch on another machine's door carries as a launch on this one's does. */
+    mark: DoorMark = DoorMark(),
 ) : RemoteCommands {
     private val json = Json { ignoreUnknownKeys = true }
     private val http = ShareHttp(io)
+    private val doors = RemoteDoor(http, mark)
 
     override suspend fun launch(command: String): RemoteLaunch? {
         val remote = remotes[command] ?: return null
         return when (val read = RemoteAddresses.read(remote.url)) {
-            is RemoteAddressRead.Read -> asked(command, read.address, remote.window)
+            // door-network: an address naming another machine's door launches `claude` on it.
+            is RemoteAddressRead.Read -> if (read.address.head == DOOR_SEGMENT) {
+                doors.launch(command, read.address, remote.window)
+            } else {
+                asked(command, read.address, remote.window)
+            }
             is RemoteAddressRead.Refused ->
                 RemoteLaunch.Refused("$command's address in splice.toml is not one it can run on: ${read.why}")
         }

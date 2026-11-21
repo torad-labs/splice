@@ -22,6 +22,7 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.daemonclient.DaemonProbe
+import splice.diagnostics.doctor.accounts.JdkAccountPoolRead
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path

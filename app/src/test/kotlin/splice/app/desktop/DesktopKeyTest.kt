@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.desktop.record.DesktopKey
 import splice.client.desktop.DESKTOP_KEY_PREFIX
 import java.nio.file.Files
 import java.nio.file.Path

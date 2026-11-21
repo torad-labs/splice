@@ -7,6 +7,12 @@
 package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
+import splice.app.provider.local.JdkHealthHttp
+import splice.app.provider.local.JdkLocalHttp
+import splice.app.provider.local.LocalProbeInputs
+import splice.app.provider.local.LocalRowsCheck
+import splice.app.provider.local.RuntimeSlotCount
+import splice.app.provider.local.SlotTables
 import splice.app.server.UpstreamPools
 import splice.core.auth.Credentials
 import splice.core.topology.AuthKind

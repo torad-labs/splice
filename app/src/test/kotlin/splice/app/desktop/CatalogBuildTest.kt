@@ -7,6 +7,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.desktop.catalog.CatalogBuild
+import splice.app.desktop.catalog.CatalogFile
+import splice.app.desktop.catalog.CatalogSource
 import splice.core.model.DiscoveredModel
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry

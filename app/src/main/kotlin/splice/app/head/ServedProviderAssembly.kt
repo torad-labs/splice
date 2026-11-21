@@ -4,14 +4,15 @@
 // every provider. A provider that cannot be built is left out with a line saying why; it never stops the daemon.
 package splice.app.head
 
+import splice.app.head.books.BooksKeys
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderLogins
 import splice.app.provider.ServedProvider
 import splice.app.provider.ServingProviders
 import splice.core.config.PROVIDER_LAYER_PREFIX
-import splice.core.topology.GatewayProviderRoute
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
+import splice.core.topology.gateway.GatewayProviderRoute
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText

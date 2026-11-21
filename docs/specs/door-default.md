@@ -54,10 +54,15 @@ What `POST /launch/claude` answers the launch shim while `claude` is on the door
 
 ### 3. The terminal has a key of its own
 
-The door admits two callers, Claude Desktop's Code tab and the terminal's `claude`, each with its own key.
+The door admits two callers, Claude Desktop's Code tab and the terminal's `claude`, each with its own key. The
+terminal's `claude` starts on the model decision 1 names. Claude Desktop starts on one of its own, the model
+`splice desktop on --model` names and its picker lists first (docs/specs/desktop-full.md); 0.6.4 had folded it into
+the terminal's, and Desktop's app mode gave it back on Nov 21, 2026.
 `splice desktop off` closes the door to Desktop and leaves `claude` running. `splice desktop rotate-key` changes
-Desktop's key only. `splice claude head` retires the terminal's key, so a session started on the door before it is
-refused afterwards, in Anthropic's error shape, with nothing sent upstream. A turn through the terminal's key is
+Desktop's key only. `splice claude head` moves only the sessions started after it: the terminal's key stays, and a
+session already on the door keeps running there (until Nov 18, 2026 the move retired the key and refused them). A
+key the door does not hold is refused with a 400 in Anthropic's error shape, whose words are splice's, with nothing
+sent upstream: Claude Code reads a 401 or a 403 from a Mantle endpoint as AWS's. A turn through the terminal's key is
 recorded as a door turn of the head that ran it.
 
 ### 4. The models

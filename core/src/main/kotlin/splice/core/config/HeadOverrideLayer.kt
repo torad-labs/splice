@@ -1,6 +1,6 @@
-// NEW: [heads.<key>.overrides] as the daemon holds them NOW. ConfigService read them once at construction; a
-// console write of splice.toml sets them here too, so the next read of that command's config follows the file
-// and a knob read live acts without a restart.
+// NEW: [heads.<key>.overrides] and [providers.<key>.overrides] as the daemon holds them NOW. ConfigService read them
+// once at construction; a console write of splice.toml sets them here too, so the next read of that command's config
+// follows the file and a knob read live acts without a restart.
 package splice.core.config
 
 import java.util.Collections
@@ -15,12 +15,10 @@ internal fun interface ConfigRevisionChanged {
  *  reads is its provider's with its own over it, so a value written once on the provider serves every head on it. */
 public class HeadOverrideLayer(
     boot: Map<String, Map<String, String>>,
-    private val inherited: Map<String, Map<String, String>> = emptyMap(),
+    inherited: Map<String, Map<String, String>> = emptyMap(),
 ) {
-    private val held = AtomicReference(
-        boot.mapValues { (_, values) -> Collections.unmodifiableMap(LinkedHashMap(values)) }
-            .let(Collections::unmodifiableMap),
-    )
+    private val held = AtomicReference(frozen(boot))
+    private val taken = AtomicReference(frozen(inherited))
     private var changed = ConfigRevisionChanged {}
 
     internal fun observeChanges(listener: ConfigRevisionChanged) {
@@ -32,6 +30,7 @@ public class HeadOverrideLayer(
      *  provider). */
     public fun all(): Map<String, Map<String, String>> {
         val own = held.get()
+        val inherited = taken.get()
         return (inherited.keys + own.keys).associateWith { layer ->
             inherited[layer].orEmpty().filterKeys { !refuses(PROVIDER_LAYER_PREFIX, it) } +
                 own[layer].orEmpty().filterKeys { !refuses(layer, it) }
@@ -57,6 +56,25 @@ public class HeadOverrideLayer(
         }
         changed()
     }
+
+    /** The provider [provider] now declares exactly [overrides], and each of [heads], the heads on it, reads them
+     *  beneath its own from its next read: one value written on a provider serves the gateway and every head on it. */
+    public fun setProvider(provider: String, heads: Collection<String>, overrides: Map<String, String>) {
+        val owned = Collections.unmodifiableMap(LinkedHashMap(overrides))
+        val layer = "$PROVIDER_LAYER_PREFIX$provider"
+        held.updateAndGet { now ->
+            Collections.unmodifiableMap(if (owned.isEmpty()) now - layer else now + (layer to owned))
+        }
+        taken.updateAndGet { now ->
+            val next = if (owned.isEmpty()) now - heads.toSet() else now + heads.associateWith { owned }
+            Collections.unmodifiableMap(next)
+        }
+        changed()
+    }
+
+    private fun frozen(layers: Map<String, Map<String, String>>): Map<String, Map<String, String>> =
+        layers.mapValues { (_, values) -> Collections.unmodifiableMap(LinkedHashMap(values)) }
+            .let(Collections::unmodifiableMap)
 }
 
 /** The layer name a provider's `[providers.<key>.overrides]` is held under, apart from every head key: the gateway reads

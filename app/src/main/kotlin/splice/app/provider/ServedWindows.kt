@@ -4,6 +4,8 @@
 // fails leaves the declared windows in force and says why in one log line; `splice doctor` says it too.
 package splice.app.provider
 
+import splice.app.provider.local.JdkLocalHttp
+import splice.app.provider.local.LocalProbeInputs
 import splice.core.topology.ProviderConfig
 import splice.core.util.DaemonLog
 import splice.core.util.EnvReader

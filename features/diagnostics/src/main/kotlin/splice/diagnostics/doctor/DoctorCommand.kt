@@ -19,6 +19,9 @@ import splice.core.util.TopologySlotsFailure
 import splice.core.util.TopologyTypeFailure
 import splice.daemonclient.DaemonSettings
 import splice.diagnostics.doctor.accounts.AccountHealthChecks
+import splice.diagnostics.doctor.accounts.AccountPoolRead
+import splice.diagnostics.doctor.accounts.AccountPoolText
+import splice.diagnostics.doctor.accounts.JdkAccountPoolRead
 import splice.diagnostics.doctor.report.DOCTOR_USAGE
 import splice.diagnostics.doctor.report.DoctorFindingRenderer
 import splice.diagnostics.doctor.report.DoctorJsonReport

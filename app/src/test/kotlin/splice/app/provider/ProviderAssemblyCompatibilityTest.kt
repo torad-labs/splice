@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.TokenUrlRefreshCall
 import splice.app.auth.SignInPlanner
+import splice.app.provider.muse.MuseResponsesArm
 import splice.core.GATEWAY_VERSION
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt

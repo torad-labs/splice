@@ -34,8 +34,8 @@ import splice.app.control.mount.ControlGuard
 import splice.app.desktop.DESKTOP_ERROR_PREFIX
 import splice.app.desktop.DESKTOP_PATH
 import splice.app.desktop.DOOR_PATH
-import splice.app.desktop.DesktopAct
 import splice.app.desktop.DesktopService
+import splice.app.desktop.setup.DesktopAct
 import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus
 import splice.http.JsonBody

@@ -210,8 +210,6 @@
 .card .slot .chip.renew { color: var(--text-body); }
 .card .slot .chip.renew svg { color: var(--text-mute); }
 /* Use now asked once, with the sessions it would move: its own row under the card's head, at the card's right */
-.card > .armrow { display: flex; justify-content: flex-end; margin-top: 0.667rem; }
-.card > .armrow .cutask { justify-content: flex-end; }
 .card .cutask .said { font: 500 .92rem/1.3 var(--font-name); color: var(--text-body); }
 /* A LOGIN'S LIMIT RESETS (Nov 13), opened from its menu: a sunk block under the card's head, one row per kind with how
    many are left and the act that spends one; the second press's note sits under its row, at the card's right */

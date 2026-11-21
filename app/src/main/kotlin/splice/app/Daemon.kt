@@ -21,8 +21,7 @@ import splice.app.daemon.BootedTopology
 import splice.app.daemon.HeadCatalogs
 import splice.app.daemon.TopologyWindows
 import splice.app.desktop.DaemonDesktop
-import splice.app.desktop.DesktopAppLibrary
-import splice.app.head.BooksKeys
+import splice.app.desktop.setup.DesktopAppLibrary
 import splice.app.head.HEAD_STOP_BUDGET_MS
 import splice.app.head.HeadBoot
 import splice.app.head.HeadCapabilities
@@ -38,6 +37,7 @@ import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
 import splice.app.head.QuotaPollSeams
 import splice.app.head.ServedProviderAssembly
+import splice.app.head.books.BooksKeys
 import splice.app.probe.LocalWindowRefresh
 import splice.app.server.DaemonServer
 import splice.app.share.DaemonShare

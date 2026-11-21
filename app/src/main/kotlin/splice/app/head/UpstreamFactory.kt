@@ -11,10 +11,10 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.upstream.retry.ProviderHoldStore
 import splice.upstream.transport.RetryPacing
-import splice.upstream.transport.TrustRoots
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamTransport
 import splice.upstream.transport.WriteBoundMs
+import splice.upstream.transport.tls.TrustRoots
 import java.nio.file.Path
 import java.security.cert.X509Certificate
 

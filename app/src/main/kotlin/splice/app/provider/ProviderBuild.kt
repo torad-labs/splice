@@ -3,6 +3,7 @@
 // qualifying through Daemon; read by HeadBuildInputs, the provider arms and LaunchSpecFactory.
 package splice.app.provider
 
+import splice.app.provider.local.LocalRowsCheck
 import splice.core.config.SpliceConfig
 import splice.core.model.HeadDiscoveredModels
 import splice.core.model.ModelCatalog

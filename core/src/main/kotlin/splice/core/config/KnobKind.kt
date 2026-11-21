@@ -71,5 +71,19 @@ internal val providerServingKnobs: Set<Knob> = setOf(
     Knob.STALL_REANCHOR_MS,
 )
 
+/** These configure a head's display or trace files, not how the gateway serves a provider, so they stay a head's own. */
+internal val headLocalKnobs: Set<Knob> = setOf(
+    Knob.PROJECTS_FOLDERS,
+    Knob.STATUSLINE_GIT_ROOTS,
+    Knob.TRACE_RETENTION_DAYS,
+    Knob.TRACE_MAX_BODY_CHARS,
+)
+
+/** The knobs a provider carries for the gateway and for every head on it (gateway-no-heads): each one a turn is served
+ *  by, which is every knob but a head-only one, a daemon-wide one and a head's display or trace knobs. A head that alone
+ *  sets one is a boot finding (GatewayMoveChecks), so a write of one goes to the provider's table (HeadOverrideWrite). */
+public val providerCarriedKnobs: Set<Knob> =
+    Knob.entries.filterTo(LinkedHashSet()) { !it.headOnly && it !in daemonWideKnobs && it !in headLocalKnobs }
+
 /** Per-head values for these knobs cannot create a different timing or daemon policy. */
 internal const val DAEMON_WIDE_OVERRIDE: String = "is daemon-wide; set it under [defaults] instead"

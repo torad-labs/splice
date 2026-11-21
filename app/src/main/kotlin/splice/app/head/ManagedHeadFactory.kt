@@ -16,6 +16,9 @@ import splice.app.control.ManagedHead
 import splice.app.control.StatuslineContext
 import splice.app.control.UsageWarning
 import splice.app.control.UsageWarningSource
+import splice.app.head.books.AssembledRoute
+import splice.app.head.books.BooksQuota
+import splice.app.head.books.ProviderBooks
 import splice.app.probe.PlaygroundProviders
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild

@@ -10,7 +10,7 @@ package splice.app.cli.desktop
 import splice.app.cli.hook.STDOUT_FD
 import splice.app.cli.hook.StreamDevice
 import splice.app.cli.hook.StreamTerminal
-import splice.app.desktop.DesktopKey
+import splice.app.desktop.record.DesktopKey
 import splice.core.terminal.TerminalOutput
 import java.nio.file.Path
 

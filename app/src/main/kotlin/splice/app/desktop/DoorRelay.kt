@@ -11,6 +11,7 @@
 package splice.app.desktop
 
 import io.ktor.server.application.ApplicationCall
+import splice.app.desktop.record.DesktopLastTurn
 import splice.core.util.WallClock
 import splice.head.GatewayTurn
 import java.time.Instant

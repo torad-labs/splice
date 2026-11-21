@@ -10,6 +10,23 @@
 package splice.app.desktop
 
 import kotlinx.coroutines.withContext
+import splice.app.desktop.catalog.CatalogBuild
+import splice.app.desktop.catalog.CatalogFile
+import splice.app.desktop.catalog.DesktopLineup
+import splice.app.desktop.catalog.DesktopProviders
+import splice.app.desktop.catalog.DoorCatalog
+import splice.app.desktop.catalog.PublishedCatalog
+import splice.app.desktop.catalog.SelectorAliases
+import splice.app.desktop.lane.ClaudeHeadLane
+import splice.app.desktop.lane.TerminalDoor
+import splice.app.desktop.record.DesktopKey
+import splice.app.desktop.record.DesktopRecords
+import splice.app.desktop.setup.DesktopAppLibrary
+import splice.app.desktop.setup.DesktopAppMode
+import splice.app.desktop.setup.DesktopPrograms
+import splice.app.desktop.setup.DesktopSettingsFile
+import splice.app.desktop.setup.DesktopSettingsTidy
+import splice.app.desktop.setup.DesktopSwitch
 import splice.app.provider.CredentialChanged
 import splice.app.provider.ModelRosters
 import splice.app.provider.ServingProviders

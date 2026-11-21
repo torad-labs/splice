@@ -3,6 +3,9 @@
 // window and its own words. The door tells them apart by the key a request presents, and from then on asks the caller.
 package splice.app.desktop
 
+import splice.app.desktop.catalog.DesktopLineup
+import splice.app.desktop.record.DesktopLastTurn
+import splice.app.desktop.record.DesktopPickerRow
 import splice.share.RefusalVoice
 
 internal abstract class DoorCaller(

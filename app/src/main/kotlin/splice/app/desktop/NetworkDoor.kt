@@ -9,6 +9,8 @@
 package splice.app.desktop
 
 import io.ktor.server.application.ApplicationCall
+import splice.app.desktop.catalog.DesktopLineup
+import splice.app.desktop.lane.ClaudeLane
 import splice.client.desktop.DoorPickerRow
 import splice.core.turn.TERMINAL_DOOR
 import splice.core.wire.HttpStatus

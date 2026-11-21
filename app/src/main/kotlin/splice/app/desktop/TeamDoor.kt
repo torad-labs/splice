@@ -10,6 +10,9 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import splice.app.desktop.catalog.DesktopLineup
+import splice.app.desktop.catalog.DesktopProviders
+import splice.app.desktop.catalog.DoorCatalog
 import splice.app.provider.ServedProvider
 import splice.core.client.SESSION_HEADER
 import splice.core.topology.Topology

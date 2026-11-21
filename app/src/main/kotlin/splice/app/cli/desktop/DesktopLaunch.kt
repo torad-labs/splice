@@ -14,7 +14,7 @@ package splice.app.cli.desktop
 import splice.app.cli.AdminSupport
 import splice.app.desktop.DESKTOP_PATH
 import splice.app.desktop.DOOR_PATH
-import splice.app.desktop.DesktopKey
+import splice.app.desktop.record.DesktopKey
 import splice.core.config.STATE_DIR_ENV
 import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput

@@ -6,6 +6,8 @@ package splice.core.topology
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import splice.core.topology.gateway.GatewaySelectorPrefixes
+import splice.core.topology.toml.TomlKeys
 
 @Serializable
 public data class DoorConfig(

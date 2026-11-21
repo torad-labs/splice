@@ -13,11 +13,11 @@ import splice.core.capability.CapabilityToml
 import splice.core.config.retiredKnobsByKey
 import splice.core.model.HeadDiscoveredModels
 import splice.core.topology.Dialect
-import splice.core.topology.ServingBoundMove
 import splice.core.topology.Topology
 import splice.core.topology.TopologyFinding
 import splice.core.topology.TopologyFindings
 import splice.core.topology.TopologyRuleViolation
+import splice.core.topology.gateway.ServingBoundMove
 import splice.core.util.SafeFailureText
 import splice.core.util.TopologyTypeFailure
 import java.nio.file.Path

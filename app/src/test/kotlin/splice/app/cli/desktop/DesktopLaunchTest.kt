@@ -7,7 +7,7 @@ package splice.app.cli.desktop
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.desktop.DesktopKey
+import splice.app.desktop.record.DesktopKey
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import java.nio.file.Files

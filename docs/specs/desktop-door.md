@@ -1,5 +1,9 @@
 # Claude Desktop's Code tab on splice (`desktop-door`)
 
+Superseded on Nov 21, 2026 by `desktop-full.md`: `splice desktop on` now sets all of Claude Desktop up on splice, with
+nothing to paste. The environment-store path this spec describes is no longer offered; a door opened that way is still
+answered until `on` or `off` replaces it. What follows is the door as it was built then.
+
 ## What a person gets
 
 Someone who uses Claude Desktop points its Code tab at splice, the way Claude Code is pointed at Amazon Bedrock or

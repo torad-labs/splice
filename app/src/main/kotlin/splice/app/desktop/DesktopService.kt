@@ -14,6 +14,18 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import splice.app.desktop.catalog.DesktopLineup
+import splice.app.desktop.catalog.DesktopProviders
+import splice.app.desktop.catalog.DoorCatalog
+import splice.app.desktop.catalog.LineupJson
+import splice.app.desktop.catalog.ProviderCatalog
+import splice.app.desktop.lane.ClaudeLane
+import splice.app.desktop.lane.DOOR_LANE
+import splice.app.desktop.record.DesktopPickerRow
+import splice.app.desktop.record.DesktopRecords
+import splice.app.desktop.setup.DesktopFeatures
+import splice.app.desktop.setup.DesktopMode
+import splice.app.desktop.setup.DesktopSwitch
 
 /** The door, its switch, the terminal's lane, and what `splice desktop` and `splice claude` say, for the routes. */
 internal class DesktopService(

@@ -10,9 +10,9 @@ import splice.core.terminal.YELLOW
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
-import splice.diagnostics.doctor.AccountPoolRead
-import splice.diagnostics.doctor.AccountPoolText
 import splice.diagnostics.doctor.AccountPoolsRead
+import splice.diagnostics.doctor.accounts.AccountPoolRead
+import splice.diagnostics.doctor.accounts.AccountPoolText
 
 internal class StatusExtras(private val accountPools: AccountPoolRead) {
     private val accountText = AccountPoolText()

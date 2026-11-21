@@ -16,6 +16,15 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.desktop.DesktopCredential
+import splice.app.desktop.record.DesktopKey
+import splice.app.desktop.record.DesktopRecords
+import splice.app.desktop.setup.DesktopAppLibrary
+import splice.app.desktop.setup.DesktopAppMode
+import splice.app.desktop.setup.DesktopManagedPolicy
+import splice.app.desktop.setup.DesktopMode
+import splice.app.desktop.setup.DesktopPolicyDefaults
+import splice.app.desktop.setup.DesktopPrograms
+import splice.app.desktop.setup.DesktopRetire
 import splice.client.desktop.DesktopAppConfig
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader

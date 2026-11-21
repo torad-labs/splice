@@ -7,6 +7,8 @@ package splice.app.desktop
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
+import splice.app.desktop.catalog.AliasedSelector
+import splice.app.desktop.catalog.SelectorAliases
 import splice.core.topology.HeadConfig
 
 class SelectorAliasesTest {

@@ -5,6 +5,14 @@
 // its configuration) and the rows its last discovery was answered with (which say whether the picker changed since).
 package splice.app.desktop
 
+import splice.app.desktop.catalog.DesktopLineup
+import splice.app.desktop.record.DesktopKey
+import splice.app.desktop.record.DesktopLastTurn
+import splice.app.desktop.record.DesktopPickerRead
+import splice.app.desktop.record.DesktopPickerRow
+import splice.app.desktop.record.DesktopRecord
+import splice.app.desktop.record.DesktopRecords
+import splice.app.desktop.record.RecordChange
 import splice.core.turn.DESKTOP_DOOR
 import splice.core.util.Cancellables
 import splice.core.util.LogSink

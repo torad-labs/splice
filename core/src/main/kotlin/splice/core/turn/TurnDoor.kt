@@ -9,7 +9,7 @@ package splice.core.turn
  *  passes on a client's own. */
 public const val TURN_DOOR_HEADER: String = "x-splice-door"
 
-/** Claude Desktop's Code tab, at the door under `/desktop`. */
+/** Claude Desktop's Code tab, at the door with its desktop key. */
 public const val DESKTOP_DOOR: String = "desktop"
 
 /** The terminal's `claude`, at the same door with a key of its own. */

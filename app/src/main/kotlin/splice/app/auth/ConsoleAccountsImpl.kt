@@ -18,7 +18,7 @@ import splice.topology.TopologyLoader
 import java.nio.file.Path
 
 // why: the console and CLI use OAuthAccountFiles' reserved label for the primary credential file.
-private const val PRIMARY_LABEL = "primary"
+internal const val PRIMARY_LABEL = "primary"
 
 /** The configured topology used to resolve a head's OAuth account files. */
 internal fun interface ConsoleAccountsTopology {
@@ -50,6 +50,8 @@ internal class ConsoleAccountsImpl(
     override suspend fun cancelLogin(id: String): LoginStatus? = sessions.cancel(id)
 
     override fun openLogins(): List<LoginStatus> = sessions.open()
+
+    override fun restartRead(id: String) = sessions.restartRead(id)
 
     override suspend fun removeAccount(headKey: String, label: String, restart: HeadRestart): AccountMutation {
         // The first account signs in with no label, so no label is the place a sign-in still open for it holds. Under

@@ -16,6 +16,18 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.desktop.catalog.CatalogBuild
+import splice.app.desktop.catalog.CatalogFile
+import splice.app.desktop.catalog.CatalogModel
+import splice.app.desktop.catalog.DesktopLineup
+import splice.app.desktop.catalog.DesktopModelSettings
+import splice.app.desktop.catalog.DoorCatalog
+import splice.app.desktop.catalog.DoorModel
+import splice.app.desktop.catalog.DoorModelWire
+import splice.app.desktop.catalog.ModelDiscovery
+import splice.app.desktop.catalog.PublishedCatalog
+import splice.app.desktop.catalog.SelectorAliases
+import splice.app.desktop.catalog.ServedModel
 import splice.app.provider.ProviderLogin
 import splice.app.provider.ServedProvider
 import splice.client.models.AnthropicTiers
@@ -106,6 +118,21 @@ internal class DoorPickerRowsTest {
             selected.asking(routed.upstream).decodeToString(),
         )
         assertNull(routing.of(lineup, ask("claude-opus-99"), null, named = true))
+    }
+
+    @Test
+    fun `a model the picker spells with the 1M hint runs when a turn names it without the hint`() {
+        // Claude Code sends `muse--muse-spark-1.3` for the row it lists as `muse--muse-spark-1.3[1m]`.
+        val lineup = lineupOf(
+            provider("muse", login = true) to
+                listOf(model("muse", "muse-spark-1.3[1m]"), model("muse", "muse-ember-1.0")),
+            provider("grok", login = true) to listOf(model("grok", "grok-4.3"), model("grok", "grok-4.3[1m]")),
+        )
+        assertEquals("muse-spark-1.3[1m]", lineup.find("muse--muse-spark-1.3")?.second?.upstream)
+        assertEquals("muse-spark-1.3[1m]", lineup.find("muse--muse-spark-1.3[1m]")?.second?.upstream)
+        // A row spelled exactly as asked is the one that runs.
+        assertEquals("grok-4.3", lineup.find("grok--grok-4.3")?.second?.upstream)
+        assertNull(lineup.find("muse--muse-spark-9"))
     }
 
     @Test

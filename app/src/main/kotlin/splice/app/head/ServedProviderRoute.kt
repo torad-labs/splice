@@ -3,6 +3,7 @@
 package splice.app.head
 
 import io.ktor.server.application.ApplicationCall
+import splice.app.head.books.AssembledRoute
 import splice.app.provider.ProviderBuild
 import splice.app.provider.ProviderLogin
 import splice.app.provider.ProviderLogins

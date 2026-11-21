@@ -14,6 +14,8 @@
 // caller's defaults.
 package splice.app.desktop
 
+import splice.app.desktop.catalog.DesktopLineup
+import splice.app.desktop.catalog.DoorModel
 import splice.app.provider.ServedProvider
 import splice.client.models.AnthropicTiers
 import splice.core.model.ModelTierSuffix

@@ -1,12 +1,90 @@
 # Changelog
 
-## Unreleased: `claude` runs on splice's door, and head commands are deprecated
+## Unreleased: a provider is served with no head, Claude Desktop sets itself up, and one model catalog
 
 ### Highlights
+- **A provider is served with no head.** Every provider in `splice.toml` is assembled for the gateway from its own
+  table, so the door, the door on your network, a team's door, `splice status` and `splice doctor` all read
+  providers, and a `splice.toml` with no `[heads.*]` block serves all three provider formats. A provider carries
+  what a turn on it needs: its pinned model and tier map, its window, its standing prompt and its own `overrides`.
+  A sign-in splice refreshes has one owner however many routes serve it.
+- **`splice desktop on` sets Claude Desktop up itself, with nothing to paste.** It writes splice's configuration into
+  Desktop's third-party configuration library and applies it, so all of Desktop (Chat, Cowork and the Code tab) runs
+  on splice's door, with the desktop key handed over by a small program Desktop runs. No key is written into
+  Desktop's files. `on` says first what that costs and asks; `off` and `splice uninstall --all` take out exactly what
+  `on` put in.
+- **Desktop starts out matching your Claude Code.** The configuration is generated: the default policy the build
+  ships, with the effort your Claude Code sessions run at and the plugin marketplaces you added laid over it. A
+  setting you change in Desktop stays as you set it: a daemon start only gives a configuration what it leaves unset.
+- **One model catalog.** splice asks the providers you are signed in to for their models at each start and keeps
+  one catalog (`model-catalog.json`), which every list reads: the terminal's `/model`, Desktop's picker, the door's
+  model discovery and `splice claude`. Each model has its provider's own name, description, reasoning levels and
+  window, under an id Claude's clients keep.
+- **A team adds a provider of its own.** A provider can take its key from a command (`credential_command`), trust a
+  company's own certificate authority (`ca_file`), report the window it really serves (`served_window`), cap a
+  turn's output (`max_output_tokens`) and pass its error messages whole (`error_messages = "whole"`).
+  `splice add provider` installs a definition a team publishes, and `[door.commands.<name>]` gives a team's wrapper
+  a command of its own on the door.
+
+### Upgrading
+- **A value only a head holds stops the daemon from starting, and the fix session offers the move.** A head's
+  window, tier models, standing prompt, an older selector prefix or an override that its provider does not say the
+  same way is a finding that names it, since the gateway would serve the provider without it. The interactive fix
+  session moves the value to the provider's table; nothing is moved silently. A head's pin, and its display and trace
+  settings, stay with the head.
+- **A setting changed for one command on the console is written where splice reads it.** A setting a turn is served
+  by (how many requests at once, the retry and reasoning settings) is its provider's, so every command on that
+  provider runs with it, and the answer names them. A display or trace setting stays the command's own.
+- **Claude Desktop has a starting model of its own again.** `splice desktop on --model <id>` names the model Desktop
+  lists first and opens a new session on; the terminal's `claude` keeps its own. 0.6.4 had folded Desktop's into the
+  terminal's.
+- **`splice desktop on` no longer prints variables to paste.** A Code tab set up that way keeps working until `on`
+  or `off` replaces it. Desktop on splice has no claude.ai sign-in: to keep your Claude account in Desktop and use
+  splice too, run a second Desktop beside your own, on a config folder of its own.
+- Another lab's model is listed under an id Claude's clients keep, such as `claude-xai--4.7`. The selectors of
+  today keep working.
+
+### Added
+- **The keyed team listener serves the door.** `/door/v1` answers on a team's server from the gateway's providers,
+  with each person's allowlist applied to the provider a model resolves to, and a streamed turn's client is pinged
+  at `[server] keepalive_seconds` when that is shorter than splice's own probe.
+- **A session launched on a door is placed there.** Sessions lists it with its door, and starting it again starts
+  it on that door.
+- **Remove takes Claude Code's own login out of splice and leaves its file.** The login stays signed in for Claude
+  Code; splice stops listing and serving it until you take it off the removed list.
+- **Every answer splits its cache write into five-minute and one-hour parts** (`usage.cache_creation`), which Claude
+  Desktop's gateway protocol reads.
+- **A turn's row names the Claude Code subagent and parent agent that sent it** on `/api/perf/turns`.
+- **`splice desktop launch`** is what a managed `processWrapper` starts the Code tab through, and `splice desktop`
+  says each Desktop feature that depends on the backend, working or why not.
+- **A command-auth provider signs in from the terminal or the console**, and `splice doctor` reports on it.
+
+### Fixed
+- **A provider keyed by a lab's other name no longer repeats the lab in its model ids.** A provider called `xai`
+  listed Grok's models as `claude-xai--xai-4.7`; it lists `claude-xai--4.7`, and the earlier spelling still runs.
+- **A header the gateway found carrying one of its keys is never forwarded upstream.**
+- **A gateway turn takes its upstream, its served-turn id, its door and its notice from what the gateway
+  authenticated**, never from the caller's headers.
+- **A cold start waits out a bound port that is merely slow to answer.**
+- **Each route over one account pool keeps its own wake-up**, so one no longer replaced another's.
+
+## splice v0.6.4: `claude` runs on splice's door, and the door answers on your network - 2026-11-19
+
+### Highlights
+- **The door answers on your network.** Turn on `splice share on` on one machine and any machine on its LAN or
+  tailnet runs plain `claude` on every model that box serves, ChatGPT, Grok, Kimi, Muse, Claude accounts and local
+  servers alike, after one `splice remote add http://<box>`. `/model` lists the box's models, the session runs over
+  the machine's own `~/.claude`, and no credential lands there. A Claude Code without splice, or Claude Desktop's
+  Code tab, runs on it from three Bedrock-style variables that `splice share status` prints. Spec:
+  `docs/specs/door-network.md`.
 - **`claude` on the door is how splice is used.** The terminal's plain `claude` runs on splice's door, the one
   Claude Desktop's Code tab uses, with a key of its own. Its `/model` picker lists the models of every account you
   signed in to with a ChatGPT, Grok, Kimi or Muse login, each labelled `splice · <command>`, and a sign-in shows in
   the next session with no restart. The session runs over your own `~/.claude`; splice writes nothing there.
+- **Claude Desktop's Code tab is a caller of that same door.** There is one door, at one path (`/door`), for the
+  terminal's `claude`, Desktop's Code tab and another machine's `claude`. Desktop keeps a key and an on/off of its
+  own and nothing else: a Code tab session starts on the model `claude` starts on, and
+  `splice claude door --model <selector>` moves both.
 - **`/login` opens splice's accounts page.** In a session on the door, and on every head here, `/login` runs
   `splice console` and the turn goes no further. Claude Code's own `/login` and `/logout` are off on the door. With
   no account signed in, a turn is refused with a message that says to type `/login`.
@@ -19,6 +97,22 @@
   on every later request. A capability that fails lets the turn go on or refuses it, as its table says.
 
 ### Upgrading
+- **Claude Desktop starts on the model `claude` starts on.** A default model saved for Desktop by an earlier
+  `splice desktop on --model` is no longer read: after the update a new Code tab session starts where the
+  terminal's `claude` does, which `splice desktop` and `splice claude` both say. To choose it, run
+  `splice claude door --model <selector>`. `splice desktop on --model` is refused with that command's name and
+  changes nothing. The window you set in Desktop is kept. A Code tab session already open follows too, from its
+  next turn: Desktop names only its own models, so the door picks at each turn. A terminal session stays on the
+  model it started on.
+- The door's address is now `http://127.0.0.1:<control_port>/door`, and `splice desktop on` prints it. Nothing has
+  to be set again: the earlier address (`/desktop`) still answers, for a Desktop set up before and for a `claude`
+  session already running.
+- A tailnet peer is now answered by a machine that is itself on a tailnet (100.64/10 and Tailscale's IPv6 range), and
+  by its MagicDNS name. Before, the share listener turned tailnet peers away. A machine on no tailnet still turns
+  those ranges away.
+- `splice remote add http://<box>` on a box that serves a door links `claude` to it and no longer links each
+  command. An address naming one command (`http://<box>:3097/claudex`) still works, and `splice share status` lists
+  those as deprecated.
 - With no choice made, `claude` is on the door unless `splice.toml` has a head whose command is `claude`, so a
   machine set up with the `claude` head keeps it. `splice claude door [--model <selector>]` moves it to the door,
   and `splice claude head` moves it back. The choice is kept across restarts and upgrades.
@@ -49,6 +143,8 @@
   in its list; `splice add claude` still adds that head.
 
 ### Changed
+- A turn that reaches the share listener's door with Desktop's key or the terminal's is answered as that caller,
+  with its own on/off and window, so a Desktop or a `claude` of the machine itself can use either address.
 - A head's `/login` opens splice's accounts page instead of signing in inside the session. `<command> login` in a
   terminal still signs in.
 - **Login alerts are two, each said once.** The daemon's `alert_command` and webhook are told when a command's last
@@ -63,6 +159,15 @@
   The first turn a login can serve the session's own model goes back to it.
 
 ### Fixed
+- **`splice claude head` leaves sessions on the door running.** It retired the terminal's key, so every `claude`
+  session already on the door was refused from its next turn. It now decides only where a new session starts.
+- **A key the door refuses is said in splice's words.** The door answered 401 and 403, which Claude Code reads from
+  a Mantle endpoint as AWS's and words as "AWS credentials expired or invalid". It answers 400 now, and the words
+  shown are splice's, with where each caller's key comes from.
+- **The console's first read no longer grows with every session ever opened.** `GET /api/sessions` sent a row for
+  every session the machine had registered: 3.3 MB and 25 seconds after a restart on a machine with 4,400 of them,
+  past the console's read limit. It sends the sessions still here and the newest 100 ended ones, `gone_older` counts
+  the rest, and `GET /api/sessions/history` pages and searches those.
 - **A ChatGPT account signs in from the console without a device code.** The Accounts page used OpenAI's device-code
   sign-in, which works only after the account turns on device-code authorization in its ChatGPT security settings,
   so most accounts could not sign in there. It now uses the browser sign-in `claudex login` uses: approve on
@@ -77,6 +182,15 @@
   drew the code beside it with "Enter this code on the sign-in page". It now shows those sign-ins the way it shows
   ChatGPT, Grok and Claude: Open sign-in, approve, and the console finishes by itself. A provider whose link does not
   carry the code still shows the code to enter.
+- **An account added from the console is on its command when the tile closes.** A ChatGPT, Grok, Kimi or Muse
+  command reads which logins it has when splice starts. Adding a second account from the Accounts page wrote the
+  login and closed its tile as done, while the command went on with the logins it had: the new account was neither
+  listed nor used until someone ran `splice restart`. splice now restarts itself for such a login, as it does after
+  a provider is added: the tile reads "Signed in. Restarting splice to use this login" and closes on the new
+  account's card once splice is back. A splice that cannot restart itself says "Restart splice" with its reason.
+  `GET /api/auth/{head}/login/{id}` answers `restarting` for such a sign-in, and a failure of kind
+  `needs_restart` when splice could not restart. Signing in again on a login the command already has still restarts
+  only that command.
 - **A login whose token can't be renewed hands the turn to another login.** When every other login was held for
   the turn's model, the turn ended "login expired and could not be renewed" though other logins were signed in. It
   now moves to the one whose hold ends soonest, or to a model with room.

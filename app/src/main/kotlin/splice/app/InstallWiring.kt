@@ -4,7 +4,7 @@
 package splice.app
 
 import splice.app.cli.AdminSupport
-import splice.app.desktop.DesktopRetire
+import splice.app.desktop.setup.DesktopRetire
 import splice.app.manager.ManagerHome
 import splice.client.login.DoorLogin
 import splice.core.config.InstallPaths

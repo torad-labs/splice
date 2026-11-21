@@ -5,10 +5,10 @@
 package splice.app
 
 import splice.app.cli.AdminSupport
-import splice.app.desktop.ClaudeLaneLook
-import splice.app.desktop.DesktopLook
-import splice.app.provider.JdkLocalHttp
-import splice.app.provider.LocalProbeInputs
+import splice.app.desktop.lane.ClaudeLaneLook
+import splice.app.desktop.setup.DesktopLook
+import splice.app.provider.local.JdkLocalHttp
+import splice.app.provider.local.LocalProbeInputs
 import splice.core.config.RunningJar
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader

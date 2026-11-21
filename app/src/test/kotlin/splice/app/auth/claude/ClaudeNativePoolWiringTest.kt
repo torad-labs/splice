@@ -41,9 +41,9 @@ import splice.core.usage.PlanLimit
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.EnvReader
-import splice.diagnostics.doctor.AccountPoolText
 import splice.diagnostics.doctor.AccountPoolsRead
-import splice.diagnostics.doctor.JdkAccountPoolRead
+import splice.diagnostics.doctor.accounts.AccountPoolText
+import splice.diagnostics.doctor.accounts.JdkAccountPoolRead
 import splice.diagnostics.playground.PlaygroundHead
 import splice.head.usage.CredentialQuotaFiles
 import splice.upstream.RetryNotice

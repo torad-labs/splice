@@ -78,6 +78,8 @@ import splice.http.listen.HttpListenerThreads
 import splice.server.caller.ClientAddresses
 import splice.server.caller.KeyAdmission
 import splice.server.ledger.ROUTE_MESSAGES
+import splice.server.signin.SigninParts
+import splice.server.signin.SigninRoute
 import splice.server.telemetry.OTLP_ROUTE
 import splice.server.telemetry.ResourceStamp
 import splice.server.telemetry.TelemetryRelay

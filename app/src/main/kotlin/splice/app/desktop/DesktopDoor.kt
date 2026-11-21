@@ -17,6 +17,10 @@ import io.ktor.server.application.ApplicationCall
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.app.desktop.catalog.DesktopLineup
+import splice.app.desktop.catalog.DesktopProviders
+import splice.app.desktop.catalog.DoorCatalog
+import splice.app.desktop.catalog.ModelDiscovery
 import splice.client.desktop.ANTHROPIC_BETA_HEADER
 import splice.client.desktop.APP_MODE_HEADER
 import splice.client.desktop.DesktopAppWindow

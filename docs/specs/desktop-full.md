@@ -31,8 +31,11 @@ the gateway answer fields of df-wire-answers.
 Outcome 9 (desktop-policy) is built: the configuration is generated, the build's default policy
 (`claude-code-desktop-policy/ccd-policy.json`, DesktopPolicyDefaults) with what the person set up in Claude Code laid
 over it (ClaudeCodeSetup, DesktopPolicy), written whole by `on` and given, where it is unset, to every applied
-configuration that points at the door at each daemon start and catalog change (DesktopAppLibrary.publish). Not yet
-checked on the real app in the sandbox of outcome 8.
+configuration that points at the door at each daemon start and catalog change (DesktopAppLibrary.publish). Read by
+the real app on Nov 21, 2026: Desktop 6.28899.2, started in a throwaway home on a private display, opened in gateway
+mode on the generated configuration and refused none of its keys, and the same run with three bad values named each
+one in `main.log` (`Failed to parse managed config "<key>"`), so its silence is acceptance. Not driven further than
+launch: a turn, the picker and Cowork under this configuration wait for the sandbox of outcome 8.
 
 ## Who it is for and why
 

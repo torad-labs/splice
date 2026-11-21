@@ -42,14 +42,19 @@ public object ClientModelNames {
     /** [selector], of the head whose selectors start [prefix], as Claude's clients keep it: itself when they do, else
      *  [prefixOf] [prefix] and the model with each lab's name put another way. With [short], a model that starts with
      *  its lab's name (`grok-4.7` on `claude-grok--`) leaves it out when the prefix already said it:
-     *  `claude-xai--4.7`. */
+     *  `claude-xai--4.7`. A prefix that is the lab's other name already (`claude-xai--`, a provider keyed `xai`) said
+     *  it too: until Nov 21, 2026 only a prefix that had to be put another way counted, so that provider's models
+     *  read `claude-xai--xai-4.7` at the door while its head's read `claude-xai--4.7`. */
     public fun readable(selector: String, prefix: String, short: Boolean = true): String {
         if (kept(selector)) return selector
         val head = prefixOf(prefix)
         val model = selector.removePrefix(prefix)
-        val lead = if (short && head != prefix) leadingLab(model) else null
+        val lead = leadingLab(model)?.takeIf { short && (head != prefix || says(head, it)) }
         return head + neutralized(lead?.let { model.substring(it.length + 1) } ?: model)
     }
+
+    /** Whether [head], a readable prefix, already carries [lab] under its other name. */
+    private fun says(head: String, lab: String): Boolean = neutral[lab]?.let { it in head.lowercase() } ?: false
 
     /** The lab's name [model] starts with, followed by `-`; null when it starts with none. */
     private fun leadingLab(model: String): String? =

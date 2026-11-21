@@ -72,6 +72,24 @@ class ReadableIdsTest {
     }
 
     @Test
+    fun `a provider keyed by a lab's other name leaves the lab's name out of its models, as its head does`() {
+        val xaiProvider = plain("claude-xai--", "grok-4.7", "grok-build-latest")
+        assertEquals("claude-xai--4.7", xaiProvider.names.nameOf("grok-4.7"))
+        assertEquals("claude-xai--build-latest", xaiProvider.names.nameOf("grok-build-latest"))
+        assertEquals("grok-4.7", xaiProvider.unwrap("claude-xai--4.7"))
+        assertEquals("claude-xai--4.7", grok.names.nameOf("grok-4.7"), "the same id the head's own table gives")
+    }
+
+    @Test
+    fun `the whole name a client was given before the short one still reaches its model`() {
+        val xaiProvider = plain("claude-xai--", "grok-4.7", "grok-4.3[1m]")
+        assertEquals("grok-4.7", xaiProvider.unwrap("claude-xai--xai-4.7"))
+        assertEquals("grok-4.3[1m]", xaiProvider.unwrap("claude-xai--xai-4.3[1m]"))
+        assertEquals("claude-xai--grok-4.7", xaiProvider.names.selectorOf("claude-xai--xai-4.7"))
+        assertEquals("claude-xai--4.7", xaiProvider.names.nameOf("grok-4.7"), "and is never the name it is listed by")
+    }
+
+    @Test
     fun `a selector Claude's clients keep is its own name`() {
         val claude = plain("claude--", "claude-opus-5-5")
         assertEquals("claude--claude-opus-5-5", claude.names.nameOf("claude-opus-5-5"))

@@ -17,11 +17,19 @@ public class ReadableNames internal constructor(private val catalog: ModelCatalo
         return names[base]?.let { it + model.removePrefix(base) } ?: catalog.wrap(model)
     }
 
+    /** Every name a model answers to: its readable name, and its whole one (no lab's name left out) where that is
+     *  another, which a client that was given it before the short one still sends. A readable name is never taken
+     *  from its own model by another's whole one. */
+    private val answering: Map<String, String> by lazy {
+        val prefix = catalog.discoveryPrefix
+        models.values.associateBy { ClientModelNames.readable(catalog.wrap(it), prefix, short = false) } + models
+    }
+
     /** The upstream model readable name [id] stands for, its window hint kept; null when [id] is none of this head's
      *  readable names. */
     public fun upstreamOf(id: String): String? {
         val base = ModelTierSuffix.strip(id)
-        return models[base]?.let { it + id.removePrefix(base) }
+        return answering[base]?.let { it + id.removePrefix(base) }
     }
 
     /** The selector readable name [id] stands for on this head, or null when [id] is none of its readable names. */

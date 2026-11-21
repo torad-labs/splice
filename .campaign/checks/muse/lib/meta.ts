@@ -1,6 +1,5 @@
 // The Muse checks' stand-in for Meta's Model API, the backend a Muse head talks to: the model list (`GET
-// /v1/models`) and the Responses route (`POST /v1/responses`). What it does comes from three places, and
-// docs/specs/muse-tool-cache.md ("What Meta's API does") says which is which:
+// /v1/models`) and the Responses route (`POST /v1/responses`). What it does comes from three places:
 //   - from Meta's documentation (dev.meta.ai, read 2026-11-16): it caches a request by prefix, in the order
 //     instructions, tools, input, among the requests that carry the same `prompt_cache_key`, and says how much of each
 //     request it read from that cache;

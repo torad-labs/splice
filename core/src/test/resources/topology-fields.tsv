@@ -41,6 +41,8 @@ door
 door.commands	
 door.commands.*.head	
 door.commands.*.models	
+door.selector_aliases	
+door.selector_aliases.*	
 heads	
 heads.*.claude	
 heads.*.claude.command	

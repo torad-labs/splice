@@ -4,12 +4,17 @@
 // bad value is one finding among all of them, never a decode error that hides the rest.
 package splice.core.topology
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
 public data class DoorConfig(
     /** `[door.commands.<name>]`: the commands a wrapper starts Claude Code on the door through, by name. */
     val commands: Map<String, DoorCommandConfig> = emptyMap(),
+    /** `[door.selector_aliases]`: an old selector prefix (`claude-ollama--`) read as the provider it stood for
+     *  (`ollama`), so a selector a caller holds under a head's custom `discovery_prefix` keeps working once that head
+     *  is gone. The gateway's own legacy prefixes need no entry. */
+    @SerialName("selector_aliases") val selectorAliases: Map<String, String> = emptyMap(),
 )
 
 /** One `[door.commands.<name>]`: the head whose pinned model a session of the command starts on, and whose models its
@@ -31,8 +36,22 @@ public const val DOOR_MODELS_DOOR: String = "door"
 
 /** Why a `[door.commands.*]` table cannot run: its head, its word, its name. Each finding names its dotted path. */
 public class DoorChecks(private val topology: Topology) {
-    public fun findings(): List<TopologyFinding> = topology.door.commands.flatMap { (name, command) ->
+    public fun findings(): List<TopologyFinding> = commandFindings() + aliasFindings()
+
+    private fun commandFindings(): List<TopologyFinding> = topology.door.commands.flatMap { (name, command) ->
         listOfNotNull(head(name, command), models(name, command), name(name))
+    }
+
+    /** An alias is a prefix a selector begins with, which ends where the model id starts (`--`), for a provider
+     *  splice.toml declares. */
+    private fun aliasFindings(): List<TopologyFinding> = topology.door.selectorAliases.mapNotNull { (prefix, to) ->
+        val why = when {
+            !prefix.startsWith(ALIAS_START) || !prefix.endsWith(ALIAS_END) || prefix == ALIAS_START + ALIAS_END ->
+                "must begin with \"$ALIAS_START\" and end with \"$ALIAS_END\", like claude-ollama--"
+            to !in topology.providers -> "names provider \"$to\", which splice.toml does not declare"
+            else -> null
+        }
+        why?.let { TopologyFinding("door.selector_aliases.\"$prefix\"", it) }
     }
 
     private fun head(name: String, command: DoorCommandConfig): TopologyFinding? {
@@ -72,3 +91,7 @@ public class DoorChecks(private val topology: Topology) {
 
 // What a door command named `claude` is told: that name is Claude Code's own, which the door already runs.
 private const val CLAUDE_TAKEN = "is Claude Code's own command, which the door already runs; give this one another name"
+
+// How a selector prefix reads: it begins `claude-` and ends `--`, where the provider's own model id starts.
+private const val ALIAS_START = "claude-"
+private const val ALIAS_END = "--"

@@ -76,6 +76,8 @@ PROBE_MOCK_PORT="$(mock_field mock_anthropic_probe.out port)"
 POOL_MOCK_PORT="$(mock_field mock_anthropic_pool.out port)"
 
 # ── 2. topology: two claude-splice-shaped heads (anthropic-passthrough, the client's own login) ───
+# Each provider is named as its head is, so the head's selector prefix is the provider's own (claude-<provider>--):
+# since gateway-no-heads a prefix only a head holds is a boot finding, read from [door.selector_aliases] alone.
 write_plan_topology() {
   mkdir -p "$HOME/.config/splice"
   cat > "$HOME/.config/splice/splice.toml" <<EOF
@@ -83,38 +85,38 @@ write_plan_topology() {
 [daemon]
 control_port = $CONTROL_PORT
 
-[providers.anthro]
+[providers.planlimit]
 dialect = "anthropic-passthrough"
 base_url = "http://127.0.0.1:$TURN_MOCK_PORT"
 auth = { kind = "client" }
 extra_headers = { anthropic-version = "2023-06-01" }
-[[providers.anthro.models]]
+[[providers.planlimit.models]]
 id = "claude-sonnet-5"
 label = "Claude Sonnet 5 (mock)"
 context_window = 200000
 
-[providers.anthroprobe]
+[providers.planprobe]
 dialect = "anthropic-passthrough"
 base_url = "http://127.0.0.1:$PROBE_MOCK_PORT"
 auth = { kind = "client" }
 extra_headers = { anthropic-version = "2023-06-01" }
-[[providers.anthroprobe.models]]
+[[providers.planprobe.models]]
 id = "claude-sonnet-5"
 label = "Claude Sonnet 5 (mock)"
 context_window = 200000
 
-[providers.anthropool]
+[providers.planpool]
 dialect = "anthropic-passthrough"
 base_url = "http://127.0.0.1:$POOL_MOCK_PORT"
 auth = { kind = "client" }
 extra_headers = { anthropic-version = "2023-06-01" }
-[[providers.anthropool.models]]
+[[providers.planpool.models]]
 id = "claude-sonnet-5"
 label = "Claude Sonnet 5 (mock)"
 context_window = 200000
 
 [heads.planpool]
-provider = "anthropool"
+provider = "planpool"
 port = $POOL_HEAD_PORT
 discovery_prefix = "claude-planpool--"
 pinned_model = "claude-sonnet-5"
@@ -122,7 +124,7 @@ pinned_model = "claude-sonnet-5"
 command = "claude-planpool"
 
 [heads.planlimit]
-provider = "anthro"
+provider = "planlimit"
 port = $PLAN_HEAD_PORT
 discovery_prefix = "claude-planlimit--"
 pinned_model = "claude-sonnet-5"
@@ -130,7 +132,7 @@ pinned_model = "claude-sonnet-5"
 command = "claude-planlimit"
 
 [heads.planprobe]
-provider = "anthroprobe"
+provider = "planprobe"
 port = $PROBE_HEAD_PORT
 discovery_prefix = "claude-planprobe--"
 pinned_model = "claude-sonnet-5"

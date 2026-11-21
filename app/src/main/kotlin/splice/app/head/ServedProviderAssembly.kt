@@ -48,10 +48,8 @@ internal class ServedProviderAssembly(
 
     override fun invoke(): List<ServedProvider> = served.toList()
 
-    /** Refuses new turns on every provider and lets the running ones finish, as a head's stop does. */
-    suspend fun drain() {
-        runtimes.forEach { it.drain() }
-    }
+    /** The direct routes join the heads in the daemon's drain and handover phases. */
+    fun running(): List<ProviderRuntime> = runtimes.toList()
 
     private fun serve(provider: String, config: ProviderConfig) {
         val key = keys.forProvider(provider)

@@ -9,6 +9,7 @@ import io.ktor.server.application.ApplicationCall
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.core.failure.VoiceFacts
+import splice.core.head.TurnRouteLifetime
 import splice.core.topology.ForwardHeaders
 import splice.core.usage.QuotaFull
 import splice.upstream.Provider
@@ -19,7 +20,7 @@ public class ProviderRuntime(
     assembled: HeadDeps,
     voiceFacts: VoiceFacts = VoiceFacts(),
     forwarded: ForwardHeaders = ForwardHeaders(emptyList()),
-) {
+) : TurnRouteLifetime {
     /** [assembled], with no other head to hand a turn to: a gateway turn is this provider's and nothing relays it to a
      *  head server (door-default's hand-off to another head is a head's, so it is closed here whatever the caller
      *  assembled). */
@@ -37,6 +38,7 @@ public class ProviderRuntime(
     private val activeCalls = ActiveCalls(calls::get)
     private val lifecycle = Mutex()
     private var phase = Phase.SERVING
+    private var drained = false
 
     public val key: String get() = turns.provider.key
 
@@ -69,12 +71,12 @@ public class ProviderRuntime(
         turns.window.open()
     }
 
-    /** Refuse new turns, let running ones finish within the stop-drain budget and cut what is left with the restart
-     *  line (the drain a head runs, TurnService.settle), then settle the provider's books. */
-    public suspend fun drain(): Unit = lifecycle.withLock { closeLocked() }
+    override suspend fun drain(): Unit = lifecycle.withLock { drainLocked() }
+
+    override suspend fun stop(): Unit = lifecycle.withLock { closeLocked() }
 
     /** Close admission at handover and keep only responses already started, with no further writes to the books. */
-    public suspend fun retire(): Int = lifecycle.withLock {
+    override suspend fun retire(): Int = lifecycle.withLock {
         if (phase != Phase.SERVING) return@withLock 0
         if (!turns.provider.finishesTurnsWhenRetired) {
             closeLocked()
@@ -87,15 +89,21 @@ public class ProviderRuntime(
     }
 
     /** Wait for the retained replies before closing the runtime. A regular stop may cut them while this waits. */
-    public suspend fun finish(withinMs: Long) {
+    override suspend fun finish(withinMs: Long) {
         turns.awaitTurns(activeCalls, withinMs)
-        drain()
+        stop()
+    }
+
+    private suspend fun drainLocked() {
+        if (phase == Phase.CLOSED || drained) return
+        turns.window.close()
+        turns.settle(activeCalls)
+        drained = true
     }
 
     private suspend fun closeLocked() {
         if (phase == Phase.CLOSED) return
-        turns.window.close()
-        turns.settle(activeCalls)
+        drainLocked()
         turns.close(retired = phase == Phase.RETIRED)
         phase = Phase.CLOSED
     }

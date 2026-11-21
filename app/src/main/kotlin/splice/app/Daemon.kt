@@ -413,7 +413,8 @@ public class Daemon(
         controlPlane.ownership.fence()
         closeListeners()
         headProbes.closeStarts()
-        val kept = headShutdown.retireHeads(heads.values.map { it.head }, HEAD_STOP_BUDGET_MS, log) {
+        val routes = heads.values.map { it.head } + providers.running()
+        val kept = headShutdown.retireHeads(routes, HEAD_STOP_BUDGET_MS, log) {
             controlPlane.ownership.leave()
         }
         val handedOver = System.nanoTime()
@@ -428,11 +429,10 @@ public class Daemon(
         kept
     }
 
-    /** #523: waits up to [withinMs] for the turns [retire] kept, and stops each head when its last one ends. The
-     *  control server's engine, which [retire] left running with its listener handed on, stops beside them. It holds
-     *  no lock, so a [stop] that arrives meanwhile is not held behind it and cuts what is still running. */
+    /** Finish retained replies before closing the old control engine. No daemon lock is held while they end. */
     public suspend fun finish(withinMs: Long) {
-        headShutdown.finishHeads(heads.values.map { it.head }, withinMs, log) { controlPlane.ownership.close() }
+        val routes = heads.values.map { it.head } + providers.running()
+        headShutdown.finishHeads(routes, withinMs, log) { controlPlane.ownership.close() }
     }
 
     public suspend fun stop(): Unit = stopLock.withLock {
@@ -451,14 +451,9 @@ public class Daemon(
             // can't cancel the siblings' drains/flushes nor skip control.stop — it surfaces on
             // stderr/daemon.log instead of the JVM default, a black hole once production redirects
             // stderr to /dev/null.
-            // The gateway's providers stop taking turns beside the heads.
-            providers.drain()
             headProbes.closeStarts()
-            headShutdown.stopHeads(
-                heads.values.map { it.head },
-                HEAD_STOP_BUDGET_MS,
-                log,
-            ) { controlPlane.ownership.close() }
+            val routes = heads.values.map { it.head } + providers.running()
+            headShutdown.stopHeads(routes, HEAD_STOP_BUDGET_MS, log) { controlPlane.ownership.close() }
 
             // A daemon that handed over closed these then, before the next daemon opened its own.
             if (!retired) closeBackground()

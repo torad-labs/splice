@@ -107,9 +107,13 @@ describe("df-wire-answers", () => {
     expect(seen.headers["anthropic-version"]).toBe("2023-06-01");
   });
 
-  test("an Anthropic head's refusal reaches Desktop with its status and body whole, streamed or not", async () => {
-    // Claude Code streams its turns, so a streamed turn's refusal is the one Desktop meets most (round 4's feature
-    // review: streamed 400, 403 and 413 came back rewritten as 400 "[splice] ..." with request_id gone).
+  // Ruled Nov 21 (repo-9a): no raw provider bodies in either mode, and ClientWire's measured retry behaviour stays. A
+  // refusal Claude Code must not resend is answered as ClientWire's P/T ending, pinned to the 2.1.310 client-reaction
+  // record (http-400-should-retry-false, http-403, http-413): 400 invalid_request_error with x-should-retry false, in
+  // Anthropic's error shape, the provider's own words carried through cp-errors' redacted path. Unverified on the real
+  // app: whether Desktop's own main process (title and side calls, the connection test) reads a 403 or 413 differently
+  // from this 400; the live test (df-live-run) settles it.
+  test("an Anthropic head's refusal reaches Desktop as a stop, in Anthropic's shape, with the provider's words", async () => {
     for (const status of [400, 403, 413]) {
       for (const stream of [false, true]) {
         const body = JSON.stringify({
@@ -122,26 +126,33 @@ describe("df-wire-answers", () => {
         for (let i = 0; i < 20; i++) ant.next.push({ status, body });
         const t = await doorTurn(d.url, { key: d.key, model: ANT, stream, session: crypto.randomUUID() });
         ant.next.length = 0;
-        let got: unknown = t.body.slice(0, 300);
+        let got: { type?: string; error?: { type?: string; message?: string }; request_id?: string } = {};
         try {
           got = JSON.parse(t.body);
         } catch {}
-        expect([status, stream, t.status, got]).toEqual([status, stream, status, JSON.parse(body)]);
+        expect([status, stream, t.status, got.type, got.error?.type]).toEqual([status, stream, 400, "error", "invalid_request_error"]);
         expect([status, stream, t.headers.get("x-should-retry")]).toEqual([status, stream, "false"]);
+        // splice's line, never the provider's raw body: no request id of Anthropic's rides along
+        expect([status, stream, (got.error?.message ?? "").length > 10, got.request_id]).toEqual([status, stream, true, undefined]);
       }
     }
   });
 
-  test("an overload says when to retry in whole seconds, and that a retry is worth it", async () => {
+  // ClientWire's family R: an overload Claude Code resends without end under its own backoff (http-529-non-stream,
+  // http-529-stream), so the door adds no x-should-retry (ruled Nov 21: no `true` where the client already retries).
+  test("an overload is answered as an overload, which the client resends on its own", async () => {
     // refused every time it is asked, so whatever splice retries itself, the answer is the overload
     for (let i = 0; i < 20; i++) ant.next.push({ status: 529, body: JSON.stringify({ type: "error", error: { type: "overloaded_error", message: "Overloaded" } }), headers: { "retry-after": "6.2" } });
     const t = await doorTurn(d.url, { key: d.key, model: ANT, stream: false, session: crypto.randomUUID() });
-    expect(t.status).toBeGreaterThanOrEqual(500);
-    expect(t.headers.get("retry-after") ?? "").toMatch(/^\d+$/);
-    expect(Number(t.headers.get("retry-after"))).toBeGreaterThanOrEqual(6);
-    expect(t.headers.get("x-should-retry")).toBe("true");
+    expect(t.status).toBe(529);
+    expect((JSON.parse(t.body) as { error?: { type?: string } }).error?.type).toBe("overloaded_error");
+    expect(t.headers.get("x-should-retry")).toBeNull();
     ant.next.length = 0;
   });
+
+  // Not built (Nov 21): a provider's Retry-After on an overload reaches no client; it is cp-errors' common path
+  // (builder1), and once built it is whole seconds, rounded up (core/wire/WholeSeconds).
+  test.todo("an overload passes the provider's Retry-After on, in whole seconds rounded up");
 
   test("count_tokens is answered on every head", async () => {
     ant.next.length = 0;

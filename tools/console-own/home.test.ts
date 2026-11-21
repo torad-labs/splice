@@ -3,7 +3,7 @@
 // console-own home.
 import { afterAll, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { layout } from "../gate/src/lib/repo.ts";
@@ -18,6 +18,9 @@ test("a home whose folder resolves into the person's own Claude Code is refused"
   const dir = mkdtempSync(join(TMP, PREFIX));
   made.push(dir);
   const link = join(dir, "home");
+  // The link's target must exist for the guard to see where it resolves: a machine without a Claude Code of its
+  // own (a CI runner) gets the folder made here, which is a no-op where it already exists.
+  mkdirSync(join(userInfo().homedir, ".claude"), { recursive: true });
   symlinkSync(join(userInfo().homedir, ".claude"), link);
   expect(() => refuseForeign(homeAt(link))).toThrow(/belongs to the person's own setup/);
 });

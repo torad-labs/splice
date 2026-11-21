@@ -53,12 +53,6 @@ internal class ServedProviderAssembly(
 
     private fun serve(provider: String, config: ProviderConfig) {
         val key = keys.forProvider(provider)
-        // A Code Mode bridge is registered with the console under the key, one per key, so a provider a head of the
-        // same key serves with it on keeps its bridge there. Its sign-in is shared either way (LoginOwners).
-        if (topology.heads[key]?.provider == provider && config.codeModeEnabled) {
-            log("[$provider] left to its head: its Code Mode bridge is registered under the head's key\n")
-            return
-        }
         // the provider's own overrides, apart from every head key: the gateway reads no head block
         val layer = "$PROVIDER_LAYER_PREFIX$provider"
         val ctx = buildInputs.providerContext(

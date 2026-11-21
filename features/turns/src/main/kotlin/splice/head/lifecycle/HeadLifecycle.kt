@@ -64,7 +64,7 @@ internal class HeadLifecycle(
         driver.resetHealth()
         driver.headStarted()
         engine.start()
-        window.open()
+        turns.open()
     }
 
     private suspend fun stopLocked() {

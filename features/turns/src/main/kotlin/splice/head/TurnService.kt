@@ -92,6 +92,11 @@ internal class TurnService(
     )
     val countTokens = CountTokens(provider, deps, admissionGate, bodyReader, bodyParse, responses)
 
+    fun open() {
+        provider.onRouteStart()
+        window.open()
+    }
+
     /** The half of a drain that does not depend on how a request arrives. The caller has already refused new turns;
      *  this waits for running ones up to the stop-drain budget, then cuts whatever is still driving with the restart
      *  line, and ends once no turn holds a gate slot and no call is still inside a handler ([activeCalls]), since a

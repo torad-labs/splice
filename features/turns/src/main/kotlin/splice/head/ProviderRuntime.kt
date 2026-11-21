@@ -68,7 +68,7 @@ public class ProviderRuntime(
     public fun start() {
         turns.driver.resetHealth()
         turns.driver.headStarted()
-        turns.window.open()
+        turns.open()
     }
 
     override suspend fun drain(): Unit = lifecycle.withLock { drainLocked() }

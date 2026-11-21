@@ -71,6 +71,14 @@ describe("gnh-schema", () => {
     expect(r.text).toContain("claude-slate--");
   });
 
+  test("a tier on an undeclared local model is a provider finding, not a skipped route at boot", async () => {
+    const toml = (await providers("")).replace(`opus = "${PEBBLE}"`, 'opus = "Missing-Local-Model"');
+    const r = await checked(toml);
+    expect(r.code).toBe(3);
+    expect(r.text).toContain("providers.pebble.model_slots");
+    expect(r.text).toContain("Missing-Local-Model");
+  });
+
   test("an override the daemon does not know on a provider is a finding that names it", async () => {
     const toml = (await providers("")).replace('upstreamTimeoutMs = "600000"', 'upstreamTimeoutMs = "600000"\nnotAKnob = "1"');
     const r = await checked(toml);

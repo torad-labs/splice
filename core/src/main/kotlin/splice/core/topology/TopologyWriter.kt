@@ -538,14 +538,18 @@ private class TopologyChecks(
         }
     }
 
-    private fun rosters(): List<TopologyFinding> = topology.heads.mapNotNull { (key, head) ->
-        topology.providers[head.provider]?.let { provider ->
-            provider.catalogRefusal(head, discovered.forHead(key))?.let { refusal ->
-                val field = if (head.modelSlots.isEmpty()) "models" else "model_slots"
-                TopologyFinding("heads.$key.$field", refusal)
+    private fun rosters(): List<TopologyFinding> =
+        topology.providers.mapNotNull { (key, provider) ->
+            val refusal = GatewayProviderRoute(key, provider).rosterRefusal()
+            refusal?.let { TopologyFinding("providers.$key.model_slots", it) }
+        } + topology.heads.mapNotNull { (key, head) ->
+            topology.providers[head.provider]?.let { provider ->
+                provider.catalogRefusal(head, discovered.forHead(key))?.let { refusal ->
+                    val field = if (head.modelSlots.isEmpty()) "models" else "model_slots"
+                    TopologyFinding("heads.$key.$field", refusal)
+                }
             }
         }
-    }
 
     /** V4-376: an override the daemon would ignore at boot. The daemon's own [ConfigService] is asked
      *  what it ignores ([ConfigService.coerceRejects], the call the boot log and the doctor make), so

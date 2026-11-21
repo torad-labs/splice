@@ -57,7 +57,7 @@ public class DoorChecks(private val topology: Topology) {
             !prefix.endsWith(ALIAS_END) || prefix == ALIAS_END ->
                 "must end with \"$ALIAS_END\", where the model id starts, after something: claude-ollama-- or zeta--"
             to !in topology.providers -> "names provider \"$to\", which splice.toml does not declare"
-            topology.providers.keys.any { it != to && prefix == "claude-$it$ALIAS_END" } ->
+            topology.providers.keys.any { it != to && prefix == GatewaySelectorPrefixes.canonical(it) } ->
                 "is the prefix of another provider's own models, so it cannot name \"$to\""
             else -> null
         }

@@ -7,6 +7,7 @@
 // still there, its `discovery_prefix` too, read once at boot. No turn reads a head, and none is relayed to one.
 package splice.app.desktop
 
+import splice.core.topology.GatewaySelectorPrefixes
 import splice.core.topology.HeadConfig
 
 /** An old or current selector read as the provider and the provider's own model id it names. */
@@ -27,9 +28,9 @@ internal class SelectorAliases(
     // The longest prefix first, so one that begins another (`claude-x--` and `claude-x-mini--`) is never taken for it.
     private val prefixes: List<Pair<String, String>> = (
         explicit.toList() +
-            declared.map { current(it) to it } +
+            declared.map { GatewaySelectorPrefixes.canonical(it) to it } +
             heads.filter { it.discoveryPrefix.isNotEmpty() }.map { it.discoveryPrefix to it.provider } +
-            LEGACY_PREFIXES.toList()
+            GatewaySelectorPrefixes.legacy.toList()
         )
         .filter { (prefix, provider) -> prefix.isNotEmpty() && provider in declared }
         .distinctBy { it.first }
@@ -42,24 +43,6 @@ internal class SelectorAliases(
         ?.takeIf { it.model.isNotEmpty() }
 
     /** [selector] as the gateway names it now, or [selector] itself when it is under no prefix this table knows. */
-    fun canonical(selector: String): String = of(selector)?.let { current(it.provider) + it.model } ?: selector
-
-    private fun current(provider: String): String = "$SELECTOR_START$provider$SELECTOR_END"
+    fun canonical(selector: String): String =
+        of(selector)?.let { GatewaySelectorPrefixes.canonical(it.provider) + it.model } ?: selector
 }
-
-/** How the gateway's selectors begin and where the provider's name ends: `claude-<provider>--<model id>`. */
-private const val SELECTOR_START = "claude-"
-private const val SELECTOR_END = "--"
-
-/** The prefixes the heads of every starter splice.toml carried, each with the provider it served: the selectors callers
- *  hold today. A head whose provider is not declared makes its prefix no alias. */
-private val LEGACY_PREFIXES: Map<String, String> = mapOf(
-    "claude-codex--" to "codex",
-    "claude-grok--" to "xai",
-    "claude-kimi--" to "kimi",
-    "claude-muse--" to "muse",
-    "claude-openrouter--" to "openrouter",
-    "claude-fireworks--" to "fireworks",
-    "claude-deepseek--" to "deepseek",
-    "claude--" to "anthropic",
-)

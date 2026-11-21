@@ -81,6 +81,16 @@ describe("gnh-moves", () => {
     expect(r.code, `${r.out}\n${r.err}`).toBe(0);
   });
 
+  test("a built-in legacy selector does not require a config move", async () => {
+    const config = (await quartz(`discovery_prefix = "claude-grok--"\npinned_model = "${BIG}"`))
+      .replaceAll("providers.quartz", "providers.xai")
+      .replace('provider = "quartz"', 'provider = "xai"');
+    const s = await Splice.create(config);
+    made.push(s);
+    const r = s.cli(["check-config"]);
+    expect(r.code, `${r.out}\n${r.err}`).toBe(0);
+  });
+
   test("the fix session moves each value where the gateway reads it, backs the file up, and splice starts", async () => {
     const s = await Splice.create(await quartz(HELD));
     made.push(s);

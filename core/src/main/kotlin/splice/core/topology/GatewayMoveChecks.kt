@@ -34,15 +34,18 @@ internal class GatewayMoveChecks(private val topology: Topology) {
 
     /** The head's selector prefix, which the gateway reads from `[door.selector_aliases]` once the head is gone. */
     private fun prefix(key: String, head: HeadConfig): List<TopologyFinding> {
-        val own = "claude-${head.provider}--"
         val said = head.discoveryPrefix
-        if (said == own || topology.door.selectorAliases[said] == head.provider) return emptyList()
+        if (said.isBlank()) return emptyList()
+        val explicit = topology.door.selectorAliases[said]
+        val canonical = topology.providers.keys.firstOrNull { GatewaySelectorPrefixes.canonical(it) == said }
+        val routed = explicit ?: canonical ?: GatewaySelectorPrefixes.legacy[said]
+        if (routed == head.provider) return emptyList()
         val move = GatewayMove(
             table = "door.selector_aliases",
             key = keys.render(said),
             value = keys.render(head.provider),
             keepsSource = true,
-        )
+        ).takeIf { explicit == null && canonical == null }
         return listOf(
             TopologyFinding(
                 "heads.$key.discovery_prefix",

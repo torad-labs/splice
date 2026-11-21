@@ -43,7 +43,7 @@ internal class GatewayMoveChecks(private val topology: Topology) {
         val move = GatewayMove(
             table = "door.selector_aliases",
             key = keys.render(said),
-            value = keys.render(head.provider),
+            value = quoted(head.provider),
             keepsSource = true,
         ).takeIf { explicit == null && canonical == null }
         return listOf(
@@ -64,7 +64,21 @@ internal class GatewayMoveChecks(private val topology: Topology) {
             held(key, "system_prompt", head.systemPrompt, provider.systemPrompt, table),
             held(key, "system_prompt_file", head.systemPromptFile, provider.systemPromptFile, table),
             held(key, "system_prompt_mode", head.systemPromptMode, provider.systemPromptMode, table),
+            embeddedTiers(key, head, provider),
         )
+    }
+
+    /** The tiers a head names on its own model rows (`slot`), which the gateway reads from the provider's `model_slots`
+     *  instead. They move as that map and the head keeps its allowlist and its slots as they are. */
+    private fun embeddedTiers(key: String, head: HeadConfig, provider: ProviderConfig): TopologyFinding? {
+        val table = "providers.${keys.render(head.provider)}"
+        val said = head.tierModels()
+        if (head.models.orEmpty().none { it.slot != null } || said == provider.tierModels) return null
+        val free = provider.modelSlots.isEmpty()
+        val why = if (free) "only this head says it" else "the provider says another"
+        val map = said.entries.joinToString(", ", "{ ", " }") { (slot, id) -> "${keys.render(slot)} = ${quoted(id)}" }
+        val move = GatewayMove(table, "model_slots", map, keepsSource = true).takeIf { free }
+        return TopologyFinding("heads.$key.models", unserved(why), move = move)
     }
 
     /** A finding when the head says [field] and its provider does not say the same. It moves to the provider's table
@@ -76,6 +90,9 @@ internal class GatewayMoveChecks(private val topology: Topology) {
         val move = GatewayMove(table, field, value = null, keepsSource = false).takeIf { free }
         return TopologyFinding("heads.$head.$field", unserved(why), move = move)
     }
+
+    /** [text] as a TOML string, which a value is and a key need not be. */
+    private fun quoted(text: String): String = "\"${keys.escape(text)}\""
 
     private fun unserved(why: String): String = "$why, so the gateway would serve the provider without it"
 

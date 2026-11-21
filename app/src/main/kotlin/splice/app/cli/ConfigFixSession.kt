@@ -172,11 +172,14 @@ internal class ConfigFixSession(
     /** [move]'s value put where the gateway reads it, and, unless the head keeps it, taken off its line, while the file
      *  still holds the bytes the finding came from ([rewrite]). */
     private fun moveValue(move: GatewayMove, line: Int?): Boolean {
-        val value = move.value ?: TomlMove(checked.lines()).valueAt(line) ?: return false
+        val moved = MoveFix(check, checked).candidate(move, line)
+        if (moved == null) {
+            output.line("  that value cannot be moved here without risking splice.toml; edit it, or move it yourself")
+            return false
+        }
         backupOnce()
         output.line("moving ${move.key} to [${move.table}]")
-        val removed = line.takeUnless { move.keepsSource }
-        rewrite { lines -> TomlMove(lines).of(move.table, move.key, value, removed) }
+        rewrite { moved }
         return true
     }
 

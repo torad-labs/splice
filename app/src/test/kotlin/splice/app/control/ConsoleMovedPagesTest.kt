@@ -5,6 +5,7 @@ package splice.app.control
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.DefaultRequest
 import io.ktor.client.request.get
 import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.runBlocking
@@ -26,6 +27,11 @@ class ConsoleMovedPagesTest {
     private val client = HttpClient(CIO) {
         expectSuccess = false
         followRedirects = false
+        install(DefaultRequest) {
+            // The root answers a browser with the redirect and any other client with a short text reply, so the
+            // test asks as a browser asks: its Accept names HTML (ConsoleMount's root reads it).
+            headers.append(HttpHeaders.Accept, "text/html")
+        }
     }
     private lateinit var control: ControlServer
 

@@ -2,7 +2,9 @@
 // Mac draws each scene named (every scene when none is) on the stub daemon with the made-up world (lib/rv.ts), in night
 // and day, at 375 and 1440 px, and writes one PNG of each, whole page, into a folder of its own under
 // build/reply-view-captures/ in this checkout, with what each scene threw, refused under its CSP or spilled sideways in
-// report.txt beside them. Run anywhere but a Mac, it sends itself to one through rig and brings the folder back. It
+// report.txt beside them. The reader's own page (page, picker, locked) is also drawn at 3840 px, and at every width as
+// the screen shows it (-screen.png), because the whole-page picture of a page pinned to its newest line puts the
+// page's bar where the screen's top was. Run anywhere but a Mac, it sends itself to one through rig and brings the folder back. It
 // never runs Chromium here.
 //
 //   bun .campaign/checks/reply-view/capture.ts [scene ...]
@@ -30,6 +32,8 @@ const HERE_SCRIPT = ".campaign/checks/reply-view/capture.ts";
 const NOT_STARTED = 75;
 const SCENES = ["history", "open", "thinking", "live", "settled", "page", "picker", "locked"] as const;
 type Scene = (typeof SCENES)[number];
+// why: the wide desktop a console page is judged at beside 1440 (CLAUDE.md, UI changes).
+const WIDE = { width: 3840, height: 2160 };
 
 const args = process.argv.slice(2);
 let out = "";
@@ -134,13 +138,15 @@ const st = stub({ transcripts: { [SESSION]: [...WORLD] }, answers: { "/api/sessi
 try {
   for (const s of (asked.length ? asked : SCENES) as Scene[]) {
     for (const theme of THEMES) {
-      for (const size of [PHONE, DESK]) {
+      const ownPage = s === "page" || s === "picker" || s === "locked";
+      for (const size of ownPage ? [PHONE, DESK, WIDE] : [PHONE, DESK]) {
         const name = `${s}-${theme}-${size.width}`;
         const notes: string[] = [];
         let o: Opened | null = null;
         try {
           o = await scene(st, s, size, theme);
           await o.page.screenshot({ path: join(dir, `${name}.png`), fullPage: true });
+          if (ownPage) await o.page.screenshot({ path: join(dir, `${name}-screen.png`), fullPage: false });
           notes.push(...(await spills(o.page)).map((x) => `spills: ${x}`));
           notes.push(...(await o.csp()).map((x) => `refused by its CSP: ${x}`));
           notes.push(...o.errors.map((e) => `threw: ${e}`));

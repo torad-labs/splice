@@ -42,6 +42,10 @@ internal interface ServedProvider {
     /** The largest request body this provider's turns take, in bytes. */
     val maxRequestBytes: Int
 
+    /** How long reading one request body may take, in milliseconds: the gateway reads a turn's body itself, to route it,
+     *  and holds it to the bounds the provider's turns are held to. */
+    val requestReadTimeoutMs: Long
+
     /** The plan window the provider reads fully used now, if one is: a reading a picker says beside the model. */
     fun quotaFull(): QuotaFull?
 

@@ -1,5 +1,5 @@
 // gnh-schema: a provider carries on its own table what a gateway turn needs that only a head block carried until now
-// (pinned_model, model_slots, context_window, the system prompt and its mode, overrides), and `[gateway] aliases` maps
+// (pinned_model, model_slots, context_window, the system prompt and its mode, overrides), and `[door.selector_aliases]` maps
 // an older selector prefix to a provider. splice.toml with such a provider and no head boots without a finding; an alias
 // that names no provider, or claims another provider's own prefix, is a finding that names it.
 
@@ -21,7 +21,7 @@ async function checked(toml: string): Promise<{ code: number; text: string }> {
   return { code: r.code, text: `${r.out}\n${r.err}` };
 }
 
-async function providers(gateway: string): Promise<string> {
+async function providers(aliases: string): Promise<string> {
   const pebble = `http://127.0.0.1:${await freePort()}/v1`;
   const slate = `http://127.0.0.1:${await freePort()}/v1`;
   return (
@@ -44,30 +44,30 @@ async function providers(gateway: string): Promise<string> {
 upstreamTimeoutMs = "600000"
 ` +
     provider({ key: "slate", url: slate, model: SLATE, window: 262144, env: "SLATE_KEY" }) +
-    gateway
+    aliases
   );
 }
 
 describe("gnh-schema", () => {
   test("a provider with its own serving values, no head and an alias table boots without a finding", async () => {
-    const r = await checked(await providers(`\n[gateway]\naliases = { "claude-rock--" = "pebble", "zeta--" = "slate" }\n`));
-    expect(r.text).not.toContain("gateway.aliases");
+    const r = await checked(await providers(`\n[door.selector_aliases]\n"claude-rock--" = "pebble"\n"zeta--" = "slate"\n`));
+    expect(r.text).not.toContain("door.selector_aliases");
     expect(r.text).not.toContain("providers.pebble");
     expect(r.code).toBe(0);
   });
 
   test("an alias naming no provider is a finding that names the alias and the provider it names", async () => {
-    const r = await checked(await providers(`\n[gateway]\naliases = { "claude-rock--" = "basalt" }\n`));
+    const r = await checked(await providers(`\n[door.selector_aliases]\n"claude-rock--" = "basalt"\n`));
     expect(r.code).toBe(3);
-    expect(r.text).toContain("gateway.aliases");
+    expect(r.text).toContain("door.selector_aliases");
     expect(r.text).toContain("claude-rock--");
     expect(r.text).toContain("basalt");
   });
 
   test("an alias that claims another provider's own prefix is a finding", async () => {
-    const r = await checked(await providers(`\n[gateway]\naliases = { "claude-slate--" = "pebble" }\n`));
+    const r = await checked(await providers(`\n[door.selector_aliases]\n"claude-slate--" = "pebble"\n`));
     expect(r.code).toBe(3);
-    expect(r.text).toContain("gateway.aliases");
+    expect(r.text).toContain("door.selector_aliases");
     expect(r.text).toContain("claude-slate--");
   });
 

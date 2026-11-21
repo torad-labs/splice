@@ -1,4 +1,4 @@
-// gnh-aliases: the selectors callers use today keep working through `[gateway] aliases`, which maps an older head's
+// gnh-aliases: the selectors callers use today keep working through `[door.selector_aliases]`, which maps an older head's
 // prefix to a provider, and nothing of it is read from a head. An aliased selector runs on its provider as the bare
 // model id and is never listed beside the canonical one. Removing every `[heads.*]` block leaves the gateway listing and
 // serving exactly the same models, under every spelling it answered before. The heads hold a window of their own that
@@ -20,8 +20,9 @@ let s: Splice;
 let providers = "";
 
 const ALIASES = `
-[gateway]
-aliases = { "claude-rock--" = "pebble", "zeta--" = "slate" }
+[door.selector_aliases]
+"claude-rock--" = "pebble"
+"zeta--" = "slate"
 `;
 
 /** Every spelling a caller may name today, and the mock and model id it must reach. */

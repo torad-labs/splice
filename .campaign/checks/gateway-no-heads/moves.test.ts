@@ -1,6 +1,6 @@
 // gnh-moves: a value that only a head block holds and that would make the Splice gateway serve that head's provider
 // differently (an older selector prefix, a context window, the tiers' models, the system prompt mode, an override) is a
-// boot finding that names it, and the fix session offers to move it: the prefix becomes a `[gateway] aliases` entry,
+// boot finding that names it, and the fix session offers to move it: the prefix becomes a `[door.selector_aliases]` entry,
 // every other value moves to the provider's own table, the head keeps behaving as before, and nothing is moved without
 // the person's answer. A head whose values the gateway already serves the same way is no finding.
 
@@ -88,7 +88,7 @@ describe("gnh-moves", () => {
     const r = onTerminal(s, ["status"], Array.from({ length: 12 }, () => "m"));
     expect(s.cli(["check-config"]).code, r.out).toBe(0);
     const toml = tomlOf(s);
-    expect(toml.gateway?.aliases?.["qz--"]).toBe("quartz");
+    expect(toml.door?.selector_aliases?.["qz--"]).toBe("quartz");
     const quartzTable = toml.providers.quartz;
     expect(quartzTable.context_window).toBe(200000);
     expect(quartzTable.model_slots).toEqual({ opus: BIG, sonnet: BIG, haiku: SMALL, fable: BIG });

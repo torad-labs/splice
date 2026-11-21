@@ -5,6 +5,7 @@
 // Responses). This proves the dialect axis: one new dialect unlocks a whole family of backends.
 package splice.provider.openai
 
+import splice.core.model.OutputCap
 import splice.core.parse.AnthropicTurnBody
 import splice.core.pool.UpstreamPool
 import splice.core.turn.ReasoningDisplay
@@ -60,7 +61,8 @@ public class OpenAiChatProvider(
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val upstreamModel = catalog.stripSuffixes(body.typed.model)
-        val built = builder.build(body.typed, upstreamModel, compact, sessionId, body.raw)
+        val capped = body.withOutputCap(OutputCap(catalog).of(upstreamModel))
+        val built = builder.build(capped.typed, upstreamModel, compact, sessionId, capped.raw)
         // The slot is held until the gateway says the turn is over (BuiltTurn.onEnd); the slot id
         // routes the turn and is no part of what it asks (BuiltTurn.routingFields).
         return BuiltTurn(

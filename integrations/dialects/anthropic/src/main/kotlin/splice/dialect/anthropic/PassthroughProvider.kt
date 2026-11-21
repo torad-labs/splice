@@ -14,6 +14,7 @@
 package splice.dialect.anthropic
 
 import splice.core.auth.Credentials
+import splice.core.model.OutputCap
 import splice.core.parse.AnthropicTurnBody
 import splice.core.prompt.SystemPromptMode
 import splice.core.turn.ReasoningDisplay
@@ -70,7 +71,7 @@ public class PassthroughProvider(
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val upstreamModel = catalog.stripSuffixes(body.typed.model)
         val built = builder.build(
-            body = body,
+            body = body.withOutputCap(OutputCap(catalog).of(upstreamModel)),
             upstreamModel = upstreamModel,
             originalModel = body.typed.model,
             compact = compact,

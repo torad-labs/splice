@@ -13,16 +13,16 @@ internal class DesktopSaid(private val out: TerminalOutput) : DoorSaid {
     override fun state(state: JsonObject) {
         out.line("Desktop: ${JsonScalars.str(state, "mode_said") ?: "off"}${reopen(state)}")
         out.line("Door: ${JsonScalars.str(state, "door").orEmpty()}")
-        out.line("Default model: ${JsonScalars.str(state, "default_model") ?: "none: no head is in the door"}")
+        out.line("Default model: ${JsonScalars.str(state, "default_model") ?: "none: no provider is in the door"}")
         val models = (state["models"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
         out.line(if (models.isEmpty()) "Models: none" else "Models:")
         models.forEach { m ->
-            out.line("  ${text(m, "model")}  ${text(m, "label")}  (${text(m, "command")})")
+            out.line("  ${text(m, "model")}  ${text(m, "label")}  (${text(m, "provider")})")
         }
         val left = (state["left_out"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
         if (left.isNotEmpty()) out.line("Left out:")
         left.forEach { h ->
-            out.line("  ${text(h, "command")} (${text(h, "head")}): ${text(h, "reason")}")
+            out.line("  ${text(h, "provider")}: ${text(h, "reason")}")
         }
         features(state)
         val last = state["last_turn"] as? JsonObject

@@ -53,11 +53,18 @@ finding, listed with every other boot finding, never a silent decode (repo CLAUD
   asked for this instead, in whichever field the dialect sends it in; a turn asking for less is unchanged. For a
   self-hosted model whose server refuses a request for more tokens than it can actually generate. `0` or a negative
   number is a finding.
-- `[door.commands.<name>] = { head = "<head key>", models = "head" | "door" }` (`models` absent = `"head"`): a
-  command a wrapper starts Claude Code on the door through, pinned to `head`'s own model and, by default, its own
-  rows in `/model`; `models = "door"` lists the door's whole picker instead. `head` must name a `[heads.*]` table
-  whose provider does not forward the caller's own Claude login (that login is never on the door). The command's
-  name may not be `claude` (Claude Code's own) or a name a `[heads.*]` table already answers to.
+- `[door.commands.<name>] = { provider = "<provider key>", models = "head" | "door" }` (`models` absent = `"head"`): a
+  command a wrapper starts Claude Code on the door through, pinned to that provider's own model and, by default, its
+  own rows in `/model`; `models = "door"` lists the door's whole picker instead. `provider` must name a `[providers.*]`
+  table that does not forward the caller's own Claude login (that login is never on the door). A file that names a
+  `head = "<head key>"` instead is read as that head's provider and never rewritten. The command's name may not be
+  `claude` (Claude Code's own) or a name a `[heads.*]` table already answers to.
+- `[door.selector_aliases] = { "claude-<old>--" = "<provider key>" }`: an old selector prefix read as the provider it
+  stood for, so a selector a caller holds under a head's custom `discovery_prefix` keeps working with no head. A key
+  must end `--` (where the model id starts, after something: `claude-ollama--`, `zeta--`), the provider must be declared,
+  and it may not be another provider's own `claude-<provider>--`; the gateway's own legacy prefixes
+  (`claude-codex--`, `claude-grok--`, `claude-kimi--`, `claude-muse--`, `claude-openrouter--`, `claude-fireworks--`,
+  `claude-deepseek--`) need no entry.
 
 ## `splice add provider`
 

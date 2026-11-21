@@ -56,7 +56,7 @@ claude-grok   # Claude Code using your Grok subscription (deprecated: use claude
 
 For example, ask one session to implement a change and the other to review it. They can discover each other with `ListAgents` and exchange findings with `SendMessage`; you don't have to copy messages between terminals. Each session still uses Claude Code's own tools and permissions.
 
-Each named backend connection is called a **head**. You choose which heads to configure; the door serves every one splice holds a credential for, and the commands above do not configure providers for you.
+You choose which providers to configure in `splice.toml`; the door serves every provider splice holds a credential for, each model as `claude-<provider>--<model id>`, with no head needed, and the commands above do not configure providers for you. A **head** is the older way to run one provider as a command of its own (`claudex`, `claude-grok`); heads still work, and the door no longer reads them. A selector you already use under a head's prefix keeps working, and `[door.selector_aliases]` names an old prefix of your own.
 
 **In [v0.4.0](https://github.com/torad-labs/splice/releases/tag/v0.4.0):** a launched session holds a turn key, never the management key; `splice upgrade` with rollback; per-head account pools with automatic switching on ChatGPT, Grok, Kimi, Muse and Claude; first-class local models; and [code mode](#code-mode-for-chatgpt) on by default for ChatGPT. Coming from 0.3.x? Read [the upgrade notes](CHANGELOG.md#upgrading-from-03x) first.
 
@@ -1034,6 +1034,23 @@ can run rig's installer.
 | Local runtimes (Ollama, LM Studio, vLLM) | `api-key` on a loopback `base_url` with the `openai-chat` dialect | **Supported**: user-managed; rows validated against what the runtime serves |
 
 The **OAuth-identity** routes are the reason splice exists: they run Claude Code on the subscription you already pay for, signing in through each provider's page. The **api-key** routes are ordinary pay-per-token API access and make the best zero-config starter.
+
+No head is needed to use any of them: declare the provider in `splice.toml` and the door serves it. Each model is
+`claude-<provider>--<model id>` (`claude-xai--grok-4.7`), and a selector you already use under an old head prefix keeps
+working:
+
+| Selector prefix | Provider | Where it comes from |
+| --- | --- | --- |
+| `claude-<provider>--` | the provider named | every provider in `splice.toml` |
+| `claude-codex--` | `codex` | built in, the old `claudex` head |
+| `claude-grok--` | `xai` | built in, the old `claude-grok` head |
+| `claude-kimi--`, `claude-muse--`, `claude-openrouter--`, `claude-fireworks--`, `claude-deepseek--` | `kimi`, `muse`, `openrouter`, `fireworks`, `deepseek` | built in |
+| `claude--` | `anthropic` | built in |
+| `zeta--` (any other `--` prefix) | the provider you name | `[door.selector_aliases]`, for a prefix of your own: `"zeta--" = "xai"` |
+
+A Claude model's own ID (`claude-opus-5-5`) runs on the Claude accounts added to splice when they serve it. Any other ID
+is refused by name, and nothing is sent upstream. `splice status` lists every provider the door serves, with or without
+a head.
 
 ### Local models
 

@@ -13,9 +13,10 @@ class DoorSelectorAliasesTest {
         auth = AuthConfig("api-key"),
     )
 
-    private fun findings(aliases: Map<String, String>) =
-        DoorChecks(Topology(providers = mapOf("ollama" to ollama), door = DoorConfig(selectorAliases = aliases)))
-            .findings()
+    private fun findings(aliases: Map<String, String>): List<TopologyFinding> {
+        val providers = mapOf("ollama" to ollama, "other" to ollama)
+        return DoorChecks(Topology(providers = providers, door = DoorConfig(selectorAliases = aliases))).findings()
+    }
 
     @Test
     fun `an alias of a prefix to a provider splice toml declares says nothing`() {
@@ -23,9 +24,21 @@ class DoorSelectorAliasesTest {
     }
 
     @Test
-    fun `a prefix that reads no selector, and a provider that is not declared, are each a finding at their own path`() {
-        val said = findings(mapOf("local" to "ollama", "claude-gone--" to "nobody", "claude---" to "ollama"))
-        val paths = listOf("local", "claude-gone--", "claude---").map { "door.selector_aliases.\"$it\"" }
-        assertEquals(paths, said.map { it.path })
+    fun `an old custom prefix is an alias too, and so is the one a head gave`() {
+        assertEquals(emptyList<TopologyFinding>(), findings(mapOf("zeta--" to "ollama", "qz--" to "other")))
+    }
+
+    @Test
+    fun `a prefix with no end, a provider not declared, and another provider's own prefix are each a finding`() {
+        val said = findings(
+            mapOf("local" to "ollama", "--" to "ollama", "claude-gone--" to "nobody", "claude-other--" to "ollama"),
+        )
+        val paths = listOf("local", "--", "claude-gone--", "claude-other--").map { "door.selector_aliases.\"$it\"" }
+        assertEquals(paths.sorted(), said.map { it.path }.sorted())
+    }
+
+    @Test
+    fun `a provider's own prefix may be aliased to itself`() {
+        assertEquals(emptyList<TopologyFinding>(), findings(mapOf("claude-ollama--" to "ollama")))
     }
 }

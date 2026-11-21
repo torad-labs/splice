@@ -1,126 +1,112 @@
-// NEW: desktop-door (docs/specs/desktop-door.md, decision 3). Which heads are in the door, read from the running heads
-// at each use: a head is in it when splice holds the credential its provider is called with. A head that forwards the
-// caller's own Claude login is in it on the Claude accounts added to it (Nov 17, 2026): a turn through the door
-// carries no Claude login, and the head runs it on one of those accounts, never on the person's own login
-// (AddedClaudeLogins); with none added it is left out. A head whose login is missing or has expired is left out until it
-// is signed in again. Its models are each a selector, the ID the head's own /v1/models lists, in splice.toml's order of
-// heads.
+// NEW: desktop-door (docs/specs/desktop-door.md, decision 3); gateway-no-heads. Which providers are in the door, read from
+// splice.toml's providers at each use: a provider is in it when splice holds the credential it is called with. One that
+// forwards the caller's own Claude login is in it on the Claude accounts added to it (Nov 17, 2026): a turn through the
+// door carries no Claude login, and runs on one of those accounts, never on the person's own login; with none added it
+// is left out. A provider whose login is missing or has expired is left out until it is signed in again. Its models are
+// each a selector, `claude-<provider>--<model id>`, in splice.toml's order of providers. No head is read: removing every
+// `[heads.*]` block leaves the door serving the same models.
 package splice.app.desktop
 
-import splice.app.auth.API_KEY
-import splice.app.auth.claude.AddedClaudeLogins
-import splice.app.control.ManagedHead
-import splice.core.auth.AuthDescription
-import splice.core.model.ClientWindows
-import splice.core.model.ModelCatalog
-import splice.core.topology.AuthKindRegistry
+import splice.app.provider.ProviderLogin
+import splice.app.provider.ServedProvider
+import splice.app.provider.ServingProviders
 import splice.core.usage.QuotaFull
-import splice.core.util.Cancellables
-import splice.core.util.SafeFailureText
-import splice.share.SharedHead
-import splice.usage.quota.HeadUsageSource
 
-/** One model in the door: its selector, its own label, its head and that head's command, and the ID the head runs it
- *  as. */
+/** One model in the door: its selector, its own label, its provider and the ID the provider runs it as. */
 internal data class DoorModel(
     val model: String,
     val label: String,
-    val head: String,
-    val command: String,
+    val provider: String,
     val upstream: String,
-    /** The plan window its head's provider reads fully used now, if one is (V4-452): a reading, never a refusal, so
-     *  the model stays in the door and a picker says it beside the name. */
+    /** The plan window its provider reads fully used now, if one is (V4-452): a reading, never a refusal, so the model
+     *  stays in the door and a picker says it beside the name. */
     val full: QuotaFull? = null,
-    /** Whether the head found it on its endpoint's own list rather than splice.toml declaring it. */
+    /** Whether the provider found it on its endpoint's own list rather than splice.toml declaring it. */
     val discovered: Boolean = false,
 )
 
-/** A head that is not in the door, and why, in words that say what to do about it. */
-internal data class LeftOut(val head: String, val command: String, val reason: String)
-
-/** A head in the door: where a turn is relayed ([relay]), its catalog, the model it names for each tier and its
- *  pinned model, the windows its sessions hold, and whether its provider is called with a login splice holds ([login]:
- *  a ChatGPT, Grok, Kimi or Muse sign-in) rather than an API key or a local server. */
-internal data class DoorHead(
-    val key: String,
-    val relay: SharedHead,
-    val catalog: ModelCatalog,
-    val tiers: Map<String, String>,
-    val pinned: String,
-    val windows: ClientWindows?,
-    val login: Boolean = false,
+/** A provider that is not in the door, and why, in words that say what to do about it. */
+internal data class LeftOut(
+    val provider: String,
+    val reason: String,
+    /** Whether it forwards the caller's own Claude login: it is `claude`, whose models are Claude's. */
+    val forwardsClientAuth: Boolean = false,
 )
 
-/** The door now: the heads in it and their models, the heads left out, the provider splice.toml runs each head on
- *  ([providers], by head key), and the model catalog published last ([catalog]), whose facts every list the door gives
+/** The door now: the providers in it and their models, the providers left out, the table that reads an old selector as
+ *  a provider's ([aliases]), and the model catalog published last ([catalog]), whose facts every list the door gives
  *  reads (DoorCatalog). */
 internal data class DesktopLineup(
-    val heads: List<DoorHead>,
+    val providers: List<ServedProvider>,
     val models: List<DoorModel>,
     val leftOut: List<LeftOut>,
-    val providers: Map<String, String>,
+    val aliases: SelectorAliases,
     val catalog: ProviderCatalog = ProviderCatalog(),
 ) {
-    /** The provider [head] runs on. */
-    fun providerOf(head: DoorHead): String = providers.getValue(head.key)
-
-    /** The rows of a terminal session's picker (docs/specs/door-default.md, decision 4): every model of a head called
-     *  with a login splice holds, and of a head on an API key or a local server the models splice.toml declares for
-     *  it, or every model it lists when it declares none. Until Nov 18, 2026 the picker left every key head out, to
-     *  keep OpenRouter's ~310 listed models out of it, and a custom API added with its key and model could not be
-     *  picked at all; a key head's own list still stays out where splice.toml names the models to show. */
+    /** The rows of a terminal session's picker (docs/specs/door-default.md, decision 4): every model of a provider
+     *  called with a login splice holds, and of a provider on an API key or a local server the models splice.toml
+     *  declares for it, or every model it lists when it declares none. Until Nov 18, 2026 the picker left every key
+     *  provider out, to keep OpenRouter's ~310 listed models out of it, and a custom API added with its key and model
+     *  could not be picked at all; a key provider's own list still stays out where splice.toml names the models to
+     *  show. */
     val picker: List<DoorModel>
         get() = models.filter(::inPicker)
 
     private fun inPicker(model: DoorModel): Boolean {
-        val head = heads.firstOrNull { it.key == model.head } ?: return false
-        return head.login || !model.discovered || models.none { it.head == head.key && !it.discovered }
+        val provider = providers.firstOrNull { it.key == model.provider } ?: return false
+        return provider.usesLogin || !model.discovered || models.none { it.provider == provider.key && !it.discovered }
     }
 
-    /** The selector a session on [head] starts on: its pinned model, or its first model when its pin is not in the
+    /** The selector a session on [provider] starts on: its pinned model, or its first model when its pin is not in the
      *  door. */
-    fun pinnedOf(head: DoorHead): String =
-        head.catalog.wrap(head.pinned).takeIf { find(it) != null }
-            ?: models.firstOrNull { it.head == head.key }?.model.orEmpty()
+    fun pinnedOf(provider: ServedProvider): String =
+        provider.catalog.wrap(pinnedId(provider)).takeIf { find(it) != null }
+            ?: models.firstOrNull { it.provider == provider.key }?.model.orEmpty()
 
-    /** The head and model of [selector], or null when no head in the door lists it. A readable name (ReadableNames,
-     *  `claude-xai--4.7`), the id Claude Desktop lists another lab's model under, finds the row of the selector it
-     *  stands for. */
-    fun find(selector: String): Pair<DoorHead, DoorModel>? {
-        val model = models.firstOrNull { it.model == selector }
-            ?: return heads.firstNotNullOfOrNull { it.catalog.names.selectorOf(selector) }
-                ?.takeIf { it != selector }?.let(::find)
-        return heads.firstOrNull { it.key == model.head }?.let { it to model }
+    /** The model a session on [provider] that names none runs: the one splice.toml pins, else its first. */
+    fun pinnedId(provider: ServedProvider): String =
+        provider.pinnedModel ?: provider.catalog.availableModelIds().firstOrNull().orEmpty()
+
+    /** The door as it stands for a caller that may use only the providers [allowed] says: those providers, their models,
+     *  and the catalog rows of those models, so every list and every route read from it serves no other. */
+    fun serving(allowed: ProviderSelection): DesktopLineup {
+        val kept = providers.filter(allowed).mapTo(HashSet()) { it.key }
+        return copy(
+            providers = providers.filter { it.key in kept },
+            models = models.filter { it.provider in kept },
+            leftOut = leftOut.filter { it.provider in kept },
+            catalog = ProviderCatalog(catalog.models.filter { it.provider in kept }),
+        )
     }
+
+    /** The provider and model of [selector], or null when no provider in the door lists it. An old selector (a head's
+     *  prefix the gateway owns, or one the person aliased) and a readable name (ReadableNames, `claude-xai--4.7`), the
+     *  id Claude Desktop lists another lab's model under, find the row of the selector they stand for. */
+    fun find(selector: String): Pair<ServedProvider, DoorModel>? {
+        val model = models.firstOrNull { it.model == selector }
+            ?: return standingFor(selector)?.takeIf { it != selector }?.let(::find)
+        return providers.firstOrNull { it.key == model.provider }?.let { it to model }
+    }
+
+    private fun standingFor(selector: String): String? = aliases.canonical(selector).takeIf { it != selector }
+        ?: providers.firstNotNullOfOrNull { it.catalog.names.selectorOf(selector) }
 }
 
-/** What a running head's provider is: its wire dialect as splice.toml spells it ([dialect], null where none was
- *  wired) and where its plan windows are read ([usage]). */
-internal data class HeadTraits(val dialect: String?, val usage: HeadUsageSource)
-
-/** The heads a lineup is read from: each running head, and the relay a turn reaches it through. */
-internal fun interface RunningHeads {
-    operator fun invoke(): List<Pair<ManagedHead, SharedHead>>
+/** Which of the door's providers a caller may use. */
+internal fun interface ProviderSelection {
+    operator fun invoke(provider: ServedProvider): Boolean
 }
 
-/** The door's heads, read from the [running] heads at each use, and the model catalog [published] for them: built
- *  from the providers signed in at the daemon's start and again when a head's credential changes ([publish]), never
- *  at a request. [providers] is the provider each of splice.toml's heads runs on. */
-internal class DesktopHeads(
-    private val running: RunningHeads,
-    private val providers: Map<String, String>,
+/** The door's providers, read from the [serving] providers at each use, and the model catalog [published] for them:
+ *  built from the providers signed in at the daemon's start and again when a provider's credential changes
+ *  ([publish]), never at a request. [aliases] reads an old selector as a provider's. */
+internal class DesktopProviders(
+    private val serving: ServingProviders,
+    private val aliases: SelectorAliases,
     private val published: PublishedCatalog,
 ) {
-    private val addedLogins = AddedClaudeLogins()
-
     /** The door now, with the catalog published last. */
     suspend fun lineup(): DesktopLineup = read().copy(catalog = catalog())
-
-    /** What each running head's provider is, by head key: its wire dialect and where its plan windows are read, for
-     *  what Desktop's features can do on it (DesktopFeatures). */
-    fun traits(): Map<String, HeadTraits> = running().associate { (managed, relay) ->
-        relay.key to HeadTraits(managed.authSurface.dialect, managed.sources.usage)
-    }
 
     /** The catalog published last; empty before the first [publish]. */
     fun catalog(): ProviderCatalog = published.current
@@ -131,79 +117,27 @@ internal class DesktopHeads(
     }
 
     private suspend fun read(): DesktopLineup {
-        val heads = mutableListOf<DoorHead>()
+        val providers = mutableListOf<ServedProvider>()
         val models = mutableListOf<DoorModel>()
         val leftOut = mutableListOf<LeftOut>()
-        running().forEach { (managed, relay) ->
-            val spec = managed.launchSpec ?: return@forEach
-            val catalog = managed.statusline.catalog ?: return@forEach
-            // Nov 17, 2026: a head that forwards the caller's Claude login is in the door on the accounts
-            // added to it, which a turn through the door runs on, and never on the person's own login
-            val read = if (relay.forwardsClientAuth) added(managed) else loginOf(managed, spec.signIn.loginCommand)
-            if (read.why != null) {
-                leftOut += LeftOut(relay.key, relay.command, read.why)
-                return@forEach
-            }
-            val pinned = spec.models.pinnedModel.ifEmpty { catalog.availableModelIds().firstOrNull().orEmpty() }
-            val windows = managed.statusline.clientWindows
-            heads += DoorHead(relay.key, relay, catalog, spec.models.tiers.byTier, pinned, windows, read.login)
-            val full = managed.head.quotaFull()
-            val declared = catalog.tierModelIds().toSet()
-            catalog.discoveryRows().forEach { row ->
-                val upstream = catalog.unwrap(row.id)
-                val discovered = upstream !in declared
-                models += DoorModel(row.id, row.displayName, relay.key, relay.command, upstream, full, discovered)
+        serving().forEach { provider ->
+            when (val login = provider.login()) {
+                is ProviderLogin.Missing -> leftOut += LeftOut(provider.key, login.reason, provider.forwardsClientAuth)
+                ProviderLogin.Ready -> {
+                    providers += provider
+                    models += modelsOf(provider)
+                }
             }
         }
-        return DesktopLineup(heads, models, leftOut, providers)
+        return DesktopLineup(providers, models, leftOut, aliases)
     }
 
-    /** A head's login as the door reads it: a login splice holds (a sign-in it keeps, not a key), and why the head is
-     *  left out, or null when it is in. */
-    private suspend fun loginOf(managed: ManagedHead, signIn: String): LoginRead {
-        val auth = Cancellables.runCatchingCancellable { managed.auth.describe() }.getOrElse { failure ->
-            val unread = "its login could not be read (${SafeFailureText.render(failure)}); sign in with `$signIn`"
-            return LoginRead(login = false, why = unread)
+    private fun modelsOf(provider: ServedProvider): List<DoorModel> {
+        val full = provider.quotaFull()
+        val declared = provider.catalog.tierModelIds().toSet()
+        return provider.catalog.discoveryRows().map { row ->
+            val upstream = provider.catalog.unwrap(row.id)
+            DoorModel(row.id, row.displayName, provider.key, upstream, full, discovered = upstream !in declared)
         }
-        return LoginRead(AuthKindRegistry.isOAuth(auth.kind), absence(auth, signIn))
     }
-
-    /** A head that forwards the caller's own Claude login, as the door reads it: in, on the accounts added to it,
-     *  while it holds one; left out with none, since the person's own login never serves a turn through the door. */
-    private fun added(managed: ManagedHead): LoginRead {
-        val labels = managed.authSurface.accountPool?.view(null)?.accounts?.map { it.label }.orEmpty()
-        return LoginRead(login = true, why = NONE_ADDED.takeIf { labels.none(addedLogins::held) })
-    }
-
-    /** Why a head is not in the door, by its login as [auth] describes it, or null when it is. */
-    private fun absence(auth: AuthDescription, signIn: String): String? = when {
-        signedIn(auth) -> null
-        auth.kind == API_KEY -> keyless(auth)
-        else -> "it is signed out; sign in with `$signIn`"
-    }
-
-    /** Why a head on an API key with none is not in the door, and how to give it one: its key file, or the key store. */
-    private fun keyless(auth: AuthDescription): String {
-        auth.fields[KEY_FILE_FIELD]?.let { return "its key file $it holds no key" }
-        val name = auth.fields[KEY_ENV_FIELD] ?: return "it has no API key"
-        return "it has no API key; set one with `printf '%s' \"\$KEY\" | splice key set $name --stdin`"
-    }
-
-    /** A login that is there and has not expired: an access token that no refresh can renew any more is gone. */
-    private fun signedIn(auth: AuthDescription): Boolean = auth.present && EXPIRED_FIELD !in auth.fields
 }
-
-/** A head's login as the door reads it: whether splice holds it, and why the head is left out (null: it is in). */
-private data class LoginRead(val login: Boolean, val why: String?)
-
-// Why a head that forwards the caller's own Claude login is not in the door while no account is added to it.
-private const val NONE_ADDED = "no Claude account is added to it, and the door never sends your own Claude login; " +
-    "add one on splice's accounts page (`splice console`)"
-
-// The field a login's description carries once its refresh has been refused for good (an invalid grant).
-private const val EXPIRED_FIELD = "refresh_latched"
-
-// The fields an API-key login's description names its key's place by: the key file it reads, or the variable it is
-// stored under.
-private const val KEY_FILE_FIELD = "key_file"
-private const val KEY_ENV_FIELD = "env_var"

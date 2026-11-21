@@ -17,13 +17,20 @@ public data class DoorConfig(
     @SerialName("selector_aliases") val selectorAliases: Map<String, String> = emptyMap(),
 )
 
-/** One `[door.commands.<name>]`: the head whose pinned model a session of the command starts on, and whose models its
- *  /model lists ([models] = "head", the default) or the door's whole picker ("door"). */
+/** One `[door.commands.<name>]`: the provider whose pinned model a session of the command starts on, and whose models
+ *  its /model lists ([models] = "head", the default) or the door's whole picker ("door"). An older file names a `head`
+ *  in place of the `provider`. */
 @Serializable
 public data class DoorCommandConfig(
     val head: String = "",
+    val provider: String = "",
     val models: String? = null,
 ) {
+    /** The key of the provider this command runs on: `provider`, or the provider of the head an older file names in
+     *  `head`, which is read and never rewritten. Null when it names neither. */
+    public fun providerKey(heads: Map<String, HeadConfig>): String? =
+        provider.ifBlank { heads[head]?.provider.orEmpty() }.ifBlank { null }
+
     /** True when a session of this command lists the door's whole picker, false for its head's rows alone. */
     public val listsDoor: Boolean get() = models == DOOR_MODELS_DOOR
 }
@@ -34,39 +41,55 @@ public const val DOOR_MODELS_HEAD: String = "head"
 /** The [DoorCommandConfig.models] word for the door's whole picker. */
 public const val DOOR_MODELS_DOOR: String = "door"
 
-/** Why a `[door.commands.*]` table cannot run: its head, its word, its name. Each finding names its dotted path. */
+/** Why a `[door.commands.*]` table cannot run: its provider, its word, its name. Each finding names its dotted path. */
 public class DoorChecks(private val topology: Topology) {
     public fun findings(): List<TopologyFinding> = commandFindings() + aliasFindings()
 
     private fun commandFindings(): List<TopologyFinding> = topology.door.commands.flatMap { (name, command) ->
-        listOfNotNull(head(name, command), models(name, command), name(name))
+        listOfNotNull(target(name, command), models(name, command), name(name))
     }
 
     /** An alias is a prefix a selector begins with, which ends where the model id starts (`--`), for a provider
-     *  splice.toml declares. */
+     *  splice.toml declares: the `claude-ollama--` a head gave, or any other old nonempty prefix (`zeta--`). It may not
+     *  be another provider's own `claude-<provider>--`, which that provider's models are listed under. */
     private fun aliasFindings(): List<TopologyFinding> = topology.door.selectorAliases.mapNotNull { (prefix, to) ->
         val why = when {
-            !prefix.startsWith(ALIAS_START) || !prefix.endsWith(ALIAS_END) || prefix == ALIAS_START + ALIAS_END ->
-                "must begin with \"$ALIAS_START\" and end with \"$ALIAS_END\", like claude-ollama--"
+            !prefix.endsWith(ALIAS_END) || prefix == ALIAS_END ->
+                "must end with \"$ALIAS_END\", where the model id starts, after something: claude-ollama-- or zeta--"
             to !in topology.providers -> "names provider \"$to\", which splice.toml does not declare"
+            topology.providers.keys.any { it != to && prefix == "claude-$it$ALIAS_END" } ->
+                "is the prefix of another provider's own models, so it cannot name \"$to\""
             else -> null
         }
         why?.let { TopologyFinding("door.selector_aliases.\"$prefix\"", it) }
     }
 
-    private fun head(name: String, command: DoorCommandConfig): TopologyFinding? {
-        val path = "door.commands.$name.head"
-        val head = topology.heads[command.head]
-        val why = when {
-            command.head.isBlank() -> "names no head; set head to the key of a [heads.*] table"
-            head == null -> "names a head splice.toml does not declare; name one of its [heads.*] tables"
-            topology.providers[head.provider]?.auth?.kind == AuthKind.Client.wire ->
-                "names a head whose provider forwards the caller's own Claude login, which is never on the door; " +
-                    "name a head on another provider"
-            else -> null
-        }
+    /** The provider a command runs on, by `provider` or, in an older file, by the `head` it names. */
+    private fun target(name: String, command: DoorCommandConfig): TopologyFinding? {
+        val named = command.provider.isNotBlank()
+        val path = "door.commands.$name." + if (named) "provider" else "head"
+        val why = (if (named) providerProblem(command.provider) else headProblem(command))
+            ?: claudeProblem(command.providerKey(topology.heads))
         return why?.let { TopologyFinding(path, it) }
     }
+
+    private fun providerProblem(provider: String): String? =
+        "names a provider splice.toml does not declare; name one of its [providers.*] tables"
+            .takeIf { provider !in topology.providers }
+
+    private fun headProblem(command: DoorCommandConfig): String? = when {
+        command.head.isBlank() -> "names no provider; set provider to the key of a [providers.*] table"
+        topology.heads[command.head] == null ->
+            "names a head splice.toml does not declare; name a provider with provider = \"<provider key>\""
+        else -> null
+    }
+
+    /** A provider that forwards the caller's own Claude login is never on a door command. */
+    private fun claudeProblem(provider: String?): String? =
+        (
+            "names a provider that forwards the caller's own Claude login, which is never on the door; " +
+                "name another provider"
+            ).takeIf { topology.providers[provider]?.auth?.kind == AuthKind.Client.wire }
 
     private fun models(name: String, command: DoorCommandConfig): TopologyFinding? =
         command.models?.takeUnless { it == DOOR_MODELS_HEAD || it == DOOR_MODELS_DOOR }?.let {
@@ -92,6 +115,5 @@ public class DoorChecks(private val topology: Topology) {
 // What a door command named `claude` is told: that name is Claude Code's own, which the door already runs.
 private const val CLAUDE_TAKEN = "is Claude Code's own command, which the door already runs; give this one another name"
 
-// How a selector prefix reads: it begins `claude-` and ends `--`, where the provider's own model id starts.
-private const val ALIAS_START = "claude-"
+// How a selector prefix ends: `--`, where the provider's own model id starts.
 private const val ALIAS_END = "--"

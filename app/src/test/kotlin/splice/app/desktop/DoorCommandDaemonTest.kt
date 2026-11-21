@@ -1,7 +1,7 @@
 // A door command (`[door.commands.<name>]`) launches on the door, end to end on a daemon over a fixture home: a session
-// of it starts on its head's pinned model, and its picker is that head's rows, or the door's whole picker where it says
-// `models = "door"`, from the same catalog. And `splice claude --json` says each head's provider and whether it is
-// listed, with the reason where it is not.
+// of it starts on its provider's pinned model, and its picker is that provider's rows, or the door's whole picker
+// where it says `models = "door"`, from the same catalog; a command that names an older `head` runs on its provider.
+// And `splice claude --json` says each provider and whether it is listed, with the reason where it is not.
 package splice.app.desktop
 
 import com.sun.net.httpserver.HttpServer
@@ -90,15 +90,16 @@ class DoorCommandDaemonTest {
                 try {
                     awaitListening(controlPort, claudePort, grokPort)
                     val grokOnly = launch(mgmt, "acme")
-                    assertEquals("claude-grok--grok-4.7", grokOnly.first)
-                    assertEquals(listOf("claude-grok--grok-4.7", "claude-grok--grok-mini"), grokOnly.second)
+                    assertEquals("claude-xai--grok-4.7", grokOnly.first)
+                    assertEquals(listOf("claude-xai--grok-4.7", "claude-xai--grok-mini"), grokOnly.second)
+                    assertEquals(grokOnly, launch(mgmt, "old"), "a command that names its head is read as its provider")
                     val everything = launch(mgmt, "everything")
-                    assertEquals("claude-grok--grok-4.7", everything.first)
+                    assertEquals("claude-xai--grok-4.7", everything.first)
                     assertEquals(
-                        listOf("claude-anthropic--claude-opus-5-5", "claude-grok--grok-4.7", "claude-grok--grok-mini"),
+                        listOf("claude-anthropic--claude-opus-5-5", "claude-xai--grok-4.7", "claude-xai--grok-mini"),
                         everything.second,
                     )
-                    heads(mgmt)
+                    providers(mgmt)
                 } finally {
                     daemon.stop()
                 }
@@ -109,18 +110,17 @@ class DoorCommandDaemonTest {
         client.close()
     }
 
-    /** `splice claude --json`'s heads: each one's provider, and whether it is in the picker and why not. */
-    private suspend fun heads(mgmt: String) {
+    /** `splice claude --json`'s providers: each one, whether it is in the picker, and why not. */
+    private suspend fun providers(mgmt: String) {
         val response = client.get("http://127.0.0.1:$controlPort/api/claude") {
             header("Authorization", "Bearer $mgmt")
         }
-        val heads = json.parseToJsonElement(response.bodyAsText()).jsonObject.getValue("heads").jsonArray
-            .associate { it.jsonObject.str("head") to it.jsonObject }
-        assertEquals("anthropic", heads.getValue("anthropic").str("provider"))
-        assertEquals("true", heads.getValue("grok").str("listed"))
-        val moon = heads.getValue("moon")
+        val listed = json.parseToJsonElement(response.bodyAsText()).jsonObject.getValue("providers").jsonArray
+            .associate { it.jsonObject.str("provider") to it.jsonObject }
+        assertEquals("true", listed.getValue("anthropic").str("listed"))
+        assertEquals("true", listed.getValue("xai").str("listed"))
+        val moon = listed.getValue("moonshot")
         assertEquals("false", moon.str("listed"))
-        assertEquals("moonshot", moon.str("provider"))
         assertEquals(true, moon.str("reason").contains("key"), moon.toString())
     }
 
@@ -202,11 +202,14 @@ class DoorCommandDaemonTest {
             claude = { command = "claude-moon" }
 
             [door.commands.acme]
-            head = "grok"
+            provider = "xai"
 
             [door.commands.everything]
-            head = "grok"
+            provider = "xai"
             models = "door"
+
+            [door.commands.old]
+            head = "grok"
         """.trimIndent()
     }
 }

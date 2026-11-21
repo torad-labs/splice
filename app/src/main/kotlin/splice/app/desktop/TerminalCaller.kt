@@ -6,10 +6,9 @@ package splice.app.desktop
 
 import splice.core.turn.TERMINAL_DOOR
 import splice.share.RefusalVoice
-import splice.share.ShareRelay
 
-internal class TerminalCaller(relay: ShareRelay, private val lane: ClaudeLane) :
-    DoorCaller(RefusalVoice(CLAUDE_ERROR_PREFIX), relay, TERMINAL_DOOR) {
+internal class TerminalCaller(private val lane: ClaudeLane) :
+    DoorCaller(RefusalVoice(CLAUDE_ERROR_PREFIX), TERMINAL_DOOR) {
     override fun presents(header: String?): Boolean = lane.key.matchesBearer(header)
 
     // Never shut: a session started on the door keeps running there after `splice claude head`, which moves only the

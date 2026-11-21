@@ -4,11 +4,11 @@
 // `on` sets Claude Desktop up itself, with nothing to paste: it puts splice's configuration in Desktop's 3P library
 // (DesktopAppMode), pointing all of Desktop (Chat, Cowork and the Code tab) at the door as its gateway, with the
 // desktop key from a credential helper Desktop runs, and opens the door. `--model` is Desktop's own default, the model
-// it lists first and opens a new session on; the terminal's `claude` keeps its own. `on` refuses, changing nothing, when
-// no head is in the door, when `--model` is not in it, or when Desktop's library can't take splice's configuration; it
-// names what it found. `off` takes out exactly what `on` put in and closes the door. Until Nov 21, 2026 `on` printed
-// five variables for the person to paste into Desktop's environment store (the Code tab alone); a door opened that way
-// is still answered until `on` or `off` replaces it.
+// it lists first and opens a new session on; the terminal's `claude` keeps its own. `on` refuses, changing nothing,
+// when no provider is in the door, when `--model` is not in it, or when Desktop's library can't take splice's
+// configuration; it names what it found. `off` takes out exactly what `on` put in and closes the door. Until Nov 21,
+// 2026 `on` printed five variables for the person to paste into Desktop's environment store (the Code tab alone); a
+// door opened that way is still answered until `on` or `off` replaces it.
 //
 // splice writes nothing into `~/.claude/settings.json`, which every terminal session hot-reloads, and changes nothing
 // in the terminal's environment. What an older splice's `on` wrote into the settings file is taken out at each start,
@@ -36,7 +36,7 @@ internal sealed class DesktopAct {
 }
 
 internal class DesktopSwitch(
-    private val heads: DesktopHeads,
+    private val providers: DesktopProviders,
     private val records: DesktopRecords,
     private val key: DesktopKey,
     /** The door's address, which splice's configuration gives Desktop. */
@@ -51,7 +51,7 @@ internal class DesktopSwitch(
     private val starting = StartingModel({ records.get().defaultModel }, picker = false)
 
     suspend fun on(model: String?): DesktopAct = lock.withLock {
-        val lineup = heads.lineup()
+        val lineup = providers.lineup()
         val named = model?.let { picked(lineup, it) ?: it }
         refusal(lineup, named)?.let { return@withLock it }
         val (chosen, why) = starting.of(lineup, named)
@@ -71,12 +71,12 @@ internal class DesktopSwitch(
         lineup.find(model)?.second?.model
             ?: DoorCatalog(lineup).served.firstOrNull { it.desktopId == model }?.rows?.firstOrNull()?.model
 
-    /** Why `on` must change nothing: no head in the door, a `--model` not in it, or Desktop's library can't take
+    /** Why `on` must change nothing: no provider in the door, a `--model` not in it, or Desktop's library can't take
      *  splice's configuration. Null when it may go on. */
     private fun refusal(lineup: DesktopLineup, model: String?): DesktopAct? {
         val notServed = starting.refusal(lineup, model)
         val found = when {
-            lineup.models.isEmpty() -> HttpStatus.CONFLICT to "no head is in the door (${leftOut(lineup)})"
+            lineup.models.isEmpty() -> HttpStatus.CONFLICT to "no provider is in the door (${leftOut(lineup)})"
             notServed != null -> HttpStatus.BAD_REQUEST to notServed
             else -> app.refusal()?.let { HttpStatus.CONFLICT to it }
         }
@@ -84,7 +84,7 @@ internal class DesktopSwitch(
     }
 
     private fun leftOut(lineup: DesktopLineup): String =
-        lineup.leftOut.joinToString("; ") { "${it.command}: ${it.reason}" }.ifEmpty { "splice runs no head" }
+        lineup.leftOut.joinToString("; ") { "${it.provider}: ${it.reason}" }.ifEmpty { "splice declares no provider" }
 
     /** The door closed, and what `on` put in Desktop's library taken out. A door an older splice opened through
      *  Desktop's environment store is closed too, and the variables to remove there are named: splice can't write that
@@ -126,7 +126,7 @@ internal class DesktopSwitch(
     }
 
     /** The model a Code tab session starts on in [lineup]: the one chosen the last time, or the pinned model of the
-     *  first head in the door; null when no head is in the door. */
+     *  first provider in the door; null when no provider is in the door. */
     fun defaultOf(lineup: DesktopLineup): String? = starting.of(lineup).first
 }
 

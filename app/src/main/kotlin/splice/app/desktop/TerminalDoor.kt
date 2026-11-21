@@ -14,7 +14,6 @@ import splice.core.topology.Topology
 import splice.core.util.LogSink
 import splice.launch.recipe.ClaudeDoor
 import splice.launch.recipe.DoorLaunchSpec
-import splice.share.ShareRelay
 
 internal class TerminalDoor(
     private val topology: Topology,
@@ -36,11 +35,11 @@ internal class TerminalDoor(
     @Volatile
     private var launched: ClaudeDoorLaunch? = null
 
-    /** The lane on [heads] at [door], and its caller, relaying through [relay]. */
-    fun open(relay: ShareRelay, heads: DesktopHeads, door: String): Pair<ClaudeLane, DoorCaller> {
-        val lane = ClaudeLane(records, key, heads, door, claudeHead, ClaudeLogin(login, log))
+    /** The lane on [providers] at [door], and its caller. */
+    fun open(providers: DesktopProviders, door: String): Pair<ClaudeLane, DoorCaller> {
+        val lane = ClaudeLane(records, key, providers, door, claudeHead, ClaudeLogin(login, log))
         launched = ClaudeDoorLaunch(lane, login, log)
-        return lane to TerminalCaller(relay, lane)
+        return lane to TerminalCaller(lane)
     }
 
     /** `claude`'s launch on the door; null before [open] and on the head lane. */
@@ -49,7 +48,9 @@ internal class TerminalDoor(
     /** A launch of `[door.commands.<name>]` on the door; null for a name splice.toml gives no door command, and before
      *  [open]. */
     override suspend fun launchCommand(name: String): DoorLaunchSpec? =
-        topology.door.commands[name]?.let { command -> launched?.launchCommand(command) }
+        topology.door.commands[name]?.let { command ->
+            launched?.launchCommand(command, command.providerKey(topology.heads))
+        }
 
     /** Whether `claude` is on the door: read from the lane record, so it holds before [open] too. */
     override fun onDoor(): Boolean = records.lane(claudeHead) == DOOR_LANE

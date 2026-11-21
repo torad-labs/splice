@@ -41,7 +41,7 @@ internal class DoctorAuth(output: TerminalOutput) {
             val seen = seenBy(head, daemon)
             seen.copy(observed = seen.observed.copy(lastRefusal = lastRefusals[head.key]))
         }
-        if (heads.isEmpty()) return listOf(DoctorCheck("auth", CheckStatus.INFO, "no heads configured"))
+        if (heads.isEmpty()) return listOf(DoctorCheck("auth", CheckStatus.INFO, "no providers configured"))
         // Severity is honest to "can I use splice at all": with zero authed heads a missing credential
         // is THE blocker (FAIL); once any head works, the others are ignorable (WARN).
         val missingStatus = if (heads.none { it.present }) CheckStatus.FAIL else CheckStatus.WARN
@@ -85,14 +85,18 @@ internal class DoctorAuth(output: TerminalOutput) {
         )
     }
 
-    /** PHASE 1, all I/O: every configured head's credential state, read through StatusCommand.
+    /** PHASE 1, all I/O: every configured head's credential state, read through StatusCommand, and each provider no
+     *  head runs, which the gateway serves on the door all the same (gateway-no-heads), under its own key.
      *  Heads whose provider does not resolve are dropped here exactly as they always were — the
      *  configuration section is what reports a dangling provider reference, not this one. */
-    private fun probeHeads(topology: Topology, envReader: EnvReader): List<DoctorHeadAuth> =
-        topology.heads.mapNotNull { (key, head) ->
+    private fun probeHeads(topology: Topology, envReader: EnvReader): List<DoctorHeadAuth> {
+        val ofHeads = topology.heads.mapNotNull { (key, head) ->
             val provider = topology.providers[head.provider] ?: return@mapNotNull null
             headAuthOf(key, head.claude.command ?: key, provider, envReader)
         }
+        val headless = topology.providers.filterKeys { key -> topology.heads.values.none { it.provider == key } }
+        return ofHeads + headless.map { (key, provider) -> headAuthOf(key, key, provider, envReader) }
+    }
 
     // api-key heads read the EFFECTIVE env var (explicit auth.env OR the derived <KEY>_API_KEY default
     // the daemon wires) so a derived-default head always gets a `splice key set` fix, never the OAuth dead-end;

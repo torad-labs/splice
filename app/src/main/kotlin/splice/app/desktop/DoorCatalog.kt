@@ -1,9 +1,9 @@
 // NEW: 2026-11-20 — every list of models the door gives, read from the one model catalog published last
 // (PublishedCatalog) and the door as it stands: Claude Desktop's gateway discovery (`GET /door/v1/models`), which fills
 // its picker in Chat, Cowork and the Code tab, the terminal's picker and another machine's (the same rows), and the
-// models `splice desktop` and `splice claude` name. What a model is (its name, description, reasoning levels, window) is its
-// provider's, from the catalog; which head runs it, under which id a client asks for it and whether its account is spent
-// are the door's. A catalog model no head in the door serves now is in none of them.
+// models `splice desktop` and `splice claude` name. What a model is (its name, description, reasoning levels, window)
+// is its provider's, from the catalog; which provider runs it, under which id a client asks for it and whether its
+// account is spent are the door's. A catalog model no provider in the door serves now is in none of them.
 //
 // Until Nov 20, 2026 these lists were built from the running heads at each call (DoorModels, LineupJson.models), with
 // effort from two constants: every other lab's model said `xhigh` and every Claude model `max`, whatever its provider
@@ -16,25 +16,25 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.app.provider.ServedProvider
 import splice.client.desktop.DoorPickerRow
 import splice.client.models.AnthropicTiers
 import splice.core.model.CLAUDE_CODE_ONE_MILLION
 import splice.core.model.ModelTierSuffix
 import splice.core.usage.QuotaFullWindow
-import splice.share.SharedHead
 
-/** One catalog model as the door serves it now: its provider's facts ([fact]), the head a turn on it runs on ([head]),
- *  that head's rows of it in the picker, one per window ([rows]), and the Claude model it is ([claude], null for another
- *  lab's). */
+/** One catalog model as the door serves it now: its provider's facts ([fact]), the provider a turn on it runs on
+ *  ([provider]), that provider's rows of it in the picker, one per window ([rows]), and the Claude model it is
+ *  ([claude], null for another lab's). */
 internal data class ServedModel(
     val fact: CatalogModel,
-    val head: DoorHead,
+    val provider: ServedProvider,
     val rows: List<DoorModel>,
     val claude: String?,
 ) {
     /** The id Claude Desktop asks for it by: Claude's own id for Claude's models, whose effort levels Desktop finds by
-     *  that id alone, else the head's name for it that Claude's clients keep (ReadableNames). */
-    val desktopId: String get() = claude ?: head.catalog.names.nameOf(fact.id)
+     *  that id alone, else the provider's name for it that Claude's clients keep (ReadableNames). */
+    val desktopId: String get() = claude ?: provider.catalog.names.nameOf(fact.id)
 
     /** Whether it has a 1M variant: a row of it carries the `[1m]` hint, or its provider serves a million tokens. */
     val supports1m: Boolean get() = rows.any(::millionRow) || fact.contextWindow >= CLAUDE_CODE_ONE_MILLION
@@ -52,7 +52,7 @@ internal class DoorCatalog(private val lineup: DesktopLineup) {
     /** The levels of Claude Desktop's Effort control, lowest first. */
     private val desktopEfforts = listOf("low", "medium", "high", "xhigh", "max")
 
-    /** Each catalog model a head in the door serves, in the catalog's order. */
+    /** Each catalog model a provider in the door serves, in the catalog's order. */
     val served: List<ServedModel> = lineup.catalog.models.mapNotNull(::served)
 
     /** Each tier's newest Claude model served: the one that tier's alias runs. */
@@ -91,15 +91,15 @@ internal class DoorCatalog(private val lineup: DesktopLineup) {
      *  fully used stays listed, with the window marked beside its name as `splice status` writes it (`7d 100%`, Nov 17,
      *  2026): its provider still serves it, and the person sees before picking it that the account is spent. */
     fun picker(): List<DoorPickerRow> = served.flatMap { model ->
-        model.rows.map { row -> DoorPickerRow(row.model, labelOf(model, row), row.command, model.fact.description) }
+        model.rows.map { row -> DoorPickerRow(row.model, labelOf(model, row), row.provider, model.fact.description) }
     }
 
-    /** Claude Desktop's list as `splice desktop --json` gives it: each model's id there, name, head and command. */
-    fun desktopJson(): JsonArray = rowsJson(desktop.map { Listed(it.desktopId, it.fact.label, it.head.relay) })
+    /** Claude Desktop's list as `splice desktop --json` gives it: each model's id there, name and provider. */
+    fun desktopJson(): JsonArray = rowsJson(desktop.map { Listed(it.desktopId, it.fact.label, it.provider.key) })
 
-    /** The picker as `splice claude --json` gives it: each row's id, name, head and command. */
+    /** The picker as `splice claude --json` gives it: each row's id, name and provider. */
     fun pickerJson(): JsonArray = rowsJson(
-        served.flatMap { model -> model.rows.map { Listed(it.model, labelOf(model, it), model.head.relay) } },
+        served.flatMap { model -> model.rows.map { Listed(it.model, labelOf(model, it), model.provider.key) } },
     )
 
     private fun rowsJson(rows: List<Listed>): JsonArray = buildJsonArray {
@@ -107,8 +107,10 @@ internal class DoorCatalog(private val lineup: DesktopLineup) {
             addJsonObject {
                 put("model", row.model)
                 put("label", row.label)
-                put("head", row.head.key)
-                put("command", row.head.command)
+                put("provider", row.provider)
+                // What a head was named and run as, kept for a script that reads them: the provider's key now.
+                put("head", row.provider)
+                put("command", row.provider)
             }
         }
     }
@@ -116,10 +118,10 @@ internal class DoorCatalog(private val lineup: DesktopLineup) {
     private fun served(fact: CatalogModel): ServedModel? {
         val id = ModelTierSuffix.strip(fact.id)
         val picker = lineup.picker.filter { ModelTierSuffix.strip(it.upstream) == id }
-        val head = lineup.heads.firstOrNull { head ->
-            lineup.providerOf(head) == fact.provider && picker.any { it.head == head.key }
+        val provider = lineup.providers.firstOrNull { provider ->
+            provider.key == fact.provider && picker.any { it.provider == provider.key }
         } ?: return null
-        return ServedModel(fact, head, picker.filter { it.head == head.key }, tiers.modelOf(id))
+        return ServedModel(fact, provider, picker.filter { it.provider == provider.key }, tiers.modelOf(id))
     }
 
     private fun discovered(model: ServedModel): JsonObject = buildJsonObject {
@@ -168,8 +170,8 @@ internal class DoorCatalog(private val lineup: DesktopLineup) {
     private fun version(claude: String): List<Int> = digits.findAll(claude).map { it.value.toInt() }.toList()
 }
 
-/** A model as `splice desktop` and `splice claude` list it: the id asked by, its name and the head that runs it. */
-private data class Listed(val model: String, val label: String, val head: SharedHead)
+/** A model as `splice desktop` and `splice claude` list it: the id asked by, its name and the provider that runs it. */
+private data class Listed(val model: String, val label: String, val provider: String)
 
 /** The window hint Claude Code holds a million-token window for. */
 private const val ONE_MILLION = "[1m]"

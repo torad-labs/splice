@@ -1,20 +1,28 @@
 // The rows a `claude` on the door lists in /model (docs/specs/door-default.md, decision 4): a signed-in account's
-// models, and the models a person added on an API key of their own, such as a custom API at work; of a key head's own
-// endpoint list, only what splice.toml declares, unless it declares nothing.
+// models, and the models a person added on an API key of their own, such as a custom API at work; of a key
+// provider's own endpoint list, only what splice.toml declares, unless it declares nothing.
 package splice.app.desktop
 
+import io.ktor.server.application.ApplicationCall
 import kotlinx.coroutines.Dispatchers.Unconfined
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.provider.ProviderLogin
+import splice.app.provider.ServedProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
-import splice.launch.LaunchSpec
-import splice.share.SharedHead
+import splice.core.usage.QuotaFull
+import splice.head.GatewayTurn
+import splice.usage.quota.HeadUsageSource
+import splice.usage.quota.UsageView
 import java.nio.file.Path
 
 internal class DoorPickerRowsTest {
@@ -22,14 +30,14 @@ internal class DoorPickerRowsTest {
     lateinit var tmp: Path
 
     @Test
-    fun `two commands on one provider each list the models they declare`() {
+    fun `two providers each list the models they declare`() {
         val large = ModelEntry("team-large", "Team Large", contextWindow = 200_000)
         val small = ModelEntry("team-small", "Team Small", contextWindow = 200_000)
         val lineup = DesktopLineup(
-            listOf(head("work-a", rows = listOf(large)), head("work-b", rows = listOf(small))),
+            listOf(provider("work-a", rows = listOf(large)), provider("work-b", rows = listOf(small))),
             listOf(model("work-a", "team-large"), model("work-b", "team-small")),
             emptyList(),
-            mapOf("work-a" to "work", "work-b" to "work"),
+            SelectorAliases(listOf("work-a", "work-b")),
         )
         assertEquals(
             listOf("work-a--team-large", "work-b--team-small"),
@@ -40,8 +48,11 @@ internal class DoorPickerRowsTest {
     @Test
     fun `a model added on a custom API's key is in the picker beside the signed-in accounts' models`() {
         val lineup = lineupOf(
-            head("codex", login = true) to listOf(model("codex", "gpt-6.1-sol"), model("codex", "gpt-6-luna", true)),
-            head("work") to listOf(model("work", "acme-coder")),
+            provider("codex", login = true) to listOf(
+                model("codex", "gpt-6.1-sol"),
+                model("codex", "gpt-6-luna", true),
+            ),
+            provider("work") to listOf(model("work", "acme-coder")),
         )
         assertEquals(
             listOf("codex--gpt-6.1-sol", "codex--gpt-6-luna", "work--acme-coder"),
@@ -50,9 +61,9 @@ internal class DoorPickerRowsTest {
     }
 
     @Test
-    fun `a key head lists the models splice toml declares for it, not the rest of its endpoint's list`() {
+    fun `a key provider lists the models splice toml declares for it, not the rest of its endpoint's list`() {
         val lineup = lineupOf(
-            head("openrouter") to listOf(
+            provider("openrouter") to listOf(
                 model("openrouter", "anthropic/claude-haiku-4.5"),
                 model("openrouter", "qwen/qwen4-max", true),
                 model("openrouter", "google/gemini-4-neon", true),
@@ -64,70 +75,105 @@ internal class DoorPickerRowsTest {
     }
 
     @Test
-    fun `a key head that declares no model lists every model its endpoint lists`() {
+    fun `a key provider that declares no model lists every model its endpoint lists`() {
         val lineup = lineupOf(
-            head("gateway") to listOf(model("gateway", "team-large", true), model("gateway", "team-small", true)),
+            provider("gateway") to listOf(model("gateway", "team-large", true), model("gateway", "team-small", true)),
         )
         assertEquals(listOf("gateway--team-large", "gateway--team-small"), lineup.picker.map { it.model })
+    }
+
+    @Test
+    fun `the Claude model picked after a provider switch runs as named with the selected effort`() {
+        val lineup = lineupOf(
+            provider("work") to listOf(model("work", "team-large")),
+            provider("claude", rows = listOf(ModelEntry("claude-opus-5-5", "Opus 5.5", contextWindow = 200_000))) to
+                listOf(model("claude", "claude-opus-5-5")),
+        )
+        val routing = DoorRouting()
+        val first = ask("work--team-large")
+        assertEquals("work", routing.of(lineup, first, null, named = true)?.provider?.key)
+        val discovered = DoorCatalog(catalogued(lineup)).discovery().getValue("data").jsonArray
+        val opus = discovered.map { it.jsonObject.getValue("id").jsonPrimitive.content }
+            .single { it == "claude-opus-5-5" }
+        val selected = ask(opus)
+        val routed = checkNotNull(routing.of(lineup, selected, null, named = true))
+        assertEquals("claude", routed.provider.key)
+        assertEquals("claude-opus-5-5", routed.upstream)
+        assertEquals(
+            """{"model":"claude-opus-5-5","output_config":{"effort":"high"}}""",
+            selected.asking(routed.upstream).decodeToString(),
+        )
+        assertNull(routing.of(lineup, ask("claude-opus-99"), null, named = true))
     }
 
     @Test
     fun `discovery advertises the serving ceiling rather than the compaction target`() {
         val id = "claude-opus-5-5"
         val row = ModelEntry(id, "Opus 5.5", contextWindow = 200_000, maxContextWindow = 1_000_000)
-        val lineup = lineupOf(head("claude", rows = listOf(row)) to listOf(model("claude", id)))
+        val lineup = lineupOf(provider("claude", rows = listOf(row)) to listOf(model("claude", id)))
         val discovered = DoorCatalog(catalogued(lineup)).discovery().getValue("data").jsonArray.single().jsonObject
         assertEquals("1000000", discovered.getValue("max_input_tokens").jsonPrimitive.content)
         assertEquals("true", discovered.getValue("supports_1m").jsonPrimitive.content)
     }
 
-    private fun lineupOf(vararg heads: Pair<DoorHead, List<DoorModel>>): DesktopLineup =
+    private fun ask(model: String): DoorAsk = DoorAsk(
+        buildJsonObject {
+            put("model", model)
+            put("output_config", buildJsonObject { put("effort", "high") })
+        },
+        model,
+        session = "same-session",
+    )
+
+    private fun lineupOf(vararg providers: Pair<ServedProvider, List<DoorModel>>): DesktopLineup =
         DesktopLineup(
-            heads.map { it.first },
-            heads.flatMap { it.second },
+            providers.map { it.first },
+            providers.flatMap { it.second },
             emptyList(),
-            heads.associate { it.first.key to it.first.key },
+            SelectorAliases(providers.map { it.first.key }),
         )
 
-    /** [lineup] with the catalog its heads' providers publish, as the daemon publishes it. */
+    /** [lineup] with the catalog its providers publish, as the daemon publishes it. */
     private fun catalogued(lineup: DesktopLineup): DesktopLineup {
         val published = PublishedCatalog(CatalogBuild(), CatalogFile(tmp.resolve("model-catalog.json"), {}), Unconfined)
         runBlocking { published.publish(lineup) }
         return lineup.copy(catalog = published.current)
     }
 
-    private fun head(
+    private fun provider(
         key: String,
         login: Boolean = false,
         rows: List<ModelEntry> = listOf(ModelEntry("m", "M", contextWindow = 200_000)),
-    ): DoorHead {
-        val catalog = ModelCatalog(
-            discoveryPrefix = "$key--",
-            models = rows,
-            defaultContextWindow = 200_000,
-        )
-        return DoorHead(key, Relay(key), catalog, emptyMap(), "m", null, login)
-    }
+    ): ServedProvider = FakeProvider(
+        key,
+        ModelCatalog(discoveryPrefix = "$key--", models = rows, defaultContextWindow = 200_000),
+        login,
+    )
 
-    private fun model(head: String, id: String, discovered: Boolean = false): DoorModel =
-        DoorModel("$head--$id", id, head, "claude-$head", id, discovered = discovered)
+    private fun model(provider: String, id: String, discovered: Boolean = false): DoorModel =
+        DoorModel("$provider--$id", id, provider, id, discovered = discovered)
+}
 
-    private class Relay(override val key: String) : SharedHead {
-        override val command: String = "claude-$key"
-        override val port: Int = 0
+/** A provider the door reads, with nothing behind it: it is read for its catalog and never asked to serve a turn. */
+private class FakeProvider(
+    override val key: String,
+    override val catalog: ModelCatalog,
+    override val usesLogin: Boolean,
+) :
+    ServedProvider {
+    override val tiers: Map<String, String> = emptyMap()
+    override val pinnedModel: String = "m"
+    override val dialect: String? = null
+    override val usage: HeadUsageSource = HeadUsageSource { UsageView(0, 0, null) }
+    override val forwardsClientAuth: Boolean = false
+    override val maxRequestBytes: Int = 0
+    override val requestReadTimeoutMs: Long = 0
 
-        override fun running(): Boolean = true
+    override fun quotaFull(): QuotaFull? = null
 
-        override fun launch(): LaunchSpec? = null
+    override suspend fun login(): ProviderLogin = ProviderLogin.Ready
 
-        override fun windows(): Map<String, Long> = emptyMap()
+    override suspend fun serve(call: ApplicationCall, turn: GatewayTurn) = error("a picker test serves no turn")
 
-        override fun logins(): List<String> = emptyList()
-
-        override fun pin(login: String, session: String): Boolean = false
-
-        override fun maxRequestBytes(): Int = 0
-
-        override fun requestReadTimeoutMs(): Long = 0
-    }
+    override suspend fun countTokens(call: ApplicationCall, turn: GatewayTurn) = error("a picker test counts no turn")
 }

@@ -4,14 +4,11 @@
 package splice.app.desktop
 
 import splice.share.RefusalVoice
-import splice.share.ShareRelay
 
 internal abstract class DoorCaller(
     /** How the door refuses this caller, in Anthropic's error shape, with its own prefix. */
     val voice: RefusalVoice,
-    /** The relay this caller's turns reach their heads through, which says its failures in [voice]. */
-    val relay: ShareRelay,
-    /** What the head's row names the door this caller's turns came through. */
+    /** What a turn's row names the door this caller's turns came through. */
     val named: String,
 ) {
     /** Whether [header], a request's Authorization, presents this caller's key, compared in constant time. */
@@ -29,18 +26,18 @@ internal abstract class DoorCaller(
     /** The window [ask]'s session holds: the caller's own ([window]) unless the request says otherwise. */
     open fun windowOf(ask: DoorAsk): Long? = window()
 
-    /** What a turn is refused with while no head is in the door. */
+    /** What a turn is refused with while no provider is in the door. */
     abstract val noHead: String
 
     /** What a model the door does not serve is refused with, after the model's name. */
     abstract val notInDoor: String
 
-    /** Whether a model of Anthropic's that a request names, in a session on no head yet, runs on the head that serves
+    /** Whether a model of Anthropic's that a request names, in a session on no provider yet, runs on the provider that serves
      *  that model and is refused by name where none does (DoorRouting). False by default: Desktop's picker lists
      *  Anthropic's models alone, and each runs its tier of the default model (desktop-door.md, decision 2). */
     open val runsNamedModels: Boolean = false
 
-    /** A turn on its way to its head, as the door sends it. Nothing by default. */
+    /** A turn on its way to its provider, as the door sends it. Nothing by default. */
     open fun sending(turn: DesktopLastTurn) = Unit
 
     /** A turn or a count this caller asked, before it is routed. Nothing by default. */

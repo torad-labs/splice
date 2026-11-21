@@ -41,6 +41,7 @@ door
 door.commands	
 door.commands.*.head	
 door.commands.*.models	
+door.commands.*.provider	
 door.selector_aliases	
 door.selector_aliases.*	
 heads	
@@ -153,6 +154,8 @@ providers.*.models[].rates.ultrafast_cache_write
 providers.*.models[].rates.ultrafast_input	
 providers.*.models[].rates.ultrafast_output	
 providers.*.models_url	
+providers.*.overrides	
+providers.*.overrides.*	
 providers.*.picker	
 providers.*.pinned_model	
 providers.*.quirks	

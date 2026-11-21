@@ -26,6 +26,7 @@ import splice.core.util.JsonWire
 import splice.core.util.WallClock
 import splice.core.wire.HttpStatus
 import splice.http.JsonReply
+import splice.share.CappedBodies
 import splice.share.RefusalVoice
 
 /** What a door turn asks: its body, the model it names, the session it is a turn of, and, for a request of Claude
@@ -49,7 +50,7 @@ internal data class DoorAsk(
 
 internal class DesktopDoor(
     private val callers: List<DoorCaller>,
-    private val heads: DesktopHeads,
+    private val providers: DesktopProviders,
     clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     /** The door's own voice, for a key it holds for no caller: it can't tell whose session that is, so its words name
@@ -57,7 +58,7 @@ internal class DesktopDoor(
     private val voice = RefusalVoice("")
     private val json = Json { ignoreUnknownKeys = true }
     private val routing = DoorRouting()
-    private val toHead = DoorRelay(clock)
+    private val toProvider = DoorRelay(clock)
     private val windows = DesktopAppWindow()
 
     /** `POST /door/v1/messages`, with or without `?beta=true`. */
@@ -70,7 +71,7 @@ internal class DesktopDoor(
      *  catalog published last (DoorCatalog), for a caller whose key it presents. */
     suspend fun models(call: ApplicationCall) {
         val caller = admitted(call) ?: return
-        val lineup = heads.lineup()
+        val lineup = providers.lineup()
         val catalog = DoorCatalog(lineup)
         val listed = catalog.discovery(caller.default(lineup))
         if (windows.app(call.request.headers[APP_MODE_HEADER])) {
@@ -106,9 +107,9 @@ internal class DesktopDoor(
         return callers.firstOrNull { it.presents(presented) }
     }
 
-    /** [call], from [caller], read and sent to the head the model it names picks. */
+    /** [call], from [caller], read and sent to the provider the model it names picks. */
     private suspend fun routed(call: ApplicationCall, caller: DoorCaller, counting: Boolean) {
-        val lineup = heads.lineup()
+        val lineup = providers.lineup()
         val request = read(call, caller, lineup) ?: return
         val model = JsonScalars.str(request, REQUEST_MODEL).orEmpty()
         val headers = call.request.headers
@@ -117,7 +118,7 @@ internal class DesktopDoor(
         caller.asked(ask)
         val route = routing.of(lineup, ask, caller.default(lineup), caller.runsNamedModels)
             ?: return caller.voice.refuse(call, HttpStatus.BAD_REQUEST, "model \"${ask.model}\" ${caller.notInDoor}")
-        toHead.send(call, caller, route, ask, counting)
+        toProvider.send(call, caller, route, ask, counting)
     }
 
     /** The caller whose key [call] presents, while its switch is on; null once [call] has been refused
@@ -133,12 +134,13 @@ internal class DesktopDoor(
         return null
     }
 
-    /** [call]'s body as a JSON object, or null once [call] has been answered: with no head in the door, a body past
-     *  what the widest head takes, or a body that is not JSON. */
+    /** [call]'s body as a JSON object, or null once [call] has been answered: with no provider in the door, a body past
+     *  what the widest provider takes, or a body that is not JSON. */
     private suspend fun read(call: ApplicationCall, caller: DoorCaller, lineup: DesktopLineup): JsonObject? {
-        val widest = lineup.heads.maxByOrNull { it.relay.maxRequestBytes() }
+        val widest = lineup.providers.maxByOrNull { it.maxRequestBytes }
             ?: return null.also { caller.voice.refuse(call, HttpStatus.BAD_REQUEST, caller.noHead) }
-        val body = caller.relay.sent(call, widest.relay) ?: return null
+        val body = CappedBodies(caller.voice).read(call, widest.maxRequestBytes, widest.requestReadTimeoutMs)
+            ?: return null
         return JsonScalars.objectOrNull(json, body.decodeToString())
             ?: null.also { caller.voice.refuse(call, HttpStatus.BAD_REQUEST, NOT_JSON) }
     }

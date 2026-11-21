@@ -11,16 +11,14 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClockIso
 import splice.share.RefusalVoice
-import splice.share.ShareRelay
 import java.time.Instant
 
 internal class DesktopCaller(
-    relay: ShareRelay,
     private val key: DesktopKey,
     private val records: DesktopRecords,
     private val log: LogSink,
     private val now: WallClockIso = WallClockIso { Instant.now().toString() },
-) : DoorCaller(RefusalVoice(DESKTOP_ERROR_PREFIX), relay, DESKTOP_DOOR) {
+) : DoorCaller(RefusalVoice(DESKTOP_ERROR_PREFIX), DESKTOP_DOOR) {
     override fun presents(header: String?): Boolean = key.matchesBearer(header)
 
     override fun closed(): String? = OFF.takeUnless { records.get().on }
@@ -33,12 +31,12 @@ internal class DesktopCaller(
     /** In app mode, the window Desktop gave the Code tab for the request's model (DesktopAppWindow); else [window]. */
     override fun windowOf(ask: DoorAsk): Long? = ask.appWindow ?: window()
 
-    override val noHead: String = "no head is in the door; `splice desktop` says why"
+    override val noHead: String = "no provider is in the door; `splice desktop` says why"
 
     override val notInDoor: String = "is not in the door; `splice desktop` lists the models it serves"
 
     // Desktop's picker is the door's own list (DoorCatalog), Claude's models under their own ids, so a Claude id it
-    // sends is a model picked from that list: it runs where a head serves it, as the terminal's `claude` does, and
+    // sends is a model picked from that list: it runs where a provider serves it, as the terminal's `claude` does, and
     // Claude Code's own side calls still run the small tier.
     override val runsNamedModels: Boolean = true
 

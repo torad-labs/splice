@@ -7,9 +7,6 @@ import splice.core.auth.ClientAuthProvider
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.dialect.anthropic.PassthroughRequestQuirks
 import splice.dialect.anthropic.PassthroughThinkingQuirks
-import splice.provider.openai.ApiKeyAuthProvider
-import splice.topology.TopologyLoader
-import java.nio.file.Paths
 
 internal class PassthroughArm(
     private val passthroughAssembly: PassthroughAssembly,
@@ -50,10 +47,7 @@ internal class PassthroughArm(
                 changes.view(key, accounts),
             )
         }
-        val auth = ApiKeyAuthProvider(
-            envVar = providerCfg.auth.effectiveApiKeyEnv(key),
-            keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
-        )
+        val auth = KeyAuth().of(ctx)
         return Wired(
             passthroughAssembly.passthroughProviderFor(
                 ctx = ctx,

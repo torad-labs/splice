@@ -5,6 +5,7 @@
 package splice.share
 
 import kotlinx.coroutines.CoroutineDispatcher
+import splice.core.topology.DOOR_SEGMENT
 import java.net.URI
 
 public class ShareDirectory(

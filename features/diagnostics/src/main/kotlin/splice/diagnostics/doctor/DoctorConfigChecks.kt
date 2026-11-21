@@ -107,7 +107,8 @@ internal class DoctorConfigChecks(
                 DoctorTierChecks.checks(unmappedTiers, configPath) + ignoredSettingChecks(topology, configPath) +
                 stateDirChecks(topology, configPath) + systemPromptChecks(topology) +
                 projectPrompts.projectPromptChecks(topology) + wireTaps.wireTapChecks(topology) +
-                traces.traceChecks(topology, runningTrace) + localRuntime.localChecks(topology, live)
+                traces.traceChecks(topology, runningTrace) + localRuntime.localChecks(topology, live) +
+                localRuntime.servedWindowChecks(topology)
         }
     }
 
@@ -149,7 +150,8 @@ internal class DoctorConfigChecks(
         ConfigService(
             TopologyStatePaths(env).of(topology),
             headOverrides = TopologyKnobLayer(topology).configOverrides(),
-            perHeadOverrides = topology.heads.mapValues { (_, head) -> head.overrides },
+            perHeadOverrides = TopologyKnobLayer(topology).layers().own,
+            inheritedOverrides = TopologyKnobLayer(topology).layers().inherited,
             envReader = env,
         ).coerceRejects().map { (where, why) ->
             DoctorCheck(

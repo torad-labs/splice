@@ -24,6 +24,8 @@ internal class GrokAccountWiring(
     private val grokRefresh: GrokRefresh,
     private val accountFiles: OAuthAccountFiles = OAuthAccountFiles(),
 ) {
+    private val owners = LoginOwners()
+
     /** Every Grok account of [primaryPath]'s pool, the primary first, each with its own refresher. */
     fun accounts(ctx: ProviderBuild, primaryPath: Path): List<WiredAccount> {
         val tokenUrl = GrokOAuthEndpoints.tokenUrl(System::getenv)
@@ -43,6 +45,9 @@ internal class GrokAccountWiring(
     }
 
     private fun auth(ctx: ProviderBuild, path: Path, tokenUrl: String): RefreshableAuthProvider =
+        owners.held(AuthKind.GrokOAuth.wire, path) { grokAuth(ctx, path, tokenUrl) }
+
+    private fun grokAuth(ctx: ProviderBuild, path: Path, tokenUrl: String): RefreshableAuthProvider =
         GrokAuthProvider(
             authPath = path,
             authCacheMs = ctx.cfg.authCacheMs,

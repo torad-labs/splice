@@ -12,7 +12,8 @@ import splice.core.failure.StoppedBy
 internal object FailureFamilies {
     fun of(cause: FailureCause): ClientWire.Family = when (cause) {
         is FailureCause.Provider -> provider(cause)
-        is FailureCause.Path -> ClientWire.Family.R
+        // cp-tls: a certificate nothing trusts meets the same refusal on every re-send, so the client is told to stop
+        is FailureCause.Path -> if (cause.permanent) ClientWire.Family.P else ClientWire.Family.R
         is FailureCause.Splice -> splice(cause)
     }
 

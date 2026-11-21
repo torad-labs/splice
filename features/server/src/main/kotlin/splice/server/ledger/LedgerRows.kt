@@ -34,7 +34,7 @@ internal class LedgerRows(private val parts: LedgerParts) {
             person = person,
             team = turn.team,
             device = turn.key.prefix,
-            command = turn.head.command,
+            command = turn.command.name,
             model = heard.model,
             route = turn.route,
             upstream = heard.upstream ?: turn.way?.served(),
@@ -83,6 +83,6 @@ internal class LedgerRows(private val parts: LedgerParts) {
     /** An OpenAI-style turn's price at its head's rate card; null when it billed nothing or the model has no card. */
     private fun price(turn: LedgerTurn, model: String?, tokens: ServedTokens?): Double? {
         if (model == null || tokens == null) return null
-        return parts.upstreams.price(turn.head.key, model, tokens)
+        return parts.upstreams.price(turn.command.key, model, tokens)
     }
 }

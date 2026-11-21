@@ -4,7 +4,7 @@
 // the design rule). It reads and reports; it never writes, never starts a daemon and never offers a fix.
 package splice.app.cli
 
-import splice.app.provider.LocalRowBootFindings
+import splice.app.provider.local.LocalRowBootFindings
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText

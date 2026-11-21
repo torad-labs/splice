@@ -47,6 +47,7 @@ function machine() {
         PATH: `${bin}:/usr/bin:/bin`,
         CI: undefined,
         SPLICE_GRADLE_HERE: undefined,
+        SPLICE_GRADLE_REMOTE: "1",
         GRADLE_SLOT_LOCK: join(dir, ".gradle-slot.lock"),
         ...env,
       },
@@ -59,6 +60,13 @@ function machine() {
 }
 
 describe("a gradle run with rig on PATH", () => {
+  test("ordinary runs build here without asking the remote runner", async () => {
+    const m = machine();
+    expect(await m.run([":app:shadowJar"], { SPLICE_GRADLE_REMOTE: undefined })).toBe(0);
+    expect(m.builtHere()).toBe(true);
+    expect(m.rigAsked()).toBeNull();
+  });
+
   test("another machine's run is the verdict, and nothing builds here", async () => {
     const m = machine();
     const status = await m.run([":app:test"], { RIG_STATUS: '{"host":"h","exit":3,"run_s":1}', RIG_EXIT: "3" });

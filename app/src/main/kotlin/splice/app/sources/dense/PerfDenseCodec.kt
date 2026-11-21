@@ -1,7 +1,7 @@
 // NEW: Oct 11, 2026 — one retained perf line as a handful of bytes, and back.
 //
 // A record is: two flag bytes; the gap since the previous line's end and the line's own length; then, for a line that
-// is a row, the ts as a difference from the previous row's, the six repeated descriptions by number, and the numeric
+// is a row, the ts as a difference from the previous row's, the eight repeated descriptions by number, and the numeric
 // fields as a presence mask and their packed values; then the cumulative-drops count and the leading ts when they differ
 // from what the flags imply. The row's own ids (trace, request, response) and the provider's words are not kept: the
 // line is read back from its byte range when a row is shown.
@@ -19,6 +19,7 @@ import splice.core.perf.PerfTurnIds
 import splice.core.turn.CLAUDE_DOOR
 import splice.core.turn.DESKTOP_DOOR
 import splice.core.turn.TERMINAL_DOOR
+import splice.core.turn.TurnAgent
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfTranscriptLink
 import splice.usage.perf.PerfTurnFacts
@@ -191,6 +192,8 @@ internal class PerfDenseCodec(private val names: PerfFieldNames, keys: List<Stri
         text(row.facts.session)
         text(row.facts.account)
         text(row.transcript.sessionId)
+        text(row.transcript.agent.id)
+        text(row.transcript.agent.parent)
         numbers(row)
     }
 
@@ -242,6 +245,8 @@ internal class PerfDenseCodec(private val names: PerfFieldNames, keys: List<Stri
         val session = textAt(cursor)
         val account = textAt(cursor)
         val sessionId = textAt(cursor)
+        val agentId = textAt(cursor)
+        val parentAgentId = textAt(cursor)
         val mask = cursor.varint()
         val packed = cursor.bytes(cursor.varint().toInt())
         return PerfRow(
@@ -260,6 +265,7 @@ internal class PerfDenseCodec(private val names: PerfFieldNames, keys: List<Stri
             transcript = PerfTranscriptLink(
                 sessionId = sessionId,
                 door = doorOf(flags),
+                agent = TurnAgent(agentId, parentAgentId),
             ),
             cause = cause,
         )

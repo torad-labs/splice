@@ -124,8 +124,6 @@ internal data class AddModelPolicy(
      *  ANY model id (llama-server lists a file path, not the id a row sends): there an unlisted row
      *  is trusted and reported as such, the rule LocalRuntimeProbe applies at boot. */
     val listAuthoritative: Boolean = true,
-    /** The endpoint supplies the serving roster; declared rows supply only pinned models and tiers. */
-    val discoverRoster: Boolean = false,
     /** The client shows its own models and picks among them, as Claude Code does on its own login: the head names
      *  no launch default and no roster, so a model the vendor ships tomorrow is there without a line changing. */
     val clientRoster: Boolean = false,
@@ -160,66 +158,57 @@ public class AddProfiles {
         shared: String? = null,
         family: String? = null,
     ): String {
-        val models = profile.models
-        val auth = if (profile.provider.authKind == API_KEY) {
-            """auth = { kind = "api-key", env = "${apiKeyEnv(key)}" }"""
-        } else {
-            """auth = { kind = "${profile.provider.authKind}" }"""
-        }
         val on = shared?.let { ", a command on [providers.$it]" }.orEmpty()
         val origin = listOf("", "# Added by `${profile.origin}`$on.")
-        val tables = listOf(
-            "[providers.$key]",
-            "dialect = \"${profile.provider.dialect}\"",
-            "base_url = \"${profile.baseUrl.orEmpty()}\"",
-            auth,
-        ) + profile.provider.extra.map { it.replace(KEY_SLOT, key) } + models.flatMap { m ->
-            listOf(
-                "[[providers.$key.models]]",
-                "id = \"${m.id}\"",
-                "label = \"${m.label}\"",
-                "context_window = ${m.contextWindow}",
-            ) + m.clientModel?.let { listOf("client_model = \"$it\"") }.orEmpty() + m.ratesLine()
-        }
-        val kin = family?.let { listOf("[providers.$key.discovery]", "family = \"$it\"") }.orEmpty()
-        val provider = origin + (tables + kin).takeIf { shared == null }.orEmpty()
+        val provider = if (shared == null) providerTable(profile, key, family) else emptyList()
         val own = profile.policy.clientRoster
-        val mappings = if (own) emptyList() else models.flatMap { m -> m.slots.map { slot -> m.id to slot } }
-        val pinned = models.first()
         val head = listOfNotNull(
             "".takeIf { shared == null },
             "[heads.$key]",
             "provider = \"${shared ?: key}\"",
             "port = $port",
             "discovery_prefix = \"claude-$key--\"",
-            "pinned_model = \"${pinned.id}\"".takeUnless { own },
+            "pinned_model = \"${profile.models.first().id}\"".takeUnless { own },
             OWN_MODELS_NOTE.takeIf { own },
-        ) + headExtras(mappings, pinned.contextWindow, profile.policy.discoverRoster) + listOf(
             "[heads.$key.claude]",
             "command = \"${profile.head.command}\"",
         )
-        return (provider + head).joinToString("\n") + "\n"
+        return (origin + provider + head).joinToString("\n") + "\n"
     }
 
-    /** Discovery profiles keep row windows and map tiers separately. Other profiles keep their
-     *  pinned window and their existing serving allowlist when they declare tiers. */
-    private fun headExtras(
-        mappings: List<Pair<String, String>>,
-        pinnedWindow: Long,
-        discoverRoster: Boolean,
-    ): List<String> {
-        if (discoverRoster) {
-            return listOf("model_slots = {" + mappings.joinToString { (id, slot) -> "$slot = \"$id\"" } + "}")
-        }
-        val window = listOf("context_window = $pinnedWindow")
-        return if (mappings.isEmpty()) {
-            window
+    /** The model windows and tier bindings belong to the provider, whether it ever has a legacy command or not. */
+    private fun providerTable(profile: AddProfile, key: String, family: String?): List<String> {
+        val authKind = profile.provider.authKind
+        val auth = if (authKind == API_KEY) {
+            """auth = { kind = "api-key", env = "${apiKeyEnv(key)}" }"""
         } else {
-            listOf(
-                "models = [" +
-                    mappings.joinToString { (id, slot) -> "{ id = \"$id\", slot = \"$slot\" }" } + "]",
-            ) + window
+            """auth = { kind = "$authKind" }"""
         }
+        return listOfNotNull(
+            "[providers.$key]",
+            "dialect = \"${profile.provider.dialect}\"",
+            "base_url = \"${profile.baseUrl.orEmpty()}\"",
+            auth,
+            "pinned_model = \"${profile.models.first().id}\"".takeUnless { profile.policy.clientRoster },
+            tierLine(profile),
+        ) + profile.provider.extra.map { it.replace(KEY_SLOT, key) } + modelTables(profile.models, key) +
+            family?.let { listOf("[providers.$key.discovery]", "family = \"$it\"") }.orEmpty()
+    }
+
+    private fun tierLine(profile: AddProfile): String? {
+        if (profile.policy.clientRoster) return null
+        val tiers = profile.models.flatMap { model -> model.slots.map { "$it = \"${model.id}\"" } }
+        return tiers.takeIf { it.isNotEmpty() }?.joinToString(prefix = "model_slots = { ", postfix = " }")
+    }
+
+    private fun modelTables(models: List<AddModel>, key: String): List<String> = models.flatMap { model ->
+        listOfNotNull(
+            "[[providers.$key.models]]",
+            "id = \"${model.id}\"",
+            "label = \"${model.label}\"",
+            "context_window = ${model.contextWindow}",
+            model.clientModel?.let { "client_model = \"$it\"" },
+        ) + model.ratesLine()
     }
 }
 

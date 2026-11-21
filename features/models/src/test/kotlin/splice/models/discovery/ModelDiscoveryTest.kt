@@ -56,7 +56,11 @@ class ModelDiscoveryTest {
         assertTrue(found is Discovery.Found, "got $found")
         found as Discovery.Found
         assertEquals(LIST_URL, found.url)
-        assertEquals(listOf(DiscoveredModel("m-chat", "Chat", 256_000, listOf("m-chat-latest"))), found.models)
+        val model = found.models.single()
+        assertEquals("m-chat", model.id)
+        assertEquals("Chat", model.label)
+        assertEquals(256_000L, model.contextWindow)
+        assertEquals(listOf("m-chat-latest"), model.aliases)
         assertEquals(2, found.ruledOut, "the image and hidden rows are counted, so daemon.log can say so")
     }
 
@@ -115,7 +119,8 @@ class ModelDiscoveryTest {
         """.trimIndent()
         val found = answered(body) as Discovery.Found
         val card = ModelRates(input = 2.0, cacheRead = 2.0, output = 10.0)
-        assertEquals(listOf(DiscoveredModel("m-priced", rates = card), DiscoveredModel("m-router")), found.models)
+        assertEquals(listOf("m-priced", "m-router"), found.models.map { it.id })
+        assertEquals(listOf(card, null), found.models.map { it.rates })
     }
 
     @Test

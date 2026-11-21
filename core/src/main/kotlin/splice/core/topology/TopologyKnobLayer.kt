@@ -17,7 +17,21 @@
 // topology placement keeps the direction one-way.
 package splice.core.topology
 
+import splice.core.config.PROVIDER_LAYER_PREFIX
+
 public class TopologyKnobLayer(private val topology: Topology) {
+    /** The per-layer knobs ConfigService holds beside the global ones: each head's own, and each provider's under
+     *  [PROVIDER_LAYER_PREFIX] (its own, apart from every head key), with what each head takes from its provider
+     *  beneath its own, so a head and the gateway read one value written once on the provider. */
+    public fun layers(): OverrideLayers = OverrideLayers(
+        own = topology.heads.mapValues { (_, head) -> head.overrides } +
+            topology.providers.filterValues { it.overrides.isNotEmpty() }
+                .mapKeys { (key, _) -> "$PROVIDER_LAYER_PREFIX$key" }
+                .mapValues { (_, provider) -> provider.overrides },
+        inherited = topology.heads.mapNotNull { (key, head) ->
+            topology.providers[head.provider]?.overrides?.takeIf { it.isNotEmpty() }?.let { key to it }
+        }.toMap(),
+    )
 
     /**
      * Flat knob map from topology TOML for ConfigService's headOverrides layer.
@@ -85,3 +99,9 @@ public class TopologyKnobLayer(private val topology: Topology) {
 
 /** The auth kinds the pre-topology management API addressed by name — one head each, ever. */
 private val LEGACY_KINDS = listOf(AuthKind.ChatgptOAuth.wire, AuthKind.GrokOAuth.wire)
+
+/** The knobs held per layer: [own] by layer name, and what a head [inherited] from its provider, by head key. */
+public data class OverrideLayers(
+    val own: Map<String, Map<String, String>>,
+    val inherited: Map<String, Map<String, String>>,
+)

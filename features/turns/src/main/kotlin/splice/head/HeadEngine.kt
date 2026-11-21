@@ -78,7 +78,7 @@ internal class HeadEngine(
     private val admission: HeadAdmission,
     private val countTokens: CountTokens,
     private val ingress: HeapIngress,
-) {
+) : ActiveCalls {
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null
 
@@ -94,6 +94,8 @@ internal class HeadEngine(
     // CodeModeDrainTest under a load near 90). The drain waits for this to reach zero too.
     private val calls = AtomicInteger()
     val activeCalls: Int get() = calls.get()
+
+    override fun invoke(): Int = activeCalls
 
     /** The port a client reaches this head on: the one the connector BOUND while running — the
      *  OS-assigned one when [HeadListen.port] is 0 — and the configured [HeadListen.port] otherwise. */

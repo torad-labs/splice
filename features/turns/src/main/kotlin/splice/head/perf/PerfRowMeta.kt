@@ -2,7 +2,9 @@ package splice.head.perf
 
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.put
+import splice.core.model.TurnPrice
 import splice.core.perf.PerfTurnIds
+import splice.core.turn.TurnAgent
 import splice.core.turn.TurnRelay
 import splice.upstream.transport.HeaderRedaction
 
@@ -45,11 +47,19 @@ public data class PerfRowMeta(
         failure.providerMessage?.let { into.put("provider_message", HeaderRedaction.redactText(it)) }
     }
 
+    /** The Claude Code subagent that sent the turn and the agent that started it, only where the request named them
+     *  (desktop-full, df-turn-headers): a session's own turns carry neither. */
+    private fun putAgent(into: JsonObjectBuilder, agent: TurnAgent) {
+        agent.id?.let { into.put("agent_id", it) }
+        agent.parent?.let { into.put("parent_agent_id", it) }
+    }
+
     /** These optional string facts never enter the row's numeric snapshot. */
     internal fun putTranscriptFacts(into: JsonObjectBuilder) {
         transcript.sessionId?.let { into.put("session_id", it) }
         transcript.responseMessageId?.let { into.put("response_message_id", it) }
         transcript.messagesHash?.let { into.put("messages_hash", it) }
+        putAgent(into, transcript.relay.agent)
         transcript.relay.door?.let { into.put("door", it) }
         // A Context Getter's request names the session it worked for, so the two can be joined (decision 10).
         transcript.relay.workedFor?.let { into.put("worked_for", it) }
@@ -62,11 +72,14 @@ public data class PerfRowMeta(
     }
 }
 
-/** The login that carried a turn and whether its prompt cache started cold. [label] null means no account was
- *  proved for the turn, and then the row carries neither fact. */
+/** The login that carried a turn, whether its prompt cache started cold, and the card its spend is priced at. [label]
+ *  null means no account was proved for the turn, and then the row carries neither of the first two facts. [price] is the
+ *  serving route's own card, for the books it counts into (its session totals): a route over books another route built
+ *  never inherits that route's rates. Null leaves it to the books' own. */
 public data class PerfAccount(
     val label: String? = null,
     val cacheCold: Boolean = false,
+    val price: TurnPrice? = null,
 )
 
 /** Why a turn failed and how hard the retry loop tried, beside the outcome tag on its perf row. */

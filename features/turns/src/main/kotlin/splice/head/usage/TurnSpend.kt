@@ -5,6 +5,7 @@ package splice.head.usage
 
 import splice.core.budget.HeadBudget
 import splice.core.budget.NoHeadBudget
+import splice.core.model.TurnPrice
 import splice.core.perf.PerfSnapshot
 import splice.core.util.Cancellables
 import splice.head.perf.RetiredRows
@@ -20,6 +21,9 @@ internal class TurnSpend(
     private val budget: HeadBudget = NoHeadBudget,
     /** #523: once the head has retired, the day's spend is the next daemon's to count, from the row left for it. */
     private val retired: RetiredRows? = null,
+    /** The card this route prices its turns at, in the books it shares with other routes: told to the hourly rollup and
+     *  carried on the row's account for the session totals. Null prices at the books' own card. */
+    val price: TurnPrice? = null,
 ) {
     /** V4-133 review: the day's spend moves by THIS row — its own ts, model and counters, the same
      *  facts a restarted daemon reads back from the file. Best-effort like [economics]: a
@@ -63,7 +67,13 @@ internal class TurnSpend(
     private fun rollup(turn: TurnEconomics, account: String?, outcome: String, atMs: Long?) {
         val store = economics ?: return
         Cancellables.discard(
-            Cancellables.runCatchingCancellable { store.record(turn, account, outcome, atMs) },
+            Cancellables.runCatchingCancellable {
+                if (price == null) {
+                    store.record(turn, account, outcome, atMs)
+                } else {
+                    store.record(turn, account, outcome, atMs, price)
+                }
+            },
             "telemetry is best-effort; a turn must never fail on the quota rollup",
         )
     }

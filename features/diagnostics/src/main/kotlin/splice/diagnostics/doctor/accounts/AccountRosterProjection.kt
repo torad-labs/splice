@@ -13,7 +13,6 @@ import splice.accounts.pool.HeadAccountView
 import splice.accounts.pool.HeadNextTarget
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
-import splice.diagnostics.doctor.AccountPoolProjection
 import splice.diagnostics.doctor.AccountPoolsRead
 import splice.diagnostics.doctor.FIX_RESTART
 import splice.diagnostics.doctor.NativeLoginHealth

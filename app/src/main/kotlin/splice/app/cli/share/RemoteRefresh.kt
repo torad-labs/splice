@@ -3,7 +3,9 @@
 // it lists that it did not list at the last add or refresh is linked, at `<server>/<command>`, under the same rules as
 // `add`; a command linked from that server that the profile no longer lists is unlinked. The laptop's own commands, and
 // those it runs on other machines, are left alone, and a command the person took out of a server's list stays out
-// while the server keeps offering it. A profile that lists what it listed before changes nothing.
+// while the server keeps offering it. The telemetry relay the profile names is kept too (F8), and the next launch of
+// each of the server's commands sends its telemetry there, or none once the server names none. A profile that lists
+// what it listed before, and the same relay, changes nothing.
 package splice.app.cli.share
 
 import splice.app.cli.server.EXAMPLE_SERVER
@@ -60,12 +62,14 @@ internal class RemoteRefresh(
         val adding = names.free(topology, offer.entries.filterKeys { it !in before && it !in linked.values })
         val wanted = topology.copy(remote = topology.remote - unlinked + adding.entries)
         val unchanged = wanted == topology
-        if (unchanged) {
+        val relayed = asks.logins.telemetry(server) != offer.telemetry
+        if (unchanged && !relayed) {
             out.line("nothing changed: $server offers ${offered.joinToString(", ").ifEmpty { "nothing" }}, as before")
         }
         unlinked.forEach { unlink(it) }
         if (!unchanged && !file.saved(wanted, topology)) return null
-        asks.logins.keepOffered(server, offered)
+        asks.logins.keepOffered(server, offered, offer.telemetry)
+        if (relayed) out.line(offer.relayLine(server))
         return RemoteRefreshed(wanted, adding.entries.keys.toList(), unlinked.toList(), adding.complete)
     }
 

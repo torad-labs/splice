@@ -47,7 +47,7 @@ private val BASE = """
     [heads.ex]
     provider = "ex"
     port = 8801
-    discovery_prefix = "ex/"
+    discovery_prefix = "claude-ex--"
     pinned_model = "m1"
     models = [
       { id = "m1", slot = "opus" },
@@ -55,6 +55,9 @@ private val BASE = """
 
     [heads.ex.claude]
     command = "claude-ex"
+
+    [door.selector_aliases]
+    "ex2--" = "ex"
 """.trimIndent() + "\n"
 
 class TopologyWriterRoundTripTest {
@@ -82,7 +85,7 @@ class TopologyWriterRoundTripTest {
 
     /** A second head on provider `ex`, pinned to m2, as the section the writer appends. */
     private fun head(key: String, port: Int): String =
-        "\n[heads.$key]\nprovider = \"ex\"\nport = $port\ndiscovery_prefix = \"$key/\"\npinned_model = \"m2\"\n"
+        "\n[heads.$key]\nprovider = \"ex\"\nport = $port\ndiscovery_prefix = \"$key--\"\npinned_model = \"m2\"\n"
 
     /** Every backup, in splice's own directory or (never, V4-284) beside the file. */
     private fun backups(): List<String> = listOf(tmp, backupDir).filter(Files::exists).flatMap { dir ->
@@ -120,7 +123,7 @@ class TopologyWriterRoundTripTest {
 
     @Test
     fun `a removed table leaves with its sub-tables and the comments before it stay`() {
-        lands(BASE.substringBefore("[heads.ex]"))
+        lands(BASE.substringBefore("[heads.ex]") + BASE.substringAfter("command = \"claude-ex\"\n"))
     }
 
     @Test
@@ -186,7 +189,14 @@ class TopologyWriterRoundTripTest {
     @Test
     fun `quotes, backslashes and line breaks in a value survive the loader`() {
         val roster = "  { id = \"m1\", slot = \"opus\" },\n]\n"
-        lands(BASE.replace(roster, roster + "system_prompt = \"say \\\"hi\\\"\\n\\\\ok\"\n"))
+        val prompt = "system_prompt = \"say \\\"hi\\\"\\n\\\\ok\"\n"
+        val expected = BASE
+            .replace(
+                "extra_headers = { x-api-key = \"sk-secret\" }\n",
+                "extra_headers = { x-api-key = \"sk-secret\" }\n$prompt",
+            )
+            .replace(roster, roster + prompt)
+        lands(expected)
         assertEquals("say \"hi\"\n\\ok", TopologyLoader.parse(Files.readString(file)).heads.getValue("ex").systemPrompt)
     }
 

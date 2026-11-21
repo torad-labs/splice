@@ -56,6 +56,24 @@ class ModelRostersTest {
         assertTrue(lines.any { "HTTP 503" in it && "published last" in it }, "$lines")
     }
 
+    @Test
+    fun `a changed provider roster republishes the catalog even when credentials are unchanged`(@TempDir tmp: Path) =
+        runBlocking {
+            var models = chat
+            val notices = mutableListOf<String>()
+            val rosters = rosters(tmp, HeadModelsSource { _, _ -> Discovery.Found(LIST_URL, models) })
+            rosters.credentialChanged = CredentialChanged { notices += it }
+
+            rosters.resolve(mapOf("xai" to provider))
+            rosters.resolve(mapOf("xai" to provider))
+            assertTrue(notices.isEmpty())
+            models = chat + DiscoveredModel("m-new")
+            rosters.resolve(mapOf("xai" to provider))
+
+            assertEquals(listOf("xai"), notices)
+            assertEquals(models, rosters.forHead("xai"))
+        }
+
     // The operator reads this line to learn what joined the picker. It once said "385 discovered" for
     // an OpenRouter head whose filter let 294 join (2026-09-23), so the filter's share is named on it.
     // A model a declared row covers is in the picker whatever the filter says, so it is not counted as

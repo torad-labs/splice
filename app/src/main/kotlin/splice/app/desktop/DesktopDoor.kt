@@ -1,8 +1,7 @@
 // NEW: desktop-door (docs/specs/desktop-door.md, decisions 1, 2, 5 and 7). A turn of Claude Code in Mantle mode,
-// answered under /door on the control port, which a restart does not move, and under /door on the share listener for
-// another machine (door-network). It is one door: Desktop's Code tab, the terminal's `claude` and another machine are
-// its callers, told apart by the key a request presents. /desktop, the control port's path before 0.6.4, still answers,
-// so a Desktop set up then and a `claude` session started then go on.
+// answered under /door on the control port, which a restart does not move (and under /desktop, its path before the
+// door had two callers, for a Desktop set up then), and under /door on the share listener for another machine
+// (door-network).
 //
 // door-default (docs/specs/door-default.md, decision 3): the door admits two callers, Claude Desktop's Code tab and the
 // terminal's `claude`, each by its own key (DoorCaller), and no other key opens it. While a caller's switch is off the
@@ -18,16 +17,30 @@ import io.ktor.server.application.ApplicationCall
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.app.desktop.catalog.DesktopLineup
+import splice.app.desktop.catalog.DesktopProviders
+import splice.app.desktop.catalog.DoorCatalog
+import splice.app.desktop.catalog.ModelDiscovery
+import splice.client.desktop.ANTHROPIC_BETA_HEADER
+import splice.client.desktop.APP_MODE_HEADER
+import splice.client.desktop.DesktopAppWindow
 import splice.core.client.SESSION_HEADER
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.util.WallClock
 import splice.core.wire.HttpStatus
 import splice.http.JsonReply
+import splice.share.CappedBodies
 import splice.share.RefusalVoice
 
-/** What a door turn asks: its body, the model it names and the session it is a turn of. */
-internal data class DoorAsk(val request: JsonObject, val model: String, val session: String?) {
+/** What a door turn asks: its body, the model it names, the session it is a turn of, and, for a request of Claude
+ *  Desktop's app mode, the window Desktop gave its Code tab for that model ([appWindow], null for any other request). */
+internal data class DoorAsk(
+    val request: JsonObject,
+    val model: String,
+    val session: String?,
+    val appWindow: Long? = null,
+) {
     /** Whether this is Claude Code's start-up check: one token, not streamed (desktop-door.md's table), whose answer
      *  no one reads. */
     val probe: Boolean
@@ -41,10 +54,7 @@ internal data class DoorAsk(val request: JsonObject, val model: String, val sess
 
 internal class DesktopDoor(
     private val callers: List<DoorCaller>,
-    private val heads: DesktopHeads,
-    /** The terminal's lane, whose starting model is the door's: a session that named no selector runs it, whoever
-     *  the caller is. */
-    private val lane: ClaudeLane,
+    private val providers: DesktopProviders,
     clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     /** The door's own voice, for a key it holds for no caller: it can't tell whose session that is, so its words name
@@ -52,8 +62,8 @@ internal class DesktopDoor(
     private val voice = RefusalVoice("")
     private val json = Json { ignoreUnknownKeys = true }
     private val routing = DoorRouting()
-    private val toHead = DoorRelay(clock)
-    private val doorModels = DoorModels()
+    private val toProvider = DoorRelay(clock)
+    private val windows = DesktopAppWindow()
 
     /** `POST /door/v1/messages`, with or without `?beta=true`. */
     suspend fun messages(call: ApplicationCall) = answer(call, counting = false)
@@ -61,11 +71,17 @@ internal class DesktopDoor(
     /** `POST /door/v1/messages/count_tokens`, with or without `?beta=true`. */
     suspend fun countTokens(call: ApplicationCall) = answer(call, counting = true)
 
-    /** `GET /door/v1/models`: the door's models as Claude Desktop's gateway discovery reads them (DoorModels), for a
-     *  caller whose key it presents. */
+    /** `GET /door/v1/models`: the door's models as Claude Desktop's gateway discovery reads them, from the model
+     *  catalog published last (DoorCatalog), for a caller whose key it presents. */
     suspend fun models(call: ApplicationCall) {
-        admitted(call) ?: return
-        JsonReply(HttpStatusCode.OK, doorModels.json(heads.lineup()).toString()).send(call)
+        val caller = admitted(call) ?: return
+        val lineup = providers.lineup()
+        val catalog = DoorCatalog(lineup)
+        val default = caller.default(lineup)
+        val surface = if (caller is DesktopCaller) ModelDiscovery.DESKTOP else ModelDiscovery.GATEWAY
+        val listed = catalog.discovery(default, surface)
+        if (surface == ModelDiscovery.DESKTOP) caller.discovered(catalog.desktopRead(default))
+        JsonReply(HttpStatusCode.OK, listed.toString()).send(call)
     }
 
     /** [call] answered for the caller whose key it presents; refused in Anthropic's shape, with nothing sent upstream,
@@ -86,21 +102,27 @@ internal class DesktopDoor(
         routed(call, from, counting)
     }
 
-    /** The caller whose key [call] presents; null when it presents none the door knows. */
+    /** The caller whose key [call] presents; null when it presents none the door knows. A gateway client sends its
+     *  key as `x-api-key` unless told bearer, as Claude Desktop's own process does (desktop-full, df-wire-door).
+     *  Authorization decides when both are there. */
     private fun keyed(call: ApplicationCall): DoorCaller? {
-        val presented = call.request.headers[HttpHeaders.Authorization]
+        val headers = call.request.headers
+        val presented = headers[HttpHeaders.Authorization] ?: headers[DOOR_API_KEY_HEADER]?.let { "Bearer $it" }
         return callers.firstOrNull { it.presents(presented) }
     }
 
-    /** [call], from [caller], read and sent to the head the model it names picks. */
+    /** [call], from [caller], read and sent to the provider the model it names picks. */
     private suspend fun routed(call: ApplicationCall, caller: DoorCaller, counting: Boolean) {
-        val lineup = heads.lineup()
+        val lineup = providers.lineup()
         val request = read(call, caller, lineup) ?: return
         val model = JsonScalars.str(request, REQUEST_MODEL).orEmpty()
-        val ask = DoorAsk(request, model, call.request.headers[SESSION_HEADER])
-        val route = routing.of(lineup, ask, lane.starting(lineup).first, caller.runsNamedModels)
+        val headers = call.request.headers
+        val window = windows.of(headers[APP_MODE_HEADER], headers[ANTHROPIC_BETA_HEADER], model)
+        val ask = DoorAsk(request, model, headers[SESSION_HEADER], window)
+        caller.asked(ask)
+        val route = routing.of(lineup, ask, caller.default(lineup), caller.runsNamedModels)
             ?: return caller.voice.refuse(call, HttpStatus.BAD_REQUEST, "model \"${ask.model}\" ${caller.notInDoor}")
-        toHead.send(call, caller, route, ask, counting)
+        toProvider.send(call, caller, route, ask, counting)
     }
 
     /** The caller whose key [call] presents, while its switch is on; null once [call] has been refused
@@ -116,12 +138,13 @@ internal class DesktopDoor(
         return null
     }
 
-    /** [call]'s body as a JSON object, or null once [call] has been answered: with no head in the door, a body past
-     *  what the widest head takes, or a body that is not JSON. */
+    /** [call]'s body as a JSON object, or null once [call] has been answered: with no provider in the door, a body past
+     *  what the widest provider takes, or a body that is not JSON. */
     private suspend fun read(call: ApplicationCall, caller: DoorCaller, lineup: DesktopLineup): JsonObject? {
-        val widest = lineup.heads.maxByOrNull { it.relay.maxRequestBytes() }
+        val widest = lineup.providers.maxByOrNull { it.maxRequestBytes }
             ?: return null.also { caller.voice.refuse(call, HttpStatus.BAD_REQUEST, caller.noHead) }
-        val body = caller.relay.sent(call, widest.relay) ?: return null
+        val body = CappedBodies(caller.voice).read(call, widest.maxRequestBytes, widest.requestReadTimeoutMs)
+            ?: return null
         return JsonScalars.objectOrNull(json, body.decodeToString())
             ?: null.also { caller.voice.refuse(call, HttpStatus.BAD_REQUEST, NOT_JSON) }
     }
@@ -140,8 +163,12 @@ private const val DOOR_REFUSAL_STATUS = HttpStatus.BAD_REQUEST
 private const val NO_DOOR_KEY =
     "Splice credentials expired or invalid · this session's key is not one the door holds: a new `claude` session " +
         "carries the terminal's, and `splice desktop on` gives Claude Desktop its own"
+
+// The header a gateway client may present its key in, in place of Authorization.
+private const val DOOR_API_KEY_HEADER = "x-api-key"
+
 private const val NOT_JSON = "the request body is not a JSON object"
 
-private const val REQUEST_MODEL = "model"
+internal const val REQUEST_MODEL: String = "model"
 private const val REQUEST_MAX_TOKENS = "max_tokens"
 private const val REQUEST_STREAM = "stream"

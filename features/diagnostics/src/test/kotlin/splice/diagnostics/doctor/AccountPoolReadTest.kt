@@ -21,7 +21,9 @@ import splice.core.testing.TestPorts
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.diagnostics.doctor.accounts.AccountHealthChecks
+import splice.diagnostics.doctor.accounts.AccountPoolText
 import splice.diagnostics.doctor.accounts.AccountRosterProjection
+import splice.diagnostics.doctor.accounts.JdkAccountPoolRead
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path

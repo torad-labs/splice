@@ -3,6 +3,7 @@
 package splice.configuration.add
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.model.DiscoveredModel
@@ -30,7 +31,7 @@ class OpenRouterProfileTest {
     }
 
     @Test
-    fun `fresh OpenRouter heads expose discovered priced rows and retain declared windows`() {
+    fun `adding OpenRouter declares the tiers and windows on the provider and keeps discovered rows`() {
         val topology = TopologyLoader.parse(DAEMON_BLOCK + AddProfiles().toml(profile, "openrouter", PORT))
         val head = topology.heads.getValue("openrouter")
         val provider = topology.providers.getValue("openrouter")
@@ -52,8 +53,10 @@ class OpenRouterProfileTest {
                 "haiku" to "z-ai/glm-5.3-flash",
                 "fable" to "openai/gpt-6-sol",
             ),
-            head.tierModels(),
+            provider.tierModels,
         )
+        assertEquals(catalog.pinnedModel, provider.pinnedModel)
+        assertTrue(head.modelSlots.isEmpty())
         assertEquals(null, head.models)
         assertEquals(null, head.contextWindow)
     }

@@ -80,7 +80,6 @@ provider = "bonsai"
 port = $RUNTIME_HEAD_PORT
 discovery_prefix = "claude-bonsai--"
 pinned_model = "$RUNTIME_MODEL"
-context_window = $RUNTIME_SERVED
 [heads.bonsai.claude]
 command = "claude-bonsai"
 EOF

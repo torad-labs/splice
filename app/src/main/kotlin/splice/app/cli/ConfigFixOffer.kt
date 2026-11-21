@@ -2,7 +2,7 @@
 // prints the whole list and exits non-zero, and nothing is changed.
 package splice.app.cli
 
-import splice.app.provider.LocalRowBootFindings
+import splice.app.provider.local.LocalRowBootFindings
 import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.TopologyBackupName

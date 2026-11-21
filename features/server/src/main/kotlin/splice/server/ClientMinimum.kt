@@ -21,7 +21,7 @@ internal class ClientMinimum(client: ServerClient) {
     fun notice(call: ApplicationCall): Map<String, String>? = told(call)?.let { mapOf(SERVED_NOTICE_HEADER to it) }
 
     /** What [call]'s laptop is told in place of an answer, when its splice is older than the minimum; else null. */
-    private fun told(call: ApplicationCall): String? {
+    fun told(call: ApplicationCall): String? {
         val floor = floor ?: return null
         val runs = versions.parse(call.request.headers[SPLICE_CLIENT_HEADER])?.takeIf { it < floor } ?: return null
         return "This laptop runs splice $runs, and this team server serves splice $floor or newer. " +

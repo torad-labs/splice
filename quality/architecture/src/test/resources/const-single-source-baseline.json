@@ -106,7 +106,7 @@
     "COLLISION PROBE_TIMEOUT_S": [
       "features/configuration/src/main/kotlin/splice/configuration/add/AddHttp.kt",
       "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeInflight.kt",
-      "app/src/main/kotlin/splice/app/provider/JdkLocalHttp.kt"
+      "app/src/main/kotlin/splice/app/provider/local/JdkLocalHttp.kt"
     ],
     "COLLISION REDIRECT_PORT": [
       "integrations/providers/codex/src/main/kotlin/splice/provider/codex/auth/CodexOAuthEndpoints.kt",

@@ -7,9 +7,9 @@
 // no session can do for the shell or the service it runs under.
 package splice.app.cli
 
-import splice.core.config.RetiredKnob
 import splice.core.config.SavedSettings
 import splice.core.terminal.TerminalOutput
+import splice.core.topology.GatewayMove
 import splice.core.topology.TopologyFileLock
 import splice.core.topology.TopologyFinding
 import splice.core.util.SecureFile
@@ -126,35 +126,35 @@ internal class ConfigFixSession(
     private fun fixInFile(finding: TopologyFinding): Boolean? {
         val line = finding.line
         val editable = line?.takeIf { assignmentAt(it) != null }
-        showMenu(line, editable?.takeIf { removable(finding) } != null, editable != null, settable(finding))
-        return when (prompter.ask("> ")?.trim()?.lowercase()) {
-            "d" -> editable?.takeIf { removable(finding) }?.let(::removeLine) ?: false
-            "v" -> editable?.takeIf { settable(finding) }?.let(::setValue) ?: false
+        val offers = FixOffers(finding, editable != null)
+        showMenu(line, offers)
+        return when (val answer = prompter.ask("> ")?.trim()?.lowercase()) {
             "e" -> edit(line)
             "s" -> skip(finding)
             "q", null -> null
-            else -> false
+            else -> changed(answer, offers, line)
         }
     }
 
-    /** A value can be set on any finding but an unknown key or a retired knob, which have no value to set. */
-    private fun settable(finding: TopologyFinding): Boolean =
-        !finding.message.contains("is not a splice.toml setting") &&
-            RetiredKnob.entries.none { finding.message.startsWith(it.retired) }
-
-    /** A model row's setting cannot be removed: the row's id and context_window are required, so removing either would
-     *  only trade this finding for a decode one (a runtime finding names a row as `providers.<p>.models[<id>]`). */
-    private fun removable(finding: TopologyFinding): Boolean = !finding.path.contains(".models[")
+    /** A change to the file the person chose from [offers], or false when the answer is not one that is on offer. */
+    private fun changed(answer: String, offers: FixOffers, line: Int?): Boolean = when {
+        answer !in offers.letters -> false
+        answer == "m" -> moveValue(requireNotNull(offers.move), line)
+        line == null -> false
+        answer == "d" -> removeLine(line)
+        else -> setValue(line)
+    }
 
     private fun skip(finding: TopologyFinding): Boolean {
         skipped.add(finding.text())
         return false
     }
 
-    private fun showMenu(line: Int?, removable: Boolean, editable: Boolean, settable: Boolean) {
+    private fun showMenu(line: Int?, offers: FixOffers) {
         val choices = listOfNotNull(
-            "[d] remove the line".takeIf { removable },
-            "[v] set a new value".takeIf { editable && settable },
+            offers.move?.let { "[m] move it to [${it.table}], where the gateway reads it" },
+            "[d] remove the line".takeIf { offers.removable },
+            "[v] set a new value".takeIf { offers.settable },
         )
         if (choices.isNotEmpty()) output.line("  " + choices.joinToString("  "))
         output.line("  [e] open your editor${line?.let { " at line $it" }.orEmpty()}")
@@ -168,6 +168,20 @@ internal class ConfigFixSession(
     private fun assignmentAt(line: Int): String? = checked.lines().getOrNull(line - 1)
         ?.takeIf { it.contains('=') && !it.trimStart().startsWith("#") }
         ?.substringBefore('=')?.trim()
+
+    /** [move]'s value put where the gateway reads it, and, unless the head keeps it, taken off its line, while the file
+     *  still holds the bytes the finding came from ([rewrite]). */
+    private fun moveValue(move: GatewayMove, line: Int?): Boolean {
+        val moved = MoveFix(check, checked).candidate(move, line)
+        if (moved == null) {
+            output.line("  that value cannot be moved here without risking splice.toml; edit it, or move it yourself")
+            return false
+        }
+        backupOnce()
+        output.line("moving ${move.key} to [${move.table}]")
+        rewrite { moved }
+        return true
+    }
 
     private fun removeLine(line: Int): Boolean {
         backupOnce()

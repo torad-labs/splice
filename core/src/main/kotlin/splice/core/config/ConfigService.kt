@@ -55,6 +55,8 @@ public class ConfigService(
      *  kt-no-println, 2026-07-27). Defaults to a no-op so tests need not thread it; the daemon
      *  always injects the real sink. */
     private val log: LogSink = LogSink(DaemonLog::write),
+    // headKey -> what that head inherits from its provider ([providers.<p>.overrides]), beneath its own overrides.
+    inheritedOverrides: Map<String, Map<String, String>> = emptyMap(),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -85,7 +87,7 @@ public class ConfigService(
     private var runtimeLayer: Map<String, Any?> = emptyMap()
 
     /** [heads.<key>.overrides] as the daemon holds them now: the boot read, then each console write of splice.toml. */
-    public val headLayer: HeadOverrideLayer = HeadOverrideLayer(perHeadOverrides)
+    public val headLayer: HeadOverrideLayer = HeadOverrideLayer(perHeadOverrides, inheritedOverrides)
 
     init {
         headLayer.observeChanges(
@@ -233,7 +235,7 @@ public class ConfigService(
         }
         val perHead = inputs.heads.filterValues { it.isNotEmpty() }.mapValues { (head, raw) ->
             previous?.global?.layers?.perHead?.get(head)?.takeIf { previous.inputs.heads[head] == raw }
-                ?: coerceAll(raw).accepted.filterKeys { knobsByKey[it] !in daemonWideKnobs }
+                ?: coerceAll(raw).accepted
         }.let(Collections::unmodifiableMap)
         val layers = ConfigLayers(defaults, globalKnobs, inputs.file, env.accepted, inputs.runtime, perHead)
         // Most-specific head values are LAST, above every shared layer, including runtime PATCH.
@@ -264,10 +266,12 @@ public class ConfigService(
         val rejects = LinkedHashMap<String, String>()
         coerceAll(headOverrides).rejected.forEach { (key, why) -> rejects[key] = why }
         headOverrides.keys.filter { it in headOnlyKnobKeys }.forEach { rejects[it] = HEAD_ONLY }
-        headLayer.all().forEach { (head, raw) ->
-            coerceAll(raw).rejected.forEach { (key, why) -> rejects["heads.$head.$key"] = why }
-            raw.keys.filter { knobsByKey[it] in daemonWideKnobs }.forEach { key ->
-                rejects["heads.$head.$key"] = DAEMON_WIDE_OVERRIDE
+        headLayer.own().forEach { (head, raw) ->
+            // a provider's layer is written under its own table, a head's under the head's
+            val where = if (head.startsWith(PROVIDER_LAYER_PREFIX)) "$head.overrides" else "heads.$head"
+            coerceAll(raw).rejected.forEach { (key, why) -> rejects["$where.$key"] = why }
+            raw.keys.filter { headLayer.refuses(head, it) }.forEach { key ->
+                rejects["$where.$key"] = DAEMON_WIDE_OVERRIDE
             }
         }
         return rejects

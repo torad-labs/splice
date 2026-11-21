@@ -58,15 +58,23 @@ internal class TurnDriver(
 ) {
     private val log get() = deps.log
 
+    /** What this route prices its own turns at, whatever books it counts them into. */
+    private val price = TurnPrice(provider.catalog)
+
     private val telemetry =
         TurnTelemetry(
             provider.key,
             deps.stores.perfStats,
             deps.log,
             deps.seams.clock,
-            TurnSpend(deps.stores.economicsStore, deps.quotaBundle.budget, deps.stores.perfStats.retired),
+            TurnSpend(
+                deps.stores.economicsStore,
+                deps.quotaBundle.budget,
+                deps.stores.perfStats.retired,
+                price,
+            ),
             deps.seams.events,
-            ServedTurnReport(deps.seams.reports.served, TurnPrice(provider.catalog)),
+            ServedTurnReport(deps.seams.reports.served, price),
         )
     private val health = HeadHealthCounters()
     private val failures = TurnFailures(provider)

@@ -24,6 +24,7 @@ import splice.oauth.grok.LoginGrok
 import splice.oauth.kimi.LoginKimi
 import splice.oauth.muse.LoginMuse
 import splice.topology.TopologyLoader
+import splice.upstream.codemode.ProcessDispatchers
 import java.net.URI
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -62,7 +63,7 @@ internal class LoginCommand(
 
     private suspend fun signIn(headKey: String, provider: ProviderConfig, topology: Topology, label: String?): Boolean {
         val result = runLoginAttempt(headKey, provider, topology, label)
-        if (!result.ok) println("splice: login for '$headKey' did not complete.")
+        if (!result.ok && !provider.auth.isCommand) println("splice: login for '$headKey' did not complete.")
         cliSignIn.writeLoginOutcome(headKey, result.ok, result.account)
         return result.ok
     }
@@ -111,7 +112,7 @@ internal class LoginCommand(
                 println("splice: --label is only supported for OAuth heads")
                 LoginResult(false)
             }
-            else -> browserLogin(headKey, topology, label, observer)
+            else -> otherLogin(headKey, provider, topology, label, observer)
         }
     } catch (e: OAuthAccountRefused) {
         println("splice: ${e.reason}")
@@ -120,6 +121,21 @@ internal class LoginCommand(
         val reason = SafeFailureText.render(e)
         println("splice: $reason")
         LoginResult(false, refusal = reason)
+    }
+
+    // custom-provider (cp-login): a provider on command auth signs in by the team's own sign-in, in the terminal here
+    // or in the daemon for the console; any other kind by its browser sign-in.
+    private suspend fun otherLogin(
+        headKey: String,
+        provider: ProviderConfig,
+        topology: Topology,
+        label: String?,
+        observer: LoginObserver?,
+    ): LoginResult {
+        if (!provider.auth.isCommand) return browserLogin(headKey, topology, label, observer)
+        val providerKey = topology.heads[headKey]?.provider ?: headKey
+        val sign = CommandSignIn(headKey, providerKey, provider, ProcessDispatchers().io(), output)
+        return if (observer == null) sign.inTerminal() else sign.inDaemon(observer)
     }
 
     private suspend fun browserLogin(
@@ -138,6 +154,9 @@ internal class LoginCommand(
         val ok: Boolean,
         val account: OAuthLoginAccount? = null,
         val refusal: String? = null,
+        // custom-provider (cp-accounts): the refusal is a sign-in that did not finish (a login_command that exited,
+        // ran out of time or left no key), which a press of Try again can mend, never the config's
+        val unfinished: Boolean = false,
     )
 
     /** What `<command> login` says on a node, where [command] runs on the machine its address [url] names: how to sign

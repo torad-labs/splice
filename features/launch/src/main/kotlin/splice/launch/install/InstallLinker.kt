@@ -95,6 +95,8 @@ internal class InstallLinker(
         headArg == null || headArg == "--all" -> commands(topology)
         // A remote `claude` is reached through the wrapped `claude`, so it has no link to make (Topology.remoteLinks).
         headArg in topology.remote -> listOf(headArg to headArg).filter { it.first in topology.remoteLinks }
+        // custom-provider (cp-command): a door command is linked by its own name, like a remote command
+        headArg in topology.door.commands -> listOf(headArg to headArg)
         else -> heads.resolveSpecificHead(topology, headArg)
             ?.let { key -> commands(topology).filter { it.first == key } }
     }
@@ -106,7 +108,7 @@ internal class InstallLinker(
             // `claude` is Claude Code's own link: only the wrap points it at the shim, recording the real binary
             // first. A head keyed `claude` with no command of its own is reached through that wrap, never linked here.
             .filterNot { (_, command) -> command == CLAUDE_COMMAND } +
-            topology.remoteLinks.map { it to it }
+            topology.remoteLinks.map { it to it } + topology.door.commands.keys.map { it to it }
 
     /** Validate the WHOLE topology's commands (+ `splice`) on EVERY install, not just this
      *  invocation — otherwise sequential single-head installs silently retarget an existing

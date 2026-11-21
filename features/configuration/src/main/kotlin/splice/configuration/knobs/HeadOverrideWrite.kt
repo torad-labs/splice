@@ -1,6 +1,12 @@
 // NEW: PATCH /api/config?head=<key> — the per-command half of the config write. The global PATCH changes a
-// value for every command; this one sets, changes or clears a command's OWN value for a knob, the
-// `[heads.<key>.overrides]` table of splice.toml, which until now the console could only show.
+// value for every command; this one sets, changes or clears the value one command runs with.
+//
+// WHERE A VALUE LANDS (gateway-no-heads, HeadOverrideLanding). A knob a turn is served by (maxInflight, the retry and
+// reasoning knobs) is the provider's: it is written to `[providers.<key>.overrides]`, where the gateway and every
+// command on that provider read it, and the reply names the provider and those commands. A value only a head held would
+// be a boot finding (GatewayMoveChecks, since cb8e877ae on Nov 21, 2026), which is what this write was refused with
+// until it was sent here later that day. A display or trace knob is the command's own and stays in
+// `[heads.<key>.overrides]`.
 //
 // IT IS NOT A SECOND WRITE PATH. The edit goes through the one TopologyWriter that PUT /api/topology and the
 // capture switch use: structure-preserving (the operator's comments and ordering stay), backed up first,
@@ -82,7 +88,7 @@ internal class HeadOverrideWrite(
         if (head !in current.heads) return refuse(HttpStatusCode.BadRequest, "unknown head: $head")
         val ask = ask(partial, head, LegacyKnobScope(current))
         return if (ask.rejected.isNotEmpty()) {
-            refused(head, ask.rejected, emptyList())
+            refused(emptyList(), ask.rejected, emptyList())
         } else {
             land(writer, base, current, head, ask)
         }
@@ -105,36 +111,45 @@ internal class HeadOverrideWrite(
     }
 
     private fun land(writer: TopologyWriter, base: JsonObject, current: Topology, head: String, ask: Ask): JsonReply {
-        val held = current.heads.getValue(head)
-        val overrides = held.overrides.toMutableMap()
-        ask.wanted.forEach { (key, value) -> if (value == null) overrides.remove(key) else overrides[key] = value }
-        val requested = current.copy(heads = current.heads + (head to held.copy(overrides = overrides)))
-        return when (val result = writer.write(requested, base)) {
-            is TopologyWriteResult.Refused -> refused(head, ask.rejected, result.findings)
+        val to = HeadOverrideLanding(current, head, ask.wanted)
+        return when (val result = writer.write(to.requested, base)) {
+            is TopologyWriteResult.Refused -> refused(to.tables, ask.rejected, result.findings)
             is TopologyWriteResult.Written -> {
-                config.headLayer.set(head, overrides)
-                JsonReply(HttpStatusCode.OK, writtenJson(ask))
+                config.headLayer.set(head, to.own)
+                to.shared?.let { config.headLayer.setProvider(to.provider, to.sharing, it) }
+                JsonReply(HttpStatusCode.OK, writtenJson(ask, to))
             }
         }
     }
 
-    private fun writtenJson(ask: Ask): String {
+    private fun writtenJson(ask: Ask, to: HeadOverrideLanding): String {
         val restart = ask.wanted.keys.filter { it in restartRequiredKnobKeys }
         return JsonWire.string(
             buildJsonObject {
                 putJsonObject("applied") { ask.wanted.forEach { (key, value) -> put(key, value) } }
                 putJsonObject("rejected") { ask.rejected.forEach { (key, why) -> put(key, why) } }
                 putJsonArray("restart_required") { restart.forEach { add(it) } }
+                // The knobs of this write its provider holds, and every command that reads them from there.
+                putJsonObject("provider") {
+                    put("key", to.provider)
+                    putJsonArray("knobs") { to.carried.forEach { add(it) } }
+                    putJsonArray("commands") { to.sharing.forEach { add(it) } }
+                }
                 put("persisted", "splice.toml")
             },
         )
     }
 
-    /** A finding names `heads.<head>.overrides.<key>`; that key is the one rejected, with the daemon's own reason. */
-    private fun refused(head: String, rejected: Map<String, String>, findings: List<TopologyFinding>): JsonReply {
-        val prefix = "heads.$head.overrides."
-        val byKey = findings.filter { it.path.startsWith(prefix) }
-            .associate { it.path.removePrefix(prefix) to it.message }
+    /** A finding names `heads.<head>.overrides.<key>` or `providers.<key>.overrides.<key>` ([tables]); that key is
+     *  the one rejected, with the daemon's own reason. */
+    private fun refused(
+        tables: List<String>,
+        rejected: Map<String, String>,
+        findings: List<TopologyFinding>,
+    ): JsonReply {
+        val byKey = findings.mapNotNull { finding ->
+            tables.firstOrNull { finding.path.startsWith(it) }?.let { finding.path.removePrefix(it) to finding.message }
+        }.toMap()
         val message = findings.joinToString("; ") { it.text() }.ifEmpty { "splice.toml write refused" }
         val body = buildJsonObject {
             put("error", message)

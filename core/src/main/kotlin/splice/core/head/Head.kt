@@ -11,42 +11,17 @@ public fun interface CompactionHold {
     public fun hold(forMs: Long)
 }
 
-public interface Head {
+public interface Head : TurnRouteLifetime {
     public val key: String
     public val label: String
     public val port: Int
 
     public suspend fun start()
 
-    /** Stop taking new turns and let the running ones finish, WITH THE PORT STILL LISTENING. A daemon stopping
-     *  several heads drains them all before any listener closes, so a head that drains early keeps answering
-     *  its clients instead of refusing their connections while its siblings finish. [stop] does both halves, so
-     *  a head with nothing to drain needs nothing here. */
-    public suspend fun drain() {}
-
     /** A restart is about to read the compactions in flight and then stop: [CompactionHold.hold] makes a NEW
      *  compaction wait at admission instead of starting one the stop's drain would cut, and the drain answers it with
      *  the stopping refusal its client retries against the next daemon. Null on a head that runs no turns. */
     public val compactionHold: CompactionHold? get() = null
-
-    /** #523: the first half of a restart that cuts no answer in the middle. The head stops taking turns and cuts the
-     *  ones whose upstream has not begun answering, which their clients send again; it KEEPS the ones already
-     *  answering, closes its books so the next daemon reads them whole, and returns how many turns it kept. Its
-     *  listener stops accepting and its accepted connections stay open. A head that cannot finish a turn beside
-     *  another daemon stops whole, as [stop] does, and keeps none: whatever it writes at its stop is written before
-     *  the next daemon reads it. */
-    public suspend fun retire(): Int {
-        stop()
-        return 0
-    }
-
-    /** The second half: waits up to [withinMs] for the turns [retire] kept, then stops the head as [stop] does,
-     *  cutting what is still running. */
-    public suspend fun finish(withinMs: Long) {
-        stop()
-    }
-
-    public suspend fun stop()
 
     public suspend fun restart() {
         stop()

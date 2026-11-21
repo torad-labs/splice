@@ -13,6 +13,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.HeadAssembly
 import splice.app.auth.SignInPlanner
 import splice.app.head.HeadBoot
+import splice.app.provider.local.LocalProbeInputs
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.model.ModelEntry

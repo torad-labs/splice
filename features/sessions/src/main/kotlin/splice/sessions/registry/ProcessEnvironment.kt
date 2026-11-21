@@ -13,11 +13,15 @@
 // (DarwinPs) and is scanned the same way. PR #247's fifth review asks two more facts of a session, to know whether
 // its hosted MCP servers hold a replaced MCP key: when it started, as its launch record says, and the arguments it was
 // started with, which name the MCP config file its launch wrote. The arguments come from /proc/<pid>/cmdline, or on
-// macOS from ProcessHandle, and are scanned by the caller and kept nowhere.
+// macOS from ProcessHandle, and are scanned by the caller and kept nowhere. door-sessions (Nov 20, 2026): a launch
+// record whose base URL is a door, this machine's or another machine's, places the session on that door (LaunchDoors,
+// the reader record-launch wrote the record with), before any head is asked.
 package splice.sessions.registry
 
 import splice.core.config.StatePaths
+import splice.core.process.LaunchOwner
 import splice.core.process.LaunchOwners
+import splice.core.topology.LaunchDoors
 import splice.core.util.Cancellables
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -84,11 +88,18 @@ public class ProcessEnvironment(
         public fun matches(value: String): Boolean
     }
 
-    /** How [pid] reaches its provider: the head its launch declared, when [headOf] still names that head on the
-     *  declared port; DIRECT for a readable environment of a process splice never launched; else UNKNOWN. */
-    public fun route(pid: Long, headOf: HeadOfPort): SessionRoute {
+    /** How [pid] reaches its provider: the door its launch declared, when [doors] reads its base URL as one (the reader
+     *  its record was written with); the head its launch declared, when [headOf] still names that head on the declared
+     *  port; DIRECT for a readable environment of a process splice never launched; else UNKNOWN. [doors] is null where
+     *  the topology could not be read, and then no launch is placed on a door. */
+    public fun route(pid: Long, doors: LaunchDoors?, headOf: HeadOfPort): SessionRoute {
         val launch = owners.read(pid) ?: return unlaunched(pid)
         if (launch.kind != "session") return SessionRoute.Unknown
+        return doors?.of(launch.head, launch.baseUrl)?.let(SessionRoute::Door) ?: onHead(launch, headOf)
+    }
+
+    /** The head [launch] declared, when [headOf] still names that head on the declared port; else UNKNOWN. */
+    private fun onHead(launch: LaunchOwner, headOf: HeadOfPort): SessionRoute {
         val port = localHead.find(launch.baseUrl)?.groupValues?.get(1)?.toIntOrNull()
         val head = port?.let(headOf::invoke)
         return if (head == launch.head) SessionRoute.Head(head) else SessionRoute.Unknown

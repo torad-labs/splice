@@ -46,6 +46,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import splice.core.client.SESSION_HEADER
 import splice.core.config.TurnKey
+import splice.core.topology.DOOR_SEGMENT
 import splice.core.topology.ShareConfig
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink

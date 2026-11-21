@@ -29,9 +29,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import splice.app.provider.LiveRosterCatalog
-import splice.app.provider.LocalProbeInputs
-import splice.app.provider.LocalRowsCheck
 import splice.app.provider.ProviderBuild
+import splice.app.provider.local.LocalProbeInputs
+import splice.app.provider.local.LocalRowsCheck
 import splice.core.compaction.CompactionInstructions
 import splice.core.model.LiveWindows
 import splice.core.model.ModelCatalog

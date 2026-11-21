@@ -28,7 +28,7 @@ class ConfigFixSessionTest {
             [heads.one]
             provider = "missing"
             port = 3101
-            discovery_prefix = "claude-one--"
+            discovery_prefix = "claude-demo--"
             pinned_model = "m"
             """.trimIndent() + "\n",
         )
@@ -122,5 +122,99 @@ class ConfigFixSessionTest {
         assertTrue(fixed)
         assertTrue(Files.isSymbolicLink(link), "the link is still a link")
         assertTrue(Files.readString(target).contains("provider = \"demo\""), "the target is what was fixed")
+    }
+
+    /** A provider with one declared model, then [extra] under the head `one`, which serves it. */
+    private fun served(root: Path, providerExtra: String, headExtra: String): Path = root.resolve("splice.toml").also {
+        Files.writeString(
+            it,
+            """
+            [providers.demo]
+            dialect = "openai-chat"
+            base_url = "https://demo.invalid"
+            auth = { kind = "api-key", env = "DEMO_KEY" }
+            """.trimIndent() + "\n" + providerExtra + """
+
+            [[providers.demo.models]]
+            id = "m"
+            context_window = 1000
+
+            [[providers.demo.models]]
+            id = "s"
+            context_window = 1000
+
+            [heads.one]
+            provider = "demo"
+            port = 3101
+            discovery_prefix = "claude-demo--"
+            pinned_model = "m"
+            """.trimIndent() + "\n" + headExtra,
+        )
+    }
+
+    private fun readsClean(file: Path, root: Path) =
+        assertTrue(ConfigFindings.read(Files.readString(file), root) is ConfigRead.Ready, Files.readString(file))
+
+    @Test
+    fun `a move into a provider that already assigns its overrides inline adds the field to that table`(
+        @TempDir root: Path,
+    ) {
+        val file = served(
+            root,
+            "overrides = { maxInflight = \"4\" } # kept\n",
+            "[heads.one.overrides]\nupstreamTimeoutMs = \"600000\"\n",
+        )
+
+        val fixed = session(file, root, ArrayDeque(listOf("m")), mutableListOf()).run()
+
+        val text = Files.readString(file)
+        assertTrue(fixed, text)
+        assertTrue(text.contains("overrides = { maxInflight = \"4\", upstreamTimeoutMs = \"600000\" } # kept"), text)
+        assertFalse(text.contains("[providers.demo.overrides]"), "a second definition of the same table: $text")
+        val left = text.lines().count { it.contains("upstreamTimeoutMs") }
+        assertEquals(1, left, "the head's line is taken off: $text")
+        readsClean(file, root)
+    }
+
+    @Test
+    fun `a prefix alias moves into an inline selector_aliases and keeps the aliases already there`(
+        @TempDir root: Path,
+    ) {
+        val file = served(root, "", "")
+        Files.writeString(
+            file,
+            Files.readString(file).replace("claude-demo--", "qz--") +
+                "\n[door]\nselector_aliases = { \"old--\" = \"demo\" }\n",
+        )
+
+        val fixed = session(file, root, ArrayDeque(listOf("m")), mutableListOf()).run()
+
+        val text = Files.readString(file)
+        assertTrue(fixed, text)
+        assertTrue(text.contains("selector_aliases = { \"old--\" = \"demo\", qz-- = \"demo\" }"), text)
+        assertFalse(text.contains("[door.selector_aliases]"), text)
+        assertTrue(text.contains("discovery_prefix = \"qz--\""), "the head keeps its own prefix: $text")
+        readsClean(file, root)
+    }
+
+    @Test
+    fun `tiers named on the head's model rows move to the provider and the head keeps its allowlist`(
+        @TempDir root: Path,
+    ) {
+        val file = served(
+            root,
+            "",
+            "\n[[heads.one.models]]\nid = \"m\"\nslot = \"opus\"\n" +
+                "\n[[heads.one.models]]\nid = \"s\"\nslot = \"haiku\"\n",
+        )
+
+        val fixed = session(file, root, ArrayDeque(listOf("m")), mutableListOf()).run()
+
+        val text = Files.readString(file)
+        assertTrue(fixed, text)
+        assertTrue(text.contains("model_slots = { opus = \"m\", haiku = \"s\" }"), text)
+        val slots = text.lines().count { it.trim().startsWith("slot = ") }
+        assertEquals(2, slots, "the head keeps its rows and slots: $text")
+        readsClean(file, root)
     }
 }

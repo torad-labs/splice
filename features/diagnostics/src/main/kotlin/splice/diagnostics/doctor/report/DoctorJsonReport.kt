@@ -96,6 +96,8 @@ internal class DoctorJsonReport(
         put("topology", run.topology?.let(shape::topology) ?: JsonPrimitive(null as String?))
         put("checks", shape.checks(run.sections))
         put("accounts", shape.accounts(run.accountPools))
+        // custom-provider (cp-diagnostics): the heads as `splice claude --json` names them
+        put("heads", JsonArray(run.heads))
         put("perf", perfTail.perf(run.topology, names))
         // V4-127: the state dir's own footprint (FEATURES.md §6), measured on every build so the CLI's
         // --json and the console's /api/doctor carry the same numbers for one run.

@@ -32,6 +32,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import splice.core.perf.PerfKeys
+import splice.core.wire.SHOULD_RETRY_HEADER
 import splice.head.ClientWindowWitness
 import splice.head.HeadDeps
 import splice.head.compaction.CompactionReplay
@@ -205,7 +206,7 @@ internal class TurnStreamer(
                 // The stop's 400 and x-should-retry false go out first; stream() reads the outcome after them.
                 running.join()
                 choice.headers.forEach { (name, value) -> call.response.header(name, value) }
-                choice.shouldRetry?.let { call.response.header("x-should-retry", it.toString()) }
+                choice.shouldRetry?.let { call.response.header(SHOULD_RETRY_HEADER, it.toString()) }
                 call.respond(CollectedReply(choice.body, HttpStatusCode.fromValue(choice.status), drive.perf))
             }
         }

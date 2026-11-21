@@ -24,9 +24,9 @@ internal class TurnKnownEnd(
 ) {
 
     /** The local credentials were missing: no upstream call ever happened. The line names the login command. */
-    suspend fun emitAuthMissing(drive: TurnDrive) {
+    suspend fun emitAuthMissing(drive: TurnDrive, why: String? = null) {
         log(telemetry.errTurn("auth-missing", drive, ": no upstream credentials"))
-        val cause = FailureCause.Splice.NoLogin(provider.loginCommand.ifEmpty { null })
+        val cause = FailureCause.Splice.NoLogin(provider.loginCommand.ifEmpty { null }, why)
         // DR-128: account BEFORE the emit — a dead-client write makes emitError rethrow after
         // sealing, and the turn must not vanish from the perf JSONL and G20 counters (the
         // 2026-07-19 storm shape: dead clients + failing upstream). Same law on every surface.

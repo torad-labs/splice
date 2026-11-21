@@ -16,6 +16,47 @@ prerequisites, the gate commands, PR titles and releasing.
 - Work goes on a short-lived branch off `main` and reaches `main` through a pull request. Versions
   and releases are cut by the maintainers.
 
+## Claude Desktop gateway models and reasoning
+
+Desktop's picker must follow the available providers' model catalog, including their names,
+descriptions and reasoning options. `CatalogBuild` builds that catalog from provider listings;
+`KnownModelMetadata` fills missing facts by provider host and model ID. The door and Desktop paths
+share `DoorModelWire`, so preserve the provider's other properties and keep model IDs consistent
+between discovery and Desktop's configuration. `GET /door/v1/models` and `/desktop/v1/models`
+serve the same catalog; Desktop receives the descriptions through discovery.
+
+For a model with named reasoning levels whose provider did not supply `thinking`, the gateway
+builds it in this shape using the provider's actual levels and default when known. Preserve an
+existing provider-supplied `thinking` value:
+
+```json
+{
+  "thinking": {
+    "type": "effort",
+    "effort_options": [
+      { "id": "low", "name": "Low" },
+      { "id": "medium", "name": "Medium", "recommended": true },
+      { "id": "high", "name": "High" }
+    ]
+  }
+}
+```
+
+The installed Desktop 6.28899.2 does not use discovery's `thinking` to build its reasoning
+selector. It first takes its picker from the applied 3P configuration's `inferenceModels`, then
+joins discovery rows by ID for descriptions and names without a `labelOverride`. Keep
+`modelDiscoveryEnabled` on and generate `inferenceModels` from the same catalog:
+`DesktopModelSettings` uses `behavesAs` with the
+newest served Claude Opus and `maxEffort` to enable the control for other providers. Without a
+served Opus, that projection does not provide their control. `DaemonDesktop` republishes the list
+at startup and when credentials or provider rosters change; Desktop reads the configuration at
+launch, so quit the whole app and reopen it when verifying a change.
+
+Desktop's `maxEffort` caps its own low/medium/high/xhigh/max sequence; it cannot express gaps,
+`minimal`, or `ultra`. The gateway still publishes the provider's exact options, but a visible
+selector alone does not prove that Desktop shows precisely those options. See
+`docs/specs/desktop-full.md` and `DoorPickerRowsTest` for the integration and its checks.
+
 ## Code rules
 
 - **Retries are total.** Known errors get a specific plan; every other error gets a bounded

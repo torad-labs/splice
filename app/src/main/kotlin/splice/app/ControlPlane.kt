@@ -10,7 +10,9 @@
 package splice.app
 
 import kotlinx.coroutines.cancel
+import splice.app.auth.EndpointModels
 import splice.app.auth.SignInPlanner
+import splice.app.auth.claude.AddedLoginHeaders
 import splice.app.auth.claude.ClaudeAccountsArm
 import splice.app.auth.claude.ClaudeAccountsSource
 import splice.app.auth.claude.LoginJoined
@@ -32,6 +34,7 @@ import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ModelRosters
 import splice.app.provider.ProviderAssembly
 import splice.core.compaction.CompactionInstructions
+import splice.core.topology.LaunchDoors
 import splice.core.usage.QuotaReadFailures
 import splice.core.version.ClientVersionTracker
 import splice.head.HeadDeps
@@ -103,7 +106,11 @@ internal class ControlPlane(
 
     /** 2026-09-22: every head's DISCOVERED models — Daemon.start() resolves them before any head is
      *  assembled, and each head's catalog reads its own through [buildInputs]. */
-    internal val modelRosters = ModelRosters(statePaths, log)
+    internal val modelRosters = ModelRosters(
+        statePaths,
+        log,
+        EndpointModels(log = log, added = AddedLoginHeaders(statePaths.stateDir, topology.declaredHeads)),
+    )
 
     // Held here so Daemon can drop the app.provider + spi imports (concentration, 2026-08-19).
     // probeScope is the daemon's OWN scope — ProviderAssembly must receive the SAME instance
@@ -141,6 +148,7 @@ internal class ControlPlane(
             log,
             identities = claudeIdentities,
             nativePlaces = splice.accounts.claude.ClaudeLoginPlacesSource { claudeLogin.owner },
+            declared = topology.declaredHeads,
         ),
     )
 
@@ -223,8 +231,10 @@ internal class ControlPlane(
         val mcpHost = mcp.host(home, sharing, heads.values.mapNotNull { it.launchSpec })
         providerAssembly.codeModeCatalogs.attach(mcpHost)
         val mcpServices = mcp.services(mcpHost, home)
-        // One session source serves the sessions routes and the heads route's client pids.
-        val sessions = sessionWiring.source(home, heads, console, foregroundTools)
+        // One session source serves the sessions routes and the heads route's client pids. A session launched on a
+        // door (this machine's, on this control port, or a `[remote.*]` one) is placed on it (door-sessions).
+        val doors = LaunchDoors(topology.remote, controlPort)
+        val sessions = sessionWiring.source(home, heads, doors, console, foregroundTools)
         val signals = health.signals(heads, sessions, probes, home)
         val guard = parts.guard()
         val listen = adopted.control(controlPort)

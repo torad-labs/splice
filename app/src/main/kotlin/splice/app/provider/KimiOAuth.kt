@@ -35,6 +35,7 @@ internal class KimiOAuth(
     private val kimiRefresh: KimiRefresh,
 ) {
     private val accountFiles = OAuthAccountFiles()
+    private val owners = LoginOwners()
 
     internal fun kimiOauthAccounts(ctx: ProviderBuild): List<KimiOAuthAccount> {
         val primaryPath = Paths.get(
@@ -70,9 +71,9 @@ internal class KimiOAuth(
         authPath: Path,
         identity: KimiDeviceIdentity,
         tokenUrl: String,
-    ): RefreshableAuthProvider {
+    ): RefreshableAuthProvider = owners.held(AuthKind.KimiOAuth.wire, authPath) {
         val identityHeaders = identity.headers()
-        return KimiAuthProvider(
+        KimiAuthProvider(
             authPath = authPath,
             authCacheMs = ctx.cfg.authCacheMs,
             refreshCall = { refreshToken -> kimiRefresh.refresh(tokenUrl, refreshToken, identityHeaders) },

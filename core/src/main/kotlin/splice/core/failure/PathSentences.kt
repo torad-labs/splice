@@ -10,6 +10,7 @@ package splice.core.failure
  *  answer that did not start in time (slice 2 finding 21, where a cut that landed before its text said "cut off"). */
 internal object PathSentences {
     fun said(cause: FailureCause.Path, at: Position, facts: LineFacts, ongoing: Boolean): Said {
+        if (cause is FailureCause.Path.Unreachable && cause.why == Unreach.UNTRUSTED) return untrusted(cause, facts)
         val head = facts.head
         val answering = at.moment == Moment.MID_CONTENT
         val what = when (cause) {
@@ -38,14 +39,25 @@ internal object PathSentences {
             Unreach.REFUSED -> refused(side, cause.local, ongoing)
             Unreach.DNS -> "$head could not reach its provider because the address did not resolve"
             Unreach.TLS -> "$head could not open a secure connection to its provider"
-            Unreach.RESET_BEFORE_REPLY -> if (answering) {
-                cut(head, ongoing, toolOpen = false)
-            } else {
-                "$side closed the connection before answering"
-            }
+            Unreach.UNTRUSTED -> "$head's provider presented a certificate splice does not trust"
+            Unreach.RESET_BEFORE_REPLY -> reset(side, head, answering, ongoing)
             Unreach.WRITE_STALLED -> "$head stopped reading the request while splice was sending it"
         }
     }
+
+    /** cp-tls: a certificate no root splice trusts signed, said whole with the key that fixes it; never re-sent. */
+    private fun untrusted(cause: FailureCause.Path.Unreachable, facts: LineFacts): Said {
+        val provider = facts.provider.key ?: facts.head
+        val reason = cause.reason?.let { said -> " ($said)" }.orEmpty()
+        val fix = "Name the certificate authority that signed it in its ca_file, or add it to this machine's trust " +
+            "store."
+        val what = "$provider's server presented a certificate splice does not trust$reason"
+        return Said(what, next = Next.Then(fix), whole = true)
+    }
+
+    /** A connection closed before the reply: a cut once the head was answering, else the side that closed it. */
+    private fun reset(side: String, head: String, answering: Boolean, ongoing: Boolean): String =
+        if (answering) cut(head, ongoing, toolOpen = false) else "$side closed the connection before answering"
 
     /** A model server on this machine that refuses is down; a remote provider that refuses only refused. */
     private fun refused(side: String, local: Boolean, ongoing: Boolean): String = when {

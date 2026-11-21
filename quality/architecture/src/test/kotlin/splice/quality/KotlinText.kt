@@ -135,6 +135,7 @@ internal object KotlinText {
                 source.startsWith("/*", i) -> blankThrough(source, i, "*/", out)
                 source.startsWith("\"\"\"", i) -> blankRawString(source, i, out)
                 source[i] == '"' -> blankQuoted(source, i, out)
+                source[i] == '\'' -> keepCharLiteral(source, i, out)
                 else -> {
                     out.append(source[i])
                     i + 1
@@ -165,6 +166,19 @@ internal object KotlinText {
         }
         repeat(closer.length) { out.append(' ') }
         return i + closer.length
+    }
+
+    /** A character literal, kept as written and stepped over whole, so the quote inside `'"'` opens no string. Until
+     *  Nov 21, 2026 it did: HeadConfig's `trim('"', '\'')` blanked the rest of that file to the next quote, the reader
+     *  of its `picker` key with it, and the schema-keys law read a key that is acted on as dead. One that does not
+     *  close on its own line is no literal, and only its apostrophe is kept. */
+    private fun keepCharLiteral(source: String, at: Int, out: StringBuilder): Int {
+        val lineEnd = source.indexOf('\n', at).let { if (it < 0) source.length else it }
+        var i = at + 1
+        while (i < lineEnd && source[i] != '\'') i += if (source[i] == '\\') 2 else 1
+        val end = if (i < lineEnd) i + 1 else at + 1
+        out.append(source, at, end)
+        return end
     }
 
     private fun blankRawString(source: String, at: Int, out: StringBuilder): Int {

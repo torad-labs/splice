@@ -12,7 +12,6 @@ import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
-import splice.core.usage.QuotaFull
 import splice.core.usage.QuotaFullWindow
 import splice.core.util.EnvReader
 import splice.core.util.LocalTimeText
@@ -61,7 +60,8 @@ internal class StatusTable(
         val unknown = readings.failedOutside(topology.heads.keys).map { (key, reason) ->
             unresolvedRow(listOf(key, "-", "-", "-"), reason)
         }
-        val rows = configured + unknown
+        // gateway-no-heads: a provider no head runs is served by the gateway on the door all the same, so it has a row.
+        val rows = configured + unknown + headless(topology, envReader)
         // Each width is the larger of the header label and the widest cell, so it never maxes over
         // an empty list: zero heads still lays out its header before the setup action. DR-173 was that shape in doctor
         // — `maxOf` over an empty section threw on a running daemon with no heads.
@@ -77,7 +77,7 @@ internal class StatusTable(
         val data = rows.map { row ->
             "  ${row.glyph} " + row.cells.mapIndexed { i, cell -> pad(cell, widths[i]) }.joinToString("") + row.action
         }
-        val setup = if (topology.heads.isEmpty()) {
+        val setup = if (topology.heads.isEmpty() && topology.providers.isEmpty()) {
             listOf(
                 "  " + palette.paint(palette.quiet, "not set up yet; connect a plan: ") +
                     palette.paint(palette.signal, "splice setup"),
@@ -87,6 +87,29 @@ internal class StatusTable(
         }
         return listOf(header) + data + setup
     }
+
+    /** A row for each provider splice.toml declares that no head runs: the door serves it, so it has no command and no
+     *  port of its own, and is ready while splice holds the credential it is called with (the accounts added to splice,
+     *  for a provider that forwards the caller's own Claude login, which only the daemon can read). */
+    private fun headless(topology: Topology, envReader: EnvReader): List<Row> =
+        topology.providers.filterKeys { key -> topology.heads.values.none { it.provider == key } }
+            .map { (key, provider) ->
+                val selfManaged = AuthKindRegistry.from(provider.auth.kind) == AuthKind.Client
+                val authed = selfManaged || signIn.credentialConfigured(key, provider, envReader)
+                val action = if (authed) {
+                    palette.paint(
+                        palette.quiet,
+                        "ready on the door",
+                    )
+                } else {
+                    palette.paint(palette.signal, MISSING)
+                }
+                val glyph = palette.paint(
+                    if (authed) palette.live else palette.strain,
+                    if (authed) LIVE_GLYPH else STRAIN_GLYPH,
+                )
+                Row(glyph, listOf(key, "the door", "-", backendLabel(provider)), action)
+            }
 
     // Calls CliSignIn / AuthKindRegistry directly — constructing StatusCommand
     // here would cycle (status() builds this class to print the table).
@@ -237,47 +260,6 @@ internal class StatusTable(
  *  unpadded because nothing follows it on the line. */
 private data class Row(val glyph: String, val cells: List<String>, val action: String)
 
-/** What status learned about one head beyond its config: why the daemon could not boot it (V4-394),
- *  the instant its provider stops refusing turns, epoch seconds (V4-398), the endpoint of its
- *  local runtime when that does not answer (V4-415), and the provider's reading when it names a window
- *  fully used (V4-452). All null for a head that is fine. */
-
-/** What the daemon reports about each head beyond its topology row, keyed by head: the boot failure, the instant
- *  its quota refusal lifts, the endpoint of a silent runtime, and a spent plan window. */
-internal class StatusReadings(
-    private val failedHeads: Map<String, String> = emptyMap(),
-    private val quotaResetAtEpochSeconds: Map<String, Long> = emptyMap(),
-    private val runtimeNotAnswering: Map<String, String> = emptyMap(),
-    private val quotaFull: Map<String, QuotaFull> = emptyMap(),
-    private val held: Map<String, List<HeldTurnReading>> = emptyMap(),
-    /** 2026-11-09 audit: each head refusing every request, and why it refused the last. */
-    private val refusing: Map<String, String> = emptyMap(),
-) {
-    /** The heads the daemon names failed that [known] does not hold, in key order. */
-    fun failedOutside(known: Set<String>): Map<String, String> = failedHeads.filterKeys { it !in known }.toSortedMap()
-
-    fun wordFor(key: String): HeadWord =
-        HeadWord(
-            failedHeads[key],
-            quotaResetAtEpochSeconds[key],
-            runtimeNotAnswering[key],
-            quotaFull[key],
-            held[key].orEmpty(),
-            refusing[key],
-        )
-}
-
-internal data class HeadWord(
-    val bootFailure: String?,
-    val quotaResetAtEpochSeconds: Long?,
-    val runtimeEndpoint: String?,
-    val quotaFull: QuotaFull? = null,
-    /** Failure-handling slice 5: the turns the head holds until their cause lifts, oldest first. */
-    val held: List<HeldTurnReading> = emptyList(),
-    /** 2026-11-09 audit: why a head refusing every request refused the last one, null while it admits turns. */
-    val refusing: String? = null,
-)
-
 /** The labelled columns, in order. A row's cells line up with these by index. */
 private val COLUMNS = listOf("head", "command", "port", "upstream")
 
@@ -300,3 +282,6 @@ private const val GAP = 3
 private const val LIVE_GLYPH = "▸"
 
 private const val STRAIN_GLYPH = "!"
+
+// What a provider no head runs says while splice holds no credential for it: where to give it one.
+private const val MISSING = "no credential: sign in on `splice console`, or set its key with `splice key set`"

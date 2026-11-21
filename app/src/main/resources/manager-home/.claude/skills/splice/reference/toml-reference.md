@@ -88,6 +88,7 @@ core/src/main/kotlin/splice/core/config/ConfigService.kt (coerceRejects, lines 2
 | `[claude]` | table | which Claude Code config items every head shares |
 | `[compaction]` | table | your text after Claude Code's compaction prompt (live) |
 | `[providers.<key>]` | map of provider tables | one upstream each |
+| `[door]` | table | the gateway: which provider a door command runs on, and old selector prefixes it still reads (section 6.1) |
 | `[heads.<key>]` | map of head tables | one loopback port each |
 | `[projects."<root>"]` | map of project tables | standing prompts by working directory |
 | `[capabilities.<name>]` | map of capability tables | work splice runs before a session's first turn goes upstream (section 10) |
@@ -380,6 +381,19 @@ A tier no row declares is not offered at launch, so Claude Code's built-in reque
 
 Source: HeadConfig.kt; HeadCatalogStatics.kt; HeadModels.kt; TopologySchema.kt (ClaudeWrapperConfig);
 Topology.kt (resolveHeadKeys, line 56); splice.example.toml (lines 491-501, 517-545, 571-592).
+
+### 6.1 [door]
+
+The gateway serves every `[providers.<key>]` itself, with no head: each model is `claude-<provider>--<model id>`. A head
+block is not read to serve a turn. These tables name what a person adds to it.
+
+| field | type | default | effect |
+|---|---|---|---|
+| `[door.commands.<name>]` `provider` | string | none | the provider a wrapper command starts Claude Code on, on its pinned model; an older `head = "<head key>"` is read as that head's provider and never rewritten |
+| `[door.commands.<name>]` `models` | `"head"` or `"door"` | `"head"` | the provider's own rows in `/model`, or the door's whole picker |
+| `[door.selector_aliases]` | map of prefix to provider key | empty | an old selector prefix read as the provider it stood for: `"claude-ollama--" = "ollama"`. A key ends `--` (after something, `claude-ollama--` or `zeta--`); the provider must be declared and the key may not be another provider's own `claude-<provider>--`. The gateway's own legacy prefixes (`claude-codex--`, `claude-grok--` for `xai`, `claude-kimi--`, `claude-muse--`, `claude-openrouter--`, `claude-fireworks--`, `claude-deepseek--`) need no entry |
+
+Source: DoorConfig.kt; SelectorAliases.kt; docs/specs/door-default.md (decision 10).
 
 ## 7. [claude]
 

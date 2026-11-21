@@ -31,6 +31,7 @@ import splice.server.ChatServer
 import splice.server.HeadUpstreams
 import splice.server.ServerMode
 import splice.server.ServerReach
+import splice.server.TeamGateway
 import splice.share.ShareMachine
 import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Path
@@ -67,7 +68,9 @@ internal class DaemonServer(
 
     override fun all(): List<UpstreamPool> = pools.all()
 
-    override fun of(head: String): UpstreamPool? = topology.heads[head]?.let { pools.named(it.provider) }
+    /** The pool of the provider [head] runs on; a provider with no head (the team door's) is asked by its own key. */
+    override fun of(head: String): UpstreamPool? =
+        (topology.heads[head]?.provider ?: head.takeIf { it in topology.providers })?.let { pools.named(it) }
 
     override fun chat(head: String): ChatServer? {
         val key = topology.heads[head]?.provider ?: return null
@@ -92,14 +95,15 @@ internal class DaemonServer(
     override fun hourly(): Map<String, Double> = HourlyPrices(topology.providers).prices()
 
     /** Opens server mode when `[server]` names an address, serving [heads] through [controlPort]'s daemon, which say
-     *  how each turn went on [served]. */
-    fun open(heads: Map<String, ManagedHead>, controlPort: Int, served: ServedTurnBoard) {
+     *  how each turn went on [served].
+     *  [gateway] serves a team's turns at `/door` on the providers, with no head. */
+    fun open(heads: Map<String, ManagedHead>, controlPort: Int, served: ServedTurnBoard, gateway: TeamGateway? = null) {
         val address = topology.server.address ?: return
         this.heads = heads
         Cancellables.runCatchingBestEffort {
             val offered = ManagedSharedHeads(heads, topology, config, ShareMachine(log).name())
             val folder = stateDir.resolve(SERVER_STATE)
-            val reach = ServerReach(turnKey, controlPort, served, EnvReader(System::getenv))
+            val reach = ServerReach(turnKey, controlPort, served, EnvReader(System::getenv), gateway)
             ServerMode(topology.server, folder, ProcessDispatchers().io(), log, upstreams = this)
                 .also { it.open(address, offered, reach, configDir, secret()) }
         }.onSuccess { mode ->

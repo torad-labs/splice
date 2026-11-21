@@ -18,23 +18,23 @@ internal class ClaudeSaid(private val out: TerminalOutput) : DoorSaid {
         }
         out.line("claude: on the door, at ${text(state, "door")}")
         val starts = JsonScalars.str(state, "default_model")
-        out.line(if (starts == null) "Starts on: no model, as no head is in the door" else "Starts on: $starts")
+        out.line(if (starts == null) "Starts on: no model, as no provider is in the door" else "Starts on: $starts")
         picker(state, NO_PICKER)
         val own = JsonScalars.str(state, "own_login")
         out.line(if (own == null) SHARED_LOGIN else "/login: $THEIRS_IN_THE_WAY $own, so splice's is not laid")
     }
 
-    /** The picker's rows and the heads left out of it, or [none] with no rows. */
+    /** The picker's rows and the providers left out of it, or [none] with no rows. */
     private fun picker(state: JsonObject, none: String) {
         val models = (state["models"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
         out.line(if (models.isEmpty()) none else "Picker:")
         models.forEach { m ->
-            out.line("  ${text(m, "model")}  ${text(m, "label")}  (${text(m, "command")})")
+            out.line("  ${text(m, "model")}  ${text(m, "label")}  (${text(m, "provider")})")
         }
         val left = (state["left_out"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
         if (left.isNotEmpty()) out.line("Left out:")
         left.forEach { h ->
-            out.line("  ${text(h, "command")} (${text(h, "head")}): ${text(h, "reason")}")
+            out.line("  ${text(h, "provider")}: ${text(h, "reason")}")
         }
     }
 

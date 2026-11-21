@@ -5,8 +5,7 @@ import splice.core.config.StatePaths
 import splice.core.process.LaunchDeclaration
 import splice.core.process.LaunchOwners
 import splice.core.process.LaunchTerminal
-import splice.core.topology.RemoteAddressRead
-import splice.core.topology.RemoteAddresses
+import splice.core.topology.LaunchDoors
 import splice.core.topology.Topology
 import splice.topology.TopologyLoader
 import java.net.URI
@@ -36,15 +35,15 @@ internal class LaunchOwnerCommand(private val args: List<String>) : Command() {
 
     private fun resolveHead(topology: Topology, selector: String, baseUrl: String, kind: String): String? {
         if (kind != "session") return topology.resolveHeadKey(selector)
-        return remoteCommand(topology, selector, baseUrl) ?: localHead(topology, baseUrl)
+        val doors = LaunchDoors(topology.remote, AdminSupport.controlPort(topology))
+        return onDoorOrRemote(doors, selector, baseUrl) ?: localHead(topology, baseUrl)
     }
 
-    /** [command], when it runs on another machine (LAN share) and [baseUrl] is the address its `[remote.<command>]`
-     *  entry sends its turns to, which is the one its launch planted. */
-    private fun remoteCommand(topology: Topology, command: String, baseUrl: String): String? {
-        val read = topology.remote[command]?.let { RemoteAddresses.read(it.url) }
-        return command.takeIf { (read as? RemoteAddressRead.Read)?.address?.turns == baseUrl }
-    }
+    /** [command], when [baseUrl] is a door (this machine's, whatever the command, or the one its `[remote.<command>]`
+     *  names) or the address its `[remote.<command>]` entry sends its turns to, which is the one its launch planted.
+     *  Read by LaunchDoors, the reader the sessions list places the session with, so the two never disagree. */
+    private fun onDoorOrRemote(doors: LaunchDoors, command: String, baseUrl: String): String? =
+        doors.of(command, baseUrl)?.command ?: command.takeIf { doors.remote(command, baseUrl) != null }
 
     private fun localHead(topology: Topology, baseUrl: String): String? {
         // A wrapped claude basename need not name a head. The daemon-authored URL does.

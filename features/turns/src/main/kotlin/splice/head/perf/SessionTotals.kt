@@ -123,10 +123,16 @@ public class SessionTotals(
 
     /** Fold one appended row into its session's total. Memory plus an enqueue, so it never blocks
      *  the turn; the first row after a head stop writes the file through, marked not clean. */
-    public fun add(sessionTag: String, model: String, counters: Map<String, Long>, rowTs: Long) {
+    public fun add(
+        sessionTag: String,
+        model: String,
+        counters: Map<String, Long>,
+        rowTs: Long,
+        pricedBy: TurnPrice? = null,
+    ) {
         if (sessionTag.isEmpty()) return
         if (!TurnBill.isCounted(counters)) return
-        val usd = price.usd(model, counters, rowTs)
+        val usd = (pricedBy ?: price).usd(model, counters, rowTs)
         val reopened = synchronized(lock) {
             loadUnderLock()
             dropIdleUnderLock()

@@ -13,6 +13,10 @@ public sealed class LoginAnswer {
     /** No login to send: the head turns it into NoLogin, with its own login command. */
     public data object Missing : LoginAnswer()
 
+    /** custom-provider (cp-credential): no login to send, and the provider says why in [why] (its credential
+     *  command's own words, or that the person is not signed in): the head turns it into NoLogin with those words. */
+    public data class Unavailable(val why: String) : LoginAnswer()
+
     /** The provider refused to grant a login, for [cause]: the turn ends with it, as on the provider's own reply. */
     public data class Refused(val cause: FailureCause.Provider) : LoginAnswer()
 

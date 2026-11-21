@@ -1,51 +1,61 @@
-// NEW: desktop-door (docs/specs/desktop-door.md, decision 4). `splice desktop` in words: what the daemon says of the
-// door, a line for each thing a person asks of it.
+// NEW: desktop-door (docs/specs/desktop-door.md, decision 4); desktop-full (df-features). `splice desktop` in words: what
+// the daemon says of the door, a line for each thing a person asks of it, the mode Claude Desktop is in first, and
+// what of Desktop works on splice in that mode.
 package splice.app.cli.desktop
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import splice.app.control.DESKTOP_ENV
-import splice.client.desktop.DESKTOP_ENV_PLACE
 import splice.core.terminal.TerminalOutput
 import splice.core.util.JsonScalars
 
 /** `splice desktop` in words. */
 internal class DesktopSaid(private val out: TerminalOutput) : DoorSaid {
     override fun state(state: JsonObject) {
-        val on = JsonScalars.str(state, "on") == "true"
-        out.line("Desktop: ${if (on) "on" else "off"}")
+        out.line("Desktop: ${JsonScalars.str(state, "mode_said") ?: "off"}${reopen(state)}")
         out.line("Door: ${JsonScalars.str(state, "door").orEmpty()}")
-        val starts = JsonScalars.str(state, "default_model")?.let { "$it, the model `claude` starts on" }
-        out.line("Default model: ${starts ?: "none: no head is in the door"}")
+        out.line("Default model: ${JsonScalars.str(state, "default_model") ?: "none: no provider is in the door"}")
         val models = (state["models"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
         out.line(if (models.isEmpty()) "Models: none" else "Models:")
         models.forEach { m ->
-            out.line("  ${text(m, "model")}  ${text(m, "label")}  (${text(m, "command")})")
+            out.line("  ${text(m, "model")}  ${text(m, "label")}  (${text(m, "provider")})")
         }
         val left = (state["left_out"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
         if (left.isNotEmpty()) out.line("Left out:")
         left.forEach { h ->
-            out.line("  ${text(h, "command")} (${text(h, "head")}): ${text(h, "reason")}")
+            out.line("  ${text(h, "provider")}: ${text(h, "reason")}")
         }
-        lastTurn(state["last_turn"] as? JsonObject)
+        features(state)
+        val last = state["last_turn"] as? JsonObject
+        if (last == null) {
+            out.line("Last turn sent: none yet")
+        } else {
+            val asked = JsonScalars.str(last, "model_asked")
+            val ran = JsonScalars.str(last, "model")
+            val session = JsonScalars.str(last, "session_id")?.let { " in session $it" }.orEmpty()
+            out.line("Last turn sent: ${text(last, "at")} on ${text(last, "head")}$session, asked $asked, sent as $ran")
+        }
     }
 
-    /** The last turn sent through the door, or that none was yet. */
-    private fun lastTurn(last: JsonObject?) {
-        if (last == null) return out.line("Last turn sent: none yet")
-        val asked = JsonScalars.str(last, "model_asked")
-        val ran = JsonScalars.str(last, "model")
-        val session = JsonScalars.str(last, "session_id")?.let { " in session $it" }.orEmpty()
-        out.line("Last turn sent: ${text(last, "at")} on ${text(last, "head")}$session, asked $asked, sent as $ran")
+    /** Each of Desktop's backend-dependent features in the mode it is in (standard while it is not in app mode), working
+     *  or why not (df-features). */
+    private fun features(state: JsonObject) {
+        val mode = if (JsonScalars.str(state, "mode") == "app") "app" else "standard"
+        val features = (state["features"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+            .filter { text(it, "mode") == mode }
+        if (features.isEmpty()) return
+        out.line("Features ($mode mode):")
+        features.forEach { f ->
+            val why = JsonScalars.str(f, "reason")?.let { " ($it)" }.orEmpty()
+            out.line("  ${text(f, "name")}: ${text(f, "state")}$why")
+        }
     }
 
-    /** What to set in Desktop's environment store, when the act's answer carries it: one `NAME=value` line each. */
-    override fun acted(state: JsonObject) {
-        val env = (state[DESKTOP_ENV] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
-        if (env.isEmpty()) return
-        out.line("splice: set these in $DESKTOP_ENV_PLACE, then start a new Code tab session:")
-        env.forEach { out.line("  ${text(it, "name")}=${text(it, "value")}") }
-        out.line("splice: they stay set until you remove them there; `splice desktop off` says which.")
+    /** What to do for Desktop to read what splice changed, when it has not yet. */
+    private fun reopen(state: JsonObject): String = when {
+        JsonScalars.str(state, "relaunched") == "false" -> "; quit and reopen Claude Desktop to apply it"
+        JsonScalars.str(state, "picker_current") == "false" ->
+            "; the picker changed since Claude Desktop last read it, so quit and reopen Claude Desktop to see it"
+        else -> ""
     }
 
     private fun text(from: JsonObject, key: String): String = JsonScalars.str(from, key).orEmpty()

@@ -29,23 +29,12 @@ import splice.core.head.HeldTurnReading
 import splice.core.topology.ForwardHeaders
 import splice.core.usage.QuotaFull
 import splice.core.util.HeadScopedLogs
-import splice.core.util.WallClockTime
 import splice.head.admission.AdmissionErrorBody
-import splice.head.admission.AdmissionGate
-import splice.head.admission.AdmissionResponses
-import splice.head.admission.AdmissionTelemetry
-import splice.head.admission.AdmissionWindow
-import splice.head.admission.GateRefusals
-import splice.head.admission.HeadAdmission
-import splice.head.compaction.CompactionReplay
 import splice.head.lifecycle.HeadLifecycle
-import splice.head.turn.TurnDriver
-import splice.head.turn.TurnPreparation
 import splice.head.turn.TurnState
 import splice.http.ingress.HeapIngress
 import splice.http.listen.AdoptedBootstrap
 import splice.upstream.Provider
-import splice.upstream.credentials.EarlyResetHeard
 
 public class HeadServer(
     private val provider: Provider,
@@ -62,90 +51,33 @@ public class HeadServer(
     forwarded: ForwardHeaders = ForwardHeaders(emptyList()),
 ) : Head {
 
-    internal val compactionReplay = CompactionReplay(
-        deps.stores.compaction.compactionRecordings,
-        heap = deps.seams.requestMaterializationGate.heap,
-    )
+    /** Everything a provider's turn needs, which a gateway's provider runtime builds too (TurnService). The turn path
+     *  reads the call's headers through [CallerHeaders], the same forwarding the door below decides on, so what the door
+     *  lets in and what rides upstream cannot disagree. */
+    private val turns = TurnService(provider, deps, voiceFacts, CallerHeaders(deps, forwarded))
+
+    internal val compactionReplay get() = turns.compactionReplay
 
     /** Slice 2: every line this head writes a person comes from here (one voice). */
-    // Read on the head's wall clock, which its holds wait on, so a hold line names the time its wait ends at.
-    internal val voice: HeadVoice = HeadVoice(
-        provider.label,
-        provider.loginCommand.ifEmpty { null },
-        voiceFacts,
-        WallClockTime(deps.traffic.upstream.retryWall),
-    )
-    private val driver = TurnDriver(provider, deps, compactionReplay, voice)
+    internal val voice: HeadVoice get() = turns.voice
 
-    init {
-        // Failure-handling slice 5: a login joining the head and a quota reading turned allowed each wake its held turns.
-        val holds = deps.traffic.liveTurns.holds
-        // The journal says when it happened: on Nov 12, 2026 a login was added while eleven turns waited, and no line
-        // told whether any of them had heard it.
-        val joins = deps.quotaBundle.accountPool?.joins
-        joins?.onJoined = Runnable {
-            val waiting = holds.joined()
-            if (waiting > 0) deps.log("[${provider.key}] a login joined: $waiting waiting turn(s) asked to move\n")
-        }
-        // A login reset at its provider comes back at once, and the journal says which one and why.
-        joins?.onEarlyReset = EarlyResetHeard { label, ended ->
-            val windows = ended.joinToString(" and ")
-            deps.log("[${provider.key}] login $label reads $windows reset before its time: its hold ended\n")
-        }
-        deps.quotaBundle.onAllowed { holds.allowed() }
-    }
-
-    private val window = AdmissionWindow()
-    private val responses = AdmissionResponses(voice)
+    /** What this head alone owns beside the shared turn service: its legacy door. */
     private val clientAuth = ClientAuth(
         deps,
-        responses,
+        turns.responses,
         ForeignHostLog("the ${provider.key} head", deps.log),
         forwardsOnly = provider.auth is ClientAuthProvider,
         // Under the head's key, so `splice logs --head` and the console's per-head log show which head refused whom.
         refusedKeys = RefusedKeyLog(HeadScopedLogs.headScopedLog(provider.key, deps.log), deps.seams.clock),
         forwarded = forwarded,
     )
-    private val bodyReader = RequestBodyReader(deps.policy.requestReadTimeoutMs)
-    private val bodyParse = AnthropicBodyParse()
-    private val admissionGate = AdmissionGate(
-        provider,
-        deps,
-        window,
-        responses,
-        CompactionPreflight(provider.catalog, deps.stores.perfStats),
-        GateRefusals(driver::recordGateRefusal),
-    )
-    private val diagnostics = HeadDiagnostics(
-        provider,
-        deps.traffic.gate,
-        driver,
-        deps.stores.captures.wireTap,
-        deps.traffic.watchdog,
-    )
-    private val admission = HeadAdmission(
-        deps,
-        admissionGate,
-        AdmissionTelemetry(deps.traffic.gate, deps.seams.clock),
-        TurnPreparation(provider, deps, bodyReader, bodyParse, clientAuth, compactionReplay),
-        responses,
-        driver,
-    )
-    private val countTokens = CountTokens(
-        provider,
-        deps,
-        admissionGate,
-        bodyReader,
-        bodyParse,
-        responses,
-    )
     private val engine = HeadEngine(
         HeadListen(listenPort, inherited),
         { line -> deps.log("[${provider.key}] $line") },
-        diagnostics,
+        turns.diagnostics,
         clientAuth,
-        admission,
-        countTokens,
+        turns.admission,
+        turns.countTokens,
         HeapIngress(
             deps.seams.requestMaterializationGate.heap,
             deps.policy.maxRequestBytes,
@@ -154,7 +86,7 @@ public class HeadServer(
         ),
     )
 
-    private val lifecycle = HeadLifecycle(provider, deps, engine, driver, window)
+    private val lifecycle = HeadLifecycle(provider, deps, engine, turns)
 
     override val key: String get() = provider.key
     override val label: String get() = provider.label
@@ -168,7 +100,7 @@ public class HeadServer(
 
     override suspend fun drain(): Unit = lifecycle.drain()
 
-    override val compactionHold: CompactionHold = CompactionHold(window::holdCompactions)
+    override val compactionHold: CompactionHold = CompactionHold(turns.window::holdCompactions)
 
     override suspend fun stop(): Unit = lifecycle.stop()
 
@@ -178,9 +110,9 @@ public class HeadServer(
 
     override suspend fun restart(): Unit = lifecycle.restart()
 
-    override fun healthSnapshot(): HeadHealth = diagnostics.healthSnapshot(engine.isRunning, engine.port)
+    override fun healthSnapshot(): HeadHealth = turns.diagnostics.healthSnapshot(engine.isRunning, engine.port)
 
-    override fun rateLimitSnapshot(): splice.core.head.RateLimitHealth = diagnostics.rateLimitSnapshot()
+    override fun rateLimitSnapshot(): splice.core.head.RateLimitHealth = turns.diagnostics.rateLimitSnapshot()
 
     override fun providerAnswer(): splice.core.head.ProviderAnswer? = deps.stores.usageStore.providerAnswer()
 
@@ -225,5 +157,5 @@ public class HeadServer(
     override val heldSayings: HeldSayings = HeldSayings { deps.traffic.liveTurns.sayings() }
 
     /** Degraded while it refuses every request before any upstream turn (2026-11-09 audit), null while it admits. */
-    override fun refusing(): splice.core.head.RefusingReading? = admission.refusing()
+    override fun refusing(): splice.core.head.RefusingReading? = turns.admission.refusing()
 }

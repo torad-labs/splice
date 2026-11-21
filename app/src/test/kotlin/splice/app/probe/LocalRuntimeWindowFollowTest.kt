@@ -56,7 +56,7 @@ class LocalRuntimeWindowFollowTest {
         val inputs = HeadBuildInputs(
             ConfigService(StatePaths(baseOverride = tempDir), envReader = { null }),
             SignInPlanner(),
-            localProbe = splice.app.provider.LocalProbeInputs(runtime.http),
+            localProbe = splice.app.provider.local.LocalProbeInputs(runtime.http),
         )
         val ctx = inputs.providerContext("local", head, provider, legacyKnobsGovern = false)
         val advertised = { LiveRosterCatalog(ctx, LiveWindows { null }).current().clientLaunchWindow }

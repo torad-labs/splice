@@ -44,7 +44,8 @@ private val SESSION_ROWS = setOf(
 
 /** The rows that answer with no key at all: the liveness probe, and the console's pages (back Oct 10, 2026), which
  *  carry no data: a page reads splice only through the keyed rows. */
-private val OPEN_ROWS = setOf("GET /health", "GET /", "GET /{...}")
+// HEAD / joined Nov 21, 2026: Claude Desktop probes its gateway's root before it uses it (desktop-full).
+private val OPEN_ROWS = setOf("GET /health", "GET /", "HEAD /", "GET /{...}")
 
 /** The status line rows answer a call with no Authorization header with one relaunch line and no data. */
 private val RELAUNCH_NOTICE_ROWS = setOf("GET /statusline/{head}", "POST /statusline/{head}")
@@ -191,7 +192,8 @@ class ControlServerAccessTest {
     // number still needs the key.
     @Test
     fun `the console's pages open with no key, and nothing else does`() {
-        assertEquals(302, rawStatus("/", "localhost:$port"))
+        // A client that asks for no HTML reads that it reached splice; a browser is sent to the console.
+        assertEquals(200, rawStatus("/", "localhost:$port"))
         assertEquals(200, rawStatus("/accounts.html", "localhost:$port"))
         assertEquals(200, rawStatus("/fonts/fraunces-400.woff2", "localhost:$port"))
         for (path in listOf("/dashboard", "/fonts/OFL-Fraunces.txt", "/..%2fmgmt-key", "/nope.html")) {

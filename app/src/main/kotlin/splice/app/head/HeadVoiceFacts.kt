@@ -2,8 +2,10 @@
 // from the provider it talks to, so the lines a person reads say whom to pay or sign in with.
 package splice.app.head
 
+import splice.core.failure.ProviderVoice
 import splice.core.failure.VoiceFacts
 import splice.core.topology.ApiKeyProviderRegistry
+import splice.core.topology.ERROR_MESSAGES_WHOLE
 import splice.core.topology.ProviderConfig
 import splice.core.topology.ProviderFamilyRule
 
@@ -19,6 +21,11 @@ internal class HeadVoiceFacts {
     fun of(providerKey: String, provider: ProviderConfig): VoiceFacts {
         val family = families.of(providerKey, provider)
         val named = family?.let { ApiKeyProviderRegistry.row(it)?.label ?: signInNames[it] }
-        return VoiceFacts(providerName = named, local = family == "local")
+        val whole = provider.errorMessages == ERROR_MESSAGES_WHOLE
+        return VoiceFacts(
+            named,
+            family == "local",
+            provider = ProviderVoice(providerKey, wholeWords = whole, commandLogin = provider.auth.isCommand),
+        )
     }
 }

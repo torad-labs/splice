@@ -1,4 +1,5 @@
-// NEW: LAYOUT-01 — the models capability's route: /api/models over each head's roster (features/models).
+// NEW: LAYOUT-01 — the models capability's route: /api/models, the model catalog published last (the door's
+// PublishedCatalog, as model-catalog.json holds it) and, for the console's pages, each head's roster (features/models).
 // §9i: and /api/models/local, what each local runtime says about its models.
 package splice.app.control.mount
 
@@ -22,7 +23,9 @@ internal class ModelsMount(
     private val localRoute = LocalRuntimesRoute(LocalRuntimesSource { ports.localRuntimes }, ProcessDispatchers().io())
 
     fun register(route: Route) {
-        route.get("/api/models") { guard.guarded(call) { modelsRoute.models(call, ports.declaredHeads) } }
+        route.get("/api/models") {
+            guard.guarded(call) { modelsRoute.models(call, ports.declaredHeads, ports.desktop?.opened?.catalog()) }
+        }
         route.get("/api/models/local") { guard.guarded(call) { localRoute.local(call) } }
     }
 }

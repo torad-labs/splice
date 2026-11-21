@@ -7,9 +7,9 @@ package splice.core.capability
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import splice.core.topology.TomlEntry
-import splice.core.topology.TomlKind
-import splice.core.topology.TomlScan
+import splice.core.topology.toml.TomlEntry
+import splice.core.topology.toml.TomlKind
+import splice.core.topology.toml.TomlScan
 
 /** One capability's table as written: its keys, each read as a JSON value ([JsonNull] for one that cannot be read),
  *  the line of each top-level key, and the line its table starts on. [listed] is a `[[capabilities.<name>]]`. */

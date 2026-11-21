@@ -7,14 +7,11 @@ import splice.core.config.StatePaths
 import splice.core.topology.ApiKeyProviderRegistry
 import splice.provider.grok.GrokProvider
 import splice.provider.grok.GrokQuirks
-import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiQuirks
 import splice.provider.openai.OpenAiResponsesProvider
-import splice.topology.TopologyLoader
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
-import java.nio.file.Paths
 
 /** [statePaths] names each head's own directory (V4-334: its reasoning outlives a restart). */
 internal class ApiKeyResponsesArm(private val statePaths: StatePaths) {
@@ -29,10 +26,7 @@ internal class ApiKeyResponsesArm(private val statePaths: StatePaths) {
         val catalog = ctx.catalog
         val watchdog = ctx.faultPlan.watchdog
         val cfg = ctx.cfg
-        val auth = ApiKeyAuthProvider(
-            envVar = providerCfg.auth.effectiveApiKeyEnv(key),
-            keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
-        )
+        val auth = KeyAuth().of(ctx)
         // Identical in both branches — factored out so adding loginCommand didn't push this past
         // detekt's LongMethod ceiling with a second duplicated ProviderTuning block.
         val tuning = ProviderTuning(

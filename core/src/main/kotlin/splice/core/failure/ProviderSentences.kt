@@ -17,10 +17,10 @@ internal class ProviderSentences(private val spoken: Spoken) {
     fun said(cause: FailureCause.Provider, at: Position, facts: LineFacts, ongoing: Boolean): Said = when (cause) {
         is FailureCause.Provider.Limited -> limited(cause, facts.head, ongoing)
         is FailureCause.Provider.NeedsPayment -> payment(cause, facts)
-        is FailureCause.Provider.Overloaded -> overloaded(cause.loading, facts.head, ongoing)
+        is FailureCause.Provider.Overloaded -> overloaded(cause, facts.head, ongoing)
         is FailureCause.Provider.ServerError -> server(cause.fault, at, facts.head, ongoing)
         is FailureCause.Provider.TooLong -> tooLong(cause, facts)
-        is FailureCause.Provider.AuthRejected -> login(cause.owner, facts, ongoing)
+        is FailureCause.Provider.AuthRejected -> login(cause, facts, ongoing)
         is FailureCause.Provider.ToolTear -> tear(cause.runaway, facts.head)
         is FailureCause.Provider.ReasoningCut, is FailureCause.Provider.Forbidden, is FailureCause.Provider.Rejected,
         is FailureCause.Provider.Refused,
@@ -89,10 +89,12 @@ internal class ProviderSentences(private val spoken: Spoken) {
         }
     }
 
-    private fun overloaded(loading: Boolean, head: String, ongoing: Boolean): Said = Said(
+    /** cp-errors: an overload whose provider said when to come back is said as ongoing, since the client waits it
+     *  out. */
+    private fun overloaded(cause: FailureCause.Provider.Overloaded, head: String, ongoing: Boolean): Said = Said(
         when {
-            loading -> "$head is still loading its model"
-            ongoing -> "$head is overloaded"
+            cause.loading -> "$head is still loading its model"
+            ongoing || cause.pushback != null -> "$head is overloaded"
             else -> "$head stayed overloaded"
         },
         next = Next.Resend("Send the message again in a few minutes."),
@@ -123,23 +125,26 @@ internal class ProviderSentences(private val spoken: Spoken) {
         return Said(what, next = holds ?: Next.None)
     }
 
-    private fun login(owner: LoginOwner, facts: LineFacts, ongoing: Boolean): Said = when (owner) {
-        LoginOwner.CLIENT -> Said(
-            "${facts.providerName ?: facts.head} did not accept this session's login",
-            next = Next.Then("Run /login, then send the message again."),
-        )
-        LoginOwner.SPLICE -> Said(
-            if (ongoing) {
-                "${facts.head}'s login expired, so splice is signing it in again"
-            } else {
-                "${facts.head}'s login expired and could not be renewed"
-            },
-            next = Next.Then(
-                facts.loginCommand?.let { "Run $it, then send the message again." }
-                    ?: "Sign ${facts.head} in again, then send the message again.",
-            ),
-        )
-    }
+    /** A login the provider refused: a key a team's credential command renewed (custom-provider, cp-credential), or a
+     *  login the client or splice holds. */
+    private fun login(cause: FailureCause.Provider.AuthRejected, facts: LineFacts, ongoing: Boolean): Said =
+        CommandKeySentences.refused(cause, facts, ongoing) ?: when (cause.owner) {
+            LoginOwner.CLIENT -> Said(
+                "${facts.providerName ?: facts.head} did not accept this session's login",
+                next = Next.Then("Run /login, then send the message again."),
+            )
+            LoginOwner.SPLICE -> Said(
+                if (ongoing) {
+                    "${facts.head}'s login expired, so splice is signing it in again"
+                } else {
+                    "${facts.head}'s login expired and could not be renewed"
+                },
+                next = Next.Then(
+                    facts.loginCommand?.let { "Run $it, then send the message again." }
+                        ?: "Sign ${facts.head} in again, then send the message again.",
+                ),
+            )
+        }
 
     private fun tear(runaway: Boolean, head: String): Said = Said(
         if (runaway) {

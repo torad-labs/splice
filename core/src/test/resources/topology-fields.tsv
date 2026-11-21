@@ -37,6 +37,13 @@ daemon.summary
 daemon.update_channel	
 defaults	
 defaults.*	
+door	
+door.commands	
+door.commands.*.head	
+door.commands.*.models	
+door.commands.*.provider	
+door.selector_aliases	
+door.selector_aliases.*	
 heads	
 heads.*.claude	
 heads.*.claude.command	
@@ -54,6 +61,7 @@ heads.*.models[].id
 heads.*.models[].slot	
 heads.*.overrides	
 heads.*.overrides.*	
+heads.*.picker	
 heads.*.pinned_model	
 heads.*.port	
 heads.*.provider	
@@ -90,16 +98,21 @@ projects.*.system_prompt_file
 projects.*.system_prompt_mode	append,replace,strip
 providers	
 providers.*.auth	
+providers.*.auth.credential_command	
 providers.*.auth.env	
 providers.*.auth.file	
 providers.*.auth.kind	
+providers.*.auth.login_command	
 providers.*.base_url	
+providers.*.ca_file	
+providers.*.context_window	
 providers.*.default_context_window	
 providers.*.dialect	openai-responses,openai-chat,anthropic-passthrough
 providers.*.discovery	
 providers.*.discovery.exclude	
 providers.*.discovery.family	
 providers.*.discovery.include	
+providers.*.error_messages	
 providers.*.extra_headers	
 providers.*.extra_headers.*	
 providers.*.extra_windows	
@@ -110,6 +123,8 @@ providers.*.forward_headers
 providers.*.health_seconds	
 providers.*.hourly_usd	
 providers.*.local	
+providers.*.model_slots	
+providers.*.model_slots.*	
 providers.*.models	
 providers.*.models[].client_model	
 providers.*.models[].compaction_reserve_tokens	
@@ -117,6 +132,7 @@ providers.*.models[].context_window
 providers.*.models[].description	
 providers.*.models[].id	
 providers.*.models[].label	
+providers.*.models[].max_output_tokens	
 providers.*.models[].rates	
 providers.*.models[].rates.cache_read	
 providers.*.models[].rates.cache_write	
@@ -138,6 +154,10 @@ providers.*.models[].rates.ultrafast_cache_write
 providers.*.models[].rates.ultrafast_input	
 providers.*.models[].rates.ultrafast_output	
 providers.*.models_url	
+providers.*.overrides	
+providers.*.overrides.*	
+providers.*.picker	
+providers.*.pinned_model	
 providers.*.quirks	
 providers.*.quirks.account_id_header	
 providers.*.quirks.block_allowlist	
@@ -184,6 +204,12 @@ providers.*.quirks.websocket
 providers.*.quirks.websocket_prefill	
 providers.*.quirks.zstd_request_body	
 providers.*.send_version	
+providers.*.served_window	
+providers.*.served_window.field	
+providers.*.served_window.url	
+providers.*.system_prompt	
+providers.*.system_prompt_file	
+providers.*.system_prompt_mode	append,replace,strip
 providers.*.upstreams	
 providers.*.upstreams[].name	
 providers.*.upstreams[].url	
@@ -229,6 +255,8 @@ server.signin.rate_per_minute
 server.teams	
 server.teams.by_domain	
 server.teams.by_domain.*	
+server.telemetry	
+server.telemetry.forward_to	
 server.tls_cert	
 server.tls_key	
 server.trusted_proxies	

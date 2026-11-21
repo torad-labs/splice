@@ -1,7 +1,9 @@
 // NEW: failure-handling slice 1 (2026-10-26). How a path leaf of FailureCause broke.
 package splice.core.failure
 
-public enum class Unreach { REFUSED, DNS, TLS, RESET_BEFORE_REPLY, WRITE_STALLED }
+/** [UNTRUSTED] (custom-provider, cp-tls): the provider presented a certificate no root splice trusts signed, which no
+ *  re-send changes; the person names its authority in the provider's ca_file. */
+public enum class Unreach { REFUSED, DNS, TLS, UNTRUSTED, RESET_BEFORE_REPLY, WRITE_STALLED }
 
 /** [ROTATED]: the provider retired the socket at its planned lifetime (the Responses websocket's 60-minute
  *  websocket_connection_limit_reached), a rotation the turn continues across on a fresh socket, not a failure of the

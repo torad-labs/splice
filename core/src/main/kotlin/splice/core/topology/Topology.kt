@@ -23,7 +23,10 @@ package splice.core.topology
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import splice.core.GATEWAY_VERSION
 import splice.core.capability.Capability
+import splice.core.client.SPLICE_CLIENT_HEADER
+import splice.core.client.SPLICE_WRAPPER_HEADER
 import splice.core.compaction.CompactionConfig
 import splice.core.config.Knob
 import splice.core.model.CatalogWindows
@@ -37,7 +40,9 @@ import splice.core.model.ModelRates
 import splice.core.model.ModelTierSuffix
 import splice.core.model.PublishedRates
 import splice.core.model.WindowRule
+import splice.core.prompt.SystemPromptMode
 import splice.core.topology.telemetry.TelemetryConfig
+import splice.core.util.TopologySlotsFailure
 
 @Serializable
 public data class Topology(
@@ -56,6 +61,8 @@ public data class Topology(
     val remote: Map<String, RemoteConfig> = emptyMap(),
     /** Server mode (docs/specs/server-mode.md): this machine as a team's front door, answering only keys. */
     val server: ServerConfig = ServerConfig(),
+    /** custom-provider (issue #680): the door's own settings, today its named commands. */
+    val door: DoorConfig = DoorConfig(),
     /** The harness (docs/specs/harness.md): capabilities splice.toml declares, read apart from the schema decode
      *  (CapabilityToml) and attached once found well-formed. Not part of the canonical tree the console edits. */
     @Transient val capabilities: List<Capability> = emptyList(),
@@ -228,6 +235,39 @@ public data class ProviderConfig(
      *  hour whatever its traffic. A usage report meters it over the hours the host was up in its window. Absent =
      *  priced by the token alone. */
     @Serializable(with = TomlDollars::class) @SerialName("hourly_usd") val hourlyUsd: Double? = null,
+    /** custom-provider (issue #680): whether this provider's heads are in the door's /model. Absent = the door's own
+     *  rule; a head's own `picker` wins over this. */
+    val picker: Boolean? = null,
+    /** custom-provider: a PEM bundle this provider's server is trusted by, on top of Java's roots and the OS store. `~`
+     *  expands; a relative path is under splice.toml's folder ([ProviderCaFile]). */
+    @SerialName("ca_file") val caFile: String? = null,
+    /** custom-provider: "whole" shows this provider's own error words as it wrote them; "filtered" (absent) keeps
+     *  splice's filter. Read as a string and checked ([CustomProviderChecks]), so one bad value hides nothing. */
+    @SerialName("error_messages") val errorMessages: String? = null,
+    /** custom-provider: where this provider reports the window it serves, read when the daemon starts. */
+    @SerialName("served_window") val servedWindow: ServedWindowConfig? = null,
+    /** gateway-no-heads: the model a session that names none runs on when the gateway serves this provider with no
+     *  head. Absent = this provider's first declared model, or its first discovered one with none declared. Mirrors
+     *  HeadConfig.pinnedModel, but never required: a headless provider always has a usable default. */
+    @SerialName("pinned_model") val pinnedModel: String? = null,
+    /** gateway-no-heads: which model an Anthropic tier (opus, sonnet, haiku, fable) runs on when the gateway serves
+     *  this provider with no head. Mirrors HeadConfig.modelSlots; absent = no tier map, so a tier runs the session's
+     *  current model. [ModelEntry] carries no slot of its own, so the COMPETING check HeadConfig.init runs does not
+     *  apply here. */
+    @SerialName("model_slots") val modelSlots: Map<String, String> = emptyMap(),
+    /** gateway-no-heads: the window the gateway serves this provider at, as a head's `context_window` is for its head. Absent
+     *  = the provider's own default and each row's declared window. */
+    @SerialName("context_window") val contextWindow: Long? = null,
+    /** gateway-no-heads: the standing instructions the gateway places on every turn it serves on this provider, as a head's
+     *  `system_prompt`, `system_prompt_file` and `system_prompt_mode` are for its head: inline text or a file, never
+     *  both, and the mode that picks the seam (`append` by default). Absent = what splice ships for the provider. */
+    @SerialName("system_prompt") val systemPrompt: String? = null,
+    @SerialName("system_prompt_file") val systemPromptFile: String? = null,
+    @SerialName("system_prompt_mode") val systemPromptMode: SystemPromptMode? = null,
+    /** gateway-no-heads: knobs the gateway reads for this provider, as a head's `[heads.KEY.overrides]` are read for its head
+     *  (upstreamTimeoutMs and the like). A head on this provider takes them beneath its own, so one value written here
+     *  serves every head on it. Each key is checked at `providers.KEY.overrides` by the knobs the daemon knows. */
+    val overrides: Map<String, String> = emptyMap(),
 ) {
     /** Whether this provider is a local runtime: what the operator said, else the loopback rule. */
     public val isLocal: Boolean
@@ -279,7 +319,15 @@ public data class ProviderConfig(
                 "code_mode_models must list at least one non-blank model id"
             }
         }
+        val slots = modelSlots.keys.map { it.trim('"', '\'').lowercase() }
+        if (slots.any { it !in headModelSlots }) throw TopologySlotsFailure(TopologySlotsFailure.Problem.UNKNOWN)
+        if (slots.distinct().size != slots.size) throw TopologySlotsFailure(TopologySlotsFailure.Problem.DUPLICATE)
+        if (modelSlots.values.any(String::isBlank)) throw TopologySlotsFailure(TopologySlotsFailure.Problem.BLANK_ID)
     }
+
+    /** gateway-no-heads: the tier-to-id map a headless gateway turn consumes, mirroring HeadConfig.tierModels(). */
+    public val tierModels: Map<String, String>
+        get() = modelSlots.entries.associate { (slot, id) -> slot.trim('"', '\'').lowercase() to id }
 
     /** True when this provider's auth kind declares code mode on this dialect in the registry. */
     private val codeModeShape: Boolean
@@ -305,11 +353,19 @@ public data class ProviderConfig(
     public val staticHeaders: Map<String, String>
         get() = via + extraHeaders.mapKeys { (key, _) -> key.trim('"') }
 
-    /** [forwardHeaders] as the list a head forwards from. */
-    public val forwarded: ForwardHeaders get() = ForwardHeaders(forwardHeaders)
+    /** [forwardHeaders] as the list a head forwards from. custom-provider (cp-identity): with [sendVersion] the
+     *  session's wrapper header rides too ([SPLICE_WRAPPER_HEADER]); without it that header never does, whatever the
+     *  list names. */
+    public val forwarded: ForwardHeaders
+        get() = ForwardHeaders(
+            forwardHeaders.filterNot { it.trim().equals(SPLICE_WRAPPER_HEADER, ignoreCase = true) } +
+                listOfNotNull(SPLICE_WRAPPER_HEADER.takeIf { sendVersion }),
+        )
 
-    /** The Via line [sendVersion] adds, or nothing. */
-    private val via: Map<String, String> get() = if (sendVersion) mapOf("Via" to SPLICE_VIA) else emptyMap()
+    /** What [sendVersion] adds, or nothing: the Via line, and (cp-identity) splice's version as the client header sends
+     *  it to a splice server, so a gateway can turn away an outdated client in words of its own. */
+    private val via: Map<String, String>
+        get() = if (sendVersion) mapOf("Via" to SPLICE_VIA, SPLICE_CLIENT_HEADER to GATEWAY_VERSION) else emptyMap()
 
     /** V4-162: this provider without its windows (see [Topology.withoutWindows]). extra_windows and
      *  window_rules declare windows and nothing else, so they are dropped whole: a row added to or
@@ -402,18 +458,19 @@ public data class ProviderConfig(
      *  one. The same decisions [catalogFor] takes, asked as a value: a writer that validates a topology names the
      *  refusal itself and catches nothing. */
     public fun catalogRefusal(head: HeadConfig, discovered: List<DiscoveredModel> = emptyList()): String? {
-        val roster = HeadModels(this).select(head, rosterWith(discovered))
+        val roster = HeadModels(this).select(head, rosterWith(discovered, head))
         if (roster is HeadModels.Roster.Refused) return roster.detail
         HeadCatalogStatics.refusal(head)?.let { return it.detail }
         return when {
-            !clientPicksModels && rowsFor(head, discovered).isEmpty() -> "a catalog needs at least one picker model"
+            !clientPicksModels && !head.servedByGateway && rowsFor(head, discovered).isEmpty() ->
+                "a catalog needs at least one picker model"
             else -> null
         }
     }
 
     /** The rows [modelsFor] selected, once [catalogRefusal] has found no reason against them. */
     private fun rowsFor(head: HeadConfig, discovered: List<DiscoveredModel>): List<ModelEntry> =
-        when (val roster = HeadModels(this).select(head, rosterWith(discovered))) {
+        when (val roster = HeadModels(this).select(head, rosterWith(discovered, head))) {
             is HeadModels.Roster.Rows -> roster.entries
             is HeadModels.Roster.Refused -> emptyList()
         }
@@ -449,7 +506,7 @@ public data class ProviderConfig(
                 entry.contextWindow
             }
             val rates = entry.rates ?: model?.rates ?: PublishedRates.of(baseUrl, entry.id)
-            entry.copy(contextWindow = window, rates = rates, maxContextWindow = ceiling)
+            entry.copy(contextWindow = window, rates = rates, maxContextWindow = ceiling, listed = model)
         }
     }
 
@@ -457,8 +514,10 @@ public data class ProviderConfig(
      *  spellings (a `[1m]` row covers its bare id, an alias row covers the model it aliases) and that
      *  [discovery] admits, in the endpoint's order. A declared row always wins its model: its window,
      *  label, rates and place carry decisions no endpoint can supply. */
-    private fun rosterWith(discovered: List<DiscoveredModel>): List<ModelEntry> {
-        if (isLocal) return models // Local metadata supplies windows, not new picker rows.
+    private fun rosterWith(discovered: List<DiscoveredModel>, head: HeadConfig): List<ModelEntry> {
+        // Local metadata supplies windows, not new picker rows, unless the head or its provider asks for every model
+        // its endpoint lists (custom-provider, cp-picker: `picker = true`).
+        if (isLocal && !head.listsEvery(this)) return models
         val extra = undeclared(discovered)
             .filter { discovery.admits(it.id) }
             .map { ModelEntry(id = it.id, label = it.label, contextWindow = windowFor(it), discovered = true) }
@@ -505,6 +564,7 @@ public data class ProviderConfig(
      *  lists no models keeps the pre-discovery rule: its declared rows are the catalog, and only an
      *  empty one gains the pinned row. */
     internal fun withPinned(roster: List<ModelEntry>, pinned: String): List<ModelEntry> {
+        if (pinned.isBlank()) return roster
         val bare = ModelTierSuffix.strip(pinned)
         val served = roster.any { ModelTierSuffix.strip(it.id) == bare }
         val declaredOnly = roster.isNotEmpty() && !listsModels

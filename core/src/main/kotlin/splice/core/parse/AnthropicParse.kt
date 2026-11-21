@@ -7,6 +7,7 @@ package splice.core.parse
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import splice.core.util.JsonScalars
 import splice.core.wire.AnthropicRequest
@@ -32,7 +33,19 @@ public data class AnthropicTurnBody(
             val ids = JsonScalars.objectOrNull(lenientJson, text)
             return JsonScalars.str(ids, "session_id")?.takeIf(String::isNotBlank)
         }
+
+    /** custom-provider (cp-output): this body asking for at most [cap] output tokens: the smaller of what it asked and
+     *  [cap], or [cap] when it named none; itself when [cap] is null or it already asked no more. Both views move
+     *  together, so every dialect's assembler writes the capped number in its own field. */
+    public fun withOutputCap(cap: Long?): AnthropicTurnBody {
+        if (cap == null) return this
+        val asked = typed.maxTokens?.takeIf { it > 0 }
+        if (asked != null && asked <= cap) return this
+        return copy(raw = JsonObject(raw + (MAX_TOKENS_KEY to JsonPrimitive(cap))), typed = typed.copy(maxTokens = cap))
+    }
 }
+
+private const val MAX_TOKENS_KEY = "max_tokens"
 
 /** The two-view parse, as a named object since the 2026-08-16 style migration (HD-M8): it is a
  *  FACTORY for [AnthropicTurnBody] over a raw request string, so it cannot be a member of the type

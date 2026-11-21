@@ -65,13 +65,15 @@ public class DesktopSettings {
         return if (out.isEmpty() && !existed(replaced, EXISTED)) null else JsonObject(out)
     }
 
-    /** Whether [file]'s `model` was picked from an older splice's door: one of [selectors] or of its picker's rows
-     *  while that door is in the file, or one of [selectors] while splice's record of what that door replaced
-     *  ([replaced]) is still held. In any other file a selector is the person's own pick: the terminal's `claude` on
-     *  the door picks one with `/model` and Claude Code writes it here, and so is a picker and a pick from it. */
+    /** Whether [file]'s `model` was picked from an older splice's door: one of [selectors], which only that door
+     *  served, while that door is in the file or splice's record of what it replaced ([replaced]) is still held. Any
+     *  other model is the person's own pick and stays: a Claude model's own id (`claude-opus-5-5`) runs on their own
+     *  login, even where the old door's picker also listed it. Until Nov 21, 2026 any model the old picker listed was
+     *  taken out too, so a bare Claude id the person picked was deleted. In any other file a selector is the person's
+     *  own pick too: the terminal's `claude` on the door picks one with `/model` and Claude Code writes it here. */
     private fun pickedFromDoor(file: JsonObject, replaced: JsonObject?, selectors: DoorSelectors): Boolean {
         val picked = JsonScalars.str(file, DESKTOP_FILE_MODEL) ?: return false
-        return if (holdsDoor(file)) selectors(picked) || picked in rows(file) else replaced != null && selectors(picked)
+        return (holdsDoor(file) || replaced != null) && selectors(picked)
     }
 
     /** The models [file]'s picker lists. */

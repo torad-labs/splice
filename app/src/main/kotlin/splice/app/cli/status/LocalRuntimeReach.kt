@@ -3,7 +3,7 @@
 // wrapper and the key say nothing about whether a turn would work; the runtime's own answer does.
 package splice.app.cli.status
 
-import splice.app.provider.JdkLocalHttp
+import splice.app.provider.local.JdkLocalHttp
 import splice.core.topology.Topology
 import splice.upstream.transport.LocalHttp
 import java.net.URI

@@ -14,7 +14,11 @@ internal class PerfCompactRetention : PerfLineKeep {
             row = row.copy(
                 facts = row.facts.copy(providerMessage = null),
                 turns = PerfTurnIds(),
-                transcript = PerfTranscriptLink(sessionId = row.transcript.sessionId, door = row.transcript.door),
+                transcript = PerfTranscriptLink(
+                    sessionId = row.transcript.sessionId,
+                    door = row.transcript.door,
+                    agent = row.transcript.agent,
+                ),
             ),
             retention = PerfRetention(textBytes = 0L, located = true),
         )

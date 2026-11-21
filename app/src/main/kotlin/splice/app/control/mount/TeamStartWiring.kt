@@ -36,14 +36,15 @@ internal class HeadStartCommands(
         return when {
             managed == null || managed.launchSpec == null || command == null ->
                 StartCommand.Refused("no launchable head is keyed '$head'")
-            !Files.isSymbolicLink(installPaths.binDir.resolve(command)) ->
-                StartCommand.Refused(
-                    "The $command command is not linked; run splice install $head.",
-                    fix = "splice install $head",
-                )
+            !Files.isSymbolicLink(installPaths.binDir.resolve(command)) -> notLinked(command, "splice install $head")
             else -> StartCommand.Ready(listOf(installPaths.binDir.resolve(command).toString()))
         }
     }
+
+    /** The refusal of a start whose [command] is not linked where `splice install` puts it, with the [fix] that puts
+     *  it back: one sentence for a head's command and for the `claude` a door session was started with. */
+    fun notLinked(command: String, fix: String): StartCommand.Refused =
+        StartCommand.Refused("The $command command is not linked; run $fix.", fix = fix)
 }
 
 /** Pins the new session to the slot's account, through the head's own pool (the same pin POST
@@ -99,9 +100,11 @@ internal class RegistryHandover(private val sessions: SessionSource?, private va
         }
     }
 
+    /** [session] registered again, live, on [head] as the registry names what it was launched on: a relaunched door
+     *  session comes back on `door` (door-sessions), and its turns may never reach this daemon. */
     override suspend fun cameOn(session: String, head: String, seconds: Long): Boolean = within(seconds) {
         sessions?.read().orEmpty().any {
-            it.sessionId == session && it.head == head && it.availability == SessionAvailability.LIVE
+            it.sessionId == session && it.launchedOn == head && it.availability == SessionAvailability.LIVE
         }
     }
 

@@ -4,26 +4,29 @@
 // never told by a key, and the control port's door routes, which admit by key alone, never admit it. A call at the
 // share listener that does present Desktop's key or the terminal's is answered as that caller (DesktopDoor.answerAs):
 // the door is one, at either listener. Its sessions start on the model and declare the window the terminal's lane
-// says, and a model of Anthropic's that a request names runs where a head here serves it, as for the terminal. A
+// says, and a model of Anthropic's that a request names runs where a provider here serves it, as for the terminal. A
 // turn's row reads as the terminal's: it is a `claude` session of this machine's door, wherever it was typed.
 package splice.app.desktop
 
 import io.ktor.server.application.ApplicationCall
+import splice.app.desktop.catalog.DesktopLineup
+import splice.app.desktop.lane.ClaudeLane
 import splice.client.desktop.DoorPickerRow
 import splice.core.turn.TERMINAL_DOOR
 import splice.core.wire.HttpStatus
 import splice.share.DOOR_STARTING
 import splice.share.RefusalVoice
 import splice.share.ShareDoor
-import splice.share.ShareRelay
 import splice.share.SharedDoorLaunch
 import splice.share.SharedDoorRow
 
-internal class NetworkCaller(relay: ShareRelay, private val lane: ClaudeLane, machine: String) :
-    DoorCaller(RefusalVoice(NETWORK_ERROR_PREFIX), relay, TERMINAL_DOOR) {
+internal class NetworkCaller(private val lane: ClaudeLane, machine: String) :
+    DoorCaller(RefusalVoice(NETWORK_ERROR_PREFIX), TERMINAL_DOOR) {
     override fun presents(header: String?): Boolean = false
 
     override fun closed(): String? = null
+
+    override fun default(lineup: DesktopLineup): String? = lane.starting(lineup).first
 
     override fun window(): Long? = lane.declared()
 

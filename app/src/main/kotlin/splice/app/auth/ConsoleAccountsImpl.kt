@@ -37,10 +37,12 @@ internal class ConsoleAccountsImpl(
     override suspend fun startLogin(headKey: String, label: String?, restart: HeadRestart): LoginStart {
         val topology = topologies.read()
         val provider = provider(headKey, topology) ?: return LoginStart.UnknownHead
-        if (!AuthKindRegistry.isOAuth(provider.auth.kind)) {
+        val command = provider.auth.isCommand
+        if (!AuthKindRegistry.isOAuth(provider.auth.kind) && !command) {
             return LoginStart.UnsupportedAuthKind(provider.auth.kind)
         }
-        return LoginStart.Started(sessions.start(headKey, provider, topology, label, restart))
+        // custom-provider (cp-login): a command sign-in leaves its key in the daemon's memory, so no head restarts for it
+        return LoginStart.Started(sessions.start(headKey, provider, topology, label, restart.takeUnless { command }))
     }
 
     override fun pollLogin(id: String): LoginStatus? = sessions.poll(id)

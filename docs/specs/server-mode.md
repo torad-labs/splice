@@ -262,6 +262,32 @@ Drafted checks for these exist and are committed with the P2 plan once P1 has la
   `permission_error` naming it. `[server.limits] tpm_per_person` refuses a person's next turn with 429 once their
   last minute's tokens reach the cap.
 
+## The team gateway (gateway-no-heads)
+
+A team reaches the gateway through the same keyed listener: `/door/v1/messages`, `/door/v1/messages/count_tokens` and
+`/door/v1/models`, with a person's key. The gateway reads the request, resolves the model it names (the provider's own
+`claude-<provider>--<id>`, a selector under an old head prefix, a `[door.selector_aliases]` entry, or a readable name) to
+the provider that serves it, and serves the turn on that provider's own serving: no head is read and none is relayed to.
+What is the server's holds on that *selected provider*, never on the selector the client wrote:
+
+- the key, per-person caps (in flight, requests and tokens a minute), budgets and the ledger row, as for a head's turn,
+  the row naming the provider as its command;
+- the allowlist (`--commands`): a provider is allowed by its own key or by the command or key of a head that runs it, so
+  a person allowed `alpha` is refused `beta` with a 403 naming `beta` whether they asked for `claude-beta--m` or for an
+  old prefix of beta's, and `GET /door/v1/models` lists only what they may use. Each name means one provider: a name that
+  is a head's command and also another provider's key keeps the head's meaning, and boot reports the clash;
+- the minimum client: an older laptop's turn is answered in the conversation and takes no slot;
+- a streamed turn is kept alive by the gateway's own client channel, the one every provider turn writes through, which
+  pings its client every two seconds while the answer is silent to learn whether it left. `[server] keepalive_seconds`
+  shortens that tick when it is below two (`1` pings every second), the listener passing the cadence as typed turn
+  metadata, not a header; the heartbeat and progress line keep their own timing. `0`, or any value from two up, adds
+  nothing: the two-second tick is the floor. A response that is not streamed is not pinged;
+- the upstream the person prefers and the id the ledger names the turn by travel to the provider as metadata this
+  listener authors, never as a header a caller could set.
+
+`[server] commands` serves a provider by its key too (no head needed), except a provider that signs with one person's
+plan login. The `/<command>/...` routes of the heads that exist keep working beside the door, unchanged.
+
 ## P3
 
 - **F13 forward_auth** for the team's dashboards on the same sign-in, with an email allowlist and admins; a

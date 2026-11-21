@@ -59,9 +59,18 @@ public data class AuthConfig(
     val kind: String,
     val file: String? = null,
     val env: String? = null,
+    /** custom-provider (issue #680): with kind = "command", the shell command that prints the current credential, as
+     *  `{"token": "...", "expires_at": "<RFC 3339>"}` or one bare line. Required with that kind, refused on any other. */
+    @SerialName("credential_command") val credentialCommand: String? = null,
+    /** custom-provider: with kind = "command", the interactive sign-in a person runs (a team CLI's browser or device
+     *  OAuth). Optional, and refused on any other kind. */
+    @SerialName("login_command") val loginCommand: String? = null,
 ) {
     /** True for the api-key scheme — [API_KEY_WIRE], declared once beside the registered kinds. */
     public val isApiKey: Boolean get() = kind == API_KEY_WIRE
+
+    /** True for the command scheme — [COMMAND_AUTH_WIRE]: a command the team ships prints the key. */
+    public val isCommand: Boolean get() = kind == COMMAND_AUTH_WIRE
 
     /** The api-key env var a head actually reads: the explicit [env], else the derived
      *  `<KEY>_API_KEY` default the daemon synthesizes. One source for daemon wiring AND the CLI so a

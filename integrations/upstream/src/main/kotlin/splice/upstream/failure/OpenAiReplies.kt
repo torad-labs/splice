@@ -17,6 +17,7 @@ import splice.core.failure.RefusedBy
 import splice.core.failure.ServerFault
 import splice.core.wire.HttpStatus
 import java.time.Duration
+import kotlin.math.ceil
 
 /** Reads an OpenAI-shaped failure by its status, refined by its error object's code: the rows OpenAI's two APIs
  *  share, which each of their standards reads before adding its own, and the reading a provider that declared none of
@@ -95,15 +96,28 @@ public object OpenAiReplies {
     }
 
     /** A 5xx. A capacity code (the backend's server_is_overloaded and slow_down, codex-rs PR #31058, or any code
-     *  spelling an overload) is an overload whatever the 5xx, as the shared classifier read it; 503 is one too. */
+     *  spelling an overload) is an overload whatever the 5xx, as the shared classifier read it; 503 is one too, and a
+     *  529 that carries a pushback. */
     private fun serverSide(
         status: Int,
         error: OpenAiError,
         said: ProviderWords?,
         stated: Stated,
-    ): FailureCause.Provider = when {
-        status == HttpStatus.SERVICE_UNAVAILABLE || CAPACITY.containsMatchIn(key(error)) ->
-            FailureCause.Provider.Overloaded(stated.pushback() ?: Lift.Unstated, loading = false, said)
+    ): FailureCause.Provider {
+        val pushback = stated.pushback()
+        return when {
+            status == HttpStatus.SERVICE_UNAVAILABLE || CAPACITY.containsMatchIn(key(error)) ->
+                FailureCause.Provider.Overloaded(pushback ?: Lift.Unstated, loading = false, said)
+            // custom-provider (cp-errors): a 529 that says when to come back is an overload, so Claude Code gets it
+            // at once and waits; one that says nothing keeps today's handling
+            status == HttpStatus.OVERLOADED && pushback != null ->
+                FailureCause.Provider.Overloaded(pushback, loading = false, said)
+            else -> failed(status, said)
+        }
+    }
+
+    /** A 5xx that is not an overload. */
+    private fun failed(status: Int, said: ProviderWords?): FailureCause.Provider = when {
         status == HttpStatus.INTERNAL_SERVER_ERROR -> FailureCause.Provider.ServerError(ServerFault.INTERNAL, said)
         status == HttpStatus.BAD_GATEWAY -> FailureCause.Provider.ServerError(ServerFault.BAD_GATEWAY, said)
         status == HttpStatus.GATEWAY_TIMEOUT -> FailureCause.Provider.ServerError(ServerFault.GATEWAY_TIMEOUT, said)
@@ -120,13 +134,20 @@ public object OpenAiReplies {
 
 /** What a reply states about when to come back. An in-band event, with no [reply], states nothing. */
 private class Stated(private val reply: FailedReply?) {
-    /** Retry-After, then OpenAI's retry-after-ms: the pushback an overload or a limit asks for. */
+    /** Retry-After, then OpenAI's retry-after-ms: the pushback an overload or a limit asks for. A wait in
+     *  milliseconds is rounded up to whole seconds here, where it is read, since a client is told whole seconds and
+     *  is never told to come back sooner than the provider asked (custom-provider, cp-errors: 1 ms is 1 s, 1001 ms
+     *  is 2 s). */
     fun pushback(): Lift.At? {
         val reply = reply ?: return null
         return ReplyFacts.retryAfterLift(reply)
             ?: reply.header("retry-after-ms")?.trim()?.toDoubleOrNull()?.takeIf { it.isFinite() && it >= 0 }
-                ?.let { ReplyFacts.liftAfter(reply, it.toLong(), LiftSource.RETRY_AFTER) }
+                ?.let { ReplyFacts.liftAfter(reply, wholeSeconds(it), LiftSource.RETRY_AFTER) }
     }
+
+    /** [ms] rounded up to whole seconds, in milliseconds. */
+    private fun wholeSeconds(ms: Double): Long =
+        Duration.ofSeconds(ceil(ms / Duration.ofSeconds(1).toMillis()).toLong()).toMillis()
 
     /** When a rate limit lifts: the pushback, else the reset of each bucket OpenAI's x-ratelimit-reset-requests and
      *  -tokens say is empty, or of both when they say neither is, since a request needs both. */

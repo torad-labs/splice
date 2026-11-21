@@ -6,7 +6,6 @@
 // (HD-24) as the file that owns the InflightGate and the materialization lease together.
 package splice.head.admission
 
-import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
@@ -15,6 +14,7 @@ import splice.core.client.SESSION_HEADER
 import splice.core.memory.HeapLease
 import splice.core.perf.OutcomeTag
 import splice.head.CompactionPreflight
+import splice.head.GatewayBody
 import splice.head.HeadDeps
 import splice.head.turn.Materialized
 import splice.head.turn.MaterializedRequest
@@ -115,7 +115,7 @@ internal class AdmissionGate(
         how: Materializing = Materializing(),
         block: MaterializedRequest<Materialized<T>>,
     ): T? = try {
-        val declared = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()?.takeIf { it >= 0L }
+        val declared = GatewayBody.declaredLength(call)
         val cap = deps.policy.maxRequestBytes()
         // An oversized DECLARATION keeps its 413 before any admission wait; an unknown length
         // reserves the full head cap.

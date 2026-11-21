@@ -51,6 +51,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.TokenUrlRefreshCall
+import splice.app.provider.muse.MuseResponsesArm
 import splice.core.auth.RefreshAttempt
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths

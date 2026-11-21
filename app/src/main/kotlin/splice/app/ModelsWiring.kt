@@ -3,7 +3,7 @@
 package splice.app
 
 import splice.app.auth.StoredModelCredentials
-import splice.app.provider.JdkLocalHttp
+import splice.app.provider.local.JdkLocalHttp
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.ApiKeyProviderRegistry
 import splice.core.util.EnvReader

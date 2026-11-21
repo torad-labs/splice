@@ -21,6 +21,8 @@ import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
+import splice.diagnostics.doctor.accounts.AccountPoolProjection
+import splice.diagnostics.doctor.accounts.AccountPoolText
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
 import splice.upstream.credentials.AccountSwitchReason

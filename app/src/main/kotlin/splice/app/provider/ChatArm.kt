@@ -7,6 +7,12 @@
 package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
+import splice.app.provider.local.JdkHealthHttp
+import splice.app.provider.local.JdkLocalHttp
+import splice.app.provider.local.LocalProbeInputs
+import splice.app.provider.local.LocalRowsCheck
+import splice.app.provider.local.RuntimeSlotCount
+import splice.app.provider.local.SlotTables
 import splice.app.server.UpstreamPools
 import splice.core.auth.Credentials
 import splice.core.topology.AuthKind
@@ -30,10 +36,11 @@ internal class ChatArm(
     private val grokRefresh: GrokRefresh,
     /** Server mode (F4): the pools of the providers that list upstreams, shared by every head of each. */
     private val pools: UpstreamPools = UpstreamPools(probeScope, log, JdkHealthHttp()),
+    /** The Grok sign-ins, held once for every arm that serves Grok (GrokResponsesArm asks the same owner). */
+    private val grokAccounts: GrokAccountWiring = GrokAccountWiring(probeScope, log, grokRefresh),
 ) {
     private val overlay = QuirksOverlay()
     private val probeInputs = LocalProbeInputs()
-    private val grokAccounts = GrokAccountWiring(probeScope, log, grokRefresh)
     private val slotTables = SlotTables(RuntimeSlotCount.Background(probeScope, log))
 
     // After compatibility validation: Grok OAuth uses refresh-capable auth; unregistered
@@ -54,10 +61,7 @@ internal class ChatArm(
         val auth = accounts.takeIf { it.isNotEmpty() }
             ?.let(WiredAccounts::providerAccount)
             ?.auth
-            ?: ApiKeyAuthProvider(
-                envVar = providerCfg.auth.effectiveApiKeyEnv(key),
-                keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
-            )
+            ?: KeyAuth().of(ctx)
         if (providerCfg.isLocal) refuseContradictedRows(ctx)
         // A provider that is several servers: its turns go where its pool says, and each server's health check carries
         // what a turn carries (the provider's headers and its key as it stands at the check).
@@ -79,7 +83,7 @@ internal class ChatArm(
             quirks = overlay.chatQuirks(providerCfg, key, label),
             display = { ctx.cfg.current().showReasoning },
             affinity = slotAffinity(ctx, (auth as? ApiKeyAuthProvider)?.keyNow()),
-            replies = chatReplies(providerCfg),
+            replies = chatReplies(providerCfg).words(providerCfg.errorMessages).recording(ctx.head.provider),
             pool = pool,
         )
         val configured = providerCfg.staticHeaders.takeIf { it.isNotEmpty() }

@@ -39,6 +39,10 @@ internal class SignInPlanner {
             AuthKind.Client -> SignInPlan("", kind.signInLabel, tokenCapture = null, credentialFix = "")
             null -> if (providerCfg.auth.kind == API_KEY) {
                 apiKeySignIn(providerCfg, head, command, key)
+            } else if (providerCfg.auth.isCommand) {
+                // custom-provider (cp-login): a command credential signs in through splice, with the team's own flow
+                val login = "splice login $key"
+                SignInPlan(login, head.provider, tokenCapture = null, credentialFix = login)
             } else {
                 SignInPlan("", "", tokenCapture = null, credentialFix = "")
             }

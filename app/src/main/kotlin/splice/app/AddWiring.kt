@@ -7,7 +7,7 @@ import splice.app.auth.AddSignInSessions
 import splice.app.auth.LoginSessions
 import splice.app.cli.AdminSupport
 import splice.app.cli.auth.LoginCommand
-import splice.app.provider.JdkLocalHttp
+import splice.app.provider.local.JdkLocalHttp
 import splice.configuration.add.AddConsole
 import splice.configuration.add.AddDoctor
 import splice.configuration.add.AddLinked

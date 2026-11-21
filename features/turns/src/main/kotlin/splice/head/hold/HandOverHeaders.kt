@@ -9,6 +9,7 @@ package splice.head.hold
 import splice.core.failure.LimitWindow
 import splice.core.failure.RECHECK_SECONDS
 import splice.core.failure.WireAnswer
+import splice.core.wire.WholeSeconds
 import splice.upstream.failure.ReplyFacts.RETRY_AFTER_HEADER
 import java.util.concurrent.TimeUnit
 
@@ -23,10 +24,10 @@ internal object HandOverHeaders {
         val headers = linkedMapOf(
             RETRY_AFTER_HEADER to secondsUntil(toldAt, nowMs).toString(),
             UNIFIED_STATUS to UNIFIED_REJECTED,
-            UNIFIED_RESET to ceilSeconds(toldAt).toString(),
+            UNIFIED_RESET to WholeSeconds.of(toldAt).toString(),
         )
         val member = windowMember(answer.window)
-        if (member != null && reset != null) headers[member] = ceilSeconds(reset).toString()
+        if (member != null && reset != null) headers[member] = WholeSeconds.of(reset).toString()
         return headers
     }
 
@@ -37,9 +38,7 @@ internal object HandOverHeaders {
         LimitWindow.BILLING_CYCLE, LimitWindow.OTHER, null -> null
     }
 
-    private fun secondsUntil(atMs: Long, nowMs: Long): Long = ceilSeconds((atMs - nowMs).coerceAtLeast(0L))
-
-    private fun ceilSeconds(ms: Long): Long = TimeUnit.MILLISECONDS.toSeconds(ms + TimeUnit.SECONDS.toMillis(1L) - 1L)
+    private fun secondsUntil(atMs: Long, nowMs: Long): Long = WholeSeconds.of(atMs - nowMs)
 }
 
 private const val UNIFIED_STATUS = "anthropic-ratelimit-unified-status"

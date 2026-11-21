@@ -9,7 +9,10 @@
 // while any is left, so it is run again until it passes. Which sessions hold such a key is SessionKeys': a planted
 // token counts only when it is one of splice's keys, so a head that forwards the person's own login and a LAN node's
 // planted word are neither relaunched nor left (PR #247 review round 4). No key is printed: the management key goes
-// only into the request's Authorization header, and a session's token is only compared.
+// only into the request's Authorization header, and a session's token is only compared. door-sessions (Nov 20, 2026):
+// a session splice launched on a door, this machine's or another machine's, is taken with the sessions on heads, named
+// by the words `splice sessions` uses (`door`, `door on <machine>`), and left with the command its launch recorded to
+// resume it by hand.
 package splice.app.cli.sessions
 
 import kotlinx.serialization.json.Json
@@ -73,7 +76,7 @@ internal class SessionsRelaunchCommand(
             stop("the session registry could not be listed (${local.shown(unlisted)})")
             return 1
         }
-        val onHeads = listing.sessions.filter(::runsOnAHead)
+        val onHeads = listing.sessions.filter(::launchedBySplice)
         return if (onHeads.isEmpty()) nothingToDo() else relaunchHolders(onHeads)
     }
 
@@ -103,7 +106,7 @@ internal class SessionsRelaunchCommand(
 
     private fun nothingToDo(): Int {
         out.line(
-            "$VERB: no running session on a splice head holds one of splice's keys; nothing to do.",
+            "$VERB: no running session splice launched holds one of splice's keys; nothing to do.",
         )
         return 0
     }
@@ -119,8 +122,9 @@ internal class SessionsRelaunchCommand(
         return if (left == 0) 0 else 1
     }
 
-    private fun runsOnAHead(record: SessionRecord): Boolean = record.availability != SessionAvailability.GONE &&
-        record.head != null && record.sessionId != null && record.process.pid != null
+    /** A running session splice launched on a head or on a door (door-sessions), which a relaunch starts again. */
+    private fun launchedBySplice(record: SessionRecord): Boolean = record.availability != SessionAvailability.GONE &&
+        record.launchedOn != null && record.sessionId != null && record.process.pid != null
 
     private fun pidOf(record: SessionRecord): Long = checkNotNull(record.process.pid)
 
@@ -129,7 +133,7 @@ internal class SessionsRelaunchCommand(
         val id = local.shown(checkNotNull(record.sessionId))
         out.line(
             "  left ${shown(record)} where it is: this command runs in it. Relaunch it from another session, or " +
-                "exit it and resume it on ${local.shown(checkNotNull(record.head))} with -r $id",
+                "exit it and ${local.resumed(record.route, id)}",
         )
     }
 
@@ -179,10 +183,9 @@ internal class SessionsRelaunchCommand(
      *  its terminal. */
     private fun left(record: SessionRecord, why: String): Asked {
         val id = local.shown(checkNotNull(record.sessionId))
-        val head = local.shown(checkNotNull(record.head))
         out.line(
             "  left ${shown(record)} where it is: ${local.shown(why)}. Run this again once it can be relaunched, " +
-                "or exit it and resume it on $head with -r $id",
+                "or exit it and ${local.resumed(record.route, id)}",
         )
         return Asked.LEFT
     }
@@ -192,11 +195,12 @@ internal class SessionsRelaunchCommand(
         return Asked.STOP
     }
 
-    /** Its name and id, and the head it runs on, as `splice sessions` prints registry text. */
+    /** Its name and id, and where it runs in the words `splice sessions` prints: its head, `door`, or
+     *  `door on <machine>`. */
     private fun shown(record: SessionRecord): String {
         val id = local.shown(record.sessionId.orEmpty())
         val name = record.name?.let(local::shown)?.takeIf { it.isNotBlank() }
-        val head = local.shown(record.head.orEmpty())
-        return (if (name == null) id else "$name ($id)") + " on $head"
+        val place = local.placed(record.route).orEmpty()
+        return (if (name == null) id else "$name ($id)") + " on $place"
     }
 }

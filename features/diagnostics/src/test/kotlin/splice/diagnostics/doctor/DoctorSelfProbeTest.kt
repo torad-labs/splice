@@ -16,6 +16,7 @@ import splice.core.config.StatePaths
 import splice.core.testing.TestPorts
 import splice.core.util.EnvReader
 import splice.daemonclient.DaemonHealth
+import splice.diagnostics.doctor.accounts.JdkAccountPoolRead
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path

@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.cli.hook.StdinTerminal
+import splice.app.cli.hook.StreamTerminal
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.wire.HttpStatus
@@ -82,7 +82,7 @@ private fun runStatus(args: List<String>, env: Map<String, String>): StatusRun {
             err = TerminalOutput { err.appendLine(it) },
             env = EnvReader { env[it] },
             stdin = PeerStdin { "" },
-            terminal = StdinTerminal { false },
+            terminal = StreamTerminal { false },
         ).run(args)
     }
     return StatusRun(code, out.toString(), err.toString())

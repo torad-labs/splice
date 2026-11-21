@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.desktop.record.DesktopKey
 import splice.client.desktop.DESKTOP_KEY_PREFIX
 import java.nio.file.Files
 import java.nio.file.Path
@@ -32,7 +33,7 @@ class DesktopKeyTest {
         val key = DesktopKey(file, logs::add).get()
         assertEquals(1, logs.size, "$logs")
         assertTrue(logs[0].contains("$file present but blank"), logs[0])
-        assertTrue(logs[0].contains("the desktop key set in Claude Desktop"), "names the key it refuses: ${logs[0]}")
+        assertTrue(logs[0].contains("the desktop key Claude Desktop held"), "names the key it refuses: ${logs[0]}")
         assertFalse(logs[0].contains(key), "the key is never written to the log: ${logs[0]}")
     }
 

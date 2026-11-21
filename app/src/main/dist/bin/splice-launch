@@ -14,7 +14,7 @@
 
 # Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 # — bump both together whenever this shim's behavior changes. No code generation.
-SPLICE_SHIM_VERSION="shim-27"
+SPLICE_SHIM_VERSION="shim-28"
 # Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 SPLICE_GATEWAY_VERSION="0.6.4"
 
@@ -201,6 +201,17 @@ terminal_pane() {
       ;;
   esac
   return 1
+}
+
+# shim-28: a launch is recorded at the address Claude Code sends its turns to, by Claude Code's own precedence: the
+# Mantle base URL when CLAUDE_CODE_USE_MANTLE=1 (the door, whose recipe unsets ANTHROPIC_BASE_URL), else
+# ANTHROPIC_BASE_URL. Head recipes clear the Mantle switch, so a head's launch records what it did before.
+turns_base_url() {
+  if [ "${CLAUDE_CODE_USE_MANTLE-}" = 1 ]; then
+    printf '%s' "${ANTHROPIC_BEDROCK_MANTLE_BASE_URL-}"
+  else
+    printf '%s' "${ANTHROPIC_BASE_URL-}"
+  fi
 }
 
 # record_launch HEAD BASE_URL KIND — ownership by this process's pid, which exec keeps.
@@ -960,7 +971,7 @@ EOF
   [ "$ar_end" -eq 1 ] && [ "$ar_argc" -gt 0 ] || fail "splice: launch failed: the recipe from the daemon is cut short"
   [ -z "$ar_warning" ] || warn "splice: $ar_warning"
   [ "$ar_native" = 1 ] && exec_argv "$ar_bin" "$@"
-  record_launch "$HEAD" "${ANTHROPIC_BASE_URL-}" session
+  record_launch "$HEAD" "$(turns_base_url)" session
   exec_argv "$@"
 }
 

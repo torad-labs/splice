@@ -3,6 +3,7 @@ package splice.core.topology
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import splice.core.topology.toml.TomlKeys
 
 /** Optional chat effort mapping. Its absence preserves the provider's budget-derived requests. */
 @Serializable

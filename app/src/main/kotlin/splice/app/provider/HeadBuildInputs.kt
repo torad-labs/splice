@@ -11,6 +11,8 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.put
 import splice.app.auth.SignInPlanner
+import splice.app.provider.local.LocalProbeInputs
+import splice.app.provider.local.LocalRowsCheck
 import splice.core.config.ConfigService
 import splice.core.config.SpliceConfig
 import splice.core.model.DiscoveredModel
@@ -40,6 +42,9 @@ internal class HeadBuildInputs(
     private val localProbe: LocalProbeInputs = LocalProbeInputs(),
 ) {
     private val localModels = ConcurrentHashMap<String, List<DiscoveredModel>>()
+
+    /** custom-provider (cp-window): each provider's served window, read once per daemon start. */
+    private val servedWindows = ServedWindows()
     private val headModels = object : HeadDiscoveredModels {
         override fun forHead(key: String): List<DiscoveredModel> = localModels[key] ?: discovered.forHead(key)
         override fun metadataForHead(key: String): List<DiscoveredModel> =
@@ -87,7 +92,8 @@ internal class HeadBuildInputs(
         headCfg: SpliceConfig,
     ): LocalRowsCheck {
         val base = provider.catalogFor(head, headCfg.contextWindowOverride)
-        return localProbe.check(provider, localProbe.bearer(key, provider, EnvReader(System::getenv)), base)
+        val bearer = localProbe.bearer(key, provider, EnvReader(System::getenv))
+        return localProbe.check(provider, bearer, base, head.listsEvery(provider))
     }
 
     /** A local runtime that answers again, or serves a model it did not at boot, moves the head's window with it
@@ -116,9 +122,11 @@ internal class HeadBuildInputs(
         head: HeadConfig,
         providerCfg: ProviderConfig,
         legacyKnobsGovern: Boolean = true,
+        configKey: String? = key,
     ): ProviderBuild {
-        val headCfg = config.getConfig(key)
-        val resolvedHead = if (legacyKnobsGovern) resolveHeadConfig(head, providerCfg, headCfg) else head
+        val headCfg = config.getConfig(configKey)
+        val resolvedHead = (if (legacyKnobsGovern) resolveHeadConfig(head, providerCfg, headCfg) else head)
+            .servedOn(providerCfg)
         val resolvedProvider = if (legacyKnobsGovern) resolveProviderConfig(providerCfg, headCfg) else providerCfg
         val localRows = if (resolvedProvider.isLocal) {
             askRuntime(key, resolvedHead, resolvedProvider, headCfg).also { found ->
@@ -139,11 +147,13 @@ internal class HeadBuildInputs(
         return ProviderBuild(
             key = key,
             head = resolvedHead,
-            providerCfg = resolvedProvider,
-            catalog = catalogFor(key, head, providerCfg, legacyKnobsGovern),
+            // cp-window: the provider with its served window, so every catalog built from it later
+            // (LiveRosterCatalog) keeps the window it really serves
+            providerCfg = servedWindows.applied(head.provider, key, resolvedProvider),
+            catalog = catalogFor(key, head, providerCfg, legacyKnobsGovern, configKey),
             faultPlan = UpstreamFaultPlan(
                 watchdog = built,
-                liveWatchdog = LiveWatchdogBudget { liveBudget(key, resolvedProvider, built) },
+                liveWatchdog = LiveWatchdogBudget { liveBudget(configKey, resolvedProvider, built) },
                 loginCommand = signInPlanner.signInPlan(resolvedProvider, resolvedHead, key).credentialFix,
             ),
             cfg = headCfg,
@@ -154,8 +164,8 @@ internal class HeadBuildInputs(
     /** [built] with the three live tiers, firstByteTimeoutMs, streamIdleMs and stallReanchorMs, read from head [key]'s own
      *  config as it stands now: a turn asks this when it starts, so a PATCH governs the next turn and no restart. The
      *  no-progress limit (upstreamTimeoutMs) stays as built: it is also the connection's read timeout, restartRequired. */
-    private fun liveBudget(key: String, provider: ProviderConfig, built: WatchdogBudget): WatchdogBudget {
-        val now = config.getConfig(key)
+    private fun liveBudget(configKey: String?, provider: ProviderConfig, built: WatchdogBudget): WatchdogBudget {
+        val now = config.getConfig(configKey)
         return built.copy(
             firstByteTimeout = now.firstByteTimeoutMs.milliseconds,
             streamIdle = now.streamIdleMs.milliseconds,
@@ -172,10 +182,13 @@ internal class HeadBuildInputs(
         head: HeadConfig,
         providerCfg: ProviderConfig,
         legacyKnobsGovern: Boolean = true,
+        configKey: String? = key,
     ): ModelCatalog {
-        val headCfg = config.getConfig(key)
-        val resolvedHead = if (legacyKnobsGovern) resolveHeadConfig(head, providerCfg, headCfg) else head
-        val resolvedProvider = effectiveProvider(key, providerCfg, legacyKnobsGovern)
+        val headCfg = config.getConfig(configKey)
+        val resolvedHead = (if (legacyKnobsGovern) resolveHeadConfig(head, providerCfg, headCfg) else head)
+            .servedOn(providerCfg)
+        val effective = effectiveProvider(key, providerCfg, legacyKnobsGovern)
+        val resolvedProvider = servedWindows.applied(head.provider, key, effective)
         return resolvedProvider.catalogFor(resolvedHead, headCfg.contextWindowOverride, headModels.forHead(key))
     }
 

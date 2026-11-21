@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.client.ClaudePolicy
+import splice.client.SessionHelpers
 import splice.client.login.TokenCaptureSpec
 import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.config.TurnKey
@@ -93,10 +94,15 @@ public data class LaunchSpec(
      *  Claude Code's /effort changes it from there, and every adapter sends what Claude Code's request names. Null
      *  for a spec that names none, such as a command another machine serves. */
     val effort: LaunchEffort? = null,
-    /** Whether a team's server serves this command (server mode, F9): its launch then names this laptop's splice to
-     *  that server, so an older one is told what to upgrade to. False for every other command. */
-    val teamServer: Boolean = false,
+    /** A command a team's server serves (server mode): what its launch tells that server, and where its telemetry goes.
+     *  Null for every other command. */
+    val teamServer: TeamServerLaunch? = null,
 ) {
+    /** The helpers the session's settings carry: the key helper of a head that checks the turn key, and the headers
+     *  helper of a session whose telemetry goes to its server's relay. */
+    public val helpers: SessionHelpers
+        get() = SessionHelpers(gateway.keyHelper, teamServer?.telemetry?.headersHelper)
+
     /** This boot-assembled spec with the current catalog's roster, labels, picker and windows.
      *  Read per launch: provider discoveries and accepted TOML window edits need no daemon restart.
      *  Discovered rows join the picker, never the positional tiers; client spellings follow their windows. */

@@ -60,15 +60,5 @@ public class DaemonSettings(private val errors: TerminalOutput) {
      *  whole port resolution (StatePaths + ConfigService env layer) so a hermetic caller never
      *  reads the real process environment or state dir. */
     public fun controlPort(topology: Topology?, envReader: EnvReader): Int =
-        ConfigService(
-            // V4-109: the state config layer lives in the daemon's RESOLVED state dir.
-            TopologyStatePaths(envReader).of(topology),
-            // No topology (fresh machine / broken TOML) still resolves through the layered config:
-            // the old null-branch returned the hardcoded default, silently IGNORING the state
-            // config.json and SPLICE_CONTROL_PORT layers — which both broke hermetic test rigs
-            // (an ambient real daemon answered instead) and diverged from the launch shim's own
-            // resolution (JW-05 discovery, 2026-08-07).
-            headOverrides = topology?.let { TopologyKnobLayer(it).configOverrides() } ?: emptyMap(),
-            envReader = envReader,
-        ).getConfig().controlPort
+        TopologyStatePaths(envReader).controlPort(topology)
 }

@@ -65,6 +65,13 @@ public data class ModelEntry(
     @SerialName("compaction_reserve_tokens") val compactionReserveTokens: Long? = null,
     /** Endpoint fact, never a compaction target or a TOML setting on a picker row. */
     @Transient val maxContextWindow: Long? = null,
+    /** The model as its provider's own list publishes it (its name, description and reasoning levels), or null for a
+     *  row only splice.toml declares. Never read from TOML: provenance is [DiscoveredModel]'s to carry, same as
+     *  [discovered]. */
+    @Transient val listed: DiscoveredModel? = null,
+    /** custom-provider (issue #680): the most this model is asked to write in one turn. A turn asking more is asked
+     *  for this; absent = what the turn asked. Positive; boot names any other value. */
+    @SerialName("max_output_tokens") val maxOutputTokens: Long? = null,
 ) {
 
     init {
@@ -101,7 +108,7 @@ public data class ExtraWindow(
 
 /** Input-size refusal ceiling, independent of the client's chosen compaction target.
  * Raw picker spellings precede the bare id, just as target-window resolution does. */
-internal object ModelServeWindows {
+public object ModelServeWindows {
     public fun forRow(catalog: ModelCatalog, id: String): Long {
         val current = catalog.live()
         val raw = current.unwrap(id)

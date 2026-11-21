@@ -3,6 +3,7 @@
 // version). Split from DoctorJsonReport.kt so the emitter file carries the emission only.
 package splice.diagnostics.doctor.report
 
+import kotlinx.serialization.json.JsonObject
 import splice.accounts.pool.HeadAccountPoolView
 import splice.core.topology.Topology
 import splice.diagnostics.doctor.DoctorCheck
@@ -59,6 +60,9 @@ internal data class DoctorRun(
     val sections: List<Pair<String, List<DoctorCheck>>>,
     /** v0.4.0 (FEATURES.md §11): the account pools the running daemon reported, keyed by head. */
     val accountPools: Map<String, HeadAccountPoolView> = emptyMap(),
+    /** custom-provider (cp-diagnostics): the heads `splice claude --json` names, in its shape; empty without a
+     *  daemon. */
+    val heads: List<JsonObject> = emptyList(),
 )
 
 /** The Claude Code version as the text doctor captured it (`claude --version`, once). */

@@ -8,6 +8,7 @@
 package splice.dialect.responses
 
 import splice.core.auth.Credentials
+import splice.core.model.OutputCap
 import splice.core.parse.AnthropicTurnBody
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
@@ -91,7 +92,8 @@ public abstract class ResponsesProvider(
     }
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
-        val built = parts.builder.build(body.typed, body.raw, parts.turnOptions.build(body, compact, sessionId))
+        val capped = body.withOutputCap(OutputCap(catalog).of(catalog.stripSuffixes(body.typed.model)))
+        val built = parts.builder.build(capped.typed, capped.raw, parts.turnOptions.build(capped, compact, sessionId))
         return BuiltTurn(
             built.req,
             built.meta,

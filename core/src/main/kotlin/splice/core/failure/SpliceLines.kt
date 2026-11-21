@@ -30,6 +30,8 @@ internal data class LineFacts(
     val local: Boolean,
     val request: RequestFacts,
     val now: Instant,
+    /** What a line says of the provider itself (VoiceFacts.provider). */
+    val provider: ProviderVoice = ProviderVoice(),
 )
 
 /** What a turn does next about a failure it is recovering from. */
@@ -84,7 +86,16 @@ internal class SpliceLines(time: LocalTimeText = LocalTimeText()) {
             is Next.Then -> then.text
             Next.None -> null
         }
-        return fit(said.what, said.quote, next)
+        return whole(cause, said, next, facts) ?: fit(said.what, said.quote, next)
+    }
+
+    /** A line said whole, however long: one its sentence asks for whole, or (custom-provider, cp-errors) one whose
+     *  provider asked for its own words, quoted whole after splice's sentence; null for any other. */
+    private fun whole(cause: FailureCause, said: Said, next: String?, facts: LineFacts): SpliceLine? {
+        val tail = next?.let { " $it" }.orEmpty()
+        if (said.whole) return SpliceLine("$SPLICE_PREFIX${said.what}.$tail")
+        val words = (cause as? FailureCause.Provider)?.said?.takeIf { facts.provider.wholeWords } ?: return null
+        return SpliceLine("$SPLICE_PREFIX${said.what}: ${words.text}$tail")
     }
 
     /** Whether this ending is the end of the road: the identical request before it already ended the same way, and
@@ -165,7 +176,13 @@ internal const val SEND_AFTER = "Send the message again after that time."
 
 /** One line before it is fitted: what happened, as a sentence without its period; the provider's words it may quote,
  *  set only on refused, rejected, forbidden, payment and unrecognized lines; and what happens next. */
-internal data class Said(val what: String, val quote: ProviderWords? = null, val next: Next = Next.None)
+internal data class Said(
+    val what: String,
+    val quote: ProviderWords? = null,
+    val next: Next = Next.None,
+    /** The line is said whole, however long: its fix names a key the person must read to act on it (cp-tls). */
+    val whole: Boolean = false,
+)
 
 /** What a line says after what happened. */
 internal sealed class Next {

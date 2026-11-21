@@ -5,7 +5,7 @@ package splice.app.cli.status
 
 import splice.app.cli.AdminSupport
 import splice.app.cli.auth.CliSignIn
-import splice.app.desktop.ClaudeLaneLook
+import splice.app.desktop.lane.ClaudeLaneLook
 import splice.core.GATEWAY_VERSION
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepthProbe
@@ -17,8 +17,8 @@ import splice.core.util.LogSink
 import splice.daemonclient.DaemonHealth
 import splice.daemonclient.DaemonProbe.HealthQuota
 import splice.daemonclient.DaemonProbe.HealthView
-import splice.diagnostics.doctor.AccountPoolRead
-import splice.diagnostics.doctor.JdkAccountPoolRead
+import splice.diagnostics.doctor.accounts.AccountPoolRead
+import splice.diagnostics.doctor.accounts.JdkAccountPoolRead
 import splice.topology.TopologyLoader
 import splice.topology.TopologyStatePaths
 

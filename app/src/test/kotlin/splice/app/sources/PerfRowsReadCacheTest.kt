@@ -8,11 +8,11 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.perf.PerfArchiveName
+import splice.core.testing.ChangeClock
 import splice.usage.perf.PerfRow
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption.APPEND
-import java.nio.file.attribute.FileTime
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -184,7 +184,8 @@ class PerfRowsCacheIntegrityTest {
         val modified = Files.getLastModifiedTime(file)
         val source = PerfRowsFileSource(file)
         assertEquals(listOf(1L, 2L), source.window(0).rows.map { it.ts })
-        afterChangeTick(file)
+        // a same-size repair shows only in the file's change time, which two changes inside one tick share
+        ChangeClock.tickAfter(file)
         Files.writeString(file, "{\"ts\":9}\n{\"ts\":8}\n")
         Files.setLastModifiedTime(file, modified)
         assertEquals(listOf(9L, 8L), source.window(0).rows.map { it.ts })
@@ -200,29 +201,11 @@ class PerfRowsCacheIntegrityTest {
         val modified = Files.getLastModifiedTime(file)
         val source = PerfRowsFileSource(file)
         assertEquals(listOf(1L), source.window(0).rows.map { it.ts })
+        ChangeClock.tickAfter(file)
         Files.writeString(file, "{\"ts\":9}")
         Files.setLastModifiedTime(file, modified)
         assertEquals(listOf(9L), source.window(0).rows.map { it.ts })
         source.window(0)
         assertEquals(2L, source.parsedLines, "an identical repaired tail does not decode again")
     }
-
-    /** Returns once the file system stamps a change later than [file]'s own change time. A same-size repair whose
-     *  modification time is put back shows only in the file's change time, and a kernel that stamps changes from its
-     *  coarse clock (Linux before 6.13, one tick of a millisecond or more) gives two changes inside one tick the same
-     *  time, which nothing that reads stamps can tell apart. The repair is therefore made after the tick. Until Nov 21,
-     *  2026 it was made at once, and the test failed on a fast machine whenever the first read and the repair fell
-     *  inside one tick. A file system with no change time needs no wait: the cache compares the bytes there. */
-    private fun afterChangeTick(file: Path) {
-        if ("unix" !in file.fileSystem.supportedFileAttributeViews()) return
-        val stamped = Files.getAttribute(file, CHANGE_TIME) as FileTime
-        val probe = file.resolveSibling("change-tick-probe")
-        do {
-            Files.writeString(probe, "")
-        } while ((Files.getAttribute(probe, CHANGE_TIME) as FileTime) <= stamped)
-        Files.delete(probe)
-    }
 }
-
-// The change time of a file, where the file system keeps one (PerfRowsCache reads the same attribute).
-private const val CHANGE_TIME = "unix:ctime"

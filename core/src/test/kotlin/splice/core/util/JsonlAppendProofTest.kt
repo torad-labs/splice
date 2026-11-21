@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.testing.ChangeClock
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -39,6 +40,8 @@ class JsonlAppendProofTest {
         val before = JsonlAppendProof.version(file)
         val previous = JsonlAppendProof.current(file)
         val mtime = Files.getLastModifiedTime(file)
+        // the rewrite shows only in the file's change time, which two changes inside one tick share
+        ChangeClock.tickAfter(file)
         Files.writeString(file, "{\"ts\":9}\n{\"ts\":8}\n")
         Files.setLastModifiedTime(file, mtime)
         JsonlSink.appendLine(file, "{\"ts\":3}")

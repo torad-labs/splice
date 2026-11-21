@@ -18,6 +18,7 @@ import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
 import splice.core.perf.PerfArchiveName
 import splice.core.perf.PerfKeys
+import splice.core.testing.ChangeClock
 import splice.core.util.JsonlSink
 import splice.usage.UsageHead
 import splice.usage.UsageHeadSinks
@@ -202,6 +203,8 @@ class PerfTurnsProjectionTest {
         val repaired = (1L..100L).joinToString("") { row(it + 1_000) } + row(101)
         val key = Files.getAttribute(file, "fileKey")
         val modified = Files.getLastModifiedTime(file)
+        // the repair shows only in the file's change time, which two changes inside one tick share
+        ChangeClock.tickAfter(file)
         Files.writeString(file, repaired)
         Files.setLastModifiedTime(file, modified)
         assertEquals(key, Files.getAttribute(file, "fileKey"), "the control repairs the same inode")

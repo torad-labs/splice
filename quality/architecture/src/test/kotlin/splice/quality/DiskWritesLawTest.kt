@@ -327,6 +327,10 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/desktop/StateRecords.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/desktop/DesktopSettingsFile.kt" to
         mapOf("writeAtomic0600(" to 1, "writeAtomic(" to 1),
+    "app/src/main/kotlin/splice/app/desktop/DesktopAppLibrary.kt" to mapOf(".writeText(" to 1),
+    "app/src/main/kotlin/splice/app/desktop/DesktopLibraryFiles.kt" to
+        mapOf("writeAtomic(" to 1, "writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/desktop/DesktopPrograms.kt" to mapOf("writeAtomic(" to 2),
     // The console launch page, 0600, documented in the console-open.html README row.
     "app/src/main/kotlin/splice/app/cli/status/ConsoleCommand.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/ConfigService.kt" to mapOf("writeAtomic0600(" to 1),

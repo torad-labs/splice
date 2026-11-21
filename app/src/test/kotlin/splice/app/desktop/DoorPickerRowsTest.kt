@@ -204,6 +204,10 @@ internal class DoorPickerRowsTest {
         assertEquals("true", discovered.getValue("supports_reasoning").jsonPrimitive.content)
         assertNull(discovered["thinking"])
         assertNull(discovered["capabilities"])
+        val settings = DesktopModelSettings(AnthropicTiers(), mapOf("opus" to "claude-opus-5-5"))
+            .models(listOf(model)).single().jsonObject
+        assertNull(settings["behavesAs"])
+        assertNull(settings["maxEffort"])
     }
 
     private fun ask(model: String): DoorAsk = DoorAsk(

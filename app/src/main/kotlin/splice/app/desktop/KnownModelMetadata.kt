@@ -7,7 +7,8 @@ import java.net.URISyntaxException
  *  Host and exact model id are both required, so a different provider is never given another vendor's metadata.
  *  Sources: https://dev.meta.ai/docs/models, https://dev.meta.ai/docs/choose-a-model,
  *  https://www.kimi.com/code/docs/en/kimi-code/models.html, https://docs.x.ai/developers/models,
- *  https://platform.claude.com/docs/en/models/overview and Claude's published model catalog. */
+ *  https://platform.claude.com/docs/en/models/overview, https://api-docs.deepseek.com/ and Claude's published model
+ *  catalog. */
 internal object KnownModelMetadata {
     fun find(baseUrl: String, id: String): KnownModel? {
         val host = try {
@@ -78,13 +79,30 @@ internal object KnownModelMetadata {
             "k3.1-pro-highspeed" to KnownModel(
                 description = "K3.1 Pro with faster output and about twice the quota usage.",
             ),
+            "k3" to KnownModel(description = "Kimi K3 for large codebases and long-document tasks."),
+            "k3-256k" to KnownModel(description = "Kimi K3 with a 256K context window."),
+            "kimi-for-coding" to KnownModel(description = "K2.8 Preview for code completion and routine development."),
+            "kimi-for-coding-highspeed" to KnownModel(description = "High-speed K2.7 Code for coding tasks."),
         ),
         "api.x.ai" to mapOf(
+            "grok-4.7" to KnownModel(description = "Grok for coding, agentic tasks and knowledge work."),
+            "grok-4.6" to KnownModel(description = "Grok 4.6 for coding and reasoning tasks."),
+            "grok-build-latest" to KnownModel(description = "Grok Build for software engineering and agent workflows."),
+            "grok-4.3" to KnownModel(description = "Grok 4.3 for tool use and instruction following."),
             "grok-4.20-0309-non-reasoning" to KnownModel("Grok 4.20 Non-Reasoning", "Grok 4.20 without reasoning."),
             "grok-4.20-0309-reasoning" to KnownModel("Grok 4.20 Reasoning", "Grok 4.20 with reasoning."),
             "grok-4.20-multi-agent-0309" to KnownModel("Grok 4.20 Multi-Agent", "Grok's multi-agent research model."),
         ),
         "api.anthropic.com" to mapOf(
+            "claude-opus-5-5" to KnownModel(description = "For long-running agentic coding and knowledge work."),
+            "claude-opus-5" to KnownModel(description = "Claude Opus for deep reasoning and long-running tasks."),
+            "claude-sonnet-5-5" to KnownModel(
+                description = "Balances speed and capability for coding and knowledge work.",
+            ),
+            "claude-sonnet-5" to KnownModel(description = "Claude Sonnet for coding and agentic tasks."),
+            "claude-fable-5" to KnownModel(description = "Claude Fable for demanding reasoning and agentic work."),
+            "claude-fable-5-1" to KnownModel(description = "Claude Fable for demanding reasoning and agentic work."),
+            "claude-haiku-4-5" to KnownModel(description = "Claude Haiku for fast, efficient tasks."),
             "claude-fable-5-2" to KnownModel(description = "For demanding reasoning and long-horizon agentic work."),
             "claude-haiku-5-5" to KnownModel(
                 description = "For fast, high-volume tasks such as classification and routing.",
@@ -95,6 +113,10 @@ internal object KnownModelMetadata {
             "claude-opus-4-5-20251101" to KnownModel(description = "Claude Opus 4.5 with manual thinking."),
             "claude-sonnet-4-6" to KnownModel(description = "Claude Sonnet for everyday coding and knowledge work."),
             "claude-sonnet-4-5-20250929" to KnownModel(description = "Claude Sonnet 4.5 with manual thinking."),
+        ),
+        "api.deepseek.com" to mapOf(
+            "deepseek-flash" to KnownModel(description = "DeepSeek V4.1 Flash with visual input and thinking modes."),
+            "deepseek-v4-pro" to KnownModel(description = "DeepSeek V4 Pro with thinking and non-thinking modes."),
         ),
     )
 }

@@ -28,8 +28,7 @@ internal class DesktopModelSettings(private val tiers: AnthropicTiers, private v
     }
 
     private fun effort(into: JsonObjectBuilder, model: ServedModel) {
-        val reasoning = model.fact.reasons || model.fact.reasoningLevels.isNotEmpty()
-        val control = newest["opus"].takeIf { model.claude == null && reasoning }
+        val control = newest["opus"].takeIf { model.claude == null && model.fact.reasoningLevels.isNotEmpty() }
         control?.let {
             into.put("behavesAs", it)
             DesktopEffort.max(model)?.let { level -> into.put("maxEffort", level) }

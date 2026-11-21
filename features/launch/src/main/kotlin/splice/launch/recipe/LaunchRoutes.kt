@@ -47,10 +47,6 @@ public class LaunchRoutes(
 
     public suspend fun launch(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
-        // door-network: a `[remote.claude]` is where the person said `claude` runs, another machine's door or head, so
-        // it is asked before this machine's own door and head.
-        val elsewhere = launchService?.remotes?.takeIf { key == CLAUDE_COMMAND }?.launch(key)
-        if (elsewhere != null) return remoteReply(call, key, elsewhere)
         val door = doorLaunch(key)
         if (door != null) return doorReply(call, key, door)
         val targets = heads.targets(key)
@@ -127,7 +123,6 @@ public class LaunchRoutes(
         val service = requireNotNull(launchService)
         val spec = when (remote) {
             is RemoteLaunch.Refused -> return refuse(call, key, remote.reason, HttpStatusCode.Conflict)
-            is RemoteLaunch.Door -> return doorReply(call, key, remote.spec)
             is RemoteLaunch.Ready -> remote.spec
         }
         val request = receiveLaunchRequest(call)

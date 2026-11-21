@@ -328,7 +328,11 @@ class ProviderWordsFilterPropertyTest {
         val out = whole(raw)
 
         assertEquals(raw, out)
-        assertNull(words(raw), "filtered mode still cuts the same body")
+        assertEquals(
+            "You have run out of credits or need a Grok subscription.",
+            words(raw),
+            "filtered mode keeps only the first sentence, dropping the URL and retry-advice ones",
+        )
     }
 
     @Test

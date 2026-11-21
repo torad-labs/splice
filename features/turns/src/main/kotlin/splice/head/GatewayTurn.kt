@@ -11,11 +11,19 @@ import io.ktor.util.AttributeKey
 /** One turn as the gateway hands it to a [ProviderRuntime]: [body] is the client's body with `model` already set to
  *  the provider's own id, [door] is what the perf row's `door` says (`desktop`, `claude` or `network`), and
  *  [clientWindow] is the window this session's client holds, which counts are scaled to; null when the gateway does
- *  not know it, which leaves the window to what the request and the session's own posts say. */
+ *  not know it, which leaves the window to what the request and the session's own posts say.
+ *
+ *  The three that follow are what an authenticated listener in front of the gateway (the team server) says of a turn it
+ *  relays: the server its person prefers, the id it named the turn by, and the notice it sends in place of the turn.
+ *  They are typed values the gateway fills, never read from the call's headers: a header on a gateway call is the
+ *  caller's, and a caller must not name a ledger row it does not own or pick the upstream. A plain door turn has none. */
 public class GatewayTurn(
     public val body: ByteArray,
     public val door: String,
     public val clientWindow: Long?,
+    public val preferredUpstream: String? = null,
+    public val servedTurn: String? = null,
+    public val notice: String? = null,
 ) {
     /** [body] as a bounded read of it, the same answer a head's own read of a call's body gives: the body, or the cap
      *  it exceeded. */

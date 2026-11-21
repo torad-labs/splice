@@ -6,6 +6,8 @@ package splice.head.scripted
 
 import splice.core.auth.ClientAuthProvider
 import splice.core.config.RequestByteCap
+import splice.core.server.ServedTurnBoard
+import splice.core.server.ServedTurns
 import splice.core.topology.ForwardHeaders
 import splice.core.util.LogSink
 import splice.dialect.anthropic.PassthroughProvider
@@ -38,20 +40,23 @@ public class HeadlessProviders internal constructor(private val heads: ScriptedH
         val pool: AccountPool? = null,
         val maxRequestBytes: Int? = null,
         val forwardsLogin: Boolean = false,
+        val served: ServedTurns = ServedTurnBoard(),
     )
 
     /** An OpenAI Chat Completions provider holding its own login, as an API-key provider does. [forwarded] names the
-     *  caller's headers its provider's forward_headers asks to ride upstream. */
+     *  caller's headers its provider's forward_headers asks to ride upstream, and [served] is the board its turns tell
+     *  how they went. */
     public suspend fun chat(
         shape: HeadShape = HeadShape(),
         maxRequestBytes: Int? = null,
         forwarded: ForwardHeaders = ForwardHeaders(emptyList()),
+        served: ServedTurns = ServedTurnBoard(),
     ): HeadlessProvider {
         heads.provider.start()
         val key = "scripted-headless-chat"
         val tuned = heads.tuning(key, shape, heads.provider.baseUrl, HeadAccounts().login.auth(key), loginCommand = "")
-        val served = ScriptedChatProvider(tuned, ChatQuirks(tuned.key), Replies(ChatReplies))
-        return serve(key, shape, served, Wiring(forwarded = forwarded, maxRequestBytes = maxRequestBytes))
+        val provider = ScriptedChatProvider(tuned, ChatQuirks(tuned.key), Replies(ChatReplies))
+        return serve(key, shape, provider, Wiring(forwarded, null, maxRequestBytes, served = served))
     }
 
     /** An Anthropic Messages provider that holds no login of its own and forwards a caller's (as `claude` does), with
@@ -66,7 +71,7 @@ public class HeadlessProviders internal constructor(private val heads: ScriptedH
         return serve(key, HeadShape(), served, Wiring(pool = pool, forwardsLogin = true))
     }
 
-    private fun serve(key: String, shape: HeadShape, served: Provider, wiring: Wiring): HeadlessProvider {
+    private fun serve(key: String, shape: HeadShape, provider: Provider, wiring: Wiring): HeadlessProvider {
         val time = heads.time
         val upstream = UpstreamClient(
             totalTimeoutMs = shape.budget.inWholeMilliseconds,
@@ -82,11 +87,12 @@ public class HeadlessProviders internal constructor(private val heads: ScriptedH
         val limited = if (cap == null) policy else policy.copy(maxRequestBytes = RequestByteCap { cap })
         val deps = base.copy(
             traffic = base.traffic.copy(liveTurns = LiveTurns(time.elapsed)),
+            seams = base.seams.copy(reports = base.seams.reports.copy(served = wiring.served)),
             stores = headStores(tmp, suffix = suffix),
             policy = limited,
             quotaBundle = if (wiring.pool == null) base.quotaBundle else quotaFor(null, wiring.pool),
         )
-        val runtime = ProviderRuntime(served, deps, forwarded = wiring.forwarded)
+        val runtime = ProviderRuntime(provider, deps, forwarded = wiring.forwarded)
         runtime.start()
         return HeadlessProvider(runtime, tmp.resolve("perf$suffix.jsonl"))
     }

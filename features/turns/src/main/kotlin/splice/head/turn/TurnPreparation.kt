@@ -46,7 +46,6 @@ import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.session.ActivityAction
-import splice.core.turn.SERVED_NOTICE_HEADER
 import splice.core.util.Cancellables
 import splice.core.wire.AnthropicRequest
 import splice.head.ActivityLabel
@@ -234,7 +233,7 @@ internal class TurnPreparation(
     ): Preparation {
         // A turn the server listener hands on to be answered with its notice alone (server mode, F9: a laptop older
         // than the server's minimum is told what to upgrade to), in the conversation, whatever model it asked.
-        val notice = call.request.headers[SERVED_NOTICE_HEADER]?.takeIf(String::isNotBlank)
+        val notice = RelayHeaders.notice(call)
         if (notice != null) {
             perf.mark(PerfKeys.PARSE)
             deps.log("[${provider.key}] server notice answered locally (${who(named.sessionId)}no upstream turn)\n")

@@ -21,12 +21,15 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.server.ServedTurn
+import splice.core.server.ServedTurns
 import splice.core.topology.ForwardHeaders
 import splice.head.scripted.ProviderRequest
 import splice.head.scripted.ScriptedLogin
 import splice.head.scripted.reply
 import splice.head.scripted.withScriptedHeads
 import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
 
 class ProviderRuntimeTest {
     /** What the gateway's caller read back. */
@@ -48,7 +51,11 @@ class ProviderRuntimeTest {
     private val gatewayKey = "gateway-door-key-0123456789"
 
     /** Posts [received], with the gateway's key on it, to a route that hands [runtime] [turn]. */
-    private suspend fun post(runtime: ProviderRuntime, turn: GatewayTurn): Answer {
+    private suspend fun post(
+        runtime: ProviderRuntime,
+        turn: GatewayTurn,
+        extra: Map<String, String> = emptyMap(),
+    ): Answer {
         var answer: Answer? = null
         testApplication {
             routing { post("/v1/messages") { runtime.serve(call, turn) } }
@@ -56,6 +63,7 @@ class ProviderRuntimeTest {
                 contentType(ContentType.Application.Json)
                 header("Authorization", "Bearer $gatewayKey")
                 header("x-api-key", gatewayKey)
+                extra.forEach { (name, value) -> header(name, value) }
                 setBody(received)
             }
             answer = Answer(response.status.value, response.headers["x-should-retry"], response.bodyAsText())
@@ -175,6 +183,78 @@ class ProviderRuntimeTest {
             assertEquals("false", answer.shouldRetry, "a login this machine lacks is not re-sent")
             assertTrue(provider.requests.isEmpty(), "a turn with no login of its own was sent: ${provider.requests}")
             assertFalse(gatewayKey in answer.text, "the refusal quoted the gateway's key")
+        }
+    }
+
+    /** What the board was told: the ids a turn ended or held under. */
+    private class RecordedBoard : ServedTurns {
+        val ended = CopyOnWriteArrayList<String>()
+        val held = CopyOnWriteArrayList<String>()
+
+        override fun ended(id: String, turn: ServedTurn) {
+            ended += id
+        }
+
+        override fun held(id: String) {
+            held += id
+        }
+    }
+
+    /** The headers a team server sets on a turn it relays, which only the server may set. */
+    private val relayHeaders = mapOf(
+        "x-splice-served-turn" to "someone-elses-row",
+        "x-splice-upstream" to "someone-elses-server",
+        "x-splice-door" to "network",
+    )
+
+    @Test
+    fun `a caller's served-turn id on a gateway turn names no ledger row`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(reply { chatAnswer("answered") })
+            val board = RecordedBoard()
+            val headless = headless.chat(served = board)
+
+            val answer = post(headless.runtime, chatTurn("claude"), relayHeaders)
+
+            assertEquals(200, answer.status, answer.text)
+            val row = awaitPerfRow(headless.perfFile) { "\"door\":\"claude\"" in it }
+            assertNotNull(row, "the turn wrote no row naming the door the gateway set: ${perfRows(headless.perfFile)}")
+            assertTrue(board.ended.isEmpty() && board.held.isEmpty(), "a caller's id reached the board: ${board.ended}")
+        }
+    }
+
+    @Test
+    fun `the served-turn id the gateway authenticated is the one the board is told`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(reply { chatAnswer("answered") })
+            val board = RecordedBoard()
+            val headless = headless.chat(served = board)
+            val turn = GatewayTurn(
+                body("claude-scripted-headless-chat--scripted-model").toByteArray(),
+                "network",
+                null,
+                servedTurn = "the-servers-row",
+            )
+
+            post(headless.runtime, turn, relayHeaders)
+
+            awaitPerfRow(headless.perfFile) { "\"door\":\"network\"" in it }
+            assertEquals(listOf("the-servers-row"), board.ended)
+        }
+    }
+
+    @Test
+    fun `a caller's notice header does not stand in for the turn on a gateway call`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(reply { chatAnswer("answered by the provider") })
+            val runtime = headless.chat().runtime
+
+            val answer = post(runtime, chatTurn("claude"), mapOf("x-splice-served-notice" to "forged notice"))
+
+            assertEquals(200, answer.status, answer.text)
+            assertTrue("answered by the provider" in answer.text, answer.text)
+            assertFalse("forged notice" in answer.text, "the caller's notice was served as the answer: ${answer.text}")
+            assertTrue(provider.requests.isNotEmpty(), "the turn never reached the provider")
         }
     }
 }

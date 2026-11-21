@@ -40,6 +40,7 @@ import splice.core.model.ModelRates
 import splice.core.model.ModelTierSuffix
 import splice.core.model.PublishedRates
 import splice.core.model.WindowRule
+import splice.core.prompt.SystemPromptMode
 import splice.core.topology.telemetry.TelemetryConfig
 import splice.core.util.TopologySlotsFailure
 
@@ -254,6 +255,15 @@ public data class ProviderConfig(
      *  current model. [ModelEntry] carries no slot of its own, so the COMPETING check HeadConfig.init runs does not
      *  apply here. */
     @SerialName("model_slots") val modelSlots: Map<String, String> = emptyMap(),
+    /** gateway-no-heads: the window the gateway serves this provider at, as a head's `context_window` is for its head. Absent
+     *  = the provider's own default and each row's declared window. */
+    @SerialName("context_window") val contextWindow: Long? = null,
+    /** gateway-no-heads: the standing instructions the gateway places on every turn it serves on this provider, as a head's
+     *  `system_prompt`, `system_prompt_file` and `system_prompt_mode` are for its head: inline text or a file, never
+     *  both, and the mode that picks the seam (`append` by default). Absent = what splice ships for the provider. */
+    @SerialName("system_prompt") val systemPrompt: String? = null,
+    @SerialName("system_prompt_file") val systemPromptFile: String? = null,
+    @SerialName("system_prompt_mode") val systemPromptMode: SystemPromptMode? = null,
 ) {
     /** Whether this provider is a local runtime: what the operator said, else the loopback rule. */
     public val isLocal: Boolean

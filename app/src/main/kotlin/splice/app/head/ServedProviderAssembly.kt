@@ -75,13 +75,17 @@ internal class ServedProviderAssembly(
 
     /** The head a provider's build needs, from the provider's own config alone: it names the selector prefix the gateway
      *  serves the provider under and carries the pin (its declared one, else its first declared row, else none, which
-     *  the gateway allows) and the tier map the provider declares. It is never bound. */
+     *  the gateway allows), the tier map, the window and the standing prompt the provider declares. It is never bound. */
     private fun headlessHead(provider: String, config: ProviderConfig): HeadConfig = HeadConfig(
         provider = provider,
         port = 0,
         discoveryPrefix = "claude-$provider--",
         pinnedModel = config.pinnedModel ?: config.models.firstOrNull()?.id.orEmpty(),
         modelSlots = config.modelSlots,
+        contextWindow = config.contextWindow,
+        systemPrompt = config.systemPrompt,
+        systemPromptFile = config.systemPromptFile,
+        systemPromptMode = config.systemPromptMode,
         servedByGateway = true,
     )
 }

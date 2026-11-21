@@ -104,6 +104,7 @@ providers.*.auth.kind
 providers.*.auth.login_command	
 providers.*.base_url	
 providers.*.ca_file	
+providers.*.context_window	
 providers.*.default_context_window	
 providers.*.dialect	openai-responses,openai-chat,anthropic-passthrough
 providers.*.discovery	
@@ -203,6 +204,9 @@ providers.*.send_version
 providers.*.served_window	
 providers.*.served_window.field	
 providers.*.served_window.url	
+providers.*.system_prompt	
+providers.*.system_prompt_file	
+providers.*.system_prompt_mode	append,replace,strip
 providers.*.upstreams	
 providers.*.upstreams[].name	
 providers.*.upstreams[].url	

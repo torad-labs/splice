@@ -12,8 +12,13 @@ path (standard mode) is removed, and a door an older splice opened that way is s
 replaces it. `--model` is Desktop's own default, listed first. `off` and `splice uninstall --all` take out exactly what
 `on` put in. The picker is the model catalog's (docs/specs/door-default.md): discovery at `/door/v1/models` (and
 `/desktop/v1/models`), each row under the id Claude's clients keep (ClientModelNames), with the provider's own name,
-description, effort levels and window; Desktop 5.11492.5's discovery reads `behaves_as`, `max_effort_level` and
-`prefer_1m` too (read from its bundle Nov 21, 2026), so no `inferenceModels` list is written. The door takes the key as
+description, effort levels and window. The installed Desktop 6.28899.2 reads names and descriptions from discovery but
+does not carry its `thinking`, `behaves_as` or `max_effort_level` fields into the picker. Splice therefore writes
+`inferenceModels` from that same provider catalog when Desktop is enabled, at daemon startup and when the catalog
+changes; `behavesAs` and `maxEffort` there enable its reasoning control. Desktop reads that configuration at launch.
+`maxEffort` caps Desktop's own low, medium, high, xhigh and max sequence; it cannot express gaps in a provider's
+sequence or its minimal and ultra levels. The gateway response still publishes the provider's exact effort options.
+The door takes the key as
 `x-api-key`, answers `GET`/`HEAD /` with `splice` for a client that asks for no HTML, and scales an app-mode request's
 counts to the 200,000 (or 1M) window Desktop gives its Code tab. `splice desktop` and `splice doctor` say the mode and
 whether Desktop was reopened since splice changed it, and `splice desktop` lists each backend-dependent feature per mode,

@@ -32,6 +32,9 @@ internal class ClaudeRemovedOwnLogins(private val storeDir: Path, private val lo
     /** Whether [view] is a login the person removed from splice. */
     fun removed(view: ClaudeLoginPlaceView): Boolean = key(view) in read()
 
+    /** Whether [account] is one whose login the person removed from splice. */
+    fun removedAccount(account: String): Boolean = account in read()
+
     /** Takes [view]'s login out of splice. */
     fun remove(view: ClaudeLoginPlaceView) {
         val all = read() + key(view)

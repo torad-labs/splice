@@ -167,6 +167,20 @@ class ClaudeConsoleSignInAddsTest {
     }
 
     @Test
+    fun `an account whose own login was removed from splice is added by signing it in`() {
+        rig.login(rig.nativeDir, rig.home.resolve(".claude.json"), "uuid-own")
+        val before = rig.live()
+        rig.removeOwnLogin()
+
+        rig.plan("ok uuid-own")
+        val own = rig.add()
+
+        assertEquals("signed_in", own.state, "the removed login no longer holds it: $own")
+        assertEquals(setOf<String?>("uuid-own"), rig.accountUuids(), "it is the command's account now")
+        assertEquals(before, rig.live(), "Claude Code's own login did not change")
+    }
+
+    @Test
     fun `a completed sign-in leaves no scratch folder and no credential behind`() {
         val before = rig.live()
         rig.plan("ok uuid-card")
@@ -399,6 +413,11 @@ private class Rig(root: Path) : AutoCloseable {
     fun add(): Seen = startTile().let { started -> awaitTile(started) { it.state in ENDED } }
 
     fun startTile(): Seen = Seen.of(arm.accounts.signIn.start(HEAD, null))
+
+    /** Remove on the command's own Claude Code login card. */
+    fun removeOwnLogin() {
+        runBlocking { arm.owner.remove(splice.accounts.claude.ClaudeLoginPlaceId.NATIVE) }
+    }
 
     fun awaitTile(started: Seen, done: (Seen) -> Boolean): Seen =
         pump({ arm.accounts.signIn.poll(started.id!!)?.let(Seen::of) ?: started }, done)

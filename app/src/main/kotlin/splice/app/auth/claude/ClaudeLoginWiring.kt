@@ -38,9 +38,12 @@ internal class ClaudeLoginWiring(
             ?: ClaudeIdentityRefresh(scope, dispatcher, profiles, ClaudeProfileProbe(userAgent, log), log)
         // A command's own login holds its account while it can send for it, or while its command renews it on its
         // next run. Signing in the account of a login that is signed out adds that account, so the person has it again.
+        // A login the person removed from splice holds nothing either: splice neither lists nor serves it, so signing
+        // its account in adds it (Nov 21, 2026: a removed login's account answered Already added and was on no card).
         val held = ClaudeHeldLogins { head, account ->
             places.firstOrNull { place ->
                 place.target.head.key == head &&
+                    !ClaudeRemovedOwnLogins(place.storeDir, log).removedAccount(account) &&
                     ClaudeNativeAuth(place.target.head.configDir, place.id, profiles, log).let { auth ->
                         val evidence = auth.credentialEvidence()
                         val sends = evidence.presence == CredentialPresence.PRESENT || evidence.renewable

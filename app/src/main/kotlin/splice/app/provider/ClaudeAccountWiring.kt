@@ -16,12 +16,14 @@ import splice.accounts.claude.ClaudeLoginPlacesSource
 import splice.app.auth.claude.ClaudeAccountFolders
 import splice.app.auth.claude.ClaudeFolderAuth
 import splice.app.auth.claude.ClaudeOAuthRefresh
+import splice.app.auth.claude.ClaudeRouteAccounts
 import splice.app.auth.claude.ClaudeTokenRefresh
 import splice.app.auth.claude.OWN_SIGN_IN_LABEL
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.config.StatePaths
 import splice.core.util.LogSink
+import splice.models.roster.DeclaredHeads
 import splice.upstream.CredentialHeaders
 import splice.usage.quota.CLAUDE_OAUTH_BETA
 
@@ -32,14 +34,16 @@ internal class ClaudeAccountWiring(
     private val refresh: ClaudeTokenRefresh = ClaudeTokenRefresh(ClaudeOAuthRefresh(log)::rotate),
     private val identities: splice.app.auth.claude.ClaudeIdentityRefresh? = null,
     nativePlaces: ClaudeLoginPlacesSource = ClaudeLoginPlacesSource { null },
+    declared: DeclaredHeads = DeclaredHeads { emptyMap() },
 ) {
+    private val routeAccounts = ClaudeRouteAccounts(folders, declared)
     private val native = ClaudeNativeAccountWiring(statePaths, nativePlaces, log, identities)
     private val owners = LoginOwners()
 
     /** Native places provide read-only selectable credentials. Without one, [caller] remains the forwarded primary;
      *  managed folders are always separate members, never a replacement for the native login owner. */
     fun accounts(head: String, caller: RefreshableAuthProvider): List<WiredAccount> {
-        val added = folders.accounts(head)
+        val added = routeAccounts.of(head)
         val places = native.accounts(head)
         if (added.isEmpty() && places.isEmpty()) return emptyList()
         val primary = places.ifEmpty {

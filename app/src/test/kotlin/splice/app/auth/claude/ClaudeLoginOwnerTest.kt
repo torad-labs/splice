@@ -76,9 +76,10 @@ class ClaudeLoginOwnerTest {
         return ClaudeLoginEdits(ClaudeLoginRead(paths, {}, WallClock { 1000 })) to ClaudeLogins(location.storeDir)
     }
 
-    // Nov 13, 2026: a Remove on this login deleted it, and every claude session on the machine said "Not logged in".
+    // Nov 19, 2026: Remove works on every login in one action. On Claude Code's own login it takes the login out of
+    // splice and leaves Claude Code's file, so no claude session outside splice is signed out (Nov 13, 2026).
     @Test
-    fun `a Remove on Claude Code's own login is refused and the login every session runs on stays`() = runBlocking {
+    fun `a Remove on Claude Code's own login takes it out of splice and leaves its file`() = runBlocking {
         val native = location()
         live(native, "account-a", """{"claudeAiOauth":{"accessToken":"synthetic-native"}}""")
         val bytes = Files.readString(native.credentials)
@@ -86,12 +87,13 @@ class ClaudeLoginOwnerTest {
         try {
             val owner = owner(native, scope, NativeAuthStart { error("must not spawn") })
 
+            assertTrue(owner.places().any { it.id == ClaudeLoginPlaceId.NATIVE })
+
             val removed = owner.remove(ClaudeLoginPlaceId.NATIVE)
 
-            assertTrue(removed is AccountMutation.Refused, removed.toString())
-            assertTrue((removed as AccountMutation.Refused).reason.contains("/logout"), removed.reason)
+            assertEquals(AccountMutation.Ok, removed)
+            assertTrue(owner.places().none { it.id == ClaudeLoginPlaceId.NATIVE })
             assertEquals(bytes, Files.readString(native.credentials))
-            assertFalse(Files.exists(native.storeDir.resolve("removed")))
         } finally {
             scope.coroutineContext[Job]?.cancelAndJoin()
         }

@@ -1164,20 +1164,12 @@ async function offerFallback(a, spot, model) {
   render();
   askingSessions = false; askSessions();
 }
-// Remove is in the text's ink like every other item, and armed it fills in that ink and names what it cuts: the limit red
-// is for limits and failures, never for an act. A refusal says so in plain words under it, its reason one press away,
-// and the menu shakes once.
-// what pressing Remove again cuts, said under the item it filled: the login and its sign-in, and the sessions on it by name
-function armNote(p, a, on) {
-  const who = (a.sessions || []).slice(0, 3).map(sessNameOf).join(", ");
-  return `<p class="alc-armnote">${p.kind === "key" ? `Removes the stored key for ${esc(a.env)}.` : `Removes ${esc(shownName(p, a))} and its sign-in.`}${on ? ` In use by ${esc(who)}${on > 3 ? ` and ${on - 3} more` : ""}.` : ""} Press Remove again to confirm.</p>`;
-}
+// Remove is in the text's ink like every other item and acts on its one press. A refusal says so in plain words under
+// it, its reason one press away, and the menu shakes once.
 function menuHtml(p, a, spot) {
-  const armed = ui.armed === spot, refused = ui.removeErr && ui.removeErr.spot === spot, key = `remove:${spot}`;
-  const on = a.sessions?.length || 0; // sessions on it sign in again or move to another login once it is gone
+  const refused = ui.removeErr && ui.removeErr.spot === spot, key = `remove:${spot}`;
   return `<div class="menu${refused && ui.shook === key ? " failed" : ""}" role="menu">${menuItems(p, a).map(([act, label]) => {
-    const text = act === "remove" && armed ? `Remove ${p.kind === "key" ? "API key" : shownName(p, a)}${on ? ` · ${on === 1 ? "1 session uses it" : `${on} sessions use it`}` : ""}` : label;
-    return `<button role="menuitem" class="${act === "remove" ? `danger${armed ? " armed" : ""}` : ""}" data-act="${act}" data-p="${p.id}" data-a="${a.id}" data-s="${spot}"${act === "remove" && ui.removing === spot ? " disabled" : ""}>${act === "remove" && ui.removing === spot ? "Removing…" : esc(text)}</button>${act === "remove" && armed && !ui.removing ? armNote(p, a, on) : ""}`;
+    return `<button role="menuitem" class="${act === "remove" ? "danger" : ""}" data-act="${act}" data-p="${p.id}" data-a="${a.id}" data-s="${spot}"${act === "remove" && ui.removing === spot ? " disabled" : ""}>${act === "remove" && ui.removing === spot ? "Removing…" : esc(label)}</button>`;
   }).join("")}${refused ? `<div class="menu-state">${refusalHtml(ui.removeErr, key)}${reasonHtml(ui.removeErr, key)}</div>` : ""}</div>`;
 }
 const keyDayWord = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); // a key card's day, "Oct 12"
@@ -2564,11 +2556,10 @@ document.addEventListener("click", async (e) => {
     case "offer-fb-use": if (a && !ui.offerBusy) await offerFallback(a, t.dataset.s, t.dataset.model); break;
     case "reset-keep": if (ui.resets) { ui.resets.arm = null; render(); } break;
     case "reset-close": if (!ui.resets?.spending) { ui.resets = null; render(); } break;
-    // Remove takes two presses on the same item; removal deletes the sign-in, so nothing comes back from it.
+    // Remove is one press, in any state the login is in (Nov 19, 2026: an owner removes what is theirs in one action).
     case "remove": {
-      if (ui.removing || ui.orderSaving) break;
+      if (ui.removing === t.dataset.s) break; // the press already on its way
       ui.removeErr = null;
-      if (ui.armed !== t.dataset.s) { ui.armed = t.dataset.s; render(); board.querySelector(".menu .armed")?.focus(); break; }
       accountRevision++; ui.removing = t.dataset.s; render();
       const res = p.kind === "key" ? await API.del(`/api/keys/${encodeURIComponent(a.env)}`) : await API.del(editPath(a));
       ui.removing = null;

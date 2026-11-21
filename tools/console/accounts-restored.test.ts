@@ -96,7 +96,6 @@ test("a Remove splice refuses says Not removed and shows splice's reason on the 
   const spare = card(page, "Spare");
   await spare.getByRole("button", { name: "More" }).click();
   await spare.getByRole("menuitem", { name: "Remove" }).click();
-  await spare.locator(".menu .armed").click();
   await expect(spare).toContainText("Not removed");
   // the reason may stand beside the word or open under it: either way he reaches it from the word
   const why = spare.getByRole("button", { name: /Not removed/ });

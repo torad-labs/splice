@@ -319,6 +319,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/mcp/NativeCodexSocketProxy.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeAccountFolders.kt" to mapOf("writeAtomic0600(" to 4),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeCredentialProfiles.kt" to mapOf("writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/auth/claude/ClaudeRemovedOwnLogins.kt" to mapOf("writeAtomic0600(" to 1),
     // A console Claude sign-in's BROWSER script, and the links it appends, in the splice-claude-signin README row.
     "app/src/main/kotlin/splice/app/auth/claude/NativeClaudeAuth.kt" to
         mapOf("Files.writeString(" to 1, "a shell redirect" to 1),

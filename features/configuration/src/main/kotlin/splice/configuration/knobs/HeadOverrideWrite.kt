@@ -4,8 +4,9 @@
 // WHERE A VALUE LANDS (gateway-no-heads, HeadOverrideLanding). A knob a turn is served by (maxInflight, the retry and
 // reasoning knobs) is the provider's: it is written to `[providers.<key>.overrides]`, where the gateway and every
 // command on that provider read it, and the reply names the provider and those commands. A value only a head held would
-// be a boot finding (GatewayMoveChecks), which is what this write was refused with from Nov 19 to Nov 21, 2026. A
-// display or trace knob is the command's own and stays in `[heads.<key>.overrides]`.
+// be a boot finding (GatewayMoveChecks, since cb8e877ae on Nov 21, 2026), which is what this write was refused with
+// until it was sent here later that day. A display or trace knob is the command's own and stays in
+// `[heads.<key>.overrides]`.
 //
 // IT IS NOT A SECOND WRITE PATH. The edit goes through the one TopologyWriter that PUT /api/topology and the
 // capture switch use: structure-preserving (the operator's comments and ordering stay), backed up first,

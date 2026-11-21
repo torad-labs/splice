@@ -31,7 +31,7 @@ class DesktopSetupTest {
     private val library by lazy { tmp.resolve("config/Claude-3p/configLibrary") }
     private val records by lazy { DesktopRecords(tmp.resolve("state/desktop.json")) {} }
     private val app by lazy {
-        DesktopAppMode(records, DesktopAppLibrary(DesktopAppConfig(env)), DesktopCredentialHelper(tmp.resolve("state")))
+        DesktopAppMode(records, DesktopAppLibrary(DesktopAppConfig(env)), DesktopPrograms(tmp.resolve("state")))
     }
 
     @Test
@@ -40,10 +40,14 @@ class DesktopSetupTest {
         records.update { it.copy(on = true) }
         assertEquals(DesktopMode.APP, app.mode())
         assertTrue(Files.isExecutable(tmp.resolve("state/desktop-credential")))
+        val launch = tmp.resolve("state/desktop-launch")
+        assertTrue(Files.isExecutable(launch), "a managed processWrapper can name the launcher")
+        assertTrue("desktop launch --state-dir" in Files.readString(launch), "it needs no variable of splice's")
         app.takeOut()
         assertFalse(Files.exists(library), "the folder splice made is gone")
         assertFalse(Files.exists(tmp.resolve("config/Claude-3p/configLibrary/_meta.json")))
         assertFalse(Files.exists(tmp.resolve("state/desktop-credential")))
+        assertFalse(Files.exists(tmp.resolve("state/desktop-launch")))
     }
 
     @Test

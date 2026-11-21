@@ -14,7 +14,7 @@ internal class DesktopLook(statePaths: StatePaths, env: EnvReader, log: LogSink)
     private val app = DesktopAppMode(
         records,
         DesktopAppLibrary(DesktopAppConfig(env)),
-        DesktopCredentialHelper(statePaths.stateDir),
+        DesktopPrograms(statePaths.stateDir),
     )
 
     fun reading(): DesktopReading {

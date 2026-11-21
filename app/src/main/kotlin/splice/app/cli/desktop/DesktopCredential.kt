@@ -1,5 +1,5 @@
 // NEW: desktop-full (docs/specs/desktop-full.md, df-credential). `splice desktop credential`: the program Claude Desktop
-// runs as splice's configuration's inferenceCredentialHelper (DesktopCredentialHelper lays the script that runs it). It
+// runs as splice's configuration's inferenceCredentialHelper (DesktopPrograms lays the script that runs it). It
 // prints the desktop key, alone on one line, to the program that runs it, and exits 0. Desktop runs it at launch and
 // whenever its cached credential runs out, maybe before splice's daemon is up, so it reads the key from splice's state
 // folder itself, minting one where there is none as the daemon would. On a terminal it prints no key: no person needs

@@ -27,7 +27,7 @@ internal class DesktopService(
     private val catalogJson = Json { explicitNulls = false }
 
     /** What `splice desktop --json` says: whether Desktop is on, the door, the default model, the lineup, each head
-     *  left out with the reason, and the last turn through the door. */
+     *  left out with the reason, each of Desktop's features in each mode, and the last turn through the door. */
     suspend fun state(): JsonObject {
         val lineup = heads.lineup()
         val record = records.get()
@@ -50,6 +50,8 @@ internal class DesktopService(
             put("picker", pickerJson(picker))
             put("picker_current", record.pickerRead?.rows?.let { it == picker }?.takeIf { mode == DesktopMode.APP })
             put("left_out", lineupJson.leftOut(lineup.leftOut))
+            // Each of Desktop's backend-dependent features in each mode, working or why not (df-features).
+            put("features", DesktopFeatures(lineup, heads.traits()).json())
             val last = record.lastTurn
             if (last == null) {
                 put("last_turn", JsonNull)

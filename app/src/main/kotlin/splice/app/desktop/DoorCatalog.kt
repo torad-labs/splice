@@ -146,7 +146,7 @@ internal class DoorCatalog(private val lineup: DesktopLineup) {
         newest[OPUS].takeIf { model.claude == null && (model.fact.reasons || model.fact.reasoningLevels.isNotEmpty()) }
 
     /** The highest of Desktop's Effort levels the provider lists for the model; none when it lists none. */
-    private fun maxEffort(model: ServedModel): String? = desktopEfforts.lastOrNull { it in model.fact.reasoningLevels }
+    fun maxEffort(model: ServedModel): String? = desktopEfforts.lastOrNull { it in model.fact.reasoningLevels }
 
     /** [row]'s name: its provider's name for the model, with the window its hint names when the model has a row
      *  without one too, and its account's full window beside it. */

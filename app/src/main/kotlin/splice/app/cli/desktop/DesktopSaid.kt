@@ -1,5 +1,6 @@
-// NEW: desktop-door (docs/specs/desktop-door.md, decision 4). `splice desktop` in words: what the daemon says of the
-// door, a line for each thing a person asks of it, the mode Claude Desktop is in first.
+// NEW: desktop-door (docs/specs/desktop-door.md, decision 4); desktop-full (df-features). `splice desktop` in words: what
+// the daemon says of the door, a line for each thing a person asks of it, the mode Claude Desktop is in first, and
+// what of Desktop works on splice in that mode.
 package splice.app.cli.desktop
 
 import kotlinx.serialization.json.JsonArray
@@ -23,6 +24,7 @@ internal class DesktopSaid(private val out: TerminalOutput) : DoorSaid {
         left.forEach { h ->
             out.line("  ${text(h, "command")} (${text(h, "head")}): ${text(h, "reason")}")
         }
+        features(state)
         val last = state["last_turn"] as? JsonObject
         if (last == null) {
             out.line("Last turn sent: none yet")
@@ -31,6 +33,20 @@ internal class DesktopSaid(private val out: TerminalOutput) : DoorSaid {
             val ran = JsonScalars.str(last, "model")
             val session = JsonScalars.str(last, "session_id")?.let { " in session $it" }.orEmpty()
             out.line("Last turn sent: ${text(last, "at")} on ${text(last, "head")}$session, asked $asked, sent as $ran")
+        }
+    }
+
+    /** Each of Desktop's backend-dependent features in the mode it is in (standard while it is not in app mode), working
+     *  or why not (df-features). */
+    private fun features(state: JsonObject) {
+        val mode = if (JsonScalars.str(state, "mode") == "app") "app" else "standard"
+        val features = (state["features"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+            .filter { text(it, "mode") == mode }
+        if (features.isEmpty()) return
+        out.line("Features ($mode mode):")
+        features.forEach { f ->
+            val why = JsonScalars.str(f, "reason")?.let { " ($it)" }.orEmpty()
+            out.line("  ${text(f, "name")}: ${text(f, "state")}$why")
         }
     }
 

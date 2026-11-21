@@ -18,6 +18,7 @@ import splice.core.usage.QuotaFull
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.share.SharedHead
+import splice.usage.quota.HeadUsageSource
 
 /** One model in the door: its selector, its own label, its head and that head's command, and the ID the head runs it
  *  as. */
@@ -93,6 +94,10 @@ internal data class DesktopLineup(
     }
 }
 
+/** What a running head's provider is: its wire dialect as splice.toml spells it ([dialect], null where none was
+ *  wired) and where its plan windows are read ([usage]). */
+internal data class HeadTraits(val dialect: String?, val usage: HeadUsageSource)
+
 /** The heads a lineup is read from: each running head, and the relay a turn reaches it through. */
 internal fun interface RunningHeads {
     operator fun invoke(): List<Pair<ManagedHead, SharedHead>>
@@ -110,6 +115,12 @@ internal class DesktopHeads(
 
     /** The door now, with the catalog published last. */
     suspend fun lineup(): DesktopLineup = read().copy(catalog = catalog())
+
+    /** What each running head's provider is, by head key: its wire dialect and where its plan windows are read, for
+     *  what Desktop's features can do on it (DesktopFeatures). */
+    fun traits(): Map<String, HeadTraits> = running().associate { (managed, relay) ->
+        relay.key to HeadTraits(managed.authSurface.dialect, managed.sources.usage)
+    }
 
     /** The catalog published last; empty before the first [publish]. */
     fun catalog(): ProviderCatalog = published.current

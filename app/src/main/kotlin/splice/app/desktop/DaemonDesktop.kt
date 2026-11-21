@@ -38,7 +38,7 @@ internal class DaemonDesktop(
     private val records = DesktopRecords(statePaths.desktopFile, log)
 
     /** What splice changes in Claude Desktop: its configuration in Desktop's library and the helper that names. */
-    private val app = DesktopAppMode(records, library, DesktopCredentialHelper(statePaths.stateDir))
+    private val app = DesktopAppMode(records, library, DesktopPrograms(statePaths.stateDir))
 
     /** The terminal's `claude` on this door. */
     val claude = TerminalDoor(topology, statePaths, log)

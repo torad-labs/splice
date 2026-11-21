@@ -1,6 +1,7 @@
 // NEW: desktop-full (docs/specs/desktop-full.md, df-app-on and df-diagnostics). The one owner of what splice changes in
-// Claude Desktop: its configuration in Desktop's 3P library (DesktopAppLibrary), the credential helper that
-// configuration names (DesktopCredentialHelper), when splice last changed the library, and which mode Desktop is in.
+// Claude Desktop: its configuration in Desktop's 3P library (DesktopAppLibrary), the programs Desktop runs for splice
+// (DesktopPrograms: the credential helper that configuration names, and the launcher), when splice last changed the
+// library, and which mode Desktop is in.
 // `splice desktop on` puts it in, `off` and `splice uninstall` take out exactly what it put in, and a daemon start keeps
 // it current. It never touches the terminal's environment or `~/.claude/settings.json`: Desktop's Code tab runs Claude
 // Code over the same `~/.claude` as the terminal, so its settings and sessions stay shared. Used by the daemon's switch
@@ -32,7 +33,7 @@ internal enum class DesktopMode(val wire: String) {
 internal class DesktopAppMode(
     private val records: DesktopRecords,
     private val library: DesktopAppLibrary,
-    private val helper: DesktopCredentialHelper,
+    private val helper: DesktopPrograms,
     private val now: WallClockIso = WallClockIso { Instant.now().toString() },
 ) {
     /** Why splice's configuration can't be put in now, with nothing changed, or null when it can. */

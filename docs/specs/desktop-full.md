@@ -16,8 +16,12 @@ description, effort levels and window; Desktop 5.11492.5's discovery reads `beha
 `prefer_1m` too (read from its bundle Nov 21, 2026), so no `inferenceModels` list is written. The door takes the key as
 `x-api-key`, answers `GET`/`HEAD /` with `splice` for a client that asks for no HTML, and scales an app-mode request's
 counts to the 200,000 (or 1M) window Desktop gives its Code tab. `splice desktop` and `splice doctor` say the mode and
-whether Desktop was reopened since splice changed it. Not built: the processWrapper launcher (it needs the managed file,
-which splice never writes), the features list (df-features) and the gateway answer fields of df-wire-answers.
+whether Desktop was reopened since splice changed it, and `splice desktop` lists each backend-dependent feature per mode,
+working or why not (DesktopFeatures; what only the live test settles is "unknown"). `on` also lays
+`<state>/desktop-launch`, which runs `splice desktop launch`: a managed processWrapper can name it, and it gives a
+Code-tab launch on the door the desktop key Desktop stripped (Mantle's bearer, or the gateway's variable). splice still
+never writes the managed file. Each turn's perf row names its subagent and parent agent (df-turn-headers). Not built:
+the gateway answer fields of df-wire-answers.
 
 ## Who it is for and why
 

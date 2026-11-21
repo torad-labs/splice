@@ -161,6 +161,22 @@ class DesktopSetupDaemonTest {
         val state = get(mgmt, "/api/desktop")
         assertEquals("true", state.str("relaunched"))
         assertEquals("true", state.str("picker_current"))
+        features(state)
+    }
+
+    /** What of Desktop works on splice, by mode (df-features): what Desktop turns off in app mode is named with
+     *  Desktop as the reason, SSH is out because the door is loopback-only, an Anthropic head answers the server web
+     *  tools, and a key head that reports no plan windows is named for the usage meter. */
+    private fun features(state: JsonObject) {
+        val features = state.getValue("features").jsonArray.map { it.jsonObject }
+        fun of(name: String, mode: String) = features.single { it.str("name") == name && it.str("mode") == mode }
+        assertEquals(28, features.size, "fourteen features in each of the two modes")
+        assertEquals("unavailable", of("fast mode", "app").str("state"))
+        assertTrue(of("fast mode", "app").str("reason").contains("Desktop"))
+        assertTrue(of("SSH sessions", "standard").str("reason").contains("127.0.0.1"))
+        assertEquals("works", of("web search and fetch", "app").str("state"))
+        assertEquals("unavailable", of("usage display", "app").str("state"))
+        assertTrue(of("usage display", "app").str("reason").startsWith("no plan windows come from anthropic,"))
     }
 
     private suspend fun off(mgmt: String, library: Path, meta: String, theirs: String, statePaths: StatePaths) {

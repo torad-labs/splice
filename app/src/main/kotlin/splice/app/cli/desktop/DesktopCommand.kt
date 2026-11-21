@@ -1,7 +1,7 @@
 // NEW: desktop-door (docs/specs/desktop-door.md, decision 4); desktop-full (docs/specs/desktop-full.md). `splice
 // desktop`: put Claude Desktop on splice, or take it back off, and say what is so. The daemon holds the door, the key and
-// the heads, so every verb but `credential` asks the running daemon (DoorClient) and prints its answer: what changed,
-// which model Desktop starts on and why, or what made it refuse.
+// the heads, so every verb but `credential` and `launch` asks the running daemon (DoorClient) and prints its answer:
+// what changed, which model Desktop starts on and why, or what made it refuse.
 //
 //   splice desktop [--json]                        the mode Desktop is in, whether it was reopened since splice changed
 //                                                  it, the door, Desktop's default model, its picker, the heads left
@@ -13,6 +13,9 @@
 //   splice desktop rotate-key                      replace the desktop key
 //   splice desktop credential                      Desktop's credential helper: prints the desktop key to the program
 //                                                  that runs it, never to a terminal; needs no daemon
+//   splice desktop launch <command> [args...]      what a managed processWrapper starts the Code tab through: runs the
+//                                                  command, with the desktop key where Desktop stripped it when it
+//                                                  launches on this door; needs no daemon
 package splice.app.cli.desktop
 
 import splice.app.LifecycleWiring
@@ -23,7 +26,7 @@ import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 
 internal const val DESKTOP_USAGE =
-    "[--json] | on [--model <id>] [--yes] | off | rotate-key | credential"
+    "[--json] | on [--model <id>] [--yes] | off | rotate-key | credential | launch <command> [args...]"
 
 /** Whether the person said yes to a question asked on the terminal. */
 internal fun interface DesktopConfirm {
@@ -52,6 +55,7 @@ internal class DesktopCommand(
 
     fun run(args: List<String>): Int = when {
         args == listOf("credential") -> DesktopCredential(out, err).run(StatePaths(envReader = env).desktopKeyFile)
+        args.firstOrNull() == "launch" -> DesktopLaunch(env, err).run(args.drop(1))
         args.firstOrNull() == "on" && "--yes" in args -> verbs.run(args - "--yes")
         args.firstOrNull() == "on" -> asked(args)
         else -> verbs.run(args)

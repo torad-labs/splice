@@ -21,7 +21,7 @@ internal class DesktopRetire(env: EnvReader, private val output: TerminalOutput)
     private val paths = StatePaths(envReader = env)
     private val config = DesktopAppConfig(env)
     private val records = DesktopRecords(paths.desktopFile, LogSink { output.line(it.trimEnd()) })
-    private val app = DesktopAppMode(records, DesktopAppLibrary(config), DesktopCredentialHelper(paths.stateDir))
+    private val app = DesktopAppMode(records, DesktopAppLibrary(config), DesktopPrograms(paths.stateDir))
 
     fun retire() {
         val record = records.get()

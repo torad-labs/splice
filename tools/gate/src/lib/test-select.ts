@@ -1,10 +1,14 @@
 // File-level test selection for a ladder leg that is one `bun test <dir>` run: the test files a change can affect, found
 // from the import graph, so a change to one gate source file runs the test files that import it (directly or through
 // others) and not the whole suite. Anything the graph cannot place, such as a config file, a fixture or a non-TypeScript
-// path under the directory, keeps the whole directory: the selection narrows only when it can prove the narrowing.
+// path under the directory, keeps the whole directory: the selection narrows only when it can prove the narrowing. So
+// does a file outside the directory that the leg names as its own input and that is no TypeScript: a test reads such a
+// file from the disk (the secret-scan allowlist), and no import says which test. Until Nov 21, 2026 such a change ran
+// no test at all, so a push that changed the allowlist passed here and failed its test in CI.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, normalize, relative } from "node:path";
 import type { Leg } from "./prepush-scope.ts";
+import { isMatchAll, matchesAny } from "./scope.ts";
 
 const IMPORT = /(?:from|import)\s*\(?\s*["'](\.{1,2}\/[^"']+)["']/g;
 const TEST_FILE = /\.test\.ts$/;
@@ -45,8 +49,11 @@ export function narrowBunTest(root: string, leg: Leg, changed: readonly string[]
   if (bun !== "bun" || test !== "test" || dir === undefined || rest.length > 0) return leg;
   const underDir = (path: string): boolean => path === dir || path.startsWith(`${dir}/`);
   const tracked = changed.filter((path) => (leg.inputs ?? []).length === 0 || underDir(path) || path.endsWith(".ts") || path.endsWith(".tsx"));
-  // A path the import graph cannot speak for keeps the whole directory.
-  if (tracked.some((path) => underDir(path) && !path.endsWith(".ts"))) return leg;
+  // A path the import graph cannot speak for keeps the whole directory: one under it that is no TypeScript, and one
+  // anywhere that the leg names as an input and that is no TypeScript, which a test can only have read from the disk.
+  const named = (leg.inputs ?? []).filter((pattern) => !isMatchAll(pattern));
+  const readFromDisk = (path: string): boolean => !/\.tsx?$/.test(path) && matchesAny(named, path);
+  if (changed.some((path) => (underDir(path) && !path.endsWith(".ts")) || readFromDisk(path))) return leg;
 
   const files = tsFiles(root, "tools");
   const importedBy = new Map<string, string[]>();

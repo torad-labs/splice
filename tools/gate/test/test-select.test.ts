@@ -41,6 +41,14 @@ describe("narrowBunTest", () => {
     expect(narrowBunTest(tree(), LEG, ["tools/gate/config/ladder.json"])).toBe(LEG);
   });
 
+  test("a file the leg names as its own input, which no import can name, keeps the whole directory", () => {
+    // The allowlist's tests read the committed allowlist from the disk, so a change to it must run them.
+    const leg: Leg = { ...LEG, inputs: ["tools/gate/src/**", ".github/secret-scan-allow.txt"] };
+    expect(narrowBunTest(tree(), leg, [".github/secret-scan-allow.txt"])).toBe(leg);
+    // A path that only a match-all pattern covers selects nothing, as it selects no leg.
+    expect(narrowBunTest(tree(), { ...LEG, inputs: ["**"] }, ["docs/notes.md"])).toBeUndefined();
+  });
+
   test("a source no test imports leaves the leg nothing to run", () => {
     expect(narrowBunTest(tree(), LEG, ["tools/e2e/src/x.ts"])).toBeUndefined();
   });

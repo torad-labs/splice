@@ -7,6 +7,7 @@ package splice.head
 
 import splice.core.failure.HeadVoice
 import splice.core.failure.VoiceFacts
+import splice.core.util.AsyncFileIo
 import splice.core.util.WallClockTime
 import splice.head.admission.AdmissionGate
 import splice.head.admission.AdmissionResponses
@@ -113,6 +114,24 @@ internal class TurnService(
         driver.stopActive()
         driver.stopDetached()
         StopSeal(gate, activeCalls, deps.seams.waiter).settle(System.nanoTime() + STOP_SEAL_NS)
+    }
+
+    /** After admission closes, keep only turns already answering and hand the shared books to the next daemon. */
+    suspend fun retire(): Int {
+        provider.onHeadRetire()
+        val kept = driver.retireActive()
+        deps.stores.perfStats.retired.retire()
+        val _ = AsyncFileIo.drain()
+        deps.stores.usageStore.freeze()
+        deps.stores.economicsStore?.flushNow()
+        deps.stores.perfStats.totals?.flushNow()
+        deps.log("[${provider.key}] retire: keeping $kept answered turn(s); the next daemon takes the rest\n")
+        return kept
+    }
+
+    suspend fun awaitTurns(activeCalls: ActiveCalls, withinMs: Long) {
+        val end = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(withinMs)
+        StopSeal(deps.traffic.gate, activeCalls, deps.seams.waiter).settle(end)
     }
 
     /** What closing a provider settles once nothing can reach it: its own stop hook, the rows held for a turn that has

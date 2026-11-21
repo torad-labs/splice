@@ -2,13 +2,10 @@ package splice.head.lifecycle
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import splice.core.util.AsyncFileIo
 import splice.head.HeadDeps
 import splice.head.HeadEngine
-import splice.head.StopSeal
 import splice.head.TurnService
 import splice.upstream.Provider
-import java.util.concurrent.TimeUnit
 
 // End in-flight SSE turns with an honest terminal before tearing the engine.
 //
@@ -33,8 +30,6 @@ internal class HeadLifecycle(
 
     // #523: set once this head has handed its books to the next daemon; from then on it writes none of them.
     private var retired = false
-    private val gate get() = deps.traffic.gate
-    private val log get() = deps.log
 
     suspend fun start(): Unit = mutex.withLock { startLocked() }
     suspend fun drain(): Unit = mutex.withLock { drainLocked() }
@@ -45,7 +40,7 @@ internal class HeadLifecycle(
      *  arrives meanwhile (the service being stopped) is not held behind it: that stop cuts what is still running with
      *  the restart line, as any stop does, and this then finds a head already closed. */
     suspend fun finish(withinMs: Long) {
-        StopSeal(gate, engine, deps.seams.waiter).settle(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(withinMs))
+        turns.awaitTurns(engine, withinMs)
         mutex.withLock { if (engine.isRunning) stopLocked() }
     }
     suspend fun restart(): Unit = mutex.withLock {
@@ -104,17 +99,8 @@ internal class HeadLifecycle(
             return 0
         }
         engine.closeAdmission(window)
-        provider.onHeadRetire()
-        val kept = driver.retireActive()
-        deps.stores.perfStats.retired.retire()
-        // A row recorded before that moment counts its hour on the file lane, behind its own append: the lane runs
-        // what it holds, and then the books are written once, whole.
-        val _ = AsyncFileIo.drain()
-        deps.stores.usageStore.freeze()
-        deps.stores.economicsStore?.flushNow()
-        deps.stores.perfStats.totals?.flushNow()
+        val kept = turns.retire()
         retired = true
-        log("[${provider.key}] retire: finishing $kept turn(s) already answering; the next daemon takes the rest\n")
         return kept
     }
 

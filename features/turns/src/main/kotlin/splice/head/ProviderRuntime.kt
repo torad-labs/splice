@@ -6,6 +6,8 @@
 package splice.head
 
 import io.ktor.server.application.ApplicationCall
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import splice.core.failure.VoiceFacts
 import splice.core.topology.ForwardHeaders
 import splice.core.usage.QuotaFull
@@ -32,6 +34,9 @@ public class ProviderRuntime(
 
     /** Calls still inside [serve] or [countTokens]: the drain waits for them as a head's engine does for its own. */
     private val calls = AtomicInteger()
+    private val activeCalls = ActiveCalls(calls::get)
+    private val lifecycle = Mutex()
+    private var phase = Phase.SERVING
 
     public val key: String get() = turns.provider.key
 
@@ -66,11 +71,36 @@ public class ProviderRuntime(
 
     /** Refuse new turns, let running ones finish within the stop-drain budget and cut what is left with the restart
      *  line (the drain a head runs, TurnService.settle), then settle the provider's books. */
-    public suspend fun drain() {
+    public suspend fun drain(): Unit = lifecycle.withLock { closeLocked() }
+
+    /** Close admission at handover and keep only responses already started, with no further writes to the books. */
+    public suspend fun retire(): Int = lifecycle.withLock {
+        if (phase != Phase.SERVING) return@withLock 0
+        if (!turns.provider.finishesTurnsWhenRetired) {
+            closeLocked()
+            return@withLock 0
+        }
         turns.window.close()
-        turns.settle { calls.get() }
-        turns.close(retired = false)
+        val kept = turns.retire()
+        phase = Phase.RETIRED
+        kept
     }
+
+    /** Wait for the retained replies before closing the runtime. A regular stop may cut them while this waits. */
+    public suspend fun finish(withinMs: Long) {
+        turns.awaitTurns(activeCalls, withinMs)
+        drain()
+    }
+
+    private suspend fun closeLocked() {
+        if (phase == Phase.CLOSED) return
+        turns.window.close()
+        turns.settle(activeCalls)
+        turns.close(retired = phase == Phase.RETIRED)
+        phase = Phase.CLOSED
+    }
+
+    private enum class Phase { SERVING, RETIRED, CLOSED }
 
     private suspend inline fun counted(block: () -> Unit) {
         calls.incrementAndGet()

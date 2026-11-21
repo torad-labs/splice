@@ -70,6 +70,7 @@ internal object ConsoleWiring {
         srv.ports.turnStatistics = statePaths
         srv.ports.wires = console.wires
         srv.ports.turns.live = console.liveTurns
+        srv.ports.turns.replies = console.replies
     }
 
     /** V4-130: the daemon's ONE pair of activity stores, under the state dir's activity directory. The edge window and

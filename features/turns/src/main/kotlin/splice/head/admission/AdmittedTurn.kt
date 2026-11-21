@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import splice.core.memory.HeapLease
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.head.live.LiveReply
 import splice.head.turn.Preparation
 import splice.upstream.TurnEnd
 import splice.upstream.retry.InflightGate
@@ -20,6 +21,10 @@ internal class AdmittedTurn(
 ) {
     private val handedOff = AtomicBoolean(false)
     var materializedEnd: TurnEnd? = null
+
+    /** reply-stream: the turn as its session's followers see it, from [follow] on; null when no one can follow it. */
+    var live: LiveReply? = null
+        private set
 
     /** The heap lease the request's trees are charged to, once it is materialized: a held turn marks it queued. */
     var heapLease: HeapLease? = null
@@ -71,6 +76,14 @@ internal class AdmittedTurn(
     fun retainRequest() {
         materializedEnd?.let(slot::onRelease)
         materializedEnd = null
+    }
+
+    /** [reply] follows this turn from here: it settles when the slot is released, which every ending reaches after
+     *  its last frame, a detached drive's included. Called once the slot is the one the drive keeps. */
+    fun follow(reply: LiveReply?) {
+        if (reply == null) return
+        live = reply
+        slot.onRelease(TurnEnd(reply::settle))
     }
 
     fun markHandedOff() {

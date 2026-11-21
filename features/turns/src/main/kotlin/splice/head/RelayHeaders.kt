@@ -7,6 +7,7 @@ import io.ktor.server.application.ApplicationCall
 import splice.core.client.AGENT_HEADER
 import splice.core.client.PARENT_AGENT_HEADER
 import splice.core.pool.PREFERRED_UPSTREAM_HEADER
+import splice.core.turn.ASKED_MODEL_HEADER
 import splice.core.turn.GATHERS_FOR_HEADER
 import splice.core.turn.SERVED_NOTICE_HEADER
 import splice.core.turn.SERVED_TURN_HEADER
@@ -20,7 +21,8 @@ internal object RelayHeaders {
      *  and sets its own, so its call's headers are the relay's: the server its person prefers among the provider's
      *  upstreams, the id the listener named the turn by (so the turn tells it how it went, server mode's ledger, F5),
      *  the door it came through (desktop-door, decision 7), the session a Context Getter's request works for
-     *  (docs/specs/harness.md, decision 9), and the Claude Code agent that sent it (desktop-full, df-turn-headers).
+     *  (docs/specs/harness.md, decision 9), the Claude Code agent that sent it (desktop-full, df-turn-headers), and the
+     *  model Claude Code asked the door for (reply-stream).
      *
      *  A gateway turn has no relay to strip a caller's headers, so none of the listener's is read off them: the upstream
      *  choice, the served-turn id and the door are the [GatewayTurn]'s own, which the gateway filled from what it
@@ -35,6 +37,7 @@ internal object RelayHeaders {
                 door = headers[TURN_DOOR_HEADER]?.takeIf { it in turnDoors },
                 workedFor = workedFor(headers),
                 agent = agentOf(headers),
+                askedModel = named(headers, ASKED_MODEL_HEADER),
             )
         return TurnRelay(
             preferredUpstream = turn.listener.preferredUpstream,
@@ -42,6 +45,7 @@ internal object RelayHeaders {
             door = turn.door.takeIf { it in turnDoors },
             workedFor = workedFor(headers),
             agent = agentOf(headers),
+            askedModel = turn.asked,
         )
     }
 

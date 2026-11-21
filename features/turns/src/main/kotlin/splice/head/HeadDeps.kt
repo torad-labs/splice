@@ -31,6 +31,7 @@ import splice.head.compact.ShadowClassifier
 import splice.head.compaction.CompactionRecordings
 import splice.head.compaction.CompactionTail
 import splice.head.compaction.SessionProjectLookup
+import splice.head.live.LiveReplies
 import splice.head.perf.PerfStats
 import splice.head.port.TurnHarness
 import splice.head.turn.LiveTurns
@@ -210,6 +211,10 @@ public data class HeadDeps(
          *  [wireTap]: no default. */
         val trace: TraceStore?,
         val observations: PerfRecorder = PerfRecorders.disabled(),
+        /** reply-stream: the daemon's one hub of live replies, which this head's turns tap the frames they write to their
+         *  client into and GET /api/sessions/{id}/live reads. Not opt-in like the two above: it holds nothing for a
+         *  session nobody follows. Null (tests, tools) is a head whose turns no one can follow. */
+        val replies: LiveReplies? = null,
     )
 
     /** Which account a turn spends, and the trackers that decide eligibility. */

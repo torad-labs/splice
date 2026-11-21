@@ -4,6 +4,7 @@ package splice.app
 import splice.core.session.ActivityAction
 import splice.core.util.WallClock
 import splice.head.HeadEvents
+import splice.head.live.LiveReplies
 import splice.head.turn.LiveTurnsByHead
 import splice.head.wire.WireTaps
 import splice.sessions.activity.ActivityStores
@@ -46,6 +47,11 @@ internal class ConsoleEventPublisher(
     /** V4-319: every head's live turns, registered by HeadServerFactory as it builds the head and read
      *  by the console's live-turn routes, here for the reason [wires] is. */
     internal val liveTurns: LiveTurnsByHead = LiveTurnsByHead()
+
+    /** reply-stream: the daemon's one hub of live replies, keyed by session: HeadServerFactory hands it to every head,
+     *  whose turns tap their client frames into it, and GET /api/sessions/{id}/live follows a session through it. One
+     *  hub, not one per head, because a session's turns may run on several heads. */
+    internal val replies: LiveReplies = LiveReplies()
 
     /** Session id -> the head its latest turn ran on and when that turn last started or ended, in
      *  least-recently-used order. */

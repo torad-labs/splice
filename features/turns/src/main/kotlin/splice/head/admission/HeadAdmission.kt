@@ -161,6 +161,8 @@ internal class HeadAdmission(
         // retrying for no visible reason. Null for every head whose trace is off.
         val trace = prepared.takeInbound()?.let { deps.stores.captures.trace?.begin(prepared.built.meta, it) }
         RequestObservation.turn(admitted.perf, trace?.turnId)
+        // reply-stream: begun beside the trace, so the turn's followers see it once its response begins.
+        admitted.follow(deps.stores.captures.replies?.begin(prepared, preparation.provider.key))
         admitAccountAndDrive(call, prepared, admitted, trace)
     }
 
@@ -262,6 +264,7 @@ internal class HeadAdmission(
                 clientPingMs = GatewayTurns.clientPingMs(call),
                 heapLease = admitted.heapLease,
                 harness = prepared.harness,
+                live = admitted.live,
             ) { admitted.markHandedOff() },
             admitted.t0,
             admitted.perf,

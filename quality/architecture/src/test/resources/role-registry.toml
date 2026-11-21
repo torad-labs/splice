@@ -60,8 +60,9 @@ names = [
     "PerfRuntimeSource",
     "ProfileReplyAction",
     "ListedRowBuild",
+    "LiveAnswer",
 ]
-reason = """GlobalMcpServers reads the operator's current global MCP server configuration from disk for the MCP host. RawMessageFragmentBuild scrubs one captured raw message for the private fragment cache, without reading account, header or global configuration state. Substituting the configuration reader for the message builder would cache server configuration as a message; substituting the message builder for the reader would give the MCP host message content instead of its server inventory.
+reason = """LiveAnswer (reply-stream, Nov 19, 2026) is a non-stream turn's whole answer, read once the turn has settled, so a session's followers get its blocks whole; it reads what the turn already answered and starts no work, so a configuration reader or a perf response in its place would hand followers something no client was sent. GlobalMcpServers reads the operator's current global MCP server configuration from disk for the MCP host. RawMessageFragmentBuild scrubs one captured raw message for the private fragment cache, without reading account, header or global configuration state. Substituting the configuration reader for the message builder would cache server configuration as a message; substituting the message builder for the reader would give the MCP host message content instead of its server inventory.
 
 PerfJsonRead supplies a performance HTTP response on the I/O dispatcher; PerfHttpWork measures the work, encodes the result under a separate reservation, and releases the returned tree after responding or failing. PerfRuntimeSource exposes an existing runtime owner's latest counters or cached sample without emitting observations or starting the measured work; RuntimeSampler.runtime reads its cached sample, while owner adapters expose their resource snapshots. ProfileReplyAction constructs one profile metadata reply only after ProfileReplies has reserved its budget; that owner transfers a distinct token to the reply or releases it on construction failure. These are different resource and ownership phases: a runtime snapshot is not an HTTP operation, and a producer under a newly acquired reply reservation is not the HTTP consumer that releases the returned tree. ListedRowBuild (sessions GoneSessionRows.kt, 2026-11-19) builds the row of one session GET /api/sessions sends, reading its transcript and repository; GoneSessionRows calls it only for the sessions it sends, so a gone session past the newest hundred is never read. It answers no request and holds no reservation: wired as PerfJsonRead it would build every session's row on a read that sends a hundred, and a probe wired here would send rows no session has."""
 
@@ -94,6 +95,7 @@ reason = """Waiter pauses an upstream retry or probe loop for a number of millis
 signature = "()->Unit"
 dated = "2026-11-06"
 names = [
+    "FollowerOverflow",
     "AccountMembershipRefresh",
     "AuthRefreshObserver",
     "ClaudePoolChange",
@@ -134,7 +136,8 @@ names = [
     "LiveCount",
     "WorkerPosted",
 ]
-reason = """A nullary effect is the widest shape in the language and the one that says the least: \
+reason = """FollowerOverflow (reply-stream, Nov 19, 2026) is what a follower of a live reply whose queue filled asks of its own writer: stop, and end that one response without draining it. It ends a reader that fell behind and never the turn it was reading, so a TurnEnd, a StopControl or a ShutdownDaemon wired in its place would end a turn or the daemon because a browser tab was slow. \
+A nullary effect is the widest shape in the language and the one that says the least: \
 every one of these is an EVENT or an ACTION with its own lifecycle owner, and no two are wired \
 from the same place. HoldChange mutates credential-owned refusal state under its generation monitor; \
 it is neither a stream-start notification nor dispatched file IO. ClaudePoolChange publishes current stored membership into one booted head, \

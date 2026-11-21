@@ -45,6 +45,11 @@
   today keep working.
 
 ### Added
+- **A session's reply can be followed while it is being written.** `GET /api/sessions/{id}/live` on the control
+  plane streams a session's reply as splice writes it to Claude Code, on every head: each turn, its text and thinking
+  as they come, each tool call as it starts, and how the turn ended. Joining in the middle of a reply shows all of it.
+  It needs the management key, answers only on this machine, is read-only, and sends nothing but what Claude Code
+  was sent as reply text, thinking and tool-call starts. `docs/live-reply.md` has the events.
 - **The keyed team listener serves the door.** `/door/v1` answers on a team's server from the gateway's providers,
   with each person's allowlist applied to the provider a model resolves to, and a streamed turn's client is pinged
   at `[server] keepalive_seconds` when that is shorter than splice's own probe.

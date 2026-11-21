@@ -94,6 +94,9 @@ internal class TurnTelemetry(
         try {
             drive.channel.finishPacing(clock = clock)
         } finally {
+            // reply-stream: every ending goes through here once, so the live turn is closed here. A row written ahead of
+            // its error frame (DR-128) leaves the end to that frame, or to the slot's release when it never comes.
+            drive.channel.live?.close(errorFollows = ending != null)
             if (!drive.collectPerf.hold(this@TurnTelemetry, outcomeTag, rateLimited, failure, ending)) {
                 recordSnapshot(drive, outcomeTag, rateLimited, failure, ending)
             }

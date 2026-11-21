@@ -70,7 +70,7 @@ internal class CollectTurn(
             writeMutex = Mutex(),
             clientGone = AtomicBoolean(false),
             trace = inputs.trace,
-        )
+        ).also { it.live = inputs.live }
         // V4-174: no frames cross this channel, so the trace reads the collected answer instead —
         // at the turn record, once the terminal has closed and the body exists.
         // collect never commits a 200 before its terminal respondText — a cancelled collect is a
@@ -114,6 +114,8 @@ internal class CollectTurn(
         // 32 holds, 2 hours, a settled hold evicted before a running one); a held drive keeps the one
         // inflight permit it was admitted with until its upstream turn ends, and a retry that follows it
         // takes none. A turn with no session cannot be tied to its re-send and runs attached as before.
+        // reply-stream: no frames cross this channel either, so the live turn reads the same answer, once it is final.
+        inputs.live?.answeredBy { terminal.responseBody() }
         val heldKey = detachOwner.replay.key(built.meta, built.requestBody)
         val drive = driveFactory.assembleDrive(inputs, terminal, channel, stream = false)
         drive.collectPerf.defer()

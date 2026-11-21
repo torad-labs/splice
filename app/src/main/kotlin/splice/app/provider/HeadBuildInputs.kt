@@ -40,6 +40,9 @@ internal class HeadBuildInputs(
     private val localProbe: LocalProbeInputs = LocalProbeInputs(),
 ) {
     private val localModels = ConcurrentHashMap<String, List<DiscoveredModel>>()
+
+    /** custom-provider (cp-window): each provider's served window, read once per daemon start. */
+    private val servedWindows = ServedWindows()
     private val headModels = object : HeadDiscoveredModels {
         override fun forHead(key: String): List<DiscoveredModel> = localModels[key] ?: discovered.forHead(key)
         override fun metadataForHead(key: String): List<DiscoveredModel> =
@@ -87,7 +90,8 @@ internal class HeadBuildInputs(
         headCfg: SpliceConfig,
     ): LocalRowsCheck {
         val base = provider.catalogFor(head, headCfg.contextWindowOverride)
-        return localProbe.check(provider, localProbe.bearer(key, provider, EnvReader(System::getenv)), base)
+        val bearer = localProbe.bearer(key, provider, EnvReader(System::getenv))
+        return localProbe.check(provider, bearer, base, head.listsEvery(provider))
     }
 
     /** A local runtime that answers again, or serves a model it did not at boot, moves the head's window with it
@@ -139,7 +143,9 @@ internal class HeadBuildInputs(
         return ProviderBuild(
             key = key,
             head = resolvedHead,
-            providerCfg = resolvedProvider,
+            // cp-window: the provider with its served window, so every catalog built from it later
+            // (LiveRosterCatalog) keeps the window it really serves
+            providerCfg = servedWindows.applied(head.provider, key, resolvedProvider),
             catalog = catalogFor(key, head, providerCfg, legacyKnobsGovern),
             faultPlan = UpstreamFaultPlan(
                 watchdog = built,
@@ -175,7 +181,8 @@ internal class HeadBuildInputs(
     ): ModelCatalog {
         val headCfg = config.getConfig(key)
         val resolvedHead = if (legacyKnobsGovern) resolveHeadConfig(head, providerCfg, headCfg) else head
-        val resolvedProvider = effectiveProvider(key, providerCfg, legacyKnobsGovern)
+        val effective = effectiveProvider(key, providerCfg, legacyKnobsGovern)
+        val resolvedProvider = servedWindows.applied(head.provider, key, effective)
         return resolvedProvider.catalogFor(resolvedHead, headCfg.contextWindowOverride, headModels.forHead(key))
     }
 

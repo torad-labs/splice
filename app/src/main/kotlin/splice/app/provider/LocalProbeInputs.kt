@@ -35,11 +35,19 @@ internal class LocalProbeInputs(private val http: LocalHttp? = null) {
         ).keyNow()
     }
 
+    /** [listsEvery]: the head asks for every model its runtime lists (custom-provider, `picker = true`), so the ones
+     *  no row declares are found too. */
+
     /** Ask the runtime behind [provider] about [catalog]'s rows. ONE sequence for the boot refusal
      *  (ChatArm) and for a window edited while the daemon runs (V4-162, TopologyWindows), so the two
      *  cannot come to disagree about what the runtime allows. Blocking network: never on a request
      *  thread. */
-    fun check(provider: ProviderConfig, bearer: String?, catalog: ModelCatalog): LocalRowsCheck {
+    fun check(
+        provider: ProviderConfig,
+        bearer: String?,
+        catalog: ModelCatalog,
+        listsEvery: Boolean = false,
+    ): LocalRowsCheck {
         val probe = LocalRuntimeProbe(provider.baseUrl, http ?: JdkLocalHttp(headers(provider, bearer)))
         val runtime = probe.detect() ?: return LocalRowsCheck.Down
         // The HEAD's effective rows, not the provider's: a head context_window override and a picker
@@ -54,7 +62,8 @@ internal class LocalProbeInputs(private val http: LocalHttp? = null) {
             val model = listed.firstOrNull { it.id == id } ?: listed.firstOrNull { it.id == "$id:latest" }
                 ?: listed.singleOrNull()?.takeIf { runtime.kind == LocalRuntimeKind.OPENAI_COMPATIBLE }
             DiscoveredModel(id, contextWindow = model?.contextLength?.takeIf { it > 0 })
-        }
+        } + listed.filter { listsEvery && it.id !in rows.keys }
+            .map { DiscoveredModel(it.id, contextWindow = it.contextLength?.takeIf { n -> n > 0 }) }
         val windows = models.associate { it.id to it.contextWindow }
         return LocalRowsCheck.Checked(
             runtime,

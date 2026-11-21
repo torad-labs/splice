@@ -47,8 +47,11 @@ public class LaunchRoutes(
 
     public suspend fun launch(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
-        // door-default: `claude` on the door runs no head here, whatever splice.toml holds.
-        val door = launchService?.door?.takeIf { key == CLAUDE_COMMAND }?.launch()
+        // door-network: a `[remote.claude]` is where the person said `claude` runs, another machine's door or head, so
+        // it is asked before this machine's own door and head.
+        val elsewhere = launchService?.remotes?.takeIf { key == CLAUDE_COMMAND }?.launch(key)
+        if (elsewhere != null) return remoteReply(call, key, elsewhere)
+        val door = doorLaunch(key)
         if (door != null) return doorReply(call, key, door)
         val targets = heads.targets(key)
         if (targets.size > 1) {
@@ -60,6 +63,13 @@ public class LaunchRoutes(
         // asked before the Claude head here, keyed `claude` too: the person gave that name to another machine's head.
         val remote = if (direct == null || key == CLAUDE_HEAD_KEY) launchService?.remotes?.launch(key) else null
         if (remote != null) remoteReply(call, key, remote) else localReply(call, key, direct ?: wrapped(key))
+    }
+
+    /** door-default: `claude` on the door runs no head here, whatever splice.toml holds; nor does a door command
+     *  (custom-provider, cp-command). Null when [key] is neither, or `claude` is not on the door. */
+    private suspend fun doorLaunch(key: String): DoorLaunchSpec? {
+        val door = launchService?.door ?: return null
+        return if (key == CLAUDE_COMMAND) door.launch() else door.launchCommand(key)
     }
 
     /** A head here, or the 404 or 503 that says why [key] launches none. */
@@ -117,6 +127,7 @@ public class LaunchRoutes(
         val service = requireNotNull(launchService)
         val spec = when (remote) {
             is RemoteLaunch.Refused -> return refuse(call, key, remote.reason, HttpStatusCode.Conflict)
+            is RemoteLaunch.Door -> return doorReply(call, key, remote.spec)
             is RemoteLaunch.Ready -> remote.spec
         }
         val request = receiveLaunchRequest(call)

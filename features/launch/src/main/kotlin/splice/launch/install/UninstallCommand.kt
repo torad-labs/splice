@@ -89,7 +89,8 @@ internal class UninstallCommand(
     ): List<String>? {
         val topology = attempt.getOrNull()
         if (topology != null) {
-            val commands = topology.heads.map { (k, h) -> h.claude.command ?: k } + topology.remoteLinks
+            val commands = topology.heads.map { (k, h) -> h.claude.command ?: k } + topology.remoteLinks +
+                topology.door.commands.keys
             return (commands + SELF_COMMAND).distinct()
         }
         if (attempt.exceptionOrNull() is java.nio.file.NoSuchFileException) {

@@ -55,8 +55,8 @@ internal class CcdSessionModeTest {
         val mode = catalog.mode("ccdsession")
         assertTrue(mode != null, "ccdsession mode must be discovered")
         assertEquals("ccd_session", mode!!.manifest.server)
-        assertTrue(mode.manifest.on)
-        assertEquals(listOf("desktop"), mode.manifest.callersOff)
+        assertTrue(mode.manifest.offer.on)
+        assertEquals(listOf(ModeCaller.DESKTOP), mode.manifest.offer.callersOff)
         assertEquals(
             listOf(
                 "mcp__ccd_session__spawn_task",

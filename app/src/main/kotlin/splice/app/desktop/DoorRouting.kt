@@ -54,22 +54,44 @@ internal class DoorRouting {
         val tier = tiers.tierOf(base) ?: return null
         val native = tiers.modelOf(base)
         val picked = named && !ask.probe
-        if (picked && native != null) {
-            val exact = served(lineup, ask, native)
-            if (exact != null || tier != SMALL_TIER) return exact
-        }
-        return sideCall(lineup, ask, Tier(tier, native, default, picked))
+        // A named model of Anthropic's a provider serves exactly runs there, as it always did. A bare Claude id no
+        // provider serves is refused by name (Nov 17). Claude Code's own tier alias (`anthropic.<model>`) is not a
+        // model named for a provider: custom-provider (cp-tiers) runs it on the session's provider as its model_slots
+        // map it, else on the provider's pinned model.
+        val exact = native?.takeIf { picked }?.let { served(lineup, ask, it) }
+        val decided = Tier(tier, native, default, picked)
+        return routeOf(lineup, ask, decided, exact, heldProvider(lineup, ask))
     }
 
-    /** [tier] when no model of the picker was named for it: on the provider the session is on, else the default
-     *  model, which only Claude Code's own calls and its small tier run as when a model is named. */
-    private fun sideCall(lineup: DesktopLineup, ask: DoorAsk, tier: Tier): DoorRoute? {
-        val held = heldProvider(lineup, ask)
-        return when {
-            held != null -> onHeld(lineup, held, tier.native, tier.name)
-            !tier.picked || tier.name == SMALL_TIER -> defaulted(lineup, tier.name, tier.default)
-            else -> null
-        }
+    /** Where [decided] runs: the exact model a provider serves, nothing for a bare Claude id no provider serves, the
+     *  session's provider for its own tier alias, else the default. */
+    private fun routeOf(
+        lineup: DesktopLineup,
+        ask: DoorAsk,
+        decided: Tier,
+        exact: DoorRoute?,
+        held: ServedProvider?,
+    ): DoorRoute? = when {
+        exact != null -> exact
+        // Claude Code's own tier alias always runs: on the session's provider, else the caller's default model.
+        ask.model.startsWith(ANTHROPIC_ALIAS) -> held?.let { onHeld(lineup, it, decided.native, decided.name) }
+            ?: defaulted(lineup, decided.name, decided.default)
+        refused(decided, ask) -> null
+        held != null -> onHeld(lineup, held, decided.native, decided.name)
+        else -> sideCall(lineup, decided)
+    }
+
+    /** Whether a named model of Anthropic's, no provider serving it, is refused rather than run on the session's
+     *  provider's pinned model. Claude Code's own tier alias is not such a model. */
+    private fun refused(decided: Tier, ask: DoorAsk): Boolean =
+        decided.picked && decided.native != null && !ask.model.startsWith(ANTHROPIC_ALIAS) &&
+            decided.name != SMALL_TIER
+
+    /** [tier] in a session on no provider: the default model, which only Claude Code's own calls and its small tier run
+     *  as when a model is named. */
+    private fun sideCall(lineup: DesktopLineup, tier: Tier): DoorRoute? = when {
+        !tier.picked || tier.name == SMALL_TIER -> defaulted(lineup, tier.name, tier.default)
+        else -> null
     }
 
     /** The provider [ask]'s session is on, or null for a session on none. */
@@ -113,6 +135,9 @@ private data class Tier(val name: String, val native: String?, val default: Stri
 
 // Claude Code's tier for its side calls (titles, summaries), which a provider may map to a smaller model of its own.
 private const val SMALL_TIER = "haiku"
+
+// The namespace Claude Code writes before a tier alias it asks for itself (`anthropic.claude-opus-5-5`).
+private const val ANTHROPIC_ALIAS = "anthropic."
 
 /** Each session's provider: the one of the last selector it named, for the tiers it asks for later. The session heard
  *  from longest ago goes first. */

@@ -12,6 +12,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -88,13 +89,13 @@ class PresentedRowLaunchTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `the head's settings json maps the presented Claude model to the row`() {
+    fun `the head's settings json carries no mapping of the presented Claude model`() {
         service.launch(spec(catalog(245_760L)), emptyList(), dangerouslySkipPermissions = false)
 
-        assertEquals(
-            buildJsonObject { put("claude-sonnet-4-6", "bonsai-2-27b") },
-            settings(tmp.resolve(".claude-bonsai/settings.json"))["modelOverrides"],
-        )
+        // head-catalog: no modelOverrides. The presented spelling stays in the launch's tier env.
+        val written = settings(tmp.resolve(".claude-bonsai/settings.json"))
+        assertFalse("modelOverrides" in written, written.toString())
+        assertFalse("availableModels" in written)
     }
 
     @Test

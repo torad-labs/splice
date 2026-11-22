@@ -447,13 +447,13 @@ dialect = "anthropic-passthrough"
 base_url = "${o.url}"
 auth = { kind = "api-key", env = "${o.keyEnv ?? "MOCK_UPSTREAM_KEY"}" }
 extra_headers = { anthropic-version = "2023-06-01" }
+model_slots = { opus = "${o.large.id}", sonnet = "${o.large.id}", haiku = "${o.small.id}" }
 ${[o.large, o.small, ...(o.more ?? [])].map(model).join("")}
 [heads.${o.key}]
 provider = "${o.key}"
 port = ${o.port}
 discovery_prefix = "claude-${o.key}--"
 pinned_model = "${o.large.id}"
-model_slots = { opus = "${o.large.id}", sonnet = "${o.large.id}", haiku = "${o.small.id}" }
 ${o.extra ?? ""}
 [heads.${o.key}.claude]
 command = "${o.command}"

@@ -4,7 +4,6 @@ package splice.launch.recipe
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -52,7 +51,7 @@ class ClientPickedLaunchTest(@param:TempDir private val tmp: Path) {
     )
 
     @Test
-    fun `an unpinned login head keeps the client choice and writes no roster or window`() {
+    fun `an unpinned login head writes no model choice, roster or window`() {
         Files.createDirectories(configDir)
         Files.writeString(configDir.resolve("settings.json"), """{"model":"claude-synthetic-chosen"}""")
         Files.writeString(configDir.resolve(".claude.json"), """{"additionalModelOptionsCache":["stale"]}""")
@@ -71,7 +70,7 @@ class ClientPickedLaunchTest(@param:TempDir private val tmp: Path) {
         )
         val settings = Json.parseToJsonElement(Files.readString(configDir.resolve("settings.json"))).jsonObject
         val state = Json.parseToJsonElement(Files.readString(configDir.resolve(".claude.json"))).jsonObject
-        assertEquals("claude-synthetic-chosen", settings["model"]?.jsonPrimitive?.content)
+        assertFalse("model" in settings, "a head folder keeps no model choice: $settings")
         assertFalse("availableModels" in settings)
         assertFalse("enforceAvailableModels" in settings)
         assertFalse("additionalModelOptionsCache" in state)

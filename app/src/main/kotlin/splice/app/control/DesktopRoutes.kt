@@ -3,8 +3,9 @@
 //
 //   POST /door/v1/messages[?beta=true]                  a turn, behind Desktop's key or the terminal's and no other
 //   POST /door/v1/messages/count_tokens[?beta=true]     a count, behind the same two keys
-//   GET  /door/v1/models                                the door's models as Claude Desktop's gateway discovery reads
-//                                                       them (DoorCatalog), behind the same two keys
+//   GET  /door/v1/models[?limit=&after_id=]             the Splice gateway's model list, as Claude Desktop's and
+//                                                       Claude Code's discovery read it (DoorCatalog/GatewayModels),
+//                                                       behind the same two keys
 //   ... /desktop/v1/...                                 the same three routes at the door's path before it had two
 //                                                       callers, for a Desktop set up then
 //   GET  /api/desktop                                   what `splice desktop` says, behind the management key
@@ -64,6 +65,14 @@ internal class DesktopRoutes(
                 val desktop = atDoor(call) ?: return@get
                 desktop.door.models(call)
             }
+        }
+        route.get("$DESKTOP_PATH/v1/models") {
+            val desktop = atDoor(call) ?: return@get
+            desktop.door.models(call)
+        }
+        route.get("$DESKTOP_PATH/v1/models") {
+            val desktop = atDoor(call) ?: return@get
+            desktop.door.models(call)
         }
         route.get("/api/desktop") { guard.guarded(call) { state(call) } }
         route.post("/api/desktop/on") { guard.guarded(call) { on(call) } }

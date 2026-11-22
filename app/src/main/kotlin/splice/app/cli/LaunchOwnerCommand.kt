@@ -5,6 +5,7 @@ import splice.core.config.StatePaths
 import splice.core.process.LaunchDeclaration
 import splice.core.process.LaunchOwners
 import splice.core.process.LaunchTerminal
+import splice.core.topology.CLAUDE_COMMAND
 import splice.core.topology.LaunchDoors
 import splice.core.topology.Topology
 import splice.topology.TopologyLoader
@@ -36,8 +37,17 @@ internal class LaunchOwnerCommand(private val args: List<String>) : Command() {
     private fun resolveHead(topology: Topology, selector: String, baseUrl: String, kind: String): String? {
         if (kind != "session") return topology.resolveHeadKey(selector)
         val doors = LaunchDoors(topology.remote, AdminSupport.controlPort(topology))
-        return onDoorOrRemote(doors, selector, baseUrl) ?: localHead(topology, baseUrl)
+        return onGateway(topology, selector, baseUrl, doors)
+            ?: onDoorOrRemote(doors, selector, baseUrl)
+            ?: localHead(topology, baseUrl)
     }
+
+    /** head-catalog: the head whose command [command] is, when its launch sends the session to this machine's Splice
+     *  gateway, which no head's port answers. `claude` on the gateway is the door's and resolves as it does there. */
+    private fun onGateway(topology: Topology, command: String, baseUrl: String, doors: LaunchDoors): String? =
+        topology.resolveHeadKey(command).takeIf {
+            command != CLAUDE_COMMAND && doors.of(command, baseUrl) != null && doors.remote(command, baseUrl) == null
+        }
 
     /** [command], when [baseUrl] is a door (this machine's, whatever the command, or the one its `[remote.<command>]`
      *  names) or the address its `[remote.<command>]` entry sends its turns to, which is the one its launch planted.

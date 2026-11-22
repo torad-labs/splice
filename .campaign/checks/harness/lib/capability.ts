@@ -192,13 +192,13 @@ dialect = "anthropic-passthrough"
 base_url = "${o.url}"
 auth = { kind = "api-key", env = "MOCK_UPSTREAM_KEY" }
 extra_headers = { anthropic-version = "2023-06-01" }
+${o.small ? `model_slots = { opus = "${large}", sonnet = "${large}", haiku = "${o.small}" }` : ""}
 ${model(large)}${o.small ? model(o.small) : ""}
 [heads.${o.key}]
 provider = "${o.key}"
 port = ${o.port}
 discovery_prefix = "claude-${o.key}--"
 pinned_model = "${large}"
-${o.small ? `model_slots = { opus = "${large}", sonnet = "${large}", haiku = "${o.small}" }` : ""}
 [heads.${o.key}.claude]
 command = "${o.command}"
 `;

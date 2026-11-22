@@ -24,6 +24,7 @@ import splice.app.desktop.catalog.ModelDiscovery
 import splice.client.desktop.ANTHROPIC_BETA_HEADER
 import splice.client.desktop.APP_MODE_HEADER
 import splice.client.desktop.DesktopAppWindow
+import splice.client.desktop.GatewayDiscovery
 import splice.core.client.SESSION_HEADER
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
@@ -64,6 +65,8 @@ internal class DesktopDoor(
     private val routing = DoorRouting()
     private val toProvider = DoorRelay(clock)
     private val windows = DesktopAppWindow()
+    private val discovery = GatewayDiscovery()
+    private val gatewayModels = GatewayModels()
 
     /** `POST /door/v1/messages`, with or without `?beta=true`. */
     suspend fun messages(call: ApplicationCall) = answer(call, counting = false)
@@ -71,17 +74,26 @@ internal class DesktopDoor(
     /** `POST /door/v1/messages/count_tokens`, with or without `?beta=true`. */
     suspend fun countTokens(call: ApplicationCall) = answer(call, counting = true)
 
-    /** `GET /door/v1/models`: the door's models as Claude Desktop's gateway discovery reads them, from the model
-     *  catalog published last (DoorCatalog), for a caller whose key it presents. */
+    /** `GET /door/v1/models` (`limit`, `after_id`): the door's models as its caller reads them. Claude Desktop's
+     *  gateway discovery takes the catalog's Desktop list (DoorCatalog); the terminal's `claude`, in Claude Code's
+     *  gateway mode, takes the Splice gateway's one list (head-catalog, GatewayModels), read at each request. */
     suspend fun models(call: ApplicationCall) {
         val caller = admitted(call) ?: return
         val lineup = providers.lineup()
         val catalog = DoorCatalog(lineup)
         val default = caller.default(lineup)
-        val surface = if (caller is DesktopCaller) ModelDiscovery.DESKTOP else ModelDiscovery.GATEWAY
-        val listed = catalog.discovery(default, surface)
-        if (surface == ModelDiscovery.DESKTOP) caller.discovered(catalog.desktopRead(default))
-        JsonReply(HttpStatusCode.OK, listed.toString()).send(call)
+        if (caller is DesktopCaller) {
+            caller.discovered(catalog.desktopRead(default))
+            JsonReply(HttpStatusCode.OK, catalog.discovery(default, ModelDiscovery.DESKTOP).toString()).send(call)
+            return
+        }
+        val query = call.request.queryParameters
+        val page = discovery.page(
+            gatewayModels.of(lineup),
+            query[LIMIT_PARAM]?.toIntOrNull(),
+            query[AFTER_ID],
+        )
+        JsonReply(HttpStatusCode.OK, page.toString()).send(call)
     }
 
     /** [call] answered for the caller whose key it presents; refused in Anthropic's shape, with nothing sent upstream,
@@ -172,3 +184,7 @@ private const val NOT_JSON = "the request body is not a JSON object"
 internal const val REQUEST_MODEL: String = "model"
 private const val REQUEST_MAX_TOKENS = "max_tokens"
 private const val REQUEST_STREAM = "stream"
+
+// The query a `/v1/models` page is asked with (Claude Code's gateway discovery).
+private const val LIMIT_PARAM = "limit"
+private const val AFTER_ID = "after_id"

@@ -44,10 +44,10 @@ describe("cp-schema", () => {
 ca_file = "${ca.ca}"
 error_messages = "whole"
 send_version = true
-served_window = { url = "https://ai.acme.example/props", field = "default_generation_settings.n_ctx" }`,
-        model: "max_output_tokens = 16384",
-        head: `picker = true
+served_window = { url = "https://ai.acme.example/props", field = "default_generation_settings.n_ctx" }
 model_slots = { opus = "${MODEL}", sonnet = "${MODEL}", haiku = "${MODEL}", fable = "${MODEL}" }`,
+        model: "max_output_tokens = 16384",
+        head: `picker = true`,
         after: `
 [door.commands.claude-acme]
 head = "acme"

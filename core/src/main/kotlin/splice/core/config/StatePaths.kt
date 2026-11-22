@@ -299,6 +299,10 @@ public class StatePaths(
      *  splice.toml, whose directory can be linked into a dotfiles repo. */
     public val configBackupsDir: Path = stateDir.resolve("config-backups")
 
+    /** head-catalog: what retiring a head moved out of its command link and its Claude folder, one dated backup per
+     *  retirement under the head's key (`splice claude retire`), which `splice claude restore` puts back. */
+    public val headBackupsDir: Path = stateDir.resolve("head-backups")
+
     /** Byte-exact session originals kept before cross-head rewrites, outside Claude Code's projects tree. */
     public val transcriptOriginalsDir: Path = stateDir.resolve("transcript-originals")
 

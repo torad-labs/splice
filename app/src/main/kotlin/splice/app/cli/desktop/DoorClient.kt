@@ -30,10 +30,11 @@ internal class DoorClient(
     private val json = Json { ignoreUnknownKeys = true }
     private val opening = DoorOpening()
 
-    /** The daemon's 200 answer to `GET /api/<area>`, or null once what went wrong is said. */
-    fun read(): ControlReply? {
+    /** The daemon's 200 answer to `GET /api/<area>[/<path>]`, or null once what went wrong is said. */
+    fun read(path: String = ""): ControlReply? {
         val (port, key) = reached() ?: return null
-        val reply = opening.reply { ControlPlaneClient.send(api(port, ""), "GET", key, STATE_MS) }
+        val at = if (path.isEmpty()) "" else "/$path"
+        val reply = opening.reply { ControlPlaneClient.send(api(port, at), "GET", key, STATE_MS) }
             ?: return null.also { refused("the daemon didn't answer") }
         return reply.takeIf { it.status == HttpStatus.OK } ?: null.also { refused(why(reply)) }
     }

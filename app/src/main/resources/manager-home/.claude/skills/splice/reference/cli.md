@@ -53,7 +53,7 @@ You: `free` (run it), `ask` (person's yes first), `person` (the person runs it i
 | `restart` | Stops the daemon and starts it again | `--now` | starts it | yes | ask |
 | `upgrade` | Fetches, verifies and activates a release, restarts, runs doctor | `--to vX.Y.Z`, `--now`, `--rollback`, `--check` | no (restarts it) | yes | ask (`--check` is read-only) |
 | `console` | Bare: starts the daemon if needed and opens the console in the person's browser, unlocked. With an action: drives the console the person has open | `<action> [words]`, `--note TEXT`, `--clear`, `--json` | yes (with an action) | yes | bare: person. Actions: free to look and point, ask before an act |
-| `claude` | The lane the terminal's `claude` runs on: splice's door, or its head, which is deprecated. On the door: the door, the model a session starts on and why, the picker's models and each head left out of it. `door` puts `claude` on the door and links it to splice; `head` puts it back on its head and replaces the terminal's key | `[--json]`, `door [--model <selector>]`, `head` | yes | yes | bare: free. `door`, `head`: ask |
+| `claude` | The lane the terminal's `claude` runs on: the Splice gateway (the door), or its head, which is deprecated. The gateway's address and window, the model a session starts on and why, the gateway's models (the one list every session's `/model` discovers) and each head left out. `door` puts `claude` on the gateway and links it to splice; `head` puts it back on its head and replaces the terminal's key. `retire` retires custom heads (deprecated and will be removed in a coming release) into a dated backup, `restore` brings them back exactly as they were, `check` says how Claude Code starts on this machine and what list each start gets | `[--json]`, `door [--model <selector>]`, `head`, `retire <command\|key>... \| --all`, `restore <command\|key>... \| --all`, `check [--json]` | yes | yes | bare and `check`: free. `door`, `head`, `retire`, `restore`: ask |
 | `login` | Signs in to a head (browser or device flow, or a masked key prompt) | `<head>`, `--label <name>`, `--discard` | no | no | person |
 | `key` | The API-key store (`keys.toml`) | `set <ENV_NAME> [--value V \| --stdin]`, `list`, `unset <ENV_NAME>` | no | no | person |
 | `rotate-key` | Replaces the management key while the daemon runs (starts the daemon if none answers) | none | yes (starts it) | yes (the CLI reads it, never you) | ask; the person runs it |
@@ -270,6 +270,33 @@ running from an older jar reads as "daemon stopped" there. If status says stoppe
 for the daemon section, then ask about a restart (the version match rule is the only cause this file verified).
 
 Source: `Command.kt:36-38`, `app/../cli/status/StatusCommand.kt:46-48` (`up = health?.version == GATEWAY_VERSION`).
+
+### claude retire, restore and check
+
+Custom heads (a head's own command and its own Claude folder) are deprecated and will be removed in a coming
+release. `claude` through the Splice gateway replaces them: type `claude`, then `/model <selector>` for the model a
+head ran; every selector of today keeps working. Each head's launch says so on one line before Claude Code starts.
+
+- `splice claude retire <command|key>...` or `splice claude retire --all`: for each head, moves its command link (only
+  splice's own, in the install's bin folder) and every setting splice wrote in its own Claude folder (settings.json,
+  splice's keys in .claude.json, the links, `/login` command and hook scripts it laid) into
+  `<state dir>/head-backups/<key>/<local time>/` with a manifest, and removes them. Sessions, transcripts and every
+  file splice did not write stay, each such file named. Retiring the head `claude` runs on puts `claude` on the
+  Splice gateway. A head a live session runs on is refused, naming the session; nothing is killed. With `--all`, every
+  head that can retire does, each refused head is named, and the exit status is 1. The head's login keeps serving the
+  gateway, so its models stay in every session's list. Nothing brings a retired command back by itself, and a launch
+  of it is refused, naming `splice claude restore`.
+- `splice claude restore <command|key>...` or `--all`: puts back, from the newest backup, every link and file byte for
+  byte, and the lane for `claude`'s head. A file the person changed since is named and that head stays retired
+  (exit 1). The backup stays.
+- `splice claude check [--json]`: read-only. Lists every way Claude Code starts here (`claude`, each head command
+  splice wrote, each launcher on `PATH` that starts Claude Code), whether each goes through the Splice gateway and
+  gets the gateway's list, and every model list found (in a head's folder, the person's `~/.claude/settings.json`, a
+  launcher's `CLAUDE_CONFIG_DIR`, managed settings), then "one way, one list: `claude` on the Splice gateway" when
+  that holds (exit 0), else what stands in the way (exit 1). It edits and runs nothing it reports; the person's files
+  are theirs to change.
+
+Ask before `retire` and `restore`: they move the person's commands. `check` is free.
 
 ## The verbs that need the person
 

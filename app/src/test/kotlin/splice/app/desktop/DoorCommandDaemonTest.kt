@@ -1,7 +1,8 @@
 // A door command (`[door.commands.<name>]`) launches on the door, end to end on a daemon over a fixture home: a session
-// of it starts on its provider's pinned model, and its picker is that provider's rows, or the door's whole picker
-// where it says `models = "door"`, from the same catalog; a command that names an older `head` runs on its provider.
-// And `splice claude --json` says each provider and whether it is listed, with the reason where it is not.
+// of it starts on its provider's pinned model, in Claude Code's gateway mode at the door, and discovers the gateway's
+// one list; `models = "head"` and `models = "door"` no longer split the picker, which head-catalog retired. A command
+// that names an older `head` runs on its provider. And `splice claude --json` says each provider and whether it is
+// listed, with the reason where it is not.
 package splice.app.desktop
 
 import com.sun.net.httpserver.HttpServer
@@ -19,11 +20,13 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.Daemon
 import splice.app.desktop.setup.DesktopManagedPolicy
 import splice.core.auth.RefreshAttempt
+import splice.core.config.FileHeldKey
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
@@ -80,6 +83,7 @@ class DoorCommandDaemonTest {
             runBlocking {
                 val statePaths = StatePaths(baseOverride = tmp.resolve("state"), envReader = EnvReader { fixture[it] })
                 val mgmt = MgmtKey(statePaths).get()
+                val terminal = FileHeldKey(statePaths.terminalKeyFile, "splice-terminal-", "claude", "", {}).get()
                 val daemon = Daemon(
                     topology = TopologyLoader.parse(toml(tmp, anthropic.baseUrl, xai.baseUrl)),
                     statePaths = statePaths,
@@ -91,13 +95,12 @@ class DoorCommandDaemonTest {
                     awaitListening(controlPort, claudePort, grokPort)
                     val grokOnly = launch(mgmt, "acme")
                     assertEquals("claude-xai--grok-4.7", grokOnly.first)
-                    assertEquals(listOf("claude-xai--grok-4.7", "claude-xai--grok-mini"), grokOnly.second)
+                    assertEquals(door, grokOnly.second)
                     assertEquals(grokOnly, launch(mgmt, "old"), "a command that names its head is read as its provider")
-                    val everything = launch(mgmt, "everything")
-                    assertEquals("claude-xai--grok-4.7", everything.first)
+                    assertEquals(grokOnly, launch(mgmt, "everything"), "every door command runs the gateway's one list")
                     assertEquals(
-                        listOf("claude-anthropic--claude-opus-5-5", "claude-xai--grok-4.7", "claude-xai--grok-mini"),
-                        everything.second,
+                        listOf("claude-opus-5-5", "claude-xai--grok-4.7", "claude-xai--grok-mini"),
+                        listed(terminal).map { it.str("id") },
                     )
                     providers(mgmt)
                 } finally {
@@ -124,8 +127,19 @@ class DoorCommandDaemonTest {
         assertEquals(true, moon.str("reason").contains("key"), moon.toString())
     }
 
-    /** The model a launch of door command [name] starts on, and the rows of its picker. */
-    private suspend fun launch(mgmt: String, name: String): Pair<String, List<String>> {
+    /** The gateway every door command's session is pointed at. */
+    private val door: String get() = "http://127.0.0.1:$controlPort/door"
+
+    /** The id every turn naming a model must use, as the gateway lists them, asked with [key], the terminal's. */
+    private suspend fun listed(key: String): List<JsonObject> {
+        val response = client.get("$door/v1/models?limit=1000") { header("Authorization", "Bearer $key") }
+        val body = response.bodyAsText()
+        assertEquals(200, response.status.value, body)
+        return json.parseToJsonElement(body).jsonObject.getValue("data").jsonArray.map { it.jsonObject }
+    }
+
+    /** The model a launch of door command [name] starts on, and the gateway address it is pointed at. */
+    private suspend fun launch(mgmt: String, name: String): Pair<String, String> {
         val response = client.post("http://127.0.0.1:$controlPort/launch/$name") {
             header("Authorization", "Bearer $mgmt")
             header("Content-Type", "application/json")
@@ -135,10 +149,11 @@ class DoorCommandDaemonTest {
         assertEquals(200, response.status.value, body)
         val recipe = json.parseToJsonElement(body).jsonObject
         val argv = recipe.getValue("argv").jsonArray.map { it.jsonPrimitive.content }
-        val settings = json.parseToJsonElement(argv[argv.indexOf("--settings") + 1]).jsonObject
-        val rows = settings.getValue("modelPicker").jsonObject.getValue("options").jsonArray
-            .map { it.jsonObject.str("model") }
-        return recipe.getValue("env").jsonObject.str("ANTHROPIC_MODEL") to rows
+        val settings = argv.indexOf("--settings").takeIf { it >= 0 }
+            ?.let { json.parseToJsonElement(argv[it + 1]).jsonObject }
+        assertNull(settings?.get("modelPicker"), "head-catalog: the launch writes no picker")
+        val env = recipe.getValue("env").jsonObject
+        return env.str("ANTHROPIC_MODEL") to env.str("ANTHROPIC_BASE_URL")
     }
 
     private fun JsonObject.str(key: String): String = getValue(key).jsonPrimitive.content

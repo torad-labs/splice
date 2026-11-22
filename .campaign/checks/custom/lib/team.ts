@@ -5,9 +5,10 @@
 // The grammar the definition uses is the one the custom-provider items decide once (cp-schema):
 //   [providers.<key>]  auth = { kind = "command", credential_command = "...", login_command = "..." },
 //                      picker = true|false, ca_file = "...", error_messages = "whole"|"filtered",
-//                      served_window = { url = "...", field = "dotted.path" }, send_version = true
+//                      served_window = { url = "...", field = "dotted.path" }, send_version = true,
+//                      model_slots = { opus, sonnet, haiku, fable }
 //   [[providers.<key>.models]]  label, description, context_window, max_output_tokens
-//   [heads.<key>]      picker = true|false, model_slots = { opus, sonnet, haiku, fable }
+//   [heads.<key>]      picker = true|false
 //   [door.commands.<name>]  head = "<head>", models = "head"|"door"
 
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

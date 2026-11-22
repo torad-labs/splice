@@ -3,9 +3,6 @@
 // vanilla dir, so this pins that no entry point is left that does.
 package splice.client.wrap
 
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -16,17 +13,12 @@ import java.nio.file.Path
 
 class ClaudeConfigMaterializerWrapTest {
 
-    private val optionsCache: JsonElement = buildJsonObject { put("cache", "claude-splice-models") }
-
     @Test
     fun `the materializer still refuses the vanilla dir and has no second door into it`(@TempDir home: Path) {
         val vanilla = home.resolve(".claude")
         val spec = MaterializeSpec(
             configDir = vanilla,
             policy = ClaudePolicy(share = setOf("settings"), isolate = emptySet()),
-            availableModelIds = listOf("claude-fable-5"),
-            defaultModel = "claude-fable-5",
-            modelOptionsCache = optionsCache,
             statuslineCommand = "curl -sS :3096/statusline/claude-splice",
         )
         assertThrows(IllegalArgumentException::class.java) { ClaudeConfigMaterializer(home).materialize(spec) }

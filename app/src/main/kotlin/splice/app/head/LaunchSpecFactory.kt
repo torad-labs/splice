@@ -9,6 +9,7 @@ import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderBuild
 import splice.client.ClaudePolicy
 import splice.client.login.LoginOutcomeFile
+import splice.core.config.HeadConfigDirs
 import splice.core.config.MgmtKey
 import splice.core.config.SpliceConfig
 import splice.core.config.StatePaths
@@ -26,7 +27,6 @@ import splice.launch.ModelTiers
 import splice.upstream.retry.CLIENT_WALL_GRACE_MS
 import splice.upstream.retry.MAX_HOLD_MS
 import java.nio.file.Path
-import java.nio.file.Paths
 
 /** A session starts at high when nothing sets its head's effort (Oct 28, 2026: the default effort is high). */
 private const val DEFAULT_LAUNCH_EFFORT = "high"
@@ -183,20 +183,4 @@ internal class LaunchSpecFactory(
         topology.heads.mapValues { (key, head) -> configDirOf(key, head.claude.configDir) }
 
     private fun configDirOf(headKey: String, declared: String?): Path = HeadConfigDirs.of(headKey, declared)
-}
-
-/** The wrapped Claude Code's per-head CLAUDE_CONFIG_DIR default is this prefix plus the head key. */
-internal const val HEAD_CONFIG_DIR_PREFIX: String = "~/.claude-"
-
-/** One head's CLAUDE_CONFIG_DIR: the declared path, else this tree's `~/.claude-<key>` default.
- *  The prefix is one const, and keeping the join in ONE member is what stops a second spelling appearing
- *  when a second caller needs it. V4-276: an object, because `splice login <claude-head> --label` is
- *  that second caller and has no factory. */
-internal object HeadConfigDirs {
-    fun of(headKey: String, declared: String?): Path = of(headKey, declared, UserHome.dir())
-
-    fun of(headKey: String, declared: String?, home: Path): Path {
-        val selected = declared ?: (HEAD_CONFIG_DIR_PREFIX + headKey)
-        return Paths.get(if (selected.startsWith("~/")) home.toString() + selected.substring(1) else selected)
-    }
 }

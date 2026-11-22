@@ -24,6 +24,7 @@ import splice.launch.LaunchReplies
 import splice.launch.LaunchSpec
 import splice.launch.RemoteLaunch
 import splice.launch.wrap.CLAUDE_HEAD_KEY
+import java.nio.file.Paths
 
 /** [cwd]: V4-183, the shim's working directory, absent from a shim older than shim-4. */
 private data class LaunchRequest(
@@ -97,9 +98,11 @@ public class LaunchRoutes(
         if (refusal != null) return refuse(call, key, refusal, HttpStatusCode.Conflict)
         // Read both live windows and the native destination hold after body reception has finished.
         val launched = target.catalog?.let(spec::withWindows) ?: spec
-        // door-default, decision 9: `claude` on its head lists the signed-in accounts' models after Claude Code's own.
-        val picker = service.door?.takeIf { key == CLAUDE_COMMAND && resolved.wrapped != null }?.headPicker()
-        val caller = LaunchCaller(request.cwd, resolved.wrapped, request.inheritedConfigDir, request.launch, picker)
+        // head-catalog: every head's command starts on the Splice gateway but one that forwards the person's own Claude
+        // login, which the gateway never carries
+        val gateway = service.door?.takeIf { launched.startsOnGateway }?.gateway(launched.signIn.headKey)
+        val caller =
+            LaunchCaller(request.cwd, resolved.wrapped, request.inheritedConfigDir, request.launch, gateway, key)
         val outcome = when (val launch = launchFor(target, launched, request, caller, service)) {
             is LaunchOutcome.Ready ->
                 LaunchOutcome.Ready(launchResponse.withAuthWarning(target, launched, launch.recipe))
@@ -116,7 +119,18 @@ public class LaunchRoutes(
         val caller = LaunchCaller(request.cwd, null, request.inheritedConfigDir, request.launch)
         val headDirs = heads.all().mapNotNull { it.spec?.trees?.own }
         val skip = request.dangerouslySkipPermissions
-        answer(call, key, service.onDoor.outcome(door, request.extraArgs, skip, caller, headDirs))
+        val told = door.copy(notice = inHeadFolder(request.inheritedConfigDir, service))
+        answer(call, key, service.onDoor.outcome(told, request.extraArgs, skip, caller, headDirs))
+    }
+
+    /** head-catalog: a `claude` started in a head's own Claude folder ([inherited], the CLAUDE_CONFIG_DIR its shell
+     *  holds) is told what that head's own command is told; null in any folder that is no head's. */
+    private suspend fun inHeadFolder(inherited: String?, service: LaunchService): String? {
+        val dir = inherited?.let { Paths.get(it) }?.takeIf { it.isAbsolute }?.normalize()
+        val head = dir?.let { d -> heads.all().firstOrNull { it.spec?.trees?.own?.toAbsolutePath()?.normalize() == d } }
+        val spec = head?.spec ?: return null
+        val gateway = service.door?.takeIf { spec.startsOnGateway }?.gateway(spec.signIn.headKey)
+        return HeadsDeprecated().said(head.head.label, spec, gateway, service.door)
     }
 
     /** A command another machine serves: refused in that machine's words, or launched from the spec it answered,

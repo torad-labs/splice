@@ -2,7 +2,6 @@
 // can never reach the model through a capture hook that cannot run.
 package splice.app.daemon
 
-import kotlinx.serialization.json.JsonObject
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
@@ -26,9 +25,6 @@ class DaemonMaterializerTest {
     private fun captureSpec(configDir: Path) = MaterializeSpec(
         configDir = configDir,
         policy = ClaudePolicy(emptySet(), emptySet()),
-        availableModelIds = listOf("m"),
-        defaultModel = "m",
-        modelOptionsCache = JsonObject(emptyMap()),
         statuslineCommand = "",
         signIn = MaterializeSignIn(
             loginCommand = "openrouter login",

@@ -1,7 +1,9 @@
 // NEW: door-default (docs/specs/door-default.md, decisions 3 and 6). The terminal's `claude` as a caller of the door:
 // its own key, the model a session starts on and the window it declares from the lane, and refusals in words that point
 // at `splice claude` and, with nothing signed in, at `/login`. The lane decides where a new session starts; the door
-// stays open to a session already on it whichever lane `claude` is on.
+// stays open to a session already on it whichever lane `claude` is on. head-catalog (Nov 19, 2026): every head's command
+// starts its session on the Splice gateway with this key, on either lane, so the gateway is open to it on both;
+// `splice claude head` still replaces the key, which refuses a session `claude` started on the gateway before.
 package splice.app.desktop.lane
 
 import splice.app.desktop.DoorCaller
@@ -25,7 +27,7 @@ internal class TerminalCaller(private val lane: ClaudeLane) :
     override val noHead: String =
         "no account is signed in, so no model is in the door; type /login to sign in on splice's accounts page"
 
-    override val notInDoor: String = "is not in the door; `splice claude` lists the models it serves"
+    override val notInDoor: String = "is not served by the Splice gateway; `splice claude` lists the models it serves"
 
     // A `claude --model claude-opus-5-5` session runs Opus, or is refused by name; never the lane's default model.
     override val runsNamedModels: Boolean = true

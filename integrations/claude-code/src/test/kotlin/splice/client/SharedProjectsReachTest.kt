@@ -11,7 +11,6 @@
 // with the materializer. Byte-identical to the arm it came from.
 package splice.client
 
-import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -43,7 +42,7 @@ class SharedProjectsReachTest {
         val policy = ClaudePolicy(share = setOf("projects"), isolate = emptySet())
 
         ClaudeConfigMaterializer(home).materialize(
-            MaterializeSpec(head, policy, listOf("m1"), "m1", buildJsonObject { }, "statusline"),
+            MaterializeSpec(head, policy, "statusline"),
         )
 
         assertTrue(Files.isSymbolicLink(head.resolve("projects")), "the head's projects dir is the shared tree")

@@ -4,13 +4,8 @@
 // LaunchSpec construction mirrors ControlServerTest.kt/WebuiContractTest.kt in this same package.
 package splice.launch.recipe
 
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -49,9 +44,11 @@ private val launchMark: List<String> =
 // why: a gateway head's session reads its turn key through this command (GatewayBearer.Helper); any one will do here
 private const val KEY_HELPER = "sed -n 's/^Authorization: Bearer //p' /run/turn-auth-header"
 
-// What a launch of a head pinned to gpt-5.6-sol says, with no door to say `claude` already runs it (decision 9)
-private const val HEADS_NOTICE = "this command is deprecated, and `claude` runs this head's models: " +
-    "after `splice claude door`, type `/model gpt-5.6-sol` in `claude`"
+// What a launch of [command], pinned to gpt-5.6-sol, says when no door is open, so `claude` is not yet on the
+// Splice gateway (head-catalog, Nov 19, 2026). The notice is said only once the launch names its command.
+private fun headsNotice(command: String): String =
+    "`$command` is a custom head, and custom heads are deprecated and will be removed in a coming " +
+        "release: run `splice claude door`, then `claude`, and type `/model gpt-5.6-sol`"
 
 class LaunchServiceTest(@param:TempDir private val tmp: Path) {
 
@@ -315,29 +312,15 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
         assertEquals("Kimi K3 (256k)", env["ANTHROPIC_DEFAULT_FABLE_MODEL_NAME"])
     }
 
-    @Test
-    fun `a head without a discovery prefix keeps the repeated tier bare, and the cache keeps every row`() {
-        val recipe = launchKimiWithRepeatedTier(prefix = "")
-        assertEquals("kimi-k3", recipe.env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
-        val written = Json.parseToJsonElement(
-            Files.readString(tmp.resolve(".claude-kimi/.claude.json")),
-        ).jsonObject.getValue("additionalModelOptionsCache").jsonArray
-        assertEquals(
-            listOf("kimi-k3", "kimi-k2.7-code"),
-            written.map { it.jsonObject.getValue("value").jsonPrimitive.content },
-            "every roster row stays in the cache: Claude Code dedupes them against the tiers itself",
-        )
-        assertEquals(256_000, written.first().jsonObject.getValue("context_window").jsonPrimitive.long)
-    }
-
     // Discovery retirement (2026-08-30). CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY made the
     // picker query /v1/models, which serves the same roster AGAIN under wrapped provider-prefixed
     // ids — every model listed twice, and Claude Code cannot dedupe the two spellings. Worse, a
     // wrapped ACTIVE id makes it ignore CLAUDE_CODE_MAX_CONTEXT_TOKENS (ab5ca6b: honored for
-    // unwrapped names only), which per-head context windows depend on. The materialized bare-id
-    // roster is the picker's one source.
+    // unwrapped names only), which per-head context windows depend on. head-catalog (Nov 19,
+    // 2026): the materializer no longer writes a per-head roster; the gateway's /v1/models is
+    // the one list.
     @Test
-    fun `gateway model discovery stays off - the materialized roster is the picker's one source`() {
+    fun `gateway model discovery stays off`() {
         val recipe = service.launch(spec("codex"), extraArgs = emptyList(), dangerouslySkipPermissions = false)
         assertNull(
             recipe.env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"],
@@ -349,11 +332,6 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
             "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY" in recipe.unset,
             "an inherited =1 would re-enable discovery: ${recipe.unset}",
         )
-        // The roster still reaches the picker: the materializer wrote the full selected catalog.
-        val cfg = tmp.resolve(".claude-codex")
-        val settings = Files.readString(cfg.resolve("settings.json"))
-        assertTrue(settings.contains("gpt-5.6-sol") && settings.contains("gpt-5.4-mini"))
-        assertTrue(Files.readString(cfg.resolve(".claude.json")).contains("additionalModelOptionsCache"))
     }
 
     @Test
@@ -361,10 +339,15 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
         // door-default (decision 7): a head launch carries the heads notice; this pinned "no warning" before.
         // Decision 9 rewrote the notice to name the model to type in `claude`; with no door here, the move comes first.
         // V4-183: `-c` is no longer a pass-through word (HeadBoundedContinue); a plain flag stands in.
-        val recipe = service.launch(spec("codex"), extraArgs = listOf("--verbose"), dangerouslySkipPermissions = false)
+        val recipe = service.launch(
+            spec("codex"),
+            extraArgs = listOf("--verbose"),
+            dangerouslySkipPermissions = false,
+            caller = LaunchCaller(command = "codex"),
+        )
         assertFalse(recipe.argv.contains("--dangerously-skip-permissions"))
         assertTrue(recipe.argv.contains("--verbose"))
-        assertEquals(HEADS_NOTICE, recipe.warning)
+        assertEquals(headsNotice("codex"), recipe.warning)
     }
 
     @Test
@@ -508,8 +491,13 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
         val mine = spec("picker").copy(trees = HeadTrees(tmp.resolve(".claude-picker"), listOf(sibling)))
 
         listOf(emptyList(), listOf("-r")).forEach { args ->
-            val recipe = service.launch(mine, extraArgs = args, dangerouslySkipPermissions = false)
-            assertEquals(HEADS_NOTICE, recipe.warning, "a picker launch says only the heads notice")
+            val recipe = service.launch(
+                mine,
+                extraArgs = args,
+                dangerouslySkipPermissions = false,
+                caller = LaunchCaller(command = "picker"),
+            )
+            assertEquals(headsNotice("picker"), recipe.warning, "a picker launch says only the heads notice")
         }
         // V4-183: a bare -c with no session of this head in the cwd is a NEW session, said once —
         // never the sibling's, and never the client's own newest-in-tree continue.

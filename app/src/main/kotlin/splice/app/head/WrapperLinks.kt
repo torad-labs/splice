@@ -30,6 +30,13 @@ internal class WrapperLinks(private val wrapperBin: WrapperBinSource, private va
         }
     }
 
+    /** [command]'s link in the bin dir when it is splice's own there, which retiring a head moves into its backup and
+     *  `splice claude check` names; null when there is none, or what is there is not splice's. */
+    fun own(command: String): Path? {
+        val bin = wrapperBin() ?: InstallPaths().binDir
+        return bin.resolve(command).takeIf { isOwnLink(bin, it, command) }
+    }
+
     private fun isOwnLink(bin: Path, link: Path, command: String): Boolean =
         command.isNotEmpty() && command != CLAUDE_COMMAND && link.normalize().parent == bin.normalize() &&
             link.isSymbolicLink()

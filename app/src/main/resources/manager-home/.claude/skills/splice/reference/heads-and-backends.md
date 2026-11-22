@@ -7,6 +7,31 @@ no profile for ("add Bedrock", "can splice talk to X?"). Every field named here 
 default in `toml-reference.md`. How to edit `splice.toml` safely (backup, check, diff, restart) is in
 `operations.md`, sections 3 to 5. Never write a key into `splice.toml`.
 
+## 0. Custom heads are deprecated
+
+Custom heads (a head's own command and its own Claude folder) are deprecated and will be removed in a coming release
+(Nov 19, 2026). A provider and its login, and the head that serves them, stay: they are how the Splice gateway serves
+those models. What goes is the command and its folder. One `claude` through the Splice gateway replaces them, and
+every session, a head's command's included in this release, starts Claude Code in its gateway mode:
+
+- `ANTHROPIC_BASE_URL` the Splice gateway (`http://127.0.0.1:<control port>/desktop`, `splice claude --json`'s `door`),
+  `ANTHROPIC_AUTH_TOKEN` the terminal's key, `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`, `ANTHROPIC_MODEL` the
+  selector it starts on, and no `CLAUDE_CODE_USE_*` switch (discovery does not run while one is set).
+- `/model` is the gateway's `GET /v1/models` answer: every model of every head in the gateway, once, in splice.toml's
+  order of heads. A Claude model is listed by its bare id (`claude-opus-5-5`) and folds into Claude Code's alias row; a
+  selector with neither `claude` nor `anthropic` in it (a hand-written `discovery_prefix`) is listed as
+  `claude-<selector>`; every other by its selector.
+- splice writes no model list for any session: no `modelPicker`, `availableModels`, `enforceAvailableModels`,
+  `modelOverrides`, `additionalModelOptionsCache` or tier variables. A head's `models` and `model_slots` say what the
+  gateway lists and runs for that head, not a list of the head's own.
+- A head that forwards the person's own Claude login keeps its own way to Anthropic this release, with no list of
+  splice's either.
+
+So adding a provider is how a new backend reaches every session: its models show in `claude`'s `/model` once it is
+signed in. Don't offer a new head's command to type. `splice claude retire --all` retires the heads a machine still has,
+`splice claude restore` brings one back, and `splice claude check` says whether `claude` on the Splice gateway is the
+one way, with the one list.
+
 ## 1. Provider, head, command
 
 - A **provider** is one upstream: `dialect` (the wire splice speaks to it), `base_url`, `auth`, optional
@@ -15,7 +40,8 @@ default in `toml-reference.md`. How to edit `splice.toml` safely (backup, check,
   turn for one provider. Table `[heads.<key>]`, with `provider = "<key>"` and a port no other head and not
   the control plane uses. Many heads may share one provider.
 - A **command** is the wrapper the person types to start Claude Code on a head, `[heads.<key>.claude]
-  command`. `splice install <command>` links it into `~/.local/bin`.
+  command`. `splice install <command>` links it into `~/.local/bin`. Deprecated and going in a coming release
+  (section 0): the person types `claude` and `/model <selector>` instead.
 - Claude Code sees each model row as `<discovery_prefix><id>`. A turn on an id that no declared or discovered
   row names is refused before it reaches the upstream.
 

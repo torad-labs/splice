@@ -7,6 +7,7 @@ import splice.app.cli.AdminSupport
 import splice.app.cli.auth.CliSignIn
 import splice.app.desktop.lane.ClaudeLaneLook
 import splice.core.GATEWAY_VERSION
+import splice.core.head.DeprecatedHeads
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepthProbe
 import splice.core.topology.AuthKind
@@ -82,10 +83,15 @@ internal class StatusCommand(
             ClaudeLaneLook(topology, TopologyStatePaths(envReader).of(topology), LogSink { System.err.print(it) })
         println()
         println("  " + palette.paint(palette.live, lane.line()))
+        // head-catalog: every custom head the install still has is deprecated, and this is where a person reads it,
+        // with what to type instead and how to retire it.
+        DeprecatedHeads(topology, envReader).all(lane.reading().onDoor).forEach { head ->
+            println("  " + palette.paint(palette.quiet, head.text))
+        }
         if (up) extras.printAccounts(port, envReader)
         extras.printCapabilities(topology)
         // The modes the door adds (modes/README.md), as the running daemon has them.
-        if (up) modeLines.lines(port, envReader).also { if (it.isNotEmpty()) println() }.forEach(::println)
+        if (up) modes(port, envReader)
         println()
         // Paths sink below the table: they are reference, not the answer, and an operator who wants
         // them knows they are here. Above the heads they read as though something were wrong.
@@ -105,6 +111,11 @@ internal class StatusCommand(
     }
 
     internal fun clientVersionWarning(health: HealthView?): String? = health?.client?.versionWarning
+
+    /** The modes the door adds, each on a line of its own after a blank one, as the running daemon has them. */
+    private fun modes(port: Int, envReader: EnvReader) {
+        modeLines.lines(port, envReader).also { if (it.isNotEmpty()) println() }.forEach(::println)
+    }
 
     /** DR-86 twin of doctor's jarCheck; lives on StatusExtras, kept here for the permanent arm's callers. */
     internal fun jarLine(): String = extras.jarLine()

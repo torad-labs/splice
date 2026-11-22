@@ -67,6 +67,8 @@ import splice.app.control.peer.PeersMount
 import splice.app.control.usage.UsageMount
 import splice.app.head.HeadRemovalAssembly
 import splice.app.peer.PeersWiring
+import splice.app.retire.HeadRetirementAssembly
+import splice.app.retire.RetirementMount
 import splice.core.config.ConfigService
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
@@ -142,6 +144,9 @@ internal class ControlServer(
     // V4-220 item 3: the add's save restarts through lifecycle's own restarts, never a second path.
     private val add = AddMount(ports, guard, lifecycle.restarts, shutdownDaemon, log)
     private val removal = HeadRemovalAssembly(config, ports, runtime, heads, log).build()
+
+    // Nov 19, 2026: `splice claude retire`, `restore` and `check` (head-catalog), beside the removal.
+    private val retirement = RetirementMount(HeadRetirementAssembly(config, ports, runtime, heads, log).build(), guard)
     private val configuration = ConfigurationMount(config, readings.health.staleness(), ports, guard, removal)
     private val usage = UsageMount(heads, resolver, config, clientVersions, ports, guard, log)
     private val accounts = AccountsMount(heads, resolver, ports, guard, log, config.statePaths.stateDir, add.restart)
@@ -226,7 +231,8 @@ internal class ControlServer(
         ControlMount(diagnostics::register),
         ControlMount(models::register),
         ControlMount(launch::register),
-    ) + standalone.rows + listOf(ControlMount(desktop::register), ControlMount(console::register)) +
+    ) + standalone.rows +
+        listOf(ControlMount(desktop::register), ControlMount(retirement::register), ControlMount(console::register)) +
         listOfNotNull(peers?.let { ControlMount(it::register) }, mcp) + standalone.last
     private val resources: List<BoundResource> = listOfNotNull(mcp, sessionWake)
 

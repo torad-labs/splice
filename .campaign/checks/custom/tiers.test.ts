@@ -46,13 +46,13 @@ beforeAll(async () => {
 dialect = "openai-chat"
 base_url = "${team.url}"
 auth = { kind = "api-key", env = "MOCK_UPSTREAM_KEY" }
+model_slots = { opus = "glm-big", sonnet = "glm-mid", haiku = "glm-small", fable = "glm-fable" }
 ${["glm-big", "glm-mid", "glm-small", "glm-fable"].map((m) => model("acme", m)).join("")}
 [heads.acme]
 provider = "acme"
 port = ${await freePort()}
 discovery_prefix = "claude-acme--"
 pinned_model = "glm-big"
-model_slots = { opus = "glm-big", sonnet = "glm-mid", haiku = "glm-small", fable = "glm-fable" }
 ` +
     mockHead({ key: "solo", command: "claude-solo", port: await freePort(), url: pinnedOnly.url, model: "solo-model" });
   s = await Splice.boot(toml);

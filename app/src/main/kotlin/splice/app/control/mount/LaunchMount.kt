@@ -3,17 +3,21 @@
 // what `<command> -r <id>` on a head would do.
 package splice.app.control.mount
 
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import splice.app.control.LaunchHeadAdapter
 import splice.app.control.ManagedHead
 import splice.app.control.api.ControlAudit
+import splice.app.control.api.ControlBodies
 import splice.app.control.api.HeadResolver
 import splice.client.resume.TranscriptModelRewrite
 import splice.client.resume.originals.TranscriptOriginals
 import splice.core.util.LogSink
 import splice.http.JsonBody
+import splice.http.JsonReply
 import splice.launch.recipe.DoorNow
 import splice.launch.recipe.LaunchRoutes
 import splice.launch.recipe.LaunchService
@@ -33,7 +37,8 @@ internal class LaunchMount(
 ) {
     private val launchHeads = LaunchHeadAdapter.heads(heads, resolver)
     private val foregroundRoute = ForegroundHookRoute(launchHeads, sessions.activity)
-    private val launchRoutes = LaunchRoutes(launchHeads, launchService, LaunchHeadAdapter.audit(audit), JsonBody())
+    private val launchAudit = LaunchHeadAdapter.audit(audit)
+    private val launchRoutes = LaunchRoutes(launchHeads, launchService, launchAudit, JsonBody())
 
     // V4-129 review: the wrap routes act on the SAME wrap the launch route resolves a wrapped
     // `claude` through (LaunchService.wrap), so what /api/claude-head/wrap writes is what /launch
@@ -58,8 +63,18 @@ internal class LaunchMount(
     // LaunchService lays down no such hook, and serves no route for one.
     private val speedRoute = launchService?.speeds?.let { SpeedHookRoute(launchHeads, it, log) }
 
+    // head-catalog (gw-retire): a retired command is refused before its head is read, saying how to come back.
+    private val stateDir = sessions.statePaths.stateDir
+
+    private suspend fun launch(call: ApplicationCall) {
+        val name = call.parameters["head"].orEmpty()
+        val retired = LaunchHeadAdapter.retired(name, stateDir) ?: return launchRoutes.launch(call)
+        launchAudit.refused(name, retired)
+        JsonReply(HttpStatusCode.Conflict, ControlBodies.errorJson(retired)).send(call)
+    }
+
     fun register(route: Route) {
-        route.post("/launch/{head}") { guard.guarded(call) { launchRoutes.launch(call) } }
+        route.post("/launch/{head}") { guard.guarded(call) { launch(call) } }
         route.post("/hooks/resume/{head}") { guard.guarded(call, Door.SESSION) { resumeHookRoute.resume(call) } }
         route.post("/hooks/foreground/{head}") { guard.guarded(call, Door.SESSION) { foregroundRoute.receive(call) } }
         speedRoute?.let { speed ->

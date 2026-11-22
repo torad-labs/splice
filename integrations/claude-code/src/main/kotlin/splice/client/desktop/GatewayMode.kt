@@ -1,0 +1,45 @@
+// NEW: head-catalog (docs/specs/door-default.md, decision 2). What puts a Claude Code in its gateway mode, the way it
+// runs as a client of any LLM gateway (code.claude.com/docs/en/llm-gateway-protocol.md, read Nov 19, 2026): the
+// gateway's address as ANTHROPIC_BASE_URL (it speaks the Anthropic Messages format), its key as ANTHROPIC_AUTH_TOKEN (a
+// bearer, so no API-key approval prompt shows), model discovery on, so `/model` is filled from the gateway's
+// /v1/models, and the model the session starts on. Discovery does not run while any provider switch is set, so every
+// one is taken out of what the session inherits, with the Mantle door's variables, every other Anthropic credential,
+// and every variable that lays a model list of its own beside the gateway's (the tiers, the small model, a custom
+// option). Facts of Claude Code's dialect, so they live here with the others.
+package splice.client.desktop
+
+import splice.client.ClaudeModelLists
+
+public class GatewayMode {
+    /** What a gateway-mode launch sets: [base] the gateway's address, [key] its key, and [model] the selector the
+     *  session starts on, when there is one. */
+    public fun env(base: String, key: String, model: String?): Map<String, String> = buildMap {
+        put(GATEWAY_BASE_URL, base)
+        put(GATEWAY_TOKEN, key)
+        put(GATEWAY_DISCOVERY, "1")
+        model?.let { put(DESKTOP_MODEL, it) }
+    }
+
+    /** What a gateway-mode launch takes out of the environment it inherits: every way past the gateway, and every
+     *  model list but the gateway's. */
+    public val unset: List<String> =
+        (providerSwitches + ALL_SWITCHES).distinct() + CREDENTIALS + ClaudeModelLists.variables
+
+    /** Whether [env], what a launch sets, puts its session in gateway mode: a base URL, a bearer, discovery on, and
+     *  no provider switch. */
+    public fun on(env: Map<String, String>): Boolean =
+        env[GATEWAY_BASE_URL] != null && env[GATEWAY_TOKEN] != null && env[GATEWAY_DISCOVERY] == "1" &&
+            ALL_SWITCHES.none { env[it].orEmpty() !in setOf("", "0") }
+}
+
+/** Where a gateway-mode session sends its turns, its key, and the switch that has it ask the gateway for `/model`. */
+public const val GATEWAY_BASE_URL: String = "ANTHROPIC_BASE_URL"
+public const val GATEWAY_TOKEN: String = "ANTHROPIC_AUTH_TOKEN"
+public const val GATEWAY_DISCOVERY: String = "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"
+
+// Claude Code's provider switches: discovery does not run while one is set.
+private val ALL_SWITCHES =
+    listOf("CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_USE_MANTLE")
+
+// The other credentials Claude Code would send in place of the gateway's key.
+private val CREDENTIALS = listOf("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN")

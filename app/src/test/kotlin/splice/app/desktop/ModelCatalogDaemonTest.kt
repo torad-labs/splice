@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.Daemon
+import splice.app.desktop.record.DesktopKey
 import splice.core.auth.RefreshAttempt
 import splice.core.config.FileHeldKey
 import splice.core.config.MgmtKey
@@ -88,6 +89,7 @@ class ModelCatalogDaemonTest {
     private val statePaths by lazy { StatePaths(baseOverride = tmp.resolve("state")) }
     private val mgmt by lazy { MgmtKey(statePaths).get() }
     private val terminal by lazy { FileHeldKey(statePaths.terminalKeyFile, "splice-terminal-", "claude", "", {}).get() }
+    private val desktop by lazy { DesktopKey(statePaths.desktopKeyFile, {}).get() }
 
     @Test
     fun `a start publishes one catalog every list agrees on, and a provider edit shows at the next start`() =
@@ -107,21 +109,50 @@ class ModelCatalogDaemonTest {
         }
 
     private suspend fun firstStart() {
-        val discovery = get(terminal, "/door/v1/models")
-        assertEquals(discovery, get(terminal, "/desktop/v1/models"))
+        // head-catalog: Claude Desktop's key reads the rich discovery rows; the terminal's key reads Anthropic's list
+        // shape at either path, with the same ids in the same order.
+        val discovery = get(desktop, "/desktop/v1/models")
         val rows = discovery.getValue("data").jsonArray.map { it.jsonObject }
+        // Desktop lists another lab's model under the name Claude's clients keep for it; the gateway's own list
+        // (Claude Code's /model) spells it as its selector. One catalog, each surface in its own spelling.
         assertEquals(
-            listOf("claude-opus-5-5", "claude-xai--grok-4.7", "claude-xai--grok-mini"),
+            listOf("claude-opus-5-5", "claude-xai--4.7", "claude-xai--mini"),
             rows.map { it.str("id") },
         )
+        val listed = get(terminal, "/door/v1/models").getValue("data").jsonArray.map { it.jsonObject }
+        assertEquals(
+            listOf("claude-opus-5-5", "claude-xai--grok-4.7", "claude-xai--grok-mini"),
+            listed.map { it.str("id") },
+        )
+        assertEquals(rows.map { it.str("display_name") }, listed.map { it.str("display_name") })
+        assertEquals(listed, get(terminal, "/desktop/v1/models").getValue("data").jsonArray.map { it.jsonObject })
 
+        providerFacts(rows)
+
+        // The file and /api/models are the same snapshot, and the file holds no credential.
+        val file = Files.readString(statePaths.modelCatalogFile)
+        assertFalse("sk-claude-x" in file || "xai-fixture-secret" in file)
+        val kept = json.parseToJsonElement(file).jsonObject.getValue("models")
+        assertEquals(kept, get(mgmt, "/api/models").getValue("models"))
+        assertEquals(listOf("claude-opus-5-5", "grok-4.7", "grok-mini"), kept.jsonArray.map { it.jsonObject.str("id") })
+
+        // `splice desktop` names Desktop's list; `splice claude`'s picker the same models by their selectors.
+        val desktop = get(mgmt, "/api/desktop").getValue("models").jsonArray.map { it.jsonObject }
+        assertEquals(rows.map { it.str("display_name") }, desktop.map { it.str("label") })
+        assertTrue(desktop.all { splice.core.model.ClientModelNames.kept(it.str("model")) })
+        val picker = get(mgmt, "/api/claude").getValue("models").jsonArray.map { it.jsonObject }
+        assertEquals(rows.map { it.str("display_name") }, picker.map { it.str("label") })
+    }
+
+    /** Every provider's own facts, as its discovery row carries them. */
+    private fun providerFacts(rows: List<JsonObject>) {
         val opus = rows.first { it.str("id") == "claude-opus-5-5" }
         assertEquals("Claude Opus 5.5", opus.str("display_name"))
         assertEquals("opus", opus.str("anthropic_family_tier"))
         assertEquals("max", opus.str("max_effort_level"))
 
         // Another lab's model keeps its own selector, description and published reasoning properties.
-        val grok = rows.first { it.str("id") == "claude-xai--grok-4.7" }
+        val grok = rows.first { it.str("id") == "claude-xai--4.7" }
         assertEquals("Grok 4.7", grok.str("display_name"))
         assertEquals("xAI's flagship", grok.str("description"))
         assertEquals("high", grok.str("max_effort_level"))
@@ -143,34 +174,20 @@ class ModelCatalogDaemonTest {
         assertEquals("high", grok.getValue("runtime").jsonObject.getValue("default_effort").jsonPrimitive.content)
 
         // A model whose provider says nothing of its reasoning gets no effort and no Claude model to behave as.
-        val mini = rows.first { it.str("id") == "claude-xai--grok-mini" }
+        val mini = rows.first { it.str("id") == "claude-xai--mini" }
         assertNull(mini["max_effort_level"])
         assertNull(mini["behaves_as"])
         assertNull(mini["description"])
-
-        // The file and /api/models are the same snapshot, and the file holds no credential.
-        val file = Files.readString(statePaths.modelCatalogFile)
-        assertFalse("sk-claude-x" in file || "xai-fixture-secret" in file)
-        val kept = json.parseToJsonElement(file).jsonObject.getValue("models")
-        assertEquals(kept, get(mgmt, "/api/models").getValue("models"))
-        assertEquals(listOf("claude-opus-5-5", "grok-4.7", "grok-mini"), kept.jsonArray.map { it.jsonObject.str("id") })
-
-        // `splice desktop` names Desktop's list; `splice claude`'s picker the same models by their selectors.
-        val desktop = get(mgmt, "/api/desktop").getValue("models").jsonArray.map { it.jsonObject }
-        assertEquals(rows.map { it.str("display_name") }, desktop.map { it.str("label") })
-        assertTrue(desktop.all { splice.core.model.ClientModelNames.kept(it.str("model")) })
-        val picker = get(mgmt, "/api/claude").getValue("models").jsonArray.map { it.jsonObject }
-        assertEquals(rows.map { it.str("display_name") }, picker.map { it.str("label") })
     }
 
     /** A start asks every provider before it publishes, so its first answer already holds both edits. */
     private suspend fun afterEdits() {
-        val rows = get(terminal, "/door/v1/models").getValue("data").jsonArray.map { it.jsonObject }
+        val rows = get(desktop, "/desktop/v1/models").getValue("data").jsonArray.map { it.jsonObject }
         assertEquals(
-            listOf("claude-opus-5-5", "claude-sonnet-5-5", "claude-xai--grok-4.7", "claude-xai--grok-mini"),
+            listOf("claude-opus-5-5", "claude-sonnet-5-5", "claude-xai--4.7", "claude-xai--mini"),
             rows.map { it.str("id") },
         )
-        assertEquals("Grok 4.7 Fast", rows.first { it.str("id") == "claude-xai--grok-4.7" }.str("display_name"))
+        assertEquals("Grok 4.7 Fast", rows.first { it.str("id") == "claude-xai--4.7" }.str("display_name"))
         val file = json.parseToJsonElement(Files.readString(statePaths.modelCatalogFile)).jsonObject
         assertEquals(file.getValue("models"), get(mgmt, "/api/models").getValue("models"))
         val picker = get(mgmt, "/api/claude").getValue("models").jsonArray.map { it.jsonObject.str("label") }
@@ -188,6 +205,9 @@ class ModelCatalogDaemonTest {
     }
 
     private suspend fun boot(statePaths: StatePaths, toml: String): Daemon {
+        // Desktop's own app mode is the caller that reads the rich discovery rows, and the door is open to it.
+        Files.createDirectories(statePaths.stateDir)
+        Files.writeString(statePaths.desktopFile, """{"on":true}""")
         val daemon = Daemon(
             topology = TopologyLoader.parse(toml),
             statePaths = statePaths,

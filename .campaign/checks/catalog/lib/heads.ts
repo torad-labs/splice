@@ -13,6 +13,7 @@ dialect = "anthropic-passthrough"
 base_url = "${o.url}"
 auth = { kind = "client" }
 extra_headers = { anthropic-version = "2023-06-01" }
+model_slots = { opus = "claude-opus-5-5", sonnet = "claude-opus-5-5", haiku = "claude-haiku-5-5" }
 
 [[providers.anthropic.models]]
 id = "claude-opus-5-5"
@@ -29,7 +30,6 @@ provider = "anthropic"
 port = ${o.port}
 discovery_prefix = "claude--"
 pinned_model = "claude-opus-5-5"
-model_slots = { opus = "claude-opus-5-5", sonnet = "claude-opus-5-5", haiku = "claude-haiku-5-5" }
 [heads.claude.claude]
 command = "claude"
 `;
@@ -53,6 +53,9 @@ export function addClaudeAccount(s: Splice, head: string, label: string, token: 
 /** A head on an API key whose discovery prefix is `prefix`, which a person may write by hand in splice.toml. */
 export function prefixedHead(o: { key: string; command: string; prefix: string; port: number; url: string; model: string; window?: number }): string {
   return `
+[door.selector_aliases]
+"${o.prefix}" = "${o.key}"
+
 [providers.${o.key}]
 dialect = "openai-chat"
 base_url = "${o.url}"

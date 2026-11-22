@@ -288,8 +288,11 @@ Source: Topology.kt (declaredWindowFor, lines 256-265; windowFor, lines 405-413)
 
 ### 5.4 discovery
 
-At start and hourly the daemon asks the provider's list endpoint what it serves. Undeclared usable models join
-the picker of a head with no `models` allowlist. A local provider is never asked.
+At start and hourly the daemon asks the provider's list endpoint what it serves. Undeclared usable models run on a
+head with no `models` allowlist, and the Splice gateway lists them for a head called with a login or one that
+declares no models. A local provider is never asked. No head writes a model list of its own into a session (the
+`/model` every session has is the gateway's, `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY`); custom heads are
+deprecated and will be removed in a coming release, and `splice claude retire` retires them.
 
 | field | type | default | effect |
 |---|---|---|---|
@@ -360,8 +363,8 @@ Source: TokenCost.kt (TomlRates, lines 168-212); SpeedRates.kt; HeadConfig.kt (l
 | `port` | int, required | none | the loopback port; unique across heads and the control plane |
 | `discovery_prefix` | string, required, non-empty | none | the picker namespace: Claude Code sees `<prefix><id>` |
 | `pinned_model` | string | `""` | the default model; required except on a `client` head |
-| `models` | array of `{ id, slot }` | absent: the provider's whole surface | an ordered allowlist. `slot` is `opus`, `sonnet`, `haiku` or `fable`, one each, one id each |
-| `model_slots` | map of tier to id | empty | tiers without restricting the picker. Never with slots inside `models` |
+| `models` | array of `{ id, slot }` | absent: the provider's whole surface | an ordered allowlist of what the head serves, and so of what the Splice gateway lists for it. `slot` is `opus`, `sonnet`, `haiku` or `fable`, one each, one id each: the model the gateway runs for that tier in a session on this head |
+| `model_slots` | map of tier to id | empty | tiers without restricting the models. Never with slots inside `models` |
 | `context_window` | int, positive | absent | forces one window onto every selected row (live) |
 | `overrides` | map of knob to string | empty | knobs for this head only, section 4 |
 | `system_prompt` / `system_prompt_file` | string | absent | standing text on every turn of a session (not on Claude Code's side requests, which carry no tools, or its auto-mode review); never both. A relative file is beside splice.toml |

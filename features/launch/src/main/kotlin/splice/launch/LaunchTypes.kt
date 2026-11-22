@@ -103,6 +103,11 @@ public data class LaunchSpec(
     public val helpers: SessionHelpers
         get() = SessionHelpers(gateway.keyHelper, teamServer?.telemetry?.headersHelper)
 
+    /** head-catalog: whether this head's command starts its session on the Splice gateway, in Claude Code's gateway
+     *  mode. Every head does but one that forwards the caller's own Claude login, which the gateway never carries
+     *  (door-default, "Not in this change"). Read without launching: `splice claude check` says what a launch does. */
+    public val startsOnGateway: Boolean get() = !gateway.forwardClientAuth
+
     /** This boot-assembled spec with the current catalog's roster, labels, picker and windows.
      *  Read per launch: provider discoveries and accepted TOML window edits need no daemon restart.
      *  Discovered rows join the picker, never the positional tiers; client spellings follow their windows. */
@@ -196,7 +201,11 @@ public data class LaunchModels(
      *  is planted under this wrapped spelling so the picker's allowlist hides its row (see
      *  LaunchService.buildEnv). Blank keeps the duplicate row. */
     val discoveryPrefix: String = "",
-)
+) {
+    /** The selector the head's pinned model runs as in `claude`'s list (its discovery prefix and the model), or null
+     *  when the head pins none. */
+    public val pinnedSelector: String? get() = pinnedModel.takeIf { it.isNotEmpty() }?.let { discoveryPrefix + it }
+}
 
 /** The effort a launch starts its session at, read when the launch asks: one of Claude Code's --effort words, or null
  *  for none of splice's. */

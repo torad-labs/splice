@@ -5,10 +5,6 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import splice.client.login.LoginInterception
-import splice.client.resume.ForegroundHook
-import splice.client.resume.ResumeHook
-import splice.client.speed.SpeedHook
 import splice.core.util.JsonScalars
 import java.nio.file.Path
 
@@ -65,11 +61,8 @@ internal object HookSettings {
         configDir: Path,
         inheritedBefore: JsonElement? = null,
     ): Merged {
-        val owned = LoginInterception.ownedHookCommands(configDir) + setOf(
-            configDir.resolve(ResumeHook.RESUME_HOOK_SH).toString(),
-            configDir.resolve(ForegroundHook.SCRIPT).toString(),
-            configDir.resolve(SpeedHook.SPEED_HOOK_SH).toString(),
-        )
+        // Exact generated commands (HeadFolderLayout), so preserving local hooks never revives an obsolete one.
+        val owned = HeadFolderLayout.hookCommands(configDir)
         val localEvents = local as? JsonObject
         val globalEvents = global as? JsonObject
         val events = localEvents?.keys.orEmpty() + globalEvents?.keys.orEmpty() + additions.keys

@@ -8,11 +8,11 @@ package splice.app.cli.auth
 
 import splice.accounts.claude.CLAUDE_LOGIN_HEAD
 import splice.app.cli.AdminSupport
-import splice.app.head.HeadConfigDirs
 import splice.client.ClaudeHead
 import splice.client.ClaudeLoginResult
 import splice.client.ClaudeLogins
 import splice.client.HeadSessions
+import splice.core.config.HeadConfigDirs
 import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.LaunchDoors

@@ -5,9 +5,12 @@ package splice.app.control
 
 import splice.app.control.api.ControlAudit
 import splice.app.control.api.HeadResolver
+import splice.core.retired.CommandRetirements
+import splice.core.topology.CLAUDE_COMMAND
 import splice.launch.LaunchAudit
 import splice.launch.LaunchHead
 import splice.launch.LaunchHeads
+import java.nio.file.Path
 
 internal object LaunchHeadAdapter {
     fun adapt(head: ManagedHead): LaunchHead = LaunchHead(
@@ -26,6 +29,15 @@ internal object LaunchHeadAdapter {
         override fun byKey(key: String): LaunchHead? = heads[key]?.let(::adapt)
 
         override fun targets(name: String): List<LaunchHead> = resolver.launchTargets(name).map(::adapt)
+    }
+
+    /** head-catalog (gw-retire): what a launch of [name] is told, before Claude Code starts and before anything of its
+     *  head is read or written, when `splice claude retire` retired its command (a stale link, or a shell's hash of
+     *  it); null for every other name. `claude` is never refused here: on the Splice gateway it is the one way. */
+    fun retired(name: String, stateDir: Path): String? {
+        if (name == CLAUDE_COMMAND) return null
+        val records = CommandRetirements(stateDir)
+        return records.of(name)?.let(records::refusal)
     }
 
     fun audit(audit: ControlAudit): LaunchAudit = object : LaunchAudit {

@@ -7,7 +7,6 @@ package splice.app.desktop.lane
 import splice.app.desktop.DoorCaller
 import splice.app.desktop.catalog.DesktopLineup
 import splice.app.desktop.catalog.DesktopProviders
-import splice.client.desktop.DoorPicker
 import splice.client.desktop.DoorPickerRow
 import splice.client.login.DoorLogin
 import splice.core.config.FileHeldKey
@@ -17,6 +16,7 @@ import splice.core.topology.Topology
 import splice.core.util.LogSink
 import splice.launch.recipe.ClaudeDoor
 import splice.launch.recipe.DoorLaunchSpec
+import splice.launch.recipe.GatewayAt
 
 internal class TerminalDoor(
     private val topology: Topology,
@@ -52,15 +52,15 @@ internal class TerminalDoor(
      *  [open]. */
     override suspend fun launchCommand(name: String): DoorLaunchSpec? =
         topology.door.commands[name]?.let { command ->
-            launched?.launchCommand(command, command.providerKey(topology.heads))
+            launched?.launchCommand(command.providerKey(topology.heads))
         }
 
     /** Whether `claude` is on the door: read from the lane record, so it holds before [open] too. */
     override fun onDoor(): Boolean = records.lane(claudeHead) == DOOR_LANE
 
-    /** The door's rows a launch of `claude` on its head adds after Claude Code's own (decision 9); null before [open],
-     *  on the door, and with no account signed in. */
-    override suspend fun headPicker(): DoorPicker? = launched?.headPicker()
+    /** The Splice gateway [head]'s command points its session at, on either lane; null before [open]. */
+    override suspend fun gateway(head: String): GatewayAt? =
+        launched?.gateway(topology.heads[head]?.provider ?: head)
 
     override fun headHere(): Boolean = claudeHead()
 

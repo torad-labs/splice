@@ -217,6 +217,7 @@ dialect = "anthropic-passthrough"
 base_url = "${o.url}"
 auth = { kind = "client" }
 extra_headers = { anthropic-version = "2023-06-01" }
+model_slots = { opus = "claude-opus-5-5", sonnet = "claude-opus-5-5", haiku = "claude-haiku-5-5" }
 
 [[providers.anthropic.models]]
 id = "claude-opus-5-5"
@@ -233,7 +234,6 @@ provider = "anthropic"
 port = ${o.port}
 discovery_prefix = "claude--"
 pinned_model = "claude-opus-5-5"
-model_slots = { opus = "claude-opus-5-5", sonnet = "claude-opus-5-5", haiku = "claude-haiku-5-5" }
 [heads.claude.claude]
 command = "claude"
 `;

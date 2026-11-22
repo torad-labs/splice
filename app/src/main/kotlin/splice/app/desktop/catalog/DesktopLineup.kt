@@ -10,6 +10,7 @@ package splice.app.desktop.catalog
 import splice.app.provider.ProviderLogin
 import splice.app.provider.ServedProvider
 import splice.app.provider.ServingProviders
+import splice.client.desktop.GatewayDiscovery
 import splice.core.model.ModelTierSuffix
 import splice.core.usage.QuotaFull
 
@@ -48,6 +49,8 @@ internal data class DesktopLineup(
     val desktopOnly: List<ServedProvider> = emptyList(),
     val desktopModels: List<DoorModel> = emptyList(),
 ) {
+    private val discovery = GatewayDiscovery()
+
     /** The rows of a terminal session's picker (docs/specs/door-default.md, decision 4): every model of a provider
      *  called with a login splice holds, and of a provider on an API key or a local server the models splice.toml
      *  declares for it, or every model it lists when it declares none. Until Nov 18, 2026 the picker left every key
@@ -94,6 +97,8 @@ internal data class DesktopLineup(
     fun find(selector: String): Pair<ServedProvider, DoorModel>? {
         val model = models.firstOrNull { it.model == selector }
             ?: models.firstOrNull { ModelTierSuffix.strip(it.model) == selector }
+            // head-catalog: the gateway lists a selector Claude Code would drop with `claude-` before it (GatewayDiscovery.idOf)
+            ?: discovery.selectorOf(selector)?.let { listed -> models.firstOrNull { it.model == listed } }
             ?: return standingFor(selector)?.takeIf { it != selector }?.let(::find)
         return providers.firstOrNull { it.key == model.provider }?.let { it to model }
     }

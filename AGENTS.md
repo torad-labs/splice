@@ -142,18 +142,29 @@ Code tab talks to the same door with Desktop's key (`DesktopCaller`); `/desktop`
 Each caller starts on a model of its own: the terminal's `claude` on the lane's (`ClaudeLane.starting`), Claude Desktop
 on the one `splice desktop on --model` names, which its picker lists first (`DesktopSwitch`). The model a turn names
 picks the head
-(`DoorRouting`); the picker lists the models of the heads signed in with an OAuth login. A launch on the door sets
-Claude Code's Mantle variables, `ANTHROPIC_MODEL` and `DISABLE_LOGIN_COMMAND`/`DISABLE_LOGOUT_COMMAND`, lays a
-`--settings` overlay carrying the picker and the hook that answers `/login`, and sets no `CLAUDE_CONFIG_DIR`. The one
+(`DoorRouting`); `/model` lists the gateway's models (`GET /door/v1/models`). A launch on the door starts Claude
+Code in its gateway mode (`ANTHROPIC_BASE_URL` at the Splice gateway, the terminal key as `ANTHROPIC_AUTH_TOKEN`,
+`CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`, no `CLAUDE_CODE_USE_*` switch), sets `ANTHROPIC_MODEL` and
+`DISABLE_LOGIN_COMMAND`/`DISABLE_LOGOUT_COMMAND`, lays a `--settings` overlay carrying the hook that answers
+`/login` and no model list, and sets no `CLAUDE_CONFIG_DIR`. The one
 file it lays in `~/.claude` is its bare `/login`, `commands/login.md` (`DoorLogin`), which opens the accounts page
 through `splice console`: laid where it is missing, never over a `/login` the person wrote, and taken out by
 `splice claude head` and `splice uninstall`.
 
-- **Head commands are deprecated, and kept.** `claudex`, `claude-grok`, `claude-kimi`, `claude-muse`, `claude` on
-  its head and every command `splice add` links still launch and answer. Each head launch's warning carries
-  `HEADS_DEPRECATED` (`features/launch/.../recipe/ClaudeDoor.kt`), which names `splice claude door`; a launch on the
-  door carries none. `splice status` and `splice doctor` name the lane. Do not remove, rename or refuse a head, and
-  set no removal date.
+- **Custom heads are deprecated and will be removed in a coming release** (head-catalog, Nov 19, 2026). A custom head
+  is a head's own command (`claudex`, `claude-grok`, `claude` on its head, every command `splice add` links) and its
+  own Claude folder; `claude` through the Splice gateway, with `/model <selector>`, replaces them, and every model name
+  of today keeps working. In this release they still launch: every head's command starts Claude Code through the Splice
+  gateway in gateway mode, as `claude` does, but a head that forwards the person's own Claude login. Each head launch's
+  warning carries one line built by `HeadsDeprecated` (`features/launch/.../recipe/ClaudeDoor.kt`): the coming
+  removal and what to type; `claude` on the gateway carries none. `splice claude retire <command|key>... | --all`
+  moves a head's command link and splice's settings in its folder into a dated backup, `splice claude restore` puts
+  them back byte for byte, and `splice claude check [--json]` says whether one way and one list hold. Retiring is the
+  person's act: an upgrade retires nothing.
+- **One list.** Every session's `/model` is the Splice gateway's `/v1/models` answer (`GatewayModels`, from
+  `DesktopLineup.picker`), which Claude Code discovers in gateway mode. No launch carries a model list of splice's:
+  no `modelPicker`, `availableModels`, `enforceAvailableModels`, `modelOverrides`, `additionalModelOptionsCache` or
+  tier variables, in the `--settings` overlay, the environment, or any Claude folder splice writes.
 - **The lane** is in `claude-lane.json` in the state folder (`ClaudeLaneRecords`): the one chosen with `splice claude
   door` or `head`, or with none chosen, the head while `splice.toml` has a head whose command is `claude` (or a
   `[remote.claude]`), and the door otherwise. `splice setup` links `claude` on the door and adds no head keyed

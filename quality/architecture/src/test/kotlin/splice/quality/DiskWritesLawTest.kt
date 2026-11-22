@@ -314,6 +314,11 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/cli/mcp/McpServiceRegistration.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/head/HeadTraceStores.kt" to mapOf("ActivityDays(" to 1),
     // The per-session fallback models, in the session-fallbacks.json README row.
+    "app/src/main/kotlin/splice/app/retire/HeadBackup.kt" to mapOf(
+        "Files.copy(" to 3,
+        "Files.createSymbolicLink(" to 2,
+        "writeAtomic0600(" to 2,
+    ),
     "app/src/main/kotlin/splice/app/head/SessionFallbackStore.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/mcp/NativeCodexMcpFiles.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/mcp/NativeCodexSocketProxy.kt" to mapOf("writeAtomic0600(" to 1),
@@ -335,6 +340,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // The console launch page, 0600, documented in the console-open.html README row.
     "app/src/main/kotlin/splice/app/cli/status/ConsoleCommand.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/ConfigService.kt" to mapOf("writeAtomic0600(" to 1),
+    "core/src/main/kotlin/splice/core/retired/CommandRetirements.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/retired/RetiredHeads.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/speed/SessionSpeeds.kt" to mapOf("writeAtomic0600(" to 1),
     // The private MCP receipt row: two platform branches create the same lock, one atomic publication writes each entry.

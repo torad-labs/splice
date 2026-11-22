@@ -103,7 +103,12 @@ class HeadServerCollectDisconnectTest {
     /** Write the request head + body on a raw socket: a real client whose close() is a real FIN,
      *  with no HTTP-client connection pool or cancellation semantics in between. The two arms
      *  differ in exactly one byte-range — `stream` — so any difference in outcome is the path. */
-    private fun openTurn(stream: Boolean, scenario: String = "hold", session: Boolean = true): Socket {
+    private fun openTurn(
+        stream: Boolean,
+        scenario: String = "hold",
+        session: Boolean = true,
+        sessionId: String = "synthetic-collect-$stream-$scenario",
+    ): Socket {
         val body = """{"model":"claude-codex--gpt-5.6-sol","stream":$stream,"max_tokens":64,""" +
             """"system":"You are a test. SCENARIO:$scenario",""" +
             """"messages":[{"role":"user","content":"go"}]}"""
@@ -111,7 +116,7 @@ class HeadServerCollectDisconnectTest {
         val request = "POST /v1/messages HTTP/1.1\r\n" +
             "Host: 127.0.0.1:$port\r\n" +
             "Authorization: Bearer test-inference-token\r\n" +
-            (if (session) "x-claude-code-session-id: synthetic-collect-$stream-$scenario\r\n" else "") +
+            (if (session) "x-claude-code-session-id: $sessionId\r\n" else "") +
             "Content-Type: application/json\r\n" +
             "Content-Length: ${body.toByteArray().size}\r\n" +
             "Connection: close\r\n\r\n" + body
@@ -173,6 +178,49 @@ class HeadServerCollectDisconnectTest {
             abandonMidTurnAndPoll(stream = true, observeMs = 20_000),
             "the stream path must free its slot on a client hang-up: ${gate.snapshot()}",
         )
+    }
+
+    /** A client that hangs up mid-stream is not an answer to continue: the gateway asks the provider ONCE and stops.
+     *  The re-anchor gate reads the client as gone and vetoes a continuation; this pins that end to end, because a
+     *  continuation is a second upstream round nobody is reading — the shape of the connection HeadServerLoadTest
+     *  found still parked after every client was cancelled (Nov 13, 2026). The provider is still parked on the hold
+     *  latch, so a second round would block inside it and be recorded here. */
+    @Test
+    fun `a client hang-up mid-stream asks upstream once and stops`() = runBlocking {
+        mock.resetHold()
+        val before = mock.upstreamBodies.size
+        val socket = openTurn(stream = true, sessionId = "synthetic-once-stream-hold")
+        try {
+            assertTrue(waitFor(15_000) { gate.snapshot().inflight == 1 }, "the turn must hold a gate slot")
+            assertTrue(waitFor(15_000) { mock.upstreamBodies.size > before }, "the turn must reach upstream")
+            // The delta is on the wire before the client goes, so the head has content it could salvage.
+            socket.soTimeout = 15_000
+            val reader = socket.getInputStream().bufferedReader()
+            var sawDelta = false
+            while (!sawDelta) {
+                val line = reader.readLine() ?: break
+                sawDelta = line.contains("\"delta\"")
+            }
+            assertTrue(sawDelta, "the first delta must reach the client before it hangs up")
+            socket.close()
+            assertTrue(
+                waitFor(20_000) { gate.snapshot().inflight == 0 },
+                "the hang-up must free the slot: ${gate.snapshot()}",
+            )
+            // A proof of absence: nothing signals "no second POST", so a bounded window is the instrument.
+            waitFor(3_000) { mock.upstreamBodies.size > before + 1 }
+            assertEquals(
+                before + 1,
+                mock.upstreamBodies.size,
+                "a client that hung up made the gateway ask upstream again: ${mock.upstreamBodies.map { it.first }}",
+            )
+            assertEquals(1L, mock.holdRelease.count, "the upstream must still be parked for this to mean anything")
+        } finally {
+            socket.close()
+            mock.releaseHold()
+            assertTrue(waitFor(30_000) { gate.snapshot().inflight == 0 }, "the released turn must drain")
+            assertTrue(AsyncFileIo.drain())
+        }
     }
 
     @Test

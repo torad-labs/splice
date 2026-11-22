@@ -10,6 +10,7 @@ import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.upstream.transport.LocalHttp
 import java.net.URI
+import java.net.URISyntaxException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -22,8 +23,13 @@ internal class LocalRuntimeReach(
     private val probeInputs: LocalProbeInputs = LocalProbeInputs(),
     private val healthHttp: HealthHttp = JdkHealthHttp(),
 ) {
-    /** Whether [baseUrl] names a loopback address on this machine; remote `local = true` providers sit outside it. */
-    fun isLoopback(baseUrl: String): Boolean = URI(baseUrl).toURL().host.lowercase() in LOOPBACK
+    /** Whether [baseUrl] names a loopback address on this machine; remote `local = true` providers sit outside it.
+     *  Malformed URLs are treated as non-loopback rather than crashing the watch loop. */
+    fun isLoopback(baseUrl: String): Boolean = try {
+        URI(baseUrl).host?.lowercase() in LOOPBACK
+    } catch (_: URISyntaxException) {
+        false
+    }
 
     /** Head key to the endpoint (`:8099` on this machine, `host:port` elsewhere) of each local head
      *  whose runtime does not answer; a head that is not a local runtime is never probed. When [includeRemote]

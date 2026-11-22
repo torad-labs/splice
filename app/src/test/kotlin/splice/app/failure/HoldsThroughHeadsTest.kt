@@ -763,8 +763,8 @@ internal abstract class HoldRouteFixtures : HoldReplyFixtures() {
         done: () -> Boolean,
     ) =
         withContext(Dispatchers.Default) {
-            settle()
             while (!done() && time.passed() < atMost) {
+                settle()
                 val now = time.passed()
                 val next = minOf(time.nextDue() ?: (now + step), now + step, atMost)
                 val seen = answers()
@@ -780,9 +780,6 @@ internal abstract class HoldRouteFixtures : HoldReplyFixtures() {
                             "answers_before=$seen answers_now=${answers()} done=${done()} " +
                             "parked=${time.parkedNow()} next_due=${time.nextDue()} wait_guard_ms=$ANSWER_MS"
                     }
-                    // Settle thoroughly after a real wake so an in-flight loopback retry lands at this virtual time
-                    // rather than a clock step later on a loaded runner (#619).
-                    settle()
                 }
                 afterStep()
             }

@@ -483,40 +483,63 @@
     ctl.append(list, add); return r;
   }
 
-  /** what restarts splice (Restart now, an upgrade, a rollback) asks first only while requests are running, since the
-   *  restart cuts other sessions' live turns; with nothing running it acts on the one press */
+  /** what restarts splice (Restart now, an upgrade, a rollback) asks first only when running requests would actually be
+   *  cut (a daemon that hands over finishes answers on commands with hands_over = true without asking) */
   function askIfRunning(r, word, go) {
     r.querySelector('.lr-ask')?.remove();
-    if (!S.running.requests) { go(); return; }
+    const cut = S.running.cutRequests;
+    if (!cut) { go(); return; }
     const b = (cls, w, f) => { const x = h('button', cls + ' press', w); x.type = 'button'; x.addEventListener('click', f); return x; };
     const a = h('div', 'lr-ask');
-    a.append(h('span', '', `Restarts splice · ${Deck.count(S.running.requests, 'request')} running ${S.running.requests === 1 ? 'is' : 'are'} cut`), b('btn quiet', 'Cancel', () => a.remove()), b('btn primary', word, () => { a.remove(); go(); }));
+    a.append(h('span', '', `Restarts splice · ${Deck.count(cut, 'request')} running ${cut === 1 ? 'is' : 'are'} cut`), b('btn quiet', 'Cancel', () => a.remove()), b('btn primary', word, () => { a.remove(); go(); }));
     r.append(a);
+  }
+  function upgradeSteps(run) {
+    const out = (run && Array.isArray(run.output) ? run.output : []).join('\n');
+    const waited = /waiting first for the compactions|waiting for \d+ compaction/i.test(out);
+    const restarting = /starting the next daemon|restarting|daemon\s+restarted/i.test(out);
+    const done = run && run.state === 'succeeded';
+    const names = waited ? ['Checked', 'Waiting for compactions', 'Restarting', 'Serving'] : ['Checked', 'Restarting', 'Serving'];
+    const active = done ? names.length : restarting ? names.indexOf('Restarting') : waited ? 1 : 0;
+    const list = h('div', 'kvs fill lr-sub');
+    names.forEach((label, i) => {
+      const d = h('div');
+      d.append(h('span', '', label), h('b', '', i < active ? 'Done' : i === active ? 'Running' : 'Pending'));
+      list.append(d);
+    });
+    return list;
   }
   function versionRow(item) {
     const { r, sv, ctl } = row('version', item.label);
     const paint = () => {
       ctl.replaceChildren(h('span', 'vbig', S.version.installed || '—'));
+      r.querySelectorAll('.lr-sub').forEach(x => x.remove());
       const run = h('span', 'faint small mono', `${n0(S.running.requests)} running`);
       const btn = (cls, word, go) => { const b = h('button', cls + ' press', word); b.type = 'button'; b.addEventListener('click', go); return b; };
       const askThen = (word, go) => askIfRunning(r, word, go);
       if (S.version.latest && S.version.latest !== S.version.installed) ctl.append(btn('btn', `Upgrade to ${S.version.latest}`, () => askThen('Upgrade', () => commit(r, sv, () => S.upgrade()))), run);
       else ctl.append(btn('btn quiet', 'Check', () => commit(r, sv, () => S.checkVersion()).then(paint)));
       if (S.version.previous) ctl.append(btn('btn quiet', `Rollback to ${S.version.previous}`, () => askThen('Rollback', () => commit(r, sv, () => S.goBack()))));
+      if (S.upgradeRun && S.upgradeRun.state) r.append(upgradeSteps(S.upgradeRun));
     };
     paint(); return r;
   }
 
   function restartRows() {
     const out = [], pend = S.pending();
-    const { r, sv, ctl } = row('restart', 'Restart', pend.length ? `${pend.length} waiting` : '');
+    const hint = pend.length ? `${pend.length} waiting` : S.restartState.handsOver ? 'Answers in progress finish' : '';
+    const { r, sv, ctl } = row('restart', 'Restart', hint);
     pend.forEach(c => { const d = h('div', 'ch span-all'); d.append(h('span', '', labelOf(c.key) + (c.cmd ? ` · ${provName(c.cmd)}` : '')), h('b', '', show(c.key, c.to)), h('span')); r.append(d); });
     const now = h('button', 'btn' + (pend.length ? ' primary' : '') + ' press', 'Restart now'), idle = h('button', 'btn quiet press', 'Restart when idle'); now.type = idle.type = 'button';
     const run = h('span', 'faint small mono', `${n0(S.running.requests)} running`);
     // the row keeps saying Back once splice answers again; what waited for the restart has gone from it
     const back = res => { if (res.state !== 'refused') r.querySelectorAll('.ch').forEach(x => x.remove()); };
-    now.addEventListener('click', () => askIfRunning(r, 'Restart now', () => commit(r, sv, () => S.restart(true)).then(back)));
-    idle.addEventListener('click', () => commit(r, sv, () => S.restart(false)).then(back));
+    const startNow = () => {
+      if (S.restartState.handsOver) sv.set('saving', 'Answers in progress finish');
+      return S.restart(S.restartState.handsOver ? 'default' : 'now');
+    };
+    now.addEventListener('click', () => askIfRunning(r, 'Restart now', () => commit(r, sv, startNow).then(back)));
+    idle.addEventListener('click', () => commit(r, sv, () => S.restart('wait')).then(back));
     ctl.append(now, idle, run); out.push(r);
     return out;
   }

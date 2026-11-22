@@ -21,6 +21,7 @@ import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.lifecycle.upgrade.CompactionSlot
 import splice.lifecycle.upgrade.CompactionWait
+import splice.lifecycle.upgrade.CompactionWaitMode
 import splice.lifecycle.upgrade.INFLIGHT_POLL_MS
 import splice.lifecycle.upgrade.InflightRead
 import splice.lifecycle.upgrade.UpgradeInflight
@@ -29,8 +30,12 @@ import splice.lifecycle.upgrade.UpgradeInflight
 public fun interface CompactionsInFlight {
     public operator fun invoke(): List<CompactionSlot>
 
-    /** Holds new compactions on every head for [forMs] before the wait reads (Head.compactionHold); null once held. */
-    public fun hold(forMs: Long): String? = null
+    /** Head keys whose commands stop whole at a restart (`hands_over == false`). */
+    public fun stopWholeHeads(): Set<String> = emptySet()
+
+    /** Holds new compactions on [heads] (every head when null) for [forMs] before the wait reads
+     *  (Head.compactionHold); null once held. */
+    public fun hold(forMs: Long, heads: Collection<String>? = null): String? = null
 }
 
 /** Where a restart the daemon took on stands. */
@@ -54,37 +59,46 @@ public class RestartAfterCompactions(
     private val wait = CompactionWait(
         output = TerminalOutput { line -> log("[control] restart: ${LogSafe.str(line.removePrefix(CLI_PREFIX))}\n") },
         inflight = object : UpgradeInflight {
-            override fun invoke(): InflightRead = InflightRead.Count(0, compactions())
+            override fun invoke(): InflightRead = InflightRead.Count(0, compactions(), compactions.stopWholeHeads())
 
-            override fun hold(forMs: Long): String? = compactions.hold(forMs)
+            override fun hold(forMs: Long, heads: Collection<String>?): String? = compactions.hold(forMs, heads)
         },
         pollMs = pollMs,
     )
     private val lock = Any()
     private var pending: Job? = null
+    private var pendingMode: CompactionWaitMode = CompactionWaitMode.ALL_REQUESTED
     private var drained = false
 
     /** Takes a restart on. [RestartPhase.Draining] means the CALLER requests the drain, once its own
      *  answer is written (DaemonRoutes' order: a daemon tearing itself down must not race its reply
      *  out of the socket it closes). [RestartPhase.Waiting] means [shutdown] runs here, after the wait.
-     *  A second request while one waits changes nothing, unless it is [now]: that ends the wait. */
-    public fun request(now: Boolean, shutdown: ShutdownDaemon): RestartPhase = synchronized(lock) {
+     *  A second request while one waits changes nothing, unless it is [now]: that ends the wait.
+     *  When [handsOver] is true and [waitAll] is false, only compactions on heads that stop whole are waited for. */
+    public fun request(
+        now: Boolean,
+        shutdown: ShutdownDaemon,
+        waitAll: Boolean = false,
+        handsOver: Boolean = false,
+    ): RestartPhase = synchronized(lock) {
         val waiting = pending
-        if (waiting != null && !now) return RestartPhase.Waiting(wait.waiting())
+        if (waiting != null && !now) return RestartPhase.Waiting(wait.waiting(pendingMode))
         waiting?.cancel()
         pending = null
-        val compactions = if (now) emptyList() else wait.waiting()
+        val mode = if (handsOver && !waitAll) CompactionWaitMode.STOPS_WHOLE_ONLY else CompactionWaitMode.ALL_REQUESTED
+        val compactions = if (now) emptyList() else wait.waiting(mode)
         if (compactions.isEmpty()) {
             drained = true
             return RestartPhase.Draining
         }
-        pending = scope.launch { drainAfterWait(shutdown) }
+        pendingMode = mode
+        pending = scope.launch { drainAfterWait(shutdown, mode) }
         RestartPhase.Waiting(compactions)
     }
 
     public fun phase(): RestartPhase = synchronized(lock) {
         when {
-            pending != null -> RestartPhase.Waiting(wait.waiting())
+            pending != null -> RestartPhase.Waiting(wait.waiting(pendingMode))
             drained -> RestartPhase.Draining
             else -> RestartPhase.Idle
         }
@@ -92,8 +106,8 @@ public class RestartAfterCompactions(
 
     // A cancelled wait (a `now` that drained already) ends in the interrupt and never drains again;
     // the check under the lock covers a `now` that lands between the wait's end and this drain.
-    private suspend fun drainAfterWait(shutdown: ShutdownDaemon) {
-        runInterruptible { wait.await() }
+    private suspend fun drainAfterWait(shutdown: ShutdownDaemon, mode: CompactionWaitMode) {
+        runInterruptible { wait.await(mode) }
         val mine = currentCoroutineContext().job
         val still = synchronized(lock) {
             (pending === mine).also { current ->

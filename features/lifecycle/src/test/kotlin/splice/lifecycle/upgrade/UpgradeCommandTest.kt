@@ -297,7 +297,7 @@ internal class UpgradeCommandTest : UpgradeRig() {
         val intact = flatInstall(home)
         inflightAfter = InflightRead.Count(2)
         maxWaitMs = 50
-        val (ok, out) = captured { command(home, release(home)).upgrade(listOf("--to", "v9.9.9")) }
+        val (ok, out) = captured { command(home, release(home)).upgrade(listOf("--to", "v9.9.9", "--wait")) }
         assertFalse(ok, out)
         assertTrue(out.contains("in flight"), out)
         assertFalse(Files.isSymbolicLink(home.resolve("share/splice.jar")), "nothing was activated")
@@ -307,12 +307,23 @@ internal class UpgradeCommandTest : UpgradeRig() {
     }
 
     @Test
+    fun `default upgrade activates at once with turns in flight`(@TempDir home: Path) {
+        flatInstall(home)
+        inflightAfter = InflightRead.Count(3)
+        val (ok, out) = captured { command(home, release(home)).upgrade(listOf("--to", "v9.9.9")) }
+        assertTrue(ok, out)
+        assertFalse(out.contains("in flight"), "default upgrade does not wait for turns: $out")
+        assertEquals(1, unitRestarts + verbRestarts)
+    }
+
+    @Test
     fun `--now activates at once with turns in flight and never reads the count`(@TempDir home: Path) {
         flatInstall(home)
         inflightAfter = InflightRead.Count(3)
         val (ok, out) = captured { command(home, release(home)).upgrade(listOf("--to", "v9.9.9", "--now")) }
         assertTrue(ok, out)
         assertFalse(out.contains("in flight"), "no wait was printed: $out")
+        assertTrue(out.contains("--now is no longer needed"), out)
         assertEquals(1, unitRestarts + verbRestarts, "the daemon restarted under the turns")
     }
 
@@ -323,7 +334,7 @@ internal class UpgradeCommandTest : UpgradeRig() {
         inflightAfter = InflightRead.Unknown("timeout")
         maxWaitMs = 50
         val cmd = command(home, release(home))
-        val (ok, out) = captured { cmd.upgrade(listOf("--to", "v9.9.9")) }
+        val (ok, out) = captured { cmd.upgrade(listOf("--to", "v9.9.9", "--wait")) }
         assertFalse(ok, out)
         assertTrue(out.contains("in-flight count unknown"), out)
         assertFalse(Files.isSymbolicLink(home.resolve("share/splice.jar")), "nothing was activated")

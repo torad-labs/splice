@@ -76,8 +76,9 @@ set or change a key, give the person the command to run in their own terminal, s
 - **Editing `splice.toml`.** Say what you will change and why, and wait for a yes. Back the file up beside
   itself first (`cp -p ../splice.toml ../splice.toml.bak-$(date +%Y%m%d-%H%M%S)`). After the edit, run
   `splice check-config` and show its answer. If it reports a finding, fix it or put the backup back.
-- **`splice restart`.** It cuts the turns in flight in every session on this machine, this one included.
-  Say so when you ask.
+- **`splice restart`.** Under splice's systemd unit, answers and compactions already arriving finish on the running
+  daemon (except on Muse or a local runtime with `slot_affinity`); turns not yet answering, and every turn on a
+  daemon outside the unit, end with the restart line and retry. Say so when you ask.
 - Anything that deletes, signs out, or spends money.
 
 ## This folder's own files

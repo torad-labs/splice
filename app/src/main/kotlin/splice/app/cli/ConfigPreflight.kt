@@ -31,31 +31,28 @@ internal class ConfigPreflight(
 ) {
     /** 0 when the file is absent or has no finding, [CONFIG_REFUSED_EXIT] with every finding printed when it has any. */
     fun check(): Int {
+        val error = refusal() ?: return 0
+        said.line("splice: $error")
+        return CONFIG_REFUSED_EXIT
+    }
+
+    /** Null when splice.toml is absent or clean; the refusal sentence otherwise (shared by `check-config` and
+     *  `POST /api/daemon/restart` so a bad config never reaches the launcher). */
+    fun refusal(): String? {
         val path = TopologyLoader.configPath(env)
-        // Boot's own rule (TopologyLoader.readOrMaterialize): only PROVEN absence is a first run, which boots a
-        // starter. An existing file that cannot be read, or a dangling symlink, is something boot refuses on, so it is
-        // a refusal here too; passing it would let the replacement stop the serving daemon for a boot that cannot happen.
         val text = try {
             Files.readString(path)
         } catch (failure: NoSuchFileException) {
-            return if (Files.exists(path, LinkOption.NOFOLLOW_LINKS)) unreadable(failure) else 0
+            return if (Files.exists(path, LinkOption.NOFOLLOW_LINKS)) unreadableReason(failure) else null
         } catch (failure: IOException) {
-            return unreadable(failure)
+            return unreadableReason(failure)
         }
         val dir = path.toAbsolutePath().parent ?: path
-        // The modes this jar carries are boot's findings too (modes/README.md), read from the same jar.
         val beside = BootSettings(RetiredSettings(env), ModeBoot().found())
         val read = ConfigFindings.read(text, dir, dir, LocalRowBootFindings(env), beside)
-        return if (read is ConfigRead.Refused) refused(read) else 0
+        return if (read is ConfigRead.Refused) SafeFailureText.render(TopologyRefusal(read.findings)) else null
     }
 
-    private fun unreadable(failure: IOException): Int {
-        said.line("splice: splice.toml cannot be read, so splice will not start: ${SafeFailureText.render(failure)}")
-        return CONFIG_REFUSED_EXIT
-    }
-
-    private fun refused(read: ConfigRead.Refused): Int {
-        said.line("splice: ${SafeFailureText.render(TopologyRefusal(read.findings))}")
-        return CONFIG_REFUSED_EXIT
-    }
+    private fun unreadableReason(failure: IOException): String =
+        "splice.toml cannot be read, so splice will not start: ${SafeFailureText.render(failure)}"
 }

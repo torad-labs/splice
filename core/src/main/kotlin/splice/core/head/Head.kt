@@ -16,6 +16,10 @@ public interface Head : TurnRouteLifetime {
     public val label: String
     public val port: Int
 
+    /** Whether a turn already answering on this head finishes on the running daemon at a hand-over; false on a
+     *  provider that stops whole at a restart (Muse, or a local runtime with slot_affinity). */
+    public val handsOver: Boolean get() = true
+
     public suspend fun start()
 
     /** A restart is about to read the compactions in flight and then stop: [CompactionHold.hold] makes a NEW

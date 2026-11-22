@@ -195,24 +195,26 @@ What `splice restart` does, in order:
 1. Reads splice.toml with boot's own check. On a finding it prints every finding, then
    `splice: nothing was stopped and <path> is unchanged`, and exits 1. The old daemon keeps serving. On a
    terminal it offers the fix session first; from your shell it does not.
-2. Without `--now`, waits for compactions in flight, up to the upstream timeout (30 minutes by default). It does not
-   wait for ordinary turns. `--now` skips only this wait.
-3. Stops the old daemon. Each head stops taking new turns and ends the turns in flight at once. The stop polls
-   for about 60 s, then sends SIGTERM, then SIGKILL.
+2. Under splice's systemd unit, hands over at once: answers and compactions already arriving finish on the running
+   daemon, and only compactions on heads that stop whole (Muse or a local runtime with `slot_affinity`) are waited on
+   first. Outside the unit, waits first for running compactions on every command. Pass `--wait` to wait for compactions
+   on every command even under the unit, or `--now` to skip every wait.
+3. Hands over or stops the old daemon. Under the unit, the next daemon starts beside it and takes every new request
+   while answers already arriving finish; on a daemon outside the unit, each head stops taking new turns and ends turns
+   in flight at once (polling up to about 60 s, then SIGTERM, then SIGKILL).
 4. Starts the new daemon and waits up to about a minute for it to answer with the expected version. When a
-   systemd user unit runs the daemon, `systemctl restart` does steps 3 and 4, and systemd holds splice's ports
-   in between: `splice restart` lays one socket unit per port from splice.toml (`splice-control.socket`,
-   `splice-head-<key>.socket`) and starts them. The first restart that lays them, or one after a head or port
-   changed, stops the daemon first so systemd can take the ports.
+   systemd user unit runs the daemon, systemd holds splice's ports in between: `splice restart` lays one socket unit
+   per port from splice.toml (`splice-control.socket`, `splice-head-<key>.socket`) and starts them. The first restart
+   that lays them, or one after a head or port changed, stops the daemon first so systemd can take the ports.
 
 What it cuts, and how sessions come back:
 
 - A request that arrives while the daemon restarts waits, and the new daemon answers it: Claude Code shows no
   error and no session changes model. Without systemd's sockets, as on a machine with no user unit, it meets a
   closed connection, and Claude Code retries it.
-- A turn still running is ended at once, without waiting for it, and its session sees "splice restarted during
-  this turn." A turn whose text had begun says "Send the message again." A buffered one says Claude Code sends it
-  again, and Claude Code does.
+- Under the unit, an answer or compaction already arriving finishes on the running daemon (except on Muse or a local
+  runtime with `slot_affinity`). A turn not yet answering, or any turn on a daemon outside the unit, ends with
+  "splice restarted during this turn." and Claude Code sends it again.
 - A compaction in flight detaches from its client instead of being cancelled, and its finished answer is kept
   on disk for up to two hours, so an identical retry gets it without a second upstream turn.
 - Code-mode JavaScript that was pending is lost and never rerun.
@@ -220,9 +222,10 @@ What it cuts, and how sessions come back:
 
 The procedure:
 
-1. Ask, and say plainly: "A restart cuts the turns in flight in every session on this machine, this one
-   included. Sessions retry on their own." Name the sessions that are working right now (`splice sessions`
-   shows each one's state).
+1. Ask, and say plainly: under splice's systemd unit, answers already arriving finish (except on Muse or a local
+   runtime with `slot_affinity`), while turns not yet answering end with the restart line and retry; outside the unit,
+   running turns are cut and retry. Name the sessions that are working right now (`splice sessions` shows each one's
+   state).
 2. Run `splice check-config` first. On exit 3, fix the file (section 3); the restart would refuse anyway.
 3. Ask whether the person's API keys come from exported environment variables. Run by hand, the restart gives
    the new daemon the environment of the shell that ran it; a systemd user unit gives its own. Your shell is

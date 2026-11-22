@@ -39,6 +39,7 @@ modules = [
     ":integrations-providers-anthropic",
     ":integrations-providers-codex",
     ":integrations-providers-grok",
+    ":integrations-providers-antigravity",
     ":integrations-providers-kimi",
     ":integrations-providers-muse",
     ":integrations-providers-openai",

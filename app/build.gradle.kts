@@ -65,6 +65,7 @@ dependencies {
     implementation(project(":integrations-providers-anthropic"))
     implementation(project(":integrations-providers-codex"))
     implementation(project(":integrations-providers-grok"))
+    implementation(project(":integrations-providers-antigravity"))
     implementation(project(":integrations-providers-kimi"))
     implementation(project(":integrations-providers-muse"))
     implementation(project(":integrations-providers-openai"))

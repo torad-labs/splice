@@ -45,6 +45,7 @@
 :integrations-providers-anthropic -> :core :integrations-upstream
 :integrations-providers-codex -> :core :integrations-upstream :integrations-dialects-openai-responses
 :integrations-providers-grok -> :core :integrations-upstream :integrations-dialects-openai-responses
+:integrations-providers-antigravity -> :core
 :integrations-providers-kimi -> :core :integrations-upstream :integrations-dialects-anthropic
 :integrations-providers-muse -> :core :integrations-upstream
 :integrations-providers-openai -> :core :integrations-upstream :integrations-dialects-openai-responses :integrations-dialects-openai-chat

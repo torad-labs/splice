@@ -12,6 +12,7 @@
 // constructor, fields, start(), and stop(); everything else delegates to those collaborators.
 package splice.app
 
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.app.control.FailedHeads
@@ -43,6 +44,7 @@ import splice.app.modes.DaemonModes
 import splice.app.modes.ModeBoot
 import splice.app.modes.ModeTools
 import splice.app.probe.LocalWindowRefresh
+import splice.app.provider.AntigravityJoin
 import splice.app.server.DaemonServer
 import splice.app.share.DaemonShare
 import splice.client.desktop.DesktopAppConfig
@@ -281,6 +283,9 @@ public class Daemon(
     /** Every provider in splice.toml, served by the gateway on its own, with no head (gateway-no-heads). */
     private val providers = ServedProviderAssembly(topology, buildInputs, managedHeadFactory, log)
 
+    /** desktop-antigravity: Antigravity, a provider only Claude Desktop runs, once agy says what it offers. */
+    private val antigravity = AntigravityJoin(config, log)
+
     /** LAN share: the commands this machine runs on another's heads, and the listener that offers its own. */
     private val share = DaemonShare(topology, config, TurnKey(mgmtKey), log, statePaths.stateDir)
 
@@ -368,8 +373,9 @@ public class Daemon(
         server.open(heads, controlPort, headServerFactory.served, desktop.team)
         controlPlane.serverMode = server
         // The desktop door, on the control port, choosing among these heads.
-        desktop.open(providers, controlPort, controlPlane.modelRosters)
+        desktop.open(providers, antigravity, controlPort, controlPlane.modelRosters)
         controlPlane.desktop = desktop
+        joinAntigravity()
         controlPlane.start(
             controlPort = controlPort,
             heads = heads,
@@ -386,6 +392,14 @@ public class Daemon(
         prices.start()
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
+    }
+
+    /** desktop-antigravity: Antigravity's models are asked of agy in the background, since agy asks Google for them;
+     *  once they arrive Desktop's list is published again with them. */
+    private fun joinAntigravity() {
+        controlPlane.probeScope.launch {
+            if (antigravity.join(controlPlane.probeScope, providers)) desktop.republish()
+        }
     }
 
     /** Assembles every head and starts each one as it is built (HeadBoot). #525: the first heads serve before the

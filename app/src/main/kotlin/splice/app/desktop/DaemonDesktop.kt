@@ -9,6 +9,8 @@
 // (TerminalDoor). Decision 9: `claude` on its head hands the door's models to the door (ClaudeHeadLane).
 package splice.app.desktop
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import splice.app.desktop.catalog.CatalogBuild
 import splice.app.desktop.catalog.CatalogFile
@@ -81,13 +83,20 @@ internal class DaemonDesktop(
     @Volatile
     private var door: String? = null
     private val io = ProcessDispatchers().io()
+    private val publishing = Mutex()
 
     /** The door on [controlPort], serving [providers], with the model catalog of the providers signed in now published
-     *  before any route serves it, and again whenever [rosters] ask a provider's list with a new credential. */
-    suspend fun open(providers: ServingProviders, controlPort: Int, rosters: ModelRosters) {
+     *  before any route serves it, and again whenever [rosters] ask a provider's list with a new credential. Claude
+     *  Desktop's lists also carry [desktopOnly]'s models, which only its launcher runs (desktop-antigravity). */
+    suspend fun open(
+        providers: ServingProviders,
+        desktopOnly: ServingProviders,
+        controlPort: Int,
+        rosters: ModelRosters,
+    ) {
         val machine = ShareMachine(log).name()
         val catalog = PublishedCatalog(CatalogBuild(), CatalogFile(statePaths.modelCatalogFile, log), io)
-        val lineups = DesktopProviders(providers, aliases, catalog)
+        val lineups = DesktopProviders(providers, desktopOnly, aliases, catalog)
         this.lineups = lineups
         rosters.credentialChanged = CredentialChanged { republish() }
         lineups.publish()
@@ -111,11 +120,14 @@ internal class DaemonDesktop(
     }
 
     /** The model catalog built again from the providers signed in now and served from here on: a provider's credential
-     *  changed (a sign-in, a sign-out, a key set). Nothing before [open]. */
+     *  changed (a sign-in, a sign-out, a key set), or Antigravity joined. Nothing before [open]. One publication at a
+     *  time, catalog and Desktop's settings together, so the last one written is always read from the newest state. */
     suspend fun republish() {
-        val source = lineups ?: return
-        source.publish()
-        door?.let { publish(it, source.lineup()) }
+        publishing.withLock {
+            val source = lineups ?: return
+            source.publish()
+            door?.let { publish(it, source.lineup()) }
+        }
     }
 
     /** The model list and splice's policy given to every Claude Desktop whose applied configuration points at [door]:

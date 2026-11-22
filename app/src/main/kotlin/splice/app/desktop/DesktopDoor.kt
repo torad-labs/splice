@@ -31,6 +31,7 @@ import splice.core.util.JsonWire
 import splice.core.util.WallClock
 import splice.core.wire.HttpStatus
 import splice.http.JsonReply
+import splice.provider.antigravity.door.DoorAgyGuard
 import splice.share.CappedBodies
 import splice.share.RefusalVoice
 
@@ -133,8 +134,31 @@ internal class DesktopDoor(
         val ask = DoorAsk(request, model, headers[SESSION_HEADER], window)
         caller.asked(ask)
         val route = routing.of(lineup, ask, caller.default(lineup), caller.runsNamedModels)
-            ?: return caller.voice.refuse(call, HttpStatus.BAD_REQUEST, "model \"${ask.model}\" ${caller.notInDoor}")
+            ?: desktopOnlyRoute(call, caller, lineup, ask)
+            ?: return
         toProvider.send(call, caller, route, ask, counting)
+    }
+
+    /** Routes a `desktopOnly` (Antigravity) model for Claude Desktop Chat turns, while refusing Claude Code CLI
+     *  agent loops and non-Desktop callers with a clear explanation (desktop-antigravity.md). */
+    private suspend fun desktopOnlyRoute(
+        call: ApplicationCall,
+        caller: DoorCaller,
+        lineup: DesktopLineup,
+        ask: DoorAsk,
+    ): DoorRoute? {
+        val desktopHit = lineup.findDesktopOnly(ask.model)
+        if (desktopHit == null) {
+            caller.voice.refuse(call, HttpStatus.BAD_REQUEST, "model \"${ask.model}\" ${caller.notInDoor}")
+            return null
+        }
+        val headers = call.request.headers
+        val isCli = DoorAgyGuard.isClaudeCodeRequest(headers[HttpHeaders.UserAgent], headers[X_APP_HEADER], ask.request)
+        if (caller !is DesktopCaller || isCli) {
+            caller.voice.refuse(call, HttpStatus.BAD_REQUEST, "model \"${ask.model}\" $DESKTOP_CHAT_ONLY")
+            return null
+        }
+        return DoorRoute(desktopHit.first, desktopHit.second.upstream)
     }
 
     /** The caller whose key [call] presents, while its switch is on; null once [call] has been refused
@@ -153,7 +177,8 @@ internal class DesktopDoor(
     /** [call]'s body as a JSON object, or null once [call] has been answered: with no provider in the door, a body past
      *  what the widest provider takes, or a body that is not JSON. */
     private suspend fun read(call: ApplicationCall, caller: DoorCaller, lineup: DesktopLineup): JsonObject? {
-        val widest = lineup.providers.maxByOrNull { it.maxRequestBytes }
+        val candidates = if (caller is DesktopCaller) lineup.providers + lineup.desktopOnly else lineup.providers
+        val widest = candidates.maxByOrNull { it.maxRequestBytes }
             ?: return null.also { caller.voice.refuse(call, HttpStatus.BAD_REQUEST, caller.noHead) }
         val body = CappedBodies(caller.voice).read(call, widest.maxRequestBytes, widest.requestReadTimeoutMs)
             ?: return null
@@ -188,3 +213,6 @@ private const val REQUEST_STREAM = "stream"
 // The query a `/v1/models` page is asked with (Claude Code's gateway discovery).
 private const val LIMIT_PARAM = "limit"
 private const val AFTER_ID = "after_id"
+private const val X_APP_HEADER = "x-app"
+private const val DESKTOP_CHAT_ONLY =
+    "runs only in Claude Desktop (Chat or Code tab), not through Claude Code's HTTP loop"

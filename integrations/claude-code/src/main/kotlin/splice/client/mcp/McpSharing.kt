@@ -30,7 +30,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonObject
 import splice.core.util.SafeFailureText
 import java.io.IOException
 import java.nio.file.Files
@@ -95,6 +94,9 @@ public class McpSharing(
     /** The setup answer (hub step 3), `[daemon] mcp_share`, read at every plan. */
     private val shareByDefault: McpShareChoice = McpShareChoice { true },
 ) {
+    /** Where a client reaches a server this daemon answers, hosted as a process or answered by the daemon itself. */
+    public val endpoint: McpEndpoint = McpEndpoint(endpointPrefix, bearer)
+
     /** A hosted server asked its client for roots, so it depends on them: no later plan shares its launch tuple,
      *  and every session from the next on starts its own copy, as for a server that names a project directory. */
     public fun rootsAsked(spec: McpServerSpec) {
@@ -125,14 +127,7 @@ public class McpSharing(
                         put(name, entry)
                     } else {
                         hosted[name] = spec
-                        putJsonObject(name) {
-                            put("type", "http")
-                            put("url", endpointPrefix + name)
-                            putJsonObject("headers") {
-                                put("Authorization", "Bearer " + token.value)
-                                headKey?.takeIf { it.isNotEmpty() }?.let { put(MCP_HEAD_HEADER, it) }
-                            }
-                        }
+                        put(name, endpoint.entry(name, headKey, token.value))
                     }
                 }
             }

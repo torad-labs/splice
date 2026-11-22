@@ -42,6 +42,33 @@ class LaunchRecipeArgsTest {
         assertEquals(listOf("--agent", "reviewer", "/review-pr 251"), read)
     }
 
+    // Nov 21, 2026: a launch also carries the file of the MCP servers splice answers itself, under a flag of its own
+    // after the hub's file and its plugin folders. It is the launch's, so it is not the person's words either; a file
+    // the person named themselves, outside splice's state, still is.
+    @Test
+    fun `a launch gives back what followed the hub's file and the file of splice's own servers`() {
+        val hub = state.resolve("mcp-hub/launch-41.json").toString()
+        val own = state.resolve("own-mcp-claude-splice-door.json").toString()
+        val started = listOf(
+            "--settings", """{"env":{"A":"1"}}""", "--mcp-config", hub, "--plugin-dir-no-mcp", "/p/a",
+            "--mcp-config", own,
+            "--mcp-config", "/home/p/servers.json", "fix the tide table",
+        )
+
+        assertEquals(
+            listOf("--mcp-config", "/home/p/servers.json", "fix the tide table"),
+            LaunchRecipeArgs.callerArgs(started, state, wrapped = true),
+        )
+        assertEquals(
+            listOf("fix the tide table"),
+            LaunchRecipeArgs.callerArgs(
+                listOf("--settings", "{}", "--mcp-config", own, "fix the tide table"),
+                state,
+                wrapped = true,
+            ),
+        )
+    }
+
     @Test
     fun `a head's launch keeps settings the person named, and splice's mark goes`() {
         val own = listOf("--settings", "/home/p/s.json", "--name", "lead")

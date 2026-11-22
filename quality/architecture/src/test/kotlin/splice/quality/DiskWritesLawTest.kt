@@ -370,6 +370,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // The hub launch file and the V4-445 file, in the mcp-hub/launch-<pid> and wrapped-mcp README rows.
     "integrations/claude-code/src/main/kotlin/splice/client/mcp/McpHubLaunch.kt" to mapOf("writeAtomic0600(" to 1),
     "integrations/claude-code/src/main/kotlin/splice/client/mcp/HostedMcpOverlay.kt" to mapOf("writeAtomic0600(" to 1),
+    // The file of the servers splice answers itself (the mcp modes), in the own-mcp README row.
+    "integrations/claude-code/src/main/kotlin/splice/client/mcp/OwnMcpLaunch.kt" to mapOf("writeAtomic0600(" to 1),
     // The plugin flag check's throwaway plugin and its per-version verdicts, in their README rows.
     "integrations/claude-code/src/main/kotlin/splice/client/mcp/PluginFlagCheck.kt" to
         mapOf("Files.writeString(" to 3),

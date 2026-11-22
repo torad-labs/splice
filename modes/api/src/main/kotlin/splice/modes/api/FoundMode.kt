@@ -9,7 +9,7 @@ public enum class ModeKind(public val wire: String) {
     /** splice holds and answers each call, and the client never sees it. */
     DOOR("door"),
 
-    /** A real MCP server splice's MCP hub serves under the mode's `server` name. */
+    /** A real MCP server the daemon answers itself, under the mode's `server` name. */
     MCP("mcp"),
 }
 

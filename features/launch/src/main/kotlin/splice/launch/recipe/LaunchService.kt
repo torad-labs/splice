@@ -23,6 +23,7 @@ import splice.client.desktop.providerSwitches
 import splice.client.mcp.HubLaunchArgs
 import splice.client.mcp.HubLaunchFor
 import splice.client.mcp.McpHubLaunch
+import splice.client.mcp.OwnMcpLaunch
 import splice.client.resume.MovingTrust
 import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.TranscriptModelRewrite
@@ -80,6 +81,10 @@ public class LaunchService(
      *  `claude` falls back to the V4-445 file of hosted user servers. Assigned by the daemon before routes serve
      *  requests; null runs every launch over its own servers. */
     public var hubLaunch: McpHubLaunch? = null
+
+    /** The MCP servers the daemon answers itself (a mode whose kind is mcp), added to every launch whatever the hub
+     *  carries of the person's own. Assigned by the daemon before routes serve requests; null adds none. */
+    public var ownMcp: OwnMcpLaunch? = null
 
     /** LAN share: the commands another machine serves, launched when a name no head here carries is asked for.
      *  Assigned by the daemon before routes serve requests; null launches heads only. */
@@ -243,7 +248,10 @@ public class LaunchService(
             claude = Path.of(claude),
             overlayHead = effective.signIn.headKey.takeIf { wrapped != null },
         )
-        return hubLaunch?.args(launch) ?: HubLaunchArgs(emptyList())
+        val carried = hubLaunch?.args(launch) ?: HubLaunchArgs(emptyList())
+        // a wrapped launch is the door's; a head's own launch is its head's, in the words a mode's manifest uses
+        val asking = if (wrapped == null) OWN_MCP_CALLER_HEAD else OWN_MCP_CALLER_DOOR
+        return ownMcp?.let { carried.copy(args = it.added(carried.args, effective.signIn.headKey, asking)) } ?: carried
     }
 
     /** Writes the head's config unless the launch is [wrapped], which materializes nothing. gpt-speed: a head signed in
@@ -433,6 +441,10 @@ public class LaunchService(
 
 /** The variable that moves Claude Code's whole config root, and its global .claude.json with it. */
 private const val CONFIG_DIR_ENV = "CLAUDE_CONFIG_DIR"
+
+// why: who a launch is for, in the words a mode's manifest uses for its callers (modes/README.md, `[callers] off`).
+private const val OWN_MCP_CALLER_DOOR = "door"
+private const val OWN_MCP_CALLER_HEAD = "head"
 
 /** Claude Code's word that ANTHROPIC_BASE_URL is Anthropic's own API behind another address (read in the 2.1.326
  *  client, where it is that variable's declared companion). */

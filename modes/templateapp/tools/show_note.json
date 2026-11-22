@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "The note's title, when it has one."
+    },
+    "text": {
+      "type": "string",
+      "description": "The note's text, as the person should read it."
+    }
+  },
+  "required": ["text"]
+}

@@ -19,7 +19,8 @@ modes/<name>/
 ```
 
 `modes/api` is `:modes-api`, the contract every mode implements and the catalog that finds and checks modes.
-`modes/template` is a working mode to copy, shipped off.
+`modes/template` is a working door mode to copy, and `modes/templateapp` a working mcp mode with an MCP App. Both
+ship off.
 
 ## The manifest
 
@@ -30,7 +31,7 @@ modes/<name>/
 | `server` | string | required | The model sees each tool as `mcp__<server>__<tool>`. |
 | `handler` | string | required | The class that answers the mode's calls, e.g. `splice.modes.template.TemplateMode`. |
 | `tools` | list of strings | required | The tools, in the order they are offered; each has `tools/<tool>.json` and `tools/<tool>.md`. |
-| `kind` | `"door"` or `"mcp"` | `"door"` | `"door"`: splice holds and answers each call inside itself, and the client never sees it. `"mcp"`: the mode is a real MCP server splice's MCP hub serves under `server`, so the client sees its tools and calls as any MCP tool's. |
+| `kind` | `"door"` or `"mcp"` | `"door"` | `"door"`: splice holds and answers each call inside itself, and the client never sees it. `"mcp"`: the mode is a real MCP server the daemon answers under `server`, so the client sees its tools and calls as any MCP tool's (see "An mcp mode"). |
 | `on` | boolean | `false` | Whether the mode is on for every session by default. splice.toml's `[modes.<name>]` overrides it. |
 | `[heads]` `only` | list of heads | `[]` | Empty: every head. Otherwise the only heads the mode is ever offered on. |
 | `[heads]` `off` | list of heads | `[]` | Heads the mode is never offered on. |
@@ -60,9 +61,9 @@ folder, the Gradle id `:modes-<name>` and the package `splice.modes.<name>`. A `
 
 ## Adding a mode
 
-1. Copy `modes/template` to `modes/<name>`.
-2. Rename it in the manifest, the package and the class: every `template`, `Template` and `TEMPLATE` becomes your
-   name.
+1. Copy `modes/template` to `modes/<name>`, or `modes/templateapp` for an mcp mode.
+2. Rename it in the manifest, the package and the class: every `template`, `Template` and `TEMPLATE` (or
+   `templateapp`, `TemplateApp`) becomes your name.
 3. Write the tools (`tools/<tool>.json`, `tools/<tool>.md`), list them in `tools`, and answer them in the handler.
 4. Run `./gradlew :modes-<name>:test`: the mode loads through the catalog and its handler answers.
 5. Build splice. The mode ships in the jar. No file outside the folder changes.
@@ -86,6 +87,27 @@ What the door adds is listed by `GET /api/modes`, by `splice status`, and on the
 switch per head writes `[modes.<name>]`. `splice check-config` lists a broken mode's findings, and a
 `[modes.<name>]` table naming no mode, as boot does.
 
+## An mcp mode
+
+A door mode's tools ride the model's request and are answered inside the turn, so the client never sees them. An
+mcp mode (`kind = "mcp"`) is an MCP server the client itself connects to, so its tools are the client's own tools
+and a client that draws MCP Apps can show its pages.
+
+- **Where it is served.** The daemon answers the server itself, at the address it serves hosted MCP servers on
+  (`/mcp/<server>`): there is no process to start. `initialize`, `tools/list`, `tools/call`, `resources/list` and
+  `resources/read` are answered in the reply to each request.
+- **How a client finds it.** Every launch on a head where the mode is on is handed one more `--mcp-config` file
+  that names the server. A caller on `[callers] off` gets no such file. A session already running when the mode is
+  turned on does not see it until its next launch; turned off, the server stops answering at once.
+- **What the client is told.** Each tool under its own name (the client shows `mcp__<server>__<tool>`), with its
+  description, schema and `_meta` as the folder writes them. `prompt.md` is the server's `instructions`.
+- **Pages.** A tool whose `tools/<tool>.meta.json` says `{ "ui": { "resourceUri": "ui://<server>/<page>" } }` names
+  a `[[resources]]` entry. The page is the entry's `file` under `resources/`, or what the handler's
+  `resource(uri)` gives for an entry with no file. A client that does not draw MCP Apps shows the tool's answer as
+  any tool's result, so the answer has to stand without the page.
+- **The session.** A call's `ModeSession.id` is the client's MCP session id, not the id `/api/sessions` gives the
+  session, and its folder and model are not known: the MCP transport does not carry them.
+
 ## The contract
 
 - The handler implements `splice.modes.api.Mode`. `answer(call)` gets a `ModeCall`: the tool's name as the manifest
@@ -94,6 +116,7 @@ switch per head writes `[modes.<name>]`. `splice check-config` lists a broken mo
 - The session is `ModeSession(id, folder, head, model, caller)`: the id `/api/sessions` gives it, its folder when
   known, its head, its model, and its caller (`door`, `head` or `desktop`).
 - `ModeStore` keeps text per session for the mode, under splice's state folder, and survives a restart.
+- `resource(uri)` gives the content of a resource the manifest declares with no `file`; only an mcp mode is asked.
 - `routes` lists the management routes the mode answers (`ModeRoute`: method, path, and a handler from a
   `ModeRequest` to a `ModeResponse`). splice serves them under `/api/` behind the management key; two modes, or a mode
   and splice, claiming one path refuses boot.

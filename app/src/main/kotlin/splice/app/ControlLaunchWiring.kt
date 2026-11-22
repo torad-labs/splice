@@ -12,6 +12,8 @@ import splice.app.auth.claude.ClaudePoolChanges
 import splice.app.daemon.BootedTopology
 import splice.app.daemon.DaemonMaterializer
 import splice.app.launch.HookProcessExec
+import splice.app.modes.ModeMcp
+import splice.app.modes.ModesNow
 import splice.client.ClaudeConfigMaterializer
 import splice.client.mcp.HostedMcpOverlay
 import splice.client.mcp.McpHubFront
@@ -19,6 +21,7 @@ import splice.client.mcp.McpHubLaunch
 import splice.client.mcp.McpHubLive
 import splice.client.mcp.McpLaunchPlanner
 import splice.client.mcp.McpSharing
+import splice.client.mcp.OwnMcpLaunch
 import splice.client.mcp.PLUGIN_FLAG_PROVEN_VERSION
 import splice.client.mcp.PluginFlagGate
 import splice.client.mcp.PluginFlagHolds
@@ -68,6 +71,9 @@ internal class ControlLaunchWiring(
     private val pluginFlags: PluginFlagHolds,
     private val login: ClaudeLoginInputs,
 ) {
+    /** The modes the daemon holds, assigned by the control plane: the mcp ones are servers a launch is told of. */
+    internal var modes: ModesNow = ModesNow { null }
+
     // Views over [daemon], never copies: a stored copy would fix the value at construction.
     private val statePaths get() = daemon.statePaths
     private val config get() = daemon.config
@@ -130,6 +136,13 @@ internal class ControlLaunchWiring(
                 log,
                 PluginFlagGate(PLUGIN_FLAG_PROVEN_VERSION, pluginFlags),
                 overlay = HostedMcpOverlay(home, sharing, statePaths.stateDir, log, temple),
+            )
+            // the mcp modes on for the launch's head and caller, read at each launch: a switch reaches the next one
+            it.ownMcp = OwnMcpLaunch(
+                { head, caller -> ModeMcp { modes.held() }.on(head, caller).map { it.manifest.server } },
+                sharing,
+                statePaths.stateDir,
+                log,
             )
         }
     }

@@ -189,22 +189,17 @@ async function exampleHeads(example: string, headsFile: string, port: string, ho
       linked = false;
     }
     // Foreign heads own the declared window. Client-login heads leave window and tier selection to Claude Code.
+    const isClient = String(obj(prov["auth"])["kind"] ?? "").toLowerCase() === "client";
     let windowOk: boolean;
     let tierOk = true;
     let pickerOk = true;
-    if (String(obj(prov["auth"])["kind"] ?? "").toLowerCase() === "client") {
+    if (isClient) {
       windowOk = !("CLAUDE_CODE_MAX_CONTEXT_TOKENS" in env || "CLAUDE_CODE_AUTO_COMPACT_WINDOW" in env);
       tierOk = !Object.keys(env).some((k) => k.startsWith("ANTHROPIC_DEFAULT_"));
       if (ownHome) {
         const overlay = settingsOverlay(argv);
         check(overlay, `${head}: the launch carries no --settings, where it hands Claude Code the head's settings`);
         pickerOk = pickerFree(overlay);
-        // head-catalog: `claude` is the gateway's, and holds the door's one window there.
-        windowOk =
-          /^[0-9]+$/.test(String(env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"])) &&
-          env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] === "1" &&
-          String(env["ANTHROPIC_BASE_URL"]).endsWith("/door") &&
-          env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] === undefined;
       } else {
         const config = env["CLAUDE_CONFIG_DIR"];
         check(config, `${head}: the launch recipe names no CLAUDE_CONFIG_DIR`);
@@ -228,8 +223,14 @@ async function exampleHeads(example: string, headsFile: string, port: string, ho
         String(env["ANTHROPIC_BASE_URL"]).endsWith("/door") &&
         env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] === undefined;
     }
+    const wantModel = isClient || pinned === "" ? pinned : `${String(h["discovery_prefix"] ?? "")}${pinned}`;
     const ok =
-      selectorFree(env["ANTHROPIC_MODEL"]) === selectorFree(pinned) && windowOk && tierOk && pickerOk && linked && wrapper;
+      selectorFree(env["ANTHROPIC_MODEL"]) === selectorFree(wantModel) &&
+      windowOk &&
+      tierOk &&
+      pickerOk &&
+      linked &&
+      wrapper;
     console.log(
       `${head.padEnd(14)} ${command.padEnd(18)} model=${env["ANTHROPIC_MODEL"]} window=${env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"]}` +
         ` example=${pinned}@${want} sessions_link=${linked} wrapper=${wrapper} ${ok ? "OK" : "MISMATCH"}`,

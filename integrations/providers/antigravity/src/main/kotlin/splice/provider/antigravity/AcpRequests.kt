@@ -27,18 +27,19 @@ internal class AcpRequests {
         }
     }
 
-    /** A new session in [folder], with no MCP server of Desktop's. */
-    fun newSession(folder: String): JsonObject = buildJsonObject {
+    /** A new session in [folder] with [mcpServers]. */
+    fun newSession(folder: String, mcpServers: JsonArray = JsonArray(emptyList())): JsonObject = buildJsonObject {
         put("cwd", folder)
-        put("mcpServers", JsonArray(emptyList()))
+        put("mcpServers", mcpServers)
     }
 
-    /** Session [id] taken up again in [folder]. */
-    fun resume(id: String, folder: String): JsonObject = buildJsonObject {
-        put("sessionId", id)
-        put("cwd", folder)
-        put("mcpServers", JsonArray(emptyList()))
-    }
+    /** Session [id] taken up again in [folder] with [mcpServers]. */
+    fun resume(id: String, folder: String, mcpServers: JsonArray = JsonArray(emptyList())): JsonObject =
+        buildJsonObject {
+            put("sessionId", id)
+            put("cwd", folder)
+            put("mcpServers", mcpServers)
+        }
 
     fun sessionOf(id: String): JsonObject = buildJsonObject { put("sessionId", id) }
 }

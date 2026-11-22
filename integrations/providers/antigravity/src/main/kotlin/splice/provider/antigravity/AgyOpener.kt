@@ -10,6 +10,17 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
+import splice.core.util.LogSink
+
+/** Capabilities learned from agy's `initialize` handshake. */
+internal data class AgyHello(val images: Boolean)
+
+/** Result of opening an agy session with optional MCP servers. */
+internal data class OpenedSession(
+    val open: AgyOpen,
+    val resumed: Boolean,
+    val mcpApplied: Boolean,
+)
 
 /** What opening agy came to. */
 internal sealed class AgyOpen {
@@ -30,14 +41,56 @@ internal class AgyOpener(
 
     /** Session [resume] taken up again, or a new one when there is none to take up or agy does not know it. */
     suspend fun open(resume: String?): AgyOpen {
+        val (hello, refusal) = sayHello()
+        if (hello == null) return AgyOpen.Unusable(refusal ?: AGY_SIGN_IN)
+        return openSession(resume, hello, JsonArray(emptyList()), emptyList(), LogSink {}).open
+    }
+
+    /** Performs ACP `initialize`; returns capabilities or the reason agy cannot be used. */
+    suspend fun sayHello(): Pair<AgyHello?, String?> {
         val hello = hello()
-        if (hello !is AcpAnswer.Result) return unusable(hello)
+        if (hello !is AcpAnswer.Result) return null to (hello.spoken("agy refused:") ?: AGY_SIGN_IN)
         val prompts = (hello.result["agentCapabilities"] as? JsonObject)?.get("promptCapabilities") as? JsonObject
         val images = JsonScalars.str(prompts, "image") == "true"
-        val (id, answered) = opened(resume)
-        val result = (answered as? AcpAnswer.Result)?.result ?: return unusable(answered)
-        return id?.let { ready(it, result, images) } ?: AgyOpen.Unusable("agy opened no session")
+        return AgyHello(images) to null
     }
+
+    /** Opens [resume] or a new session with [mcpServers]; if agy refuses the MCP servers, logs [serverNames] and
+     *  retries with an empty list so the session still runs. */
+    suspend fun openSession(
+        resume: String?,
+        hello: AgyHello,
+        mcpServers: JsonArray,
+        serverNames: List<String>,
+        log: LogSink,
+    ): OpenedSession {
+        val (attempt, refusedMcp) = tryOpenWithFallback(resume, mcpServers, serverNames, log)
+        val result = (attempt.answer as? AcpAnswer.Result)?.result
+            ?: return OpenedSession(unusable(attempt.answer), resumed = false, mcpApplied = false)
+        val open = attempt.id?.let { ready(it, result, hello.images) }
+            ?: AgyOpen.Unusable("agy opened no session")
+        val applied = open is AgyOpen.Ready && mcpServers.isNotEmpty() && !refusedMcp
+        return OpenedSession(open, resumed = attempt.resumed, mcpApplied = applied)
+    }
+
+    private suspend fun tryOpenWithFallback(
+        resume: String?,
+        mcpServers: JsonArray,
+        serverNames: List<String>,
+        log: LogSink,
+    ): Pair<OpenAttempt, Boolean> {
+        val first = openAttempt(resume, mcpServers)
+        val answer = first.answer
+        if (mcpServers.isNotEmpty() && isMcpRefusal(answer)) {
+            val message = (answer as? AcpAnswer.Refused)?.message.orEmpty()
+            val names = serverNames.joinToString(", ")
+            log("[antigravity] agy refused MCP servers ($names): $message; retrying without\n")
+            return openAttempt(resume, JsonArray(emptyList())) to true
+        }
+        return first to false
+    }
+
+    private fun isMcpRefusal(answer: AcpAnswer): Boolean = answer is AcpAnswer.Refused && answer.code != AUTH_REQUIRED
 
     /** agy's answer to `initialize`. */
     suspend fun hello(): AcpAnswer = asked("initialize", requests.initialize())
@@ -45,13 +98,21 @@ internal class AgyOpener(
     /** The session [resume] when agy takes it up (or refuses it for want of a sign-in), else a new one: its id and
      *  everything agy answered with; whatever went wrong instead is in that answer too. */
     suspend fun opened(resume: String?): Pair<String?, AcpAnswer> {
-        val resumed = resume?.let { asked("session/resume", requests.resume(it, cwd)) }
-        val signedOut = resumed is AcpAnswer.Refused && resumed.code == AUTH_REQUIRED
-        val taken = resumed is AcpAnswer.Result || signedOut
-        if (resumed != null && taken) return resume to resumed
-        val beganNew = asked("session/new", requests.newSession(cwd))
-        return (beganNew as? AcpAnswer.Result)?.let { JsonScalars.str(it.result, "sessionId") } to beganNew
+        val attempt = openAttempt(resume, JsonArray(emptyList()))
+        return attempt.id to attempt.answer
     }
+
+    private suspend fun openAttempt(resume: String?, mcpServers: JsonArray): OpenAttempt {
+        val resumed = resume?.let { asked("session/resume", requests.resume(it, cwd, mcpServers)) }
+        val signedOut = resumed is AcpAnswer.Refused && resumed.code == AUTH_REQUIRED
+        if (resumed is AcpAnswer.Result) return OpenAttempt(resume, resumed, resumed = true)
+        if (signedOut) return OpenAttempt(resume, resumed, resumed = false)
+        val beganNew = asked("session/new", requests.newSession(cwd, mcpServers))
+        val id = (beganNew as? AcpAnswer.Result)?.let { JsonScalars.str(it.result, "sessionId") }
+        return OpenAttempt(id, beganNew, resumed = false)
+    }
+
+    private data class OpenAttempt(val id: String?, val answer: AcpAnswer, val resumed: Boolean)
 
     private fun ready(id: String, answer: JsonObject, images: Boolean): AgyOpen {
         val options = answer["configOptions"] as? JsonArray ?: JsonArray(emptyList())

@@ -27,23 +27,33 @@ internal data class ToolCard(
 )
 
 /** Builds the card and the result of an ACP tool call. */
-internal class ToolCards {
+internal class ToolCards(private val mcpLookup: McpToolLookup = McpToolLookup { null }) {
     /** The card of [call], an ACP `tool_call` (or the `toolCall` of a permission request). */
     fun of(call: JsonObject): ToolCard {
         val facts = CallFacts(call)
-        subagentOf(call, facts)?.let { return it }
-        return when (JsonScalars.str(call, "kind")) {
-            "execute" -> facts.card("Bash", "command" to facts.text(COMMAND_KEYS), "description" to facts.title)
-            "edit" -> edit(facts)
-            "read" -> facts.card("Read", TOOL_FILE_PATH to facts.where)
-            "search" -> facts.card("Grep", "pattern" to facts.text(PATTERN_KEYS), "path" to facts.path)
-            "fetch" -> facts.card("WebFetch", "url" to facts.text(URL_KEYS), "prompt" to facts.title)
-            else -> ToolCard(
-                JsonScalars.str(call, "name") ?: facts.title.ifEmpty { OTHER_TOOL },
-                facts.raw.ifEmpty { buildJsonObject { put("description", facts.title) } },
-                facts.title,
-            )
-        }
+        return subagentOf(call, facts) ?: mcpOf(call, facts) ?: byKind(call, facts)
+    }
+
+    private fun byKind(call: JsonObject, facts: CallFacts): ToolCard = when (JsonScalars.str(call, "kind")) {
+        "execute" -> facts.card("Bash", "command" to facts.text(COMMAND_KEYS), DESCRIPTION_KEY to facts.title)
+        "edit" -> edit(facts)
+        "read" -> facts.card("Read", TOOL_FILE_PATH to facts.where)
+        "search" -> facts.card("Grep", "pattern" to facts.text(PATTERN_KEYS), "path" to facts.path)
+        "fetch" -> facts.card("WebFetch", "url" to facts.text(URL_KEYS), "prompt" to facts.title)
+        else -> ToolCard(
+            JsonScalars.str(call, "name") ?: facts.title.ifEmpty { OTHER_TOOL },
+            facts.raw.ifEmpty { buildJsonObject { put(DESCRIPTION_KEY, facts.title) } },
+            facts.title,
+        )
+    }
+
+    private fun mcpOf(call: JsonObject, facts: CallFacts): ToolCard? {
+        val claudeName = JsonScalars.str(call, "name")?.let(mcpLookup::claudeName) ?: return null
+        return ToolCard(
+            claudeName,
+            facts.raw.ifEmpty { buildJsonObject { put(DESCRIPTION_KEY, facts.title) } },
+            facts.title,
+        )
     }
 
     /** Translates agy's `invoke_subagent` delegation into Claude Code's `Task` card so Desktop draws a subagent pane
@@ -54,7 +64,7 @@ internal class ToolCards {
         val prompt = JsonScalars.str(facts.raw, SUBAGENT_PROMPT).orEmpty()
         val typeName = JsonScalars.str(facts.raw, SUBAGENT_TYPE).orEmpty()
         val input = buildJsonObject {
-            put("description", role)
+            put(DESCRIPTION_KEY, role)
             put("prompt", prompt)
             if (typeName.isNotEmpty()) put("subagent_type", typeName)
         }
@@ -133,6 +143,7 @@ private const val SUBAGENT_TYPE = "TypeName"
 private const val TOOL_FILE_PATH = "file_path"
 private const val TOOL_CONTENT = "content"
 private const val TOOL_DIFF = "diff"
+private const val DESCRIPTION_KEY = "description"
 
 // Where agy's raw input may carry each value. Not yet seen from agy itself (unverified), so each lists the spellings
 // ACP agents use; the call's title stands in when none is there.

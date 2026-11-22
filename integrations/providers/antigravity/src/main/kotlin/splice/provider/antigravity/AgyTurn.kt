@@ -18,8 +18,9 @@ internal class AgyTurn(
     private val frames: DesktopFrames,
     private val out: DesktopOut,
     private val transcript: ClaudeTranscript,
+    mcpLookup: McpToolLookup = McpToolLookup { null },
 ) {
-    private val cards = ToolCards()
+    private val cards = ToolCards(mcpLookup)
     private val taskFrames = TaskFrames(frames.sessionId)
     private val tools = LinkedHashMap<String, ToolCard>()
     private val answered = HashSet<String>()

@@ -10,7 +10,12 @@
 @font-face { font-family: "DM Mono"; font-weight: 500; font-display: swap; src: url(fonts/dm-mono-500.woff2) format("woff2"); }
 
 :root {
-  --root-size: clamp(15px, 0.78125vw, 30px);
+  /* Type and controls are one size on every screen: 15 px where the browser's own default is 16. A wider window shows
+     more of the page, never the same page larger, and the browser's zoom scales it as it scales any page. This was
+     clamp(15px, 0.78125vw, 30px), 1/128 of the window's width: at 3840 px every length doubled, so a 4K screen showed
+     a 1920 px page at twice the size, and zooming did nothing, because zooming in narrows the window by the same
+     factor (Nov 21, 2026, the person who uses it: "everything looks gigantic", and zoom "doesn't work"). */
+  --root-size: 93.75%;
 
   /* ground */
   --ground: rgb(17 20 26);

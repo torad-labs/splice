@@ -28,12 +28,14 @@ test("the kit's files are in the console, each once", () => {
   }
 });
 
-test("a page of only its own field gets the shell: six tabs, no rails or composer it did not ask for, the 3840 scale", async () => {
+test("a page of only its own field gets the shell: six tabs, no rails or composer it did not ask for, one size at 1440 and 3840", async () => {
   await expectFrame(b, d, "probe/probe.html", { current: null, railL: false, railR: false, composer: false });
 }, 60_000);
 
-test("the root size is 15 px at 1440 and 30 px at 3840", async () => {
-  for (const [size, px] of [[NARROW, 15], [WIDE, 30]] as const) {
+// Nov 21, 2026: this asked for 30 px at 3840, the root that followed the window's width and drew a 3840 px screen at
+// twice the size. The root is the same on every window now, so the browser's zoom is what scales the page.
+test("the root size is 15 px at 1440 and at 3840", async () => {
+  for (const [size, px] of [[NARROW, 15], [WIDE, 15]] as const) {
     const o = await open(b, d, "probe/probe.html", size);
     try {
       expect(await o.page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize))).toBeCloseTo(px, 0);

@@ -1,7 +1,7 @@
 // What the console-night-deck checks share: a stub daemon that serves this checkout's console folder by the names
 // ConsoleMount serves (a plain name, or one under fonts/ or brand/) and answers /api/* from made-up rows, the way
 // tools/console's tests read the pages; Chromium at the two widths the feature is judged at; and the frame every
-// Night Deck page shares (the six tabs, which rails and composer it has, and how it scales from 1440 to 3840 px).
+// Night Deck page shares (the six tabs, which rails and composer it has, and its type the same size at 1440 and 3840 px).
 //
 // Every value here is made up (the "acme" world). Nothing comes from anyone's machine.
 
@@ -144,8 +144,9 @@ export interface Want {
 }
 
 /** The page at 1440 and at 3840 (night), and once in day: no page error, the six tabs in order with [want.current]
- *  marked, the rails and composer [want] names and no others, nothing past the right edge, and the 3840 page drawn as
- *  a larger 1440 page (the nav twice as tall, within 10%). */
+ *  marked, the rails and composer [want] names and no others, nothing past the right edge, and the 3840 page drawn at
+ *  the 1440 page's size (the nav as tall on both). Nov 21, 2026: this asked for the nav twice as tall at 3840, which
+ *  is what the person on a 3840 px screen called gigantic; a wider window now shows more of the page, never a larger one. */
 export async function expectFrame(b: Browser, d: Daemon, file: string, want: Want): Promise<void> {
   const seen: Frame[] = [];
   for (const [size, theme] of [[NARROW, "night"], [WIDE, "night"], [NARROW, "day"]] as const) {
@@ -166,9 +167,7 @@ export async function expectFrame(b: Browser, d: Daemon, file: string, want: Wan
   }
   const [narrow, wide] = seen as [Frame, Frame];
   expect(narrow.navH).toBeGreaterThan(0);
-  const ratio = wide.navH / narrow.navH;
-  expect(ratio, "at 3840 the page should read as a larger 1440 page").toBeGreaterThan(1.8);
-  expect(ratio).toBeLessThan(2.2);
+  expect(wide.navH, "at 3840 the page's type and controls are the size they are at 1440").toBeCloseTo(narrow.navH, 0);
 }
 
 /** The open glass panel (an inspect lens), once it has grown in. */

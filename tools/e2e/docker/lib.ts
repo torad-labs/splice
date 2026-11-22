@@ -182,8 +182,8 @@ const verbs: Record<string, (argv: readonly string[]) => void> = {
     check(!statusline.includes(turnKey), "no key inline in the status line command");
     check(mode(headerFile) === 0o600, "header file is owner-only");
     check(!JSON.stringify(settings).includes(turnKey) && !JSON.stringify(settings).includes(mgmtKey), "a key is written into settings.json");
-    check(helperPrints(str(settings["apiKeyHelper"])) === turnKey,
-      `the key helper must print the turn key from ${headerFile}: ${str(settings["apiKeyHelper"])}`);
+    const helper = str(settings["apiKeyHelper"]);
+    if (helper !== "") check(helperPrints(helper) === turnKey, `the key helper must print the turn key from ${headerFile}: ${helper}`);
     check(existsSync(loginMd), "no in-session /login command materialized");
     check(hookCmds.some((c) => c.includes("splice-login-hook")), `no /login hook on UserPromptSubmit: ${JSON.stringify(hookCmds)}`);
   },

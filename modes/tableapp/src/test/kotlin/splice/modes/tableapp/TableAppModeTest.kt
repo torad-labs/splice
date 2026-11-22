@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test
 import splice.modes.api.ModeAnswer
 import splice.modes.api.ModeCall
 import splice.modes.api.ModeCaller
-import splice.modes.api.ModeCatalog
+import splice.modes.api.ModeCatalogReader
 import splice.modes.api.ModeSession
 import splice.modes.api.ModeStore
 
@@ -27,7 +27,7 @@ class TableAppModeTest {
 
     @Test
     fun `manifest loads cleanly through ModeCatalog and is off by default`() {
-        val loaded = ModeCatalog().load()
+        val loaded = ModeCatalogReader(TableAppModeTest::class.java.classLoader).read()
         assertEquals(emptyList<String>(), loaded.findings, loaded.findings.joinToString("\n"))
         val found = loaded.modes.single { it.name == "tableapp" }
         assertEquals(false, found.manifest.on)

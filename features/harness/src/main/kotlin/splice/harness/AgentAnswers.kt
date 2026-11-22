@@ -123,7 +123,7 @@ internal class AgentAnswers(
     private fun settledText(raw: Settled): Pair<String, Boolean>? = when (raw) {
         is Settled.Text -> raw.text to false
         is Settled.Error -> raw.text to true
-        else -> null
+        is Settled.Refused, is Settled.Failed, Settled.Stopped -> null
     }
 
     /** A port's tool answers in the daemon's own thread pool; its answer is the call's result. */

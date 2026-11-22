@@ -5,19 +5,13 @@ package splice.harness.hook
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import splice.core.failure.Decline
 import splice.core.failure.FailureCause
-import splice.core.parse.lenientJson
 import splice.core.turn.TurnOutcome
-import splice.core.util.JsonScalars
 import splice.harness.AgentTyped
 import splice.harness.agent.AgentAsk
 import splice.harness.agent.AgentSession
 import splice.harness.agent.AgentWire
-import splice.harness.agent.USER
 import splice.upstream.InterceptedRoundPost
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RoundBody
@@ -35,10 +29,11 @@ internal class HookRounds(
     private val session: AgentSession,
     private val hooks: HookRuns,
     private val inner: RoundInterceptor?,
-    private val next: AgentAsk,
+    next: AgentAsk,
 ) : RoundInterceptor, RoundBodyInterceptor {
     private val wire = AgentWire()
     private val emit = HookRewriteEmit()
+    private val cont = HookContinue(wire, next)
 
     override suspend fun intercept(bodyJson: String, sink: WireSink, postRound: InterceptedRoundPost): RoundResult =
         intercept(RoundBody.Text(bodyJson), sink, postRound)
@@ -53,11 +48,7 @@ internal class HookRounds(
         }
     }
 
-    private suspend fun stepRound(
-        state: LoopState,
-        sink: WireSink,
-        postRound: InterceptedRoundPost,
-    ): Step {
+    private suspend fun stepRound(state: LoopState, sink: WireSink, postRound: InterceptedRoundPost): Step {
         val buffer = HookBufferSink()
         val posted = invokeInner(state.current, AgentTyped(buffer, buffer.message), postRound)
         val outcome = (posted as? RoundResult.Outcome)?.outcome as? TurnOutcome.Success
@@ -71,16 +62,16 @@ internal class HookRounds(
     }
 
     private suspend fun applyDecision(
-        decision: Decision,
+        decision: RoundDecision,
         state: LoopState,
         buffer: HookBufferSink,
         sink: WireSink,
         outcome: TurnOutcome.Success,
     ): Step = when (decision) {
-        is Decision.Refuse -> Step.Done(refused(decision.mode, decision.reason))
-        is Decision.Continue -> {
+        is RoundDecision.Refuse -> Step.Done(refused(decision.mode, decision.reason))
+        is RoundDecision.Continue -> {
             state.continues++
-            val nextBody = continueBody(state.current, state.produced, buffer.message.blocks(), decision.text)
+            val nextBody = cont.build(state.current, state.produced, buffer.message.blocks(), decision.text)
             if (nextBody != null) {
                 Step.Again(nextBody)
             } else {
@@ -88,15 +79,15 @@ internal class HookRounds(
                 Step.Done(RoundResult.Outcome(outcome))
             }
         }
-        is Decision.Replace -> {
+        is RoundDecision.Replace -> {
             sink.addTextBlock(decision.text)
             Step.Done(RoundResult.Outcome(outcome))
         }
-        is Decision.Rewrite -> {
+        is RoundDecision.Rewrite -> {
             emit.emit(sink, decision.body)
             Step.Done(RoundResult.Outcome(outcome))
         }
-        Decision.Pass -> {
+        RoundDecision.Pass -> {
             buffer.replayInto(sink)
             Step.Done(RoundResult.Outcome(outcome))
         }
@@ -116,41 +107,23 @@ internal class HookRounds(
             else -> post(body.text)
         }
 
-    private suspend fun decide(blocks: List<JsonObject>, continues: Int): Decision {
+    private suspend fun decide(blocks: List<JsonObject>, continues: Int): RoundDecision {
         val resp = hooks.response(session, blocks)
-        if (resp is HookRuns.ResponseDecision.Refused) return Decision.Refuse(resp.mode, resp.reason)
+        if (resp is HookRuns.ResponseDecision.Refused) return RoundDecision.Refuse(resp.mode, resp.reason)
         val rewritten = (resp as? HookRuns.ResponseDecision.Rewritten)?.body
         val currentBlocks = (rewritten?.get("content") as? JsonArray)?.mapNotNull { it as? JsonObject } ?: blocks
         val stopDecision = if (currentBlocks.none(wire::isCall)) checkStop(currentBlocks, continues) else null
-        return stopDecision ?: rewritten?.let(Decision::Rewrite) ?: Decision.Pass
+        return stopDecision ?: rewritten?.let(RoundDecision::Rewrite) ?: RoundDecision.Pass
     }
 
-    private suspend fun checkStop(blocks: List<JsonObject>, continues: Int): Decision? =
+    private suspend fun checkStop(blocks: List<JsonObject>, continues: Int): RoundDecision? =
         when (val stop = hooks.onStop(session, blocks, emit.textOf(blocks))) {
-            is HookRuns.StopDecision.Refused -> Decision.Refuse(stop.mode, stop.reason)
+            is HookRuns.StopDecision.Refused -> RoundDecision.Refuse(stop.mode, stop.reason)
             is HookRuns.StopDecision.Continue ->
-                if (continues < MAX_ON_STOP_CONTINUES) Decision.Continue(stop.text) else null
-            is HookRuns.StopDecision.Replace -> Decision.Replace(stop.text)
+                if (continues < MAX_ON_STOP_CONTINUES) RoundDecision.Continue(stop.text) else null
+            is HookRuns.StopDecision.Replace -> RoundDecision.Replace(stop.text)
             HookRuns.StopDecision.Pass -> null
         }
-
-    private fun continueBody(
-        body: RoundBody,
-        produced: MutableList<JsonObject>,
-        assistantBlocks: List<JsonObject>,
-        followUp: String,
-    ): RoundBody? {
-        val userBlock = buildJsonObject {
-            put("type", "text")
-            put("text", JsonPrimitive(followUp))
-        }
-        val made = listOf(wire.message(wire.assistant, assistantBlocks), wire.message(USER, listOf(userBlock)))
-        val reqObj = (body as? RoundBody.Tree)?.element as? JsonObject
-            ?: JsonScalars.objectOrNull(lenientJson, body.text)
-        val built = next.next(reqObj, produced + made, made) ?: return null
-        produced += made
-        return RoundBody.Tree(built)
-    }
 
     private fun refused(mode: String, reason: String): RoundResult =
         RoundResult.Ended(TurnDeclined(FailureCause.Splice.Declined(Decline.ModeRefused(mode, reason))))
@@ -165,13 +138,5 @@ internal class HookRounds(
     private sealed class Step {
         data class Done(val result: RoundResult) : Step()
         data class Again(val body: RoundBody) : Step()
-    }
-
-    private sealed class Decision {
-        data object Pass : Decision()
-        data class Rewrite(val body: JsonObject) : Decision()
-        data class Replace(val text: String) : Decision()
-        data class Continue(val text: String) : Decision()
-        data class Refuse(val mode: String, val reason: String) : Decision()
     }
 }

@@ -3,7 +3,6 @@
 package splice.harness.hook
 
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -68,7 +67,7 @@ internal class HookRuns(
         return Hooked(rewritten?.body ?: body, null, null)
     }
 
-    private suspend fun one(spec: HookSpec, moment: HookMoment, session: AgentSession, body: JsonObject): HookAnswer {
+    internal suspend fun one(spec: HookSpec, moment: HookMoment, session: AgentSession, body: JsonObject): HookAnswer {
         val call = HookCall(moment, session, body)
         val attempt = Cancellables.runCatchingBestEffort {
             withTimeoutOrNull(spec.timeoutMs) { work(spec, moment, session, body, call) }
@@ -137,6 +136,8 @@ internal class HookRuns(
         put("session", session.id)
     }
 
+    private val phaseTwo = HookPhaseTwo(this)
+
     /** Wraps [inner] with [HookRounds] when [session] has any `on_stop` or `response` hooks, else returns [inner]. */
     fun wrapRounds(
         session: AgentSession?,
@@ -149,23 +150,8 @@ internal class HookRuns(
     }
 
     /** Runs `before_tool_call` hooks for one tool call; `Rewrite` chains input, `Refuse` stops. */
-    suspend fun beforeToolCall(session: AgentSession, tool: String, input: JsonElement): ToolBefore {
-        val specs = at(HookMoment.BEFORE_TOOL_CALL, session)
-        if (specs.isEmpty()) return ToolBefore.Go(input)
-        var current = input
-        for (spec in specs) {
-            val payload = buildJsonObject {
-                put("tool", tool)
-                put("input", current)
-            }
-            when (val ans = one(spec, HookMoment.BEFORE_TOOL_CALL, session, payload)) {
-                is HookAnswer.Refuse -> return ToolBefore.Refused(spec.mode, ans.reason)
-                is HookAnswer.Rewrite -> current = ans.body
-                else -> Unit
-            }
-        }
-        return ToolBefore.Go(current)
-    }
+    suspend fun beforeToolCall(session: AgentSession, tool: String, input: JsonElement): ToolBefore =
+        phaseTwo.beforeToolCall(session, tool, input)
 
     /** Runs `after_tool_call` hooks for one tool call; `Replace` chains result text, `Refuse` stops. */
     suspend fun afterToolCall(
@@ -174,67 +160,15 @@ internal class HookRuns(
         input: JsonElement,
         text: String,
         isError: Boolean,
-    ): ToolAfter {
-        val specs = at(HookMoment.AFTER_TOOL_CALL, session)
-        if (specs.isEmpty()) return ToolAfter.Go(text, replaced = false)
-        var current = text
-        var replaced = false
-        for (spec in specs) {
-            val payload = buildJsonObject {
-                put("tool", tool)
-                put("input", input)
-                put("result", current)
-                put("is_error", isError)
-            }
-            when (val ans = one(spec, HookMoment.AFTER_TOOL_CALL, session, payload)) {
-                is HookAnswer.Refuse -> return ToolAfter.Refused(spec.mode, ans.reason)
-                is HookAnswer.Replace -> {
-                    current = ans.text
-                    replaced = true
-                }
-                else -> Unit
-            }
-        }
-        return ToolAfter.Go(current, replaced)
-    }
+    ): ToolAfter = phaseTwo.afterToolCall(session, tool, input, text, isError)
 
     /** Runs `response` hooks over the model's assembled content blocks. */
-    suspend fun response(session: AgentSession, blocks: List<JsonObject>): ResponseDecision {
-        val specs = at(HookMoment.RESPONSE, session)
-        if (specs.isEmpty()) return ResponseDecision.Pass
-        var body = buildJsonObject { put("content", JsonArray(blocks)) }
-        var rewritten = false
-        for (spec in specs) {
-            when (val ans = one(spec, HookMoment.RESPONSE, session, body)) {
-                is HookAnswer.Refuse -> return ResponseDecision.Refused(spec.mode, ans.reason)
-                is HookAnswer.Rewrite -> {
-                    body = ans.body
-                    rewritten = true
-                }
-                else -> Unit
-            }
-        }
-        return if (rewritten) ResponseDecision.Rewritten(body) else ResponseDecision.Pass
-    }
+    suspend fun response(session: AgentSession, blocks: List<JsonObject>): ResponseDecision =
+        phaseTwo.response(session, blocks)
 
     /** Runs `on_stop` hooks when the model finishes with no tool calls. */
-    suspend fun onStop(session: AgentSession, blocks: List<JsonObject>, text: String): StopDecision {
-        val specs = at(HookMoment.ON_STOP, session)
-        val payload = buildJsonObject {
-            put("content", JsonArray(blocks))
-            put("text", text)
-        }
-        var decision: StopDecision = StopDecision.Pass
-        for (spec in specs) {
-            when (val ans = one(spec, HookMoment.ON_STOP, session, payload)) {
-                is HookAnswer.Refuse -> return StopDecision.Refused(spec.mode, ans.reason)
-                is HookAnswer.Continue -> return StopDecision.Continue(ans.text)
-                is HookAnswer.Replace -> decision = StopDecision.Replace(ans.text)
-                else -> Unit
-            }
-        }
-        return decision
-    }
+    suspend fun onStop(session: AgentSession, blocks: List<JsonObject>, text: String): StopDecision =
+        phaseTwo.onStop(session, blocks, text)
 
     /** What the request hooks leave a turn: the body to send (null leaves it as it was), and the mode and reason of a
      *  refusal. */

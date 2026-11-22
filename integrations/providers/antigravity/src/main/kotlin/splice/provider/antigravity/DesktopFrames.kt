@@ -175,7 +175,7 @@ internal class DesktopFrames(internal val sessionId: String) {
         put("type", type)
         body()
         put("uuid", uuid)
-        put(SESSION_ID_KEY, sessionId)
+        put(FRAME_SESSION_ID, sessionId)
     }
 
     private fun commandsOf(commands: List<AgyCommand>): JsonArray = buildJsonArray {
@@ -197,30 +197,30 @@ internal class TaskFrames(private val sessionId: String) {
         put("type", "system")
         put(SUBTYPE, "task_started")
         put("task_id", id)
-        put(TOOL_USE_ID_KEY, id)
+        put(FRAME_TOOL_USE_ID, id)
         put("description", subagent.description)
         if (subagent.subagentType.isNotEmpty()) put("subagent_type", subagent.subagentType)
         put("task_type", "local_agent")
         put("is_backgrounded", false)
         put("uuid", UUID.randomUUID().toString())
-        put(SESSION_ID_KEY, sessionId)
+        put(FRAME_SESSION_ID, sessionId)
     }
 
     fun notification(id: String, status: String, summary: String): JsonObject = buildJsonObject {
         put("type", "system")
         put(SUBTYPE, "task_notification")
         put("task_id", id)
-        put(TOOL_USE_ID_KEY, id)
+        put(FRAME_TOOL_USE_ID, id)
         put("status", status)
         put("summary", summary)
         put("uuid", UUID.randomUUID().toString())
-        put(SESSION_ID_KEY, sessionId)
+        put(FRAME_SESSION_ID, sessionId)
     }
 }
 
 private const val OUTPUT_STYLE = "default"
-private const val SESSION_ID_KEY = "session_id"
-private const val TOOL_USE_ID_KEY = "tool_use_id"
+private const val FRAME_SESSION_ID = "session_id"
+private const val FRAME_TOOL_USE_ID = "tool_use_id"
 
 /** The member that says which kind of control message or system message a line is. */
 private const val SUBTYPE = "subtype"

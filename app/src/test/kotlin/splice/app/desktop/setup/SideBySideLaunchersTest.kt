@@ -1,15 +1,21 @@
 package splice.app.desktop.setup
 
+import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.cli.desktop.DaemonUp
+import splice.core.config.MgmtKey
+import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
+import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicInteger
 
 class SideBySideLaunchersTest {
     @Test
@@ -108,6 +114,54 @@ class SideBySideLaunchersTest {
             val refreshed = Files.readString(configFile)
             assertTrue(refreshed.contains("\"projectsEnabled\": true"), refreshed)
             assertTrue(refreshed.contains("\"defaultModelEffort\": \"low\""), refreshed)
+        }
+    }
+
+    @Test
+    fun `launch still starts Desktop with empty stderr when publish returns non-200`(@TempDir tmp: Path) {
+        val home = Files.createDirectories(tmp.resolve("home"))
+        val binDir = Files.createDirectories(tmp.resolve("bin"))
+        val claudeBin = binDir.resolve("claude-desktop").also { Files.writeString(it, "#!/bin/sh\n") }
+        assertTrue(claudeBin.toFile().setExecutable(true))
+        val publishHits = AtomicInteger(0)
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/api/desktop/publish") { ex ->
+            publishHits.incrementAndGet()
+            val _ = ex.requestBody.readBytes()
+            val body = """{"error":"busy"}""".toByteArray()
+            ex.sendResponseHeaders(500, body.size.toLong())
+            ex.responseBody.use { it.write(body) }
+        }
+        server.start()
+        try {
+            val stateDir = tmp.resolve("state")
+            val vars = mapOf(
+                "HOME" to home.toString(),
+                "XDG_CONFIG_HOME" to Files.createDirectories(tmp.resolve("config")).toString(),
+                "SPLICE_STATE_DIR" to stateDir.toString(),
+                "SPLICE_CONTROL_PORT" to server.address.port.toString(),
+                "PATH" to binDir.toString(),
+            )
+            val env = EnvReader { vars[it] }
+            UserHome.within(home) {
+                val _ = MgmtKey(StatePaths(baseOverride = stateDir, envReader = env)).get()
+                val errLines = mutableListOf<String>()
+                val launched = mutableListOf<List<String>>()
+                val desktop = SideBySideDesktop(
+                    env = env,
+                    out = TerminalOutput {},
+                    err = TerminalOutput { errLines += it },
+                    daemon = DaemonUp { true },
+                    osName = "Linux",
+                    starter = DesktopProcessStarter { cmd, _ -> 0.also { launched += cmd } },
+                )
+                assertEquals(0, desktop.launch(emptyList()))
+                assertEquals(1, publishHits.get())
+                assertTrue(errLines.isEmpty(), errLines.toString())
+                assertEquals(1, launched.size)
+            }
+        } finally {
+            server.stop(0)
         }
     }
 }

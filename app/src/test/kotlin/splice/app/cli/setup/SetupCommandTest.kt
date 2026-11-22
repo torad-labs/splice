@@ -270,7 +270,7 @@ class SetupCommandTest {
                             frame = WizardFrame(out = chrome, ask = ConfirmPrompt { _, d -> d }),
                             hasConsole = { true },
                             pickHeads = HeadPicker { _, _ -> MultiSelectOutcome.Chosen(emptyList()) },
-                            pickLaunchers = LauncherPicker { _, _ ->
+                            pickLaunchers = HeadPicker { _, _ ->
                                 MultiSelectOutcome.Chosen(listOf(OPT_CLI, OPT_DESKTOP_APP))
                             },
                             spinner = Spinner(tty = false),

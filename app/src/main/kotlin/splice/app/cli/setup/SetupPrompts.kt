@@ -36,7 +36,7 @@ internal data class SetupPrompts(
             .ask(question, options, initial, minimum = 1)
     },
     /** Optional side-by-side launchers (`claude-splice` CLI shortcut + OS Applications folder launcher). */
-    val pickLaunchers: LauncherPicker = LauncherPicker { options, initial ->
+    val pickLaunchers: HeadPicker = HeadPicker { options, initial ->
         MultiSelectPrompt(KeyReader(System.`in`), TerminalMode(), System.out)
             .ask("Optional side-by-side launchers (Enter to skip)", options, initial, minimum = 0)
     },

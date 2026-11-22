@@ -22,11 +22,6 @@ internal data class LauncherChoice(
     val desktopApp: Boolean = false,
 )
 
-/** Prompts the operator to tick optional side-by-side launchers (multi-select). */
-internal fun interface LauncherPicker {
-    operator fun invoke(options: List<SelectOption<String>>, initial: Set<String>): MultiSelectOutcome<String>
-}
-
 internal class SetupLaunchers(
     private val env: EnvReader = EnvReader(System::getenv),
     private val osName: String = System.getProperty("os.name").orEmpty(),

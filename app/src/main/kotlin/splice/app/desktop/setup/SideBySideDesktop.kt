@@ -35,7 +35,7 @@ internal class SideBySideDesktop(
 
     /** The isolated config root (`~/.config/claude-splice`) that `DesktopAppConfig.beside()` discovers automatically. */
     fun profileDir(): Path {
-        val base = env(XDG_CONFIG_HOME)?.takeIf { it.isNotBlank() }?.let(Path::of)
+        val base = env(SIDE_BY_SIDE_XDG_CONFIG_HOME)?.takeIf { it.isNotBlank() }?.let(Path::of)
             ?: UserHome.dir(env).resolve(".config")
         return base.resolve(SIDE_BY_SIDE_DIR_NAME)
     }
@@ -49,7 +49,7 @@ internal class SideBySideDesktop(
         val records = DesktopRecords(paths.desktopFile, log)
         if (!records.get().on) records.update { it.copy(on = true) }
         val helper = DesktopPrograms(paths.stateDir).lay()
-        val isolatedEnv = EnvReader { key -> if (key == XDG_CONFIG_HOME) profile.toString() else env(key) }
+        val isolatedEnv = EnvReader { key -> if (key == SIDE_BY_SIDE_XDG_CONFIG_HOME) profile.toString() else env(key) }
         val config = DesktopAppConfig(isolatedEnv)
         val library = DesktopAppLibrary(config)
         val applied = DesktopLibraryFiles().read(config.meta)?.let(config::applied)
@@ -86,7 +86,7 @@ internal class SideBySideDesktop(
     }
 
     private fun buildEnv(profile: Path): Map<String, String> = buildMap {
-        put(XDG_CONFIG_HOME, profile.toString())
+        put(SIDE_BY_SIDE_XDG_CONFIG_HOME, profile.toString())
         put(CLAUDE_SPLICE_DESKTOP_ENV, "1")
         if (!isMac()) put("CHROME_DESKTOP", SIDE_BY_SIDE_DESKTOP_FILE)
     }
@@ -131,5 +131,5 @@ internal const val SIDE_BY_SIDE_DESKTOP_FILE: String = "ai.torad.claude-splice.d
 internal const val SIDE_BY_SIDE_APP_NAME: String = "Claude (Splice)"
 
 private const val SIDE_BY_SIDE_CONFIG_ID = "splice-side-by-side"
-private const val XDG_CONFIG_HOME = "XDG_CONFIG_HOME"
+private const val SIDE_BY_SIDE_XDG_CONFIG_HOME = "XDG_CONFIG_HOME"
 private const val CLAUDE_SPLICE_DESKTOP_ENV = "CLAUDE_SPLICE_DESKTOP"

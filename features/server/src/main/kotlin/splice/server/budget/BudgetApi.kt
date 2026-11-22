@@ -21,11 +21,14 @@ import splice.core.util.JsonScalars
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.server.ServerAnswer
+import splice.server.audit.CONTROL_ACTOR
+import splice.server.audit.ServerAudit
 
 public class BudgetApi internal constructor(
     private val book: BudgetBook,
     private val gate: BudgetGate,
     private val log: LogSink,
+    private val audit: ServerAudit? = null,
 ) {
     /** Every budget set, with what was spent against it. */
     public fun list(): ServerAnswer {
@@ -35,12 +38,17 @@ public class BudgetApi internal constructor(
     }
 
     /** Sets the budget [body] names. */
-    public suspend fun set(body: JsonObject?): ServerAnswer = when (val read = read(body)) {
+    public suspend fun set(
+        body: JsonObject?,
+        actor: String = CONTROL_ACTOR,
+    ): ServerAnswer = when (val read = read(body)) {
         is BudgetAsk.Unread -> refused(read.why)
         is BudgetAsk.Read -> {
             val set = book.set(read.setting)
             log("[server] budget of ${set.scope} ${LogSafe.str(set.name)} set\n")
-            ServerAnswer.Done(HttpStatusCode.OK, row(gate.readings().first { it.setting == set }))
+            val reply = row(gate.readings().first { it.setting == set })
+            audit?.record(actor, "budget.set", "${set.scope}:${set.name}", reply)
+            ServerAnswer.Done(HttpStatusCode.OK, reply)
         }
     }
 

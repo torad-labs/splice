@@ -12,17 +12,20 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
+import splice.server.audit.CONTROL_ACTOR
+import splice.server.audit.ServerAudit
 
 public class TeamApi(
     private val people: ServerPeople,
     private val log: LogSink,
     /** `[server] commands`, the commands a team may be let use. */
     served: List<String>,
+    private val audit: ServerAudit? = null,
 ) {
     private val commandNames = CommandNames(served)
 
     /** Sets `{"commands": [names]}` for [team] and answers `{"team", "commands"}` as they now stand. */
-    public suspend fun set(team: String, body: JsonObject?): ServerAnswer {
+    public suspend fun set(team: String, body: JsonObject?, actor: String = CONTROL_ACTOR): ServerAnswer {
         val name = team.trim().takeIf { it.isNotEmpty() && it.none(Char::isISOControl) }
         val read = body?.get(COMMANDS_FIELD)?.let { commandNames.read(it, everyAllowed = false) }
         val grant = (read as? GrantReading.Granted)?.grant
@@ -32,13 +35,12 @@ public class TeamApi(
         }
         val now = people.setTeam(name, TeamSettings(commands = grant.names))
         log("[server] settings of team ${LogSafe.str(name)} changed\n")
-        return ServerAnswer.Done(
-            HttpStatusCode.OK,
-            buildJsonObject {
-                put(TEAM, name)
-                putJsonArray(COMMANDS_FIELD) { now.commands.orEmpty().forEach { add(it) } }
-            },
-        )
+        val reply = buildJsonObject {
+            put(TEAM, name)
+            putJsonArray(COMMANDS_FIELD) { now.commands.orEmpty().forEach { add(it) } }
+        }
+        audit?.record(actor, "team.set", name, reply)
+        return ServerAnswer.Done(HttpStatusCode.OK, reply)
     }
 
     private fun refused(why: String): ServerAnswer = ServerAnswer.Refused(HttpStatusCode.BadRequest, why)

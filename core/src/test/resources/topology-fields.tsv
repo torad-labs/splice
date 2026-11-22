@@ -225,6 +225,7 @@ server.budgets
 server.budgets.action	
 server.budgets.person_daily_usd	
 server.client	
+server.client.download_url	
 server.client.minimum	
 server.commands	
 server.export	
@@ -235,6 +236,8 @@ server.export.path_style
 server.export.region	
 server.export.secret_key_env	
 server.export.to	
+server.forward_auth	
+server.forward_auth.allow	
 server.keepalive_seconds	
 server.limits	
 server.limits.inflight_per_person	

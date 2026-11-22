@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import splice.core.topology.ServerConfig
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
+import splice.server.audit.ServerAudit
 import splice.server.budget.BudgetApi
 import splice.server.budget.BudgetBook
 import splice.server.budget.BudgetGate
@@ -37,6 +38,7 @@ public class ServerBookkeeping internal constructor(
     private val people: ServerPeople,
     private val upstreams: UpstreamApi,
     private val run: BookRun,
+    private val audit: ServerAudit? = null,
 ) {
     // What each person and team spent, counted from every row of the ledger.
     private val spend = ServerSpend(run.clock)
@@ -61,7 +63,7 @@ public class ServerBookkeeping internal constructor(
     public val usageApi: UsageApi = UsageApi(ledger, people, server, run.clock, upstreams)
 
     /** Each person's and team's budgets, as the CLI and the control plane set and list them. */
-    public val budgetApi: BudgetApi = BudgetApi(budgetBook, budgets, run.log)
+    public val budgetApi: BudgetApi = BudgetApi(budgetBook, budgets, run.log, audit)
 
     /** The ledger copied out hour by hour to `[server.export]`, on its own and when the CLI asks. */
     public val usageExport: UsageExport =

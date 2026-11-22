@@ -11,6 +11,7 @@ import splice.core.topology.ServerAddress
 import splice.core.topology.ServerConfig
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
+import splice.server.audit.ServerAudit
 import splice.server.metrics.MetricPeople
 import splice.server.metrics.ServerMetrics
 import splice.server.signin.IdTokens
@@ -63,22 +64,25 @@ public class ServerMode(
     private val people = ServerPeople(folder.resolve(PEOPLE_FILE), io)
     private val limits = PersonLimits(server.limits, people, server.teams, clock)
 
+    /** Every administrative action taken on this server (F16), persisted under `<state>/server/audit.jsonl`. */
+    public val audit: ServerAudit = ServerAudit(folder.resolve(AUDIT_FILE), io, clock)
+
     /** The keys' operations, as the CLI and the control plane ask them. */
-    public val keyApi: KeyApi = KeyApi(keys, log)
+    public val keyApi: KeyApi = KeyApi(keys, log, audit)
 
     /** The upstreams as they read now, as the control plane lists them. */
     public val upstreamApi: UpstreamApi = UpstreamApi(upstreams)
 
     /** Each person's settings, as the CLI and the control plane set them. */
-    public val personApi: PersonApi = PersonApi(people, log, upstreamApi, server.commands)
+    public val personApi: PersonApi = PersonApi(people, log, upstreamApi, server.commands, audit)
 
     /** Each team's settings, as the CLI and the control plane set them (F12). */
-    public val teamApi: TeamApi = TeamApi(people, log, server.commands)
+    public val teamApi: TeamApi = TeamApi(people, log, server.commands, audit)
 
     /** The server's books (F5): its usage ledger and reports, its budgets, and the ledger's export, as the CLI, the
      *  control plane and an admin's key ask them. */
     public val books: ServerBookkeeping =
-        ServerBookkeeping(folder, server, people, upstreamApi, BookRun(io, clock, waiter, log))
+        ServerBookkeeping(folder, server, people, upstreamApi, BookRun(io, clock, waiter, log), audit)
 
     /** Each person's traffic, live (F6): what an admin scrapes from the listener and the operator's OTLP export sends. */
     public val metrics: ServerMetrics = ServerMetrics(MetricPeople(keys, people, server.teams, limits), clock)
@@ -117,7 +121,7 @@ public class ServerMode(
             val issuer = SigninIssuer(SigninClient(signin, signinSecret), io, clock)
             SigninParts(signin, issuer, IdTokens(signin, issuer, clock))
         }
-        val opened = ServerListener(server, parts, tls, AdminReads(books.usageApi, metrics), io, log, signin)
+        val opened = ServerListener(server, parts, tls, AdminReads(books.usageApi, metrics, audit), io, log, signin)
         opened.start(address)
         listener = opened
         books.exporting(reach.env)
@@ -134,4 +138,5 @@ public class ServerMode(
 
 private const val KEYS_FILE = "keys.json"
 private const val PEOPLE_FILE = "people.json"
+private const val AUDIT_FILE = "audit.jsonl"
 private const val SERVER_LOG_TAG = "server"

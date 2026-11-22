@@ -25,6 +25,7 @@ import splice.app.control.mount.ControlGuard
 import splice.http.JsonBody
 import splice.server.ServerAnswer
 import splice.server.ServerMode
+import splice.server.audit.DEFAULT_AUDIT_TAIL
 
 internal class ServerModeRoutes(private val replies: ServerModeReplies, private val guard: ControlGuard) {
     private val jsonBody = JsonBody()
@@ -37,6 +38,7 @@ internal class ServerModeRoutes(private val replies: ServerModeReplies, private 
         route.put("/api/server/people/{$PERSON_PARAM}") { guard.guarded(call) { setPerson(call) } }
         route.put("/api/server/teams/{$TEAM_PARAM}") { guard.guarded(call) { setTeam(call) } }
         route.get("/api/server/upstreams") { guard.guarded(call) { listUpstreams(call) } }
+        route.get("/api/server/audit") { guard.guarded(call) { listAudit(call) } }
     }
 
     private suspend fun listKeys(call: ApplicationCall) {
@@ -72,6 +74,12 @@ internal class ServerModeRoutes(private val replies: ServerModeReplies, private 
     private suspend fun listUpstreams(call: ApplicationCall) {
         val mode = running(call) ?: return
         say(call, mode.upstreamApi.list())
+    }
+
+    private suspend fun listAudit(call: ApplicationCall) {
+        val mode = running(call) ?: return
+        val tail = call.request.queryParameters["tail"]?.toIntOrNull() ?: DEFAULT_AUDIT_TAIL
+        say(call, mode.audit.list(tail))
     }
 
     private suspend fun running(call: ApplicationCall): ServerMode? = replies.running(call)

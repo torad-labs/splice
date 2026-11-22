@@ -52,9 +52,12 @@ public data class ProfileSignin(
 @Serializable
 public data class ProfileTelemetry(val otlp: String)
 
-/** The oldest splice a laptop may run against the server, or null when it takes any. */
+/** The oldest splice a laptop may run against the server, and where to fetch the server's client build (F9, F15). */
 @Serializable
-public data class ProfileClient(val minimum: String?)
+public data class ProfileClient(
+    val minimum: String?,
+    @SerialName("download_url") val downloadUrl: String? = null,
+)
 
 /** A laptop's ask of a server's profile, with the key it holds or one it was handed. */
 public class ServerProfiles(

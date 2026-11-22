@@ -18,13 +18,15 @@ import io.ktor.server.response.respondText
 import splice.core.topology.ServerConfig
 import splice.core.wire.HttpStatus
 import splice.http.JsonBody
+import splice.server.audit.DEFAULT_AUDIT_TAIL
+import splice.server.audit.ServerAudit
 import splice.server.ledger.UsageApi
 import splice.server.metrics.PROMETHEUS_TEXT
 import splice.server.metrics.ServerMetrics
 import splice.share.RefusalVoice
 
-/** What an admin reads over the listener beside the keys: the ledger's reports (F5) and the live metrics (F6). */
-internal data class AdminReads(val usage: UsageApi, val metrics: ServerMetrics)
+/** What an admin reads over the listener beside the keys: the ledger's reports (F5), live metrics (F6) and audit log (F16). */
+internal data class AdminReads(val usage: UsageApi, val metrics: ServerMetrics, val audit: ServerAudit? = null)
 
 internal class ServerAdmin(
     private val server: ServerConfig,
@@ -45,27 +47,33 @@ internal class ServerAdmin(
                 voice.refuse(call, HttpStatus.FORBIDDEN, why)
             }
             metrics -> call.respondText(reads.metrics.prometheus(), ContentType.parse(PROMETHEUS_TEXT))
-            else -> say(call, asked(call, rest.drop(1)))
+            else -> say(call, asked(call, key.person, rest.drop(1)))
         }
     }
 
     /** What an admin's request for [path], the path after `/server/api`, comes to; null for a path that is none. */
-    private suspend fun asked(call: ApplicationCall, path: List<String>): ServerAnswer? {
-        val prefix = path.getOrNull(1)
+    private suspend fun asked(call: ApplicationCall, actor: String, path: List<String>): ServerAnswer? {
+        val method = call.request.httpMethod
         return when {
-            path == listOf(USAGE_ROUTE) && call.request.httpMethod == HttpMethod.Get ->
+            method == HttpMethod.Get && path == listOf(USAGE_ROUTE) ->
                 reads.usage.report(call.request.queryParameters)
-            path.firstOrNull() != KEYS_ROUTE || path.size > 2 -> null
-            prefix == null -> everyKey(call)
-            call.request.httpMethod == HttpMethod.Delete -> keys.revoke(prefix)
+            method == HttpMethod.Get && path == listOf(AUDIT_ROUTE) ->
+                reads.audit?.list(call.request.queryParameters["tail"]?.toIntOrNull() ?: DEFAULT_AUDIT_TAIL)
+            path.firstOrNull() == KEYS_ROUTE && path.size <= 2 -> keyAction(call, actor, path.getOrNull(1))
             else -> null
         }
     }
 
+    private suspend fun keyAction(call: ApplicationCall, actor: String, prefix: String?): ServerAnswer? = when {
+        prefix == null -> everyKey(call, actor)
+        call.request.httpMethod == HttpMethod.Delete -> keys.revoke(prefix, actor)
+        else -> null
+    }
+
     /** `/server/api/keys` itself: the list, or a new key. */
-    private suspend fun everyKey(call: ApplicationCall): ServerAnswer? = when (call.request.httpMethod) {
+    private suspend fun everyKey(call: ApplicationCall, actor: String): ServerAnswer? = when (call.request.httpMethod) {
         HttpMethod.Get -> keys.list(call.request.queryParameters["person"])
-        HttpMethod.Post -> keys.create(jsonBody.parse(call))
+        HttpMethod.Post -> keys.create(jsonBody.parse(call), actor)
         else -> null
     }
 
@@ -88,4 +96,5 @@ internal class ServerAdmin(
 private const val API_ROUTE = "api"
 private const val KEYS_ROUTE = "keys"
 private const val USAGE_ROUTE = "usage"
+private const val AUDIT_ROUTE = "audit"
 private const val METRICS_ROUTE = "metrics"

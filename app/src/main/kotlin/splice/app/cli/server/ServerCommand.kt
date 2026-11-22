@@ -18,7 +18,7 @@ internal const val SERVER_USAGE =
         "usage rows [--since D | --from T --to T] [--person <email>] [--json] | usage export --now | " +
         "usage report [--by person|team|current-team|day|model|device] [--since D | --from T --to T] " +
         "[--format json|csv|md] | budget set --person <email>|--team <name> [--daily-usd N] [--monthly-usd N] " +
-        "[--action block|warn] | budget list [--json]"
+        "[--action block|warn] | budget list [--json] | audit [--tail N] [--json]"
 
 /** One verb: its exit code for the words after its name, or null when they are no use of it. */
 internal fun interface ServerVerb {
@@ -38,6 +38,7 @@ internal class ServerCommand(
     private val teams = ServerTeamVerbs(ask)
     private val usage = ServerUsageVerbs(ask)
     private val budgets = ServerBudgetVerbs(ask)
+    private val audit = ServerAuditVerbs(ask)
 
     // Each verb by the two words that name it.
     private val verbs: Map<String, ServerVerb> = mapOf(
@@ -55,7 +56,11 @@ internal class ServerCommand(
     )
 
     fun run(args: List<String>): Int {
-        val code = verbs[args.take(2).joinToString(" ")]?.run(args.drop(2))
+        val code = if (args.firstOrNull() == "audit") {
+            audit.list(args.drop(1))
+        } else {
+            verbs[args.take(2).joinToString(" ")]?.run(args.drop(2))
+        }
         if (code == null) err.line("usage: splice server $SERVER_USAGE")
         return code ?: PeerExit.BAD_USAGE
     }

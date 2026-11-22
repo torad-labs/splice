@@ -225,6 +225,33 @@ class ServerConfigFindingsTest {
         val issuer = found.single { it.path == "server.signin.issuer" }.message
         assertTrue("https" in issuer, issuer)
     }
+
+    @Test
+    fun `forward_auth and client download_url accept valid entries and refuse malformed ones`() {
+        val good = """
+            [server.client]
+            minimum = "0.10.0"
+            download_url = "https://releases.team.example/splice"
+            [server.forward_auth]
+            allow = ["Ada@Team.example", "@ops.example"]
+        """.trimIndent()
+        val ready = ConfigFindings.read(server(good) + head(), directory, configDir = directory)
+        val cfg = assertInstanceOf(ConfigRead.Ready::class.java, ready, ready.toString()).topology.server
+        assertEquals("https://releases.team.example/splice", cfg.client.downloadUrl)
+        assertTrue(cfg.forwardAuth?.admits("ada@team.example", isAdmin = false) == true)
+        assertTrue(cfg.forwardAuth?.admits("bob@ops.example", isAdmin = false) == true)
+        assertTrue(cfg.forwardAuth?.admits("stranger@other.example", isAdmin = false) == false)
+        assertTrue(cfg.forwardAuth?.admits("stranger@other.example", isAdmin = true) == true)
+
+        val bad = """
+            [server.client]
+            download_url = "ftp://bad.example"
+            [server.forward_auth]
+            allow = ["not-an-email"]
+        """.trimIndent()
+        val found = refused(server(bad) + head())
+        assertEquals(setOf("server.client.download_url", "server.forward_auth.allow"), found.map { it.path }.toSet())
+    }
 }
 
 private const val API_KEY = """{ kind = "api-key", env = "BOX_KEY" }"""

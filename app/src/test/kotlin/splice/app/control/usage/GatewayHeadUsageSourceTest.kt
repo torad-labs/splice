@@ -1,6 +1,6 @@
 // Verifies that when a custom head (e.g. `claude-kimi`) launches through the Splice gateway onto a differently-named
 // provider (`kimi`), its usage snapshot merges pre-upgrade head readings with live gateway provider readings.
-package splice.app.control
+package splice.app.control.usage
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test

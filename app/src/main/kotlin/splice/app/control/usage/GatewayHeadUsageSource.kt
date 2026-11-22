@@ -2,7 +2,7 @@
 // differs from its provider's key (e.g. `[heads.claude-kimi]` serving `[providers.kimi]`). Since head-catalog (#735)
 // launches custom heads through the Splice gateway (`/door`), turns record against the provider's gateway lane while
 // pre-upgrade readings remain on the head's own files; merging keeps both retention and live readings accurate.
-package splice.app.control
+package splice.app.control.usage
 
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView

@@ -4,6 +4,8 @@ package splice.app.control
 
 import splice.accounts.claude.ClaudeLoginPlacesSource
 import splice.app.control.api.HeadResolver
+import splice.app.control.usage.GatewayHeadUsageSource
+import splice.app.control.usage.GatewayProviderUsage
 import splice.app.sources.PerfRowsFileSource
 import splice.core.auth.CLIENT_AUTH_KIND
 import splice.core.config.StatePaths

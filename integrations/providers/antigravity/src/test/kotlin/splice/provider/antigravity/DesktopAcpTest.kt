@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.util.ClaudeProjectFolder
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.core.util.WallClock
@@ -291,7 +292,7 @@ internal class DesktopAcpTest {
     private fun project(): Path = tmp.resolve("work.dir")
 
     private fun transcript(id: String): Path = home().resolve(".claude").resolve("projects")
-        .resolve(ProjectFolder().of(project().toString())).resolve("$id.jsonl")
+        .resolve(ClaudeProjectFolder.of(project().toString())).resolve("$id.jsonl")
 
     private fun recordFile(): Path =
         home().resolve(".claude").resolve("sessions").resolve("${ProcessHandle.current().pid()}.json")

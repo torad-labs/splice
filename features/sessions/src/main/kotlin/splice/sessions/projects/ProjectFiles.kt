@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.util.ClaudeProjectFolder
 import splice.core.util.PathProbe
 import splice.sessions.query.SessionHead
 import java.nio.file.Files
@@ -17,11 +18,9 @@ private val INSTRUCTION_FILES = listOf("CLAUDE.md", "AGENTS.md")
 private const val MEMORY_SUFFIX = ".md"
 
 internal class ProjectFiles(private val heads: Map<String, SessionHead>) {
-    private val slugChars = Regex("[^A-Za-z0-9]")
-
     fun read(id: String): JsonObject {
         val root = Paths.get(id)
-        val slug = slugChars.replace(id, "-")
+        val slug = ClaudeProjectFolder.of(id)
         val memoryDirs = heads.mapNotNull { (name, head) ->
             head.transcriptRoot?.let { name to it.resolve("projects").resolve(slug).resolve("memory") }
         }

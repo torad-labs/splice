@@ -13,11 +13,13 @@ import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import splice.core.util.ClaudeProjectFolder
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.util.JsonlSink
 import splice.core.util.WallClock
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.time.Instant
 
@@ -32,8 +34,12 @@ internal data class TranscriptOwner(
 /** Session [owner]'s transcript under Claude's [config] folder, its lines stamped by [clock]. */
 internal class ClaudeTranscript(config: Path, private val owner: TranscriptOwner, private val clock: WallClock) {
     val file: Path =
-        config.resolve(TRANSCRIPTS_FOLDER).resolve(ProjectFolder().of(owner.cwd)).resolve("${owner.sessionId}.jsonl")
+        config.resolve(TRANSCRIPTS_FOLDER).resolve(ClaudeProjectFolder.of(owner.cwd))
+            .resolve("${owner.sessionId}.jsonl")
     private var last: String? = lastUuid()
+
+    // Whether the transcript's folder stands — believed from when we last made it or wrote into it.
+    private var foldersMade = false
 
     /** Desktop's user message [uuid] with [content]. */
     fun user(uuid: String, content: JsonElement) = userLine(uuid, content)
@@ -65,11 +71,31 @@ internal class ClaudeTranscript(config: Path, private val owner: TranscriptOwner
             put("uuid", uuid)
             put("timestamp", Instant.ofEpochMilli(clock()).toString())
         }
-        Files.createDirectories(file.parent)
-        // A transcript is never rotated: Desktop and Claude Code read it whole, as Claude Code writes it.
-        val bytes = (JsonWire.string(line) + "\n").toByteArray(Charsets.UTF_8)
-        JsonlSink.appendLine(file, bytes, Long.MAX_VALUE, JsonlSink.NO_ARCHIVE, JsonlSink.PAGE_CACHE_FORCE)
+        append((JsonWire.string(line) + "\n").toByteArray(Charsets.UTF_8))
         last = uuid
+    }
+
+    /** One encoded line into the transcript. The folder is made when its first line lands, and not asked after again
+     *  until something proves otherwise — a folder taken away mid-session costs one failed open, never a lost turn:
+     *  Desktop may tidy a projects tree between turns, so a line that finds its folder gone remakes it and lands anyway,
+     *  as the per-line createDirectories this memo replaced always did.
+     *
+     * A transcript is never rotated: Desktop and Claude Code read it whole, as Claude Code writes it. */
+    private fun append(bytes: ByteArray) {
+        if (!foldersMade) makeFolders()
+        try {
+            JsonlSink.appendLine(file, bytes, Long.MAX_VALUE, JsonlSink.NO_ARCHIVE, JsonlSink.PAGE_CACHE_FORCE)
+        } catch (ignored: NoSuchFileException) {
+            foldersMade = false
+            makeFolders()
+            JsonlSink.appendLine(file, bytes, Long.MAX_VALUE, JsonlSink.NO_ARCHIVE, JsonlSink.PAGE_CACHE_FORCE)
+        }
+    }
+
+    /** Make [file]'s parent, marking the folder believed to stand until an open says otherwise. */
+    private fun makeFolders() {
+        Files.createDirectories(file.parent)
+        foldersMade = true
     }
 
     /** The uuid of the transcript's last line, which the next line follows; null for a new transcript. */
@@ -81,27 +107,8 @@ internal class ClaudeTranscript(config: Path, private val owner: TranscriptOwner
     }
 }
 
-/** The folder Claude Desktop and Claude Code keep a project's transcripts in: its path with every character but a
- *  letter or digit made `-`, and past 200 characters cut there and told apart by a hash of the whole path, as
- *  Desktop 6.28899.2 names it (its `sf`). */
-internal class ProjectFolder {
-    fun of(cwd: String): String {
-        val name = cwd.replace(NOT_ALNUM, "-")
-        if (name.length <= MAX_FOLDER_CHARS) return name
-        return name.take(MAX_FOLDER_CHARS) + "-" + kotlin.math.abs(cwd.hashCode().toLong()).toString(RADIX)
-    }
-}
-
 /** Where Claude keeps transcripts, under its config folder. */
 private const val TRANSCRIPTS_FOLDER = "projects"
 
 /** How much of a transcript's end is read for its last line: far more than one line takes. */
 private const val TAIL_BYTES = 4 * 1024 * 1024
-
-/** Desktop's longest folder name before it cuts and hashes. */
-private const val MAX_FOLDER_CHARS = 200
-
-/** Desktop writes the hash in base 36. */
-private const val RADIX = 36
-
-private val NOT_ALNUM = Regex("[^a-zA-Z0-9]")

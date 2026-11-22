@@ -27,6 +27,14 @@ on its direct legs, saying that Gradle did not run (`PRE-PUSH: SENT, GRADLE NOT 
 timing record). The pull request's checks run the same suites on GitHub, and main takes nothing they have not
 passed. A machine that is only busy is waited for.
 
+With `rig` on PATH the hook runs none of its other builds, checks and tests on this machine either. Only the legs that
+read the commit run here: its title and attribution, the no-Python wall, the rule walls, the secret-scan allowlist,
+the module law and whether the hub's binaries are there. Every test suite, the type checks, the dependency audit and
+the Kotlin lint are not started; the hook names them (`PRE-PUSH: SENT, n CHECK(S) NOT RUN`, and `sent:legs-unrun` or
+`sent:gradle-legs-unrun` in the timing record) and the pull request's checks run them. To run a suite before a push,
+send it to another machine yourself (`rig remote run -- bun test ./tools/console/*.test.ts`), or set
+`SPLICE_GRADLE_HERE=1` for a push that this machine must judge whole.
+
 ## The pre-push gate
 
 The pre-push hook judges the pushed sha in a build tree checked out clean from it (`bun tools/gate hook`). One push

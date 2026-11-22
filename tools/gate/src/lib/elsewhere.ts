@@ -29,6 +29,12 @@
 // when none is: a push held for an hour by a build box that was down is what made the run local (hook.ts). A machine
 // that is only busy is there, and the tier waits for it as every run does.
 //
+// The same holds for what the pre-push hook runs beside Gradle ([keptOffThisMachine]): its test suites, its type check
+// and its lint are builds, checks and tests too, and where rig is there they do not run on this machine. Nov 21, 2026:
+// after the Gradle tier left, a push still ran the gate's own tests (which start Gradle), the console's tests (which
+// start a browser) and the release tests on the machine the developer's sessions share, and the developer asked who
+// was running builds there.
+//
 // The run stays here when:
 //   - rig is not on PATH, or this is CI: nothing to send it with;
 //   - SPLICE_GRADLE_HERE is set: the run that rig started on the other machine has it, so it builds where it stands,
@@ -93,10 +99,23 @@ type Try =
   | { readonly signal: NodeJS.Signals }
   | { readonly notRun: string; readonly again: boolean };
 
+/** rig, when it is what takes this tree's runs off this machine: on PATH, outside CI, with nothing naming this machine
+ *  for the run, and a build root that carries the gate. Null when a run is this machine's own. */
+function rigFor(run: Pick<GradleRun, "buildRoot" | "env">): string | null {
+  const rig = run.env.CI || run.env[BUILD_HERE] ? null : Bun.which("rig", { PATH: run.env.PATH ?? "" });
+  return rig !== null && existsSync(join(run.buildRoot, "tools", "gate", "index.ts")) ? rig : null;
+}
+
+/** Whether the builds, checks and tests of the tree at [run.buildRoot] are kept off this machine: rig is there to send
+ *  them with. The pre-push hook then runs here only what reads the commit, and nothing that builds, tests or lints. */
+export function keptOffThisMachine(run: Pick<GradleRun, "buildRoot" | "env">): boolean {
+  return rigFor(run) !== null;
+}
+
 /** The status of the run when rig took it, or undefined when it is this machine's to run. */
 export async function gradleElsewhere(run: GradleRun): Promise<number | undefined> {
-  const rig = run.env.CI || run.env[BUILD_HERE] ? null : Bun.which("rig", { PATH: run.env.PATH ?? "" });
-  if (rig === null || !existsSync(join(run.buildRoot, "tools", "gate", "index.ts"))) return undefined;
+  const rig = rigFor(run);
+  if (rig === null) return undefined;
   const fetched = run.args.flatMap((arg) => FETCHED.find((it) => it.task.test(arg))?.paths ?? []);
   const made = run.args.find((arg) => MADE_HERE.test(arg));
   const local = run.args.find((arg) => isAbsolute(arg.replace(/^--?[\w-]+=/, "")));
@@ -126,8 +145,8 @@ export async function gradleElsewhere(run: GradleRun): Promise<number | undefine
  *  tree, a refusal and a rig that says nothing all count as a machine being there: the run waits for them or fails on
  *  them, in its own words. */
 export async function noMachineFor(run: GradleRun): Promise<string | undefined> {
-  const rig = run.env.CI || run.env[BUILD_HERE] ? null : Bun.which("rig", { PATH: run.env.PATH ?? "" });
-  if (rig === null || !existsSync(join(run.buildRoot, "tools", "gate", "index.ts"))) return undefined;
+  const rig = rigFor(run);
+  if (rig === null) return undefined;
   const ended = await oneTry(rig, run, [], ["true"]);
   return "notRun" in ended && ended.noMachine ? ended.notRun : undefined;
 }

@@ -27,6 +27,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.Daemon
 import splice.app.desktop.record.DesktopKey
 import splice.app.desktop.setup.DesktopManagedPolicy
+import splice.client.desktop.DesktopAppConfig
 import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -79,18 +80,19 @@ class DesktopSetupDaemonTest {
         val home = Files.createDirectories(tmp.resolve("home"))
         val settings = Files.createDirectories(home.resolve(".claude")).resolve("settings.json")
         Files.writeString(settings, """{"model":"claude-opus-5-5","env":{"FOO":"1"}}""")
-        val library = Files.createDirectories(tmp.resolve("config/Claude-3p/configLibrary"))
+        val xdg = tmp.resolve("config").toString()
+        // The daemon's environment: Desktop's configuration under the fixture home, never the person's.
+        val fixture = mapOf(
+            "HOME" to home.toString(),
+            "XDG_CONFIG_HOME" to xdg,
+        )
+        val fixtureEnv = EnvReader { fixture[it] }
+        val library = Files.createDirectories(DesktopAppConfig(fixtureEnv).library)
         // The person's own configuration, applied, which `on` stands in for and `off` puts back.
         val theirs = "0b7e3c1a-1111-4c2d-9e8f-123456789abc"
         val meta = """{"appliedId":"$theirs","entries":[{"id":"$theirs","name":"Work Bedrock"}]}"""
         Files.writeString(library.resolve("_meta.json"), meta)
         Files.writeString(library.resolve("$theirs.json"), """{"inferenceProvider":"bedrock"}""")
-        val xdg = tmp.resolve("config").toString()
-        // The daemon's environment: Desktop's configuration under the fixture home, never the person's.
-        val fixture = mapOf(
-            "XDG_CONFIG_HOME" to xdg,
-        )
-        val fixtureEnv = EnvReader { fixture[it] }
         val provider = OneModelProvider()
         fixtureHome(home, tmp) {
             runBlocking {

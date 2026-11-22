@@ -19,8 +19,8 @@ class DesktopAppConfigTest {
         val home = tmp.resolve("home")
         val config = DesktopAppConfig(envOf(HOME_KEY to home.toString()), osName = LINUX_OS)
 
-        assertEquals(home.resolve(".config/Claude-3p/configLibrary"), config.library)
-        assertEquals(home.resolve(".config/Claude-3p/configLibrary/_meta.json"), config.meta)
+        assertEquals(home.resolve(".config").resolve(RELATIVE_LIBRARY), config.library)
+        assertEquals(home.resolve(".config").resolve(RELATIVE_LIBRARY).resolve("_meta.json"), config.meta)
     }
 
     @Test
@@ -28,12 +28,12 @@ class DesktopAppConfigTest {
         val home = tmp.resolve("home")
         val config = DesktopAppConfig(envOf(HOME_KEY to home.toString()), osName = MAC_OS)
 
-        assertEquals(home.resolve("Library/Application Support/Claude-3p/configLibrary"), config.library)
-        assertEquals(home.resolve("Library/Application Support/Claude-3p/configLibrary/_meta.json"), config.meta)
+        assertEquals(home.resolve(MAC_APP_SUPPORT_REL).resolve(RELATIVE_LIBRARY), config.library)
+        assertEquals(home.resolve(MAC_APP_SUPPORT_REL).resolve(RELATIVE_LIBRARY).resolve("_meta.json"), config.meta)
     }
 
     @Test
-    fun `explicit XDG_CONFIG_HOME overrides default on linux and macos`(@TempDir tmp: Path) {
+    fun `explicit XDG_CONFIG_HOME overrides linux only and is ignored on macos`(@TempDir tmp: Path) {
         val home = tmp.resolve("home")
         val xdg = tmp.resolve("custom-xdg")
         val env = envOf(HOME_KEY to home.toString(), XDG_KEY to xdg.toString())
@@ -43,13 +43,13 @@ class DesktopAppConfigTest {
             DesktopAppConfig(env, osName = LINUX_OS).library,
         )
         assertEquals(
-            xdg.resolve(RELATIVE_LIBRARY),
+            home.resolve(MAC_APP_SUPPORT_REL).resolve(RELATIVE_LIBRARY),
             DesktopAppConfig(env, osName = MAC_OS).library,
         )
     }
 
     @Test
-    fun `blank XDG_CONFIG_HOME falls back to platform default`(@TempDir tmp: Path) {
+    fun `blank XDG_CONFIG_HOME falls back to dot config on linux`(@TempDir tmp: Path) {
         val home = tmp.resolve("home")
         val env = envOf(HOME_KEY to home.toString(), XDG_KEY to "   ")
 
@@ -57,35 +57,22 @@ class DesktopAppConfigTest {
             home.resolve(".config").resolve(RELATIVE_LIBRARY),
             DesktopAppConfig(env, osName = LINUX_OS).library,
         )
-        assertEquals(
-            home.resolve("Library/Application Support").resolve(RELATIVE_LIBRARY),
-            DesktopAppConfig(env, osName = MAC_OS).library,
-        )
     }
 
     @Test
-    fun `CLAUDE_USER_DATA_DIR resolves directly to configLibrary without Claude-3p`(@TempDir tmp: Path) {
+    fun `explicit baseDir overrides default and XDG_CONFIG_HOME on both linux and macos`(@TempDir tmp: Path) {
         val home = tmp.resolve("home")
-        val xdg = tmp.resolve("xdg")
-        val userData = tmp.resolve("custom-user-data")
-        val env = envOf(
-            HOME_KEY to home.toString(),
-            XDG_KEY to xdg.toString(),
-            USER_DATA_KEY to userData.toString(),
-        )
-
-        assertEquals(userData.resolve("configLibrary"), DesktopAppConfig(env, osName = LINUX_OS).library)
-        assertEquals(userData.resolve("configLibrary"), DesktopAppConfig(env, osName = MAC_OS).library)
-    }
-
-    @Test
-    fun `blank CLAUDE_USER_DATA_DIR falls back to home resolution`(@TempDir tmp: Path) {
-        val home = tmp.resolve("home")
-        val env = envOf(HOME_KEY to home.toString(), USER_DATA_KEY to "  ")
+        val xdg = tmp.resolve("custom-xdg")
+        val explicitBase = tmp.resolve("explicit-base")
+        val env = envOf(HOME_KEY to home.toString(), XDG_KEY to xdg.toString())
 
         assertEquals(
-            home.resolve("Library/Application Support").resolve(RELATIVE_LIBRARY),
-            DesktopAppConfig(env, osName = MAC_OS).library,
+            explicitBase.resolve(RELATIVE_LIBRARY),
+            DesktopAppConfig(env, osName = LINUX_OS, baseDir = explicitBase).library,
+        )
+        assertEquals(
+            explicitBase.resolve(RELATIVE_LIBRARY),
+            DesktopAppConfig(env, osName = MAC_OS, baseDir = explicitBase).library,
         )
     }
 
@@ -104,17 +91,18 @@ class DesktopAppConfigTest {
     }
 
     @Test
-    fun `beside discovers sibling libraries on macos under Library Application Support`(@TempDir tmp: Path) {
+    fun `beside discovers sibling libraries on macos under Library Application Support ignoring XDG`(
+        @TempDir tmp: Path,
+    ) {
         val home = tmp.resolve("home")
-        val appSupport = home.resolve("Library/Application Support")
+        val xdg = tmp.resolve("ignored-xdg")
+        Files.createDirectories(xdg.resolve("xdg-only").resolve(RELATIVE_LIBRARY))
+        val appSupport = home.resolve(MAC_APP_SUPPORT_REL)
         val sideBySideLib = Files.createDirectories(appSupport.resolve("claude-splice").resolve(RELATIVE_LIBRARY))
         val secondLib = Files.createDirectories(appSupport.resolve("work-desktop").resolve(RELATIVE_LIBRARY))
         Files.createDirectories(appSupport.resolve("Claude"))
 
-        val env = envOf(
-            HOME_KEY to home.toString(),
-            USER_DATA_KEY to tmp.resolve("parent-user-data").toString(),
-        )
+        val env = envOf(HOME_KEY to home.toString(), XDG_KEY to xdg.toString())
         val found = DesktopAppConfig(env, osName = MAC_OS).beside()
 
         assertEquals(listOf(sideBySideLib, secondLib), found.map(DesktopAppConfig::library))
@@ -141,21 +129,19 @@ class DesktopAppConfigTest {
         assertEquals(listOf(Path.of(DESKTOP_MANAGED_FILE)), linux.managedFiles)
         assertEquals(
             listOf(
-                Path.of("/Library/Managed Preferences/com.anthropic.claudefordesktop.plist"),
+                Path.of(MAC_MACHINE_PLIST),
                 Path.of("/Library/Managed Preferences/alice/com.anthropic.claudefordesktop.plist"),
             ),
             macWithUser.managedFiles,
         )
-        assertEquals(
-            listOf(Path.of("/Library/Managed Preferences/com.anthropic.claudefordesktop.plist")),
-            macNoUser.managedFiles,
-        )
+        assertEquals(listOf(Path.of(MAC_MACHINE_PLIST)), macNoUser.managedFiles)
     }
 }
 
 private const val HOME_KEY = "HOME"
 private const val XDG_KEY = "XDG_CONFIG_HOME"
-private const val USER_DATA_KEY = "CLAUDE_USER_DATA_DIR"
 private const val LINUX_OS = "Linux"
 private const val MAC_OS = "Mac OS X"
+private const val MAC_APP_SUPPORT_REL = "Library/Application Support"
 private const val RELATIVE_LIBRARY = "Claude-3p/configLibrary"
+private const val MAC_MACHINE_PLIST = "/Library/Managed Preferences/com.anthropic.claudefordesktop.plist"

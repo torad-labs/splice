@@ -20,13 +20,13 @@ internal class ServerAuditVerbs(private val ask: PeerAsk) {
             raw.toIntOrNull()?.takeIf { it > 0 } ?: return null
         }
         val path = if (tail == null) AUDIT_PATH else "$AUDIT_PATH?tail=$tail"
-        return ask.managed(ControlRequest("GET", path), JSON_SWITCH in parsed.switches, ::render)
+        return ask.managed(ControlRequest("GET", path), JSON_SWITCH in parsed.switches) { render(it) }
     }
 
-    private fun render(body: JsonObject): List<String> {
+    private fun render(body: JsonObject): String {
         val entries = (body["entries"] as? JsonArray).orEmpty().map { it.jsonObject }
-        if (entries.isEmpty()) return listOf("no audit entries recorded yet")
-        return entries.map { row ->
+        if (entries.isEmpty()) return "no audit entries recorded yet"
+        return entries.joinToString("\n") { row ->
             val ts = JsonScalars.str(row, "ts").orEmpty()
             val actor = JsonScalars.str(row, "actor").orEmpty()
             val action = JsonScalars.str(row, "action").orEmpty()

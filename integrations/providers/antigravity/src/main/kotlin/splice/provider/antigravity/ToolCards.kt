@@ -49,9 +49,7 @@ internal class ToolCards {
     /** Translates agy's `invoke_subagent` delegation into Claude Code's `Task` card so Desktop draws a subagent pane
      *  and agy's own tool name never reaches the wire or transcript. */
     private fun subagentOf(call: JsonObject, facts: CallFacts): ToolCard? {
-        val named = JsonScalars.str(call, "name") == SUBAGENT_TOOL || facts.title == SUBAGENT_TOOL
-        val shaped = facts.raw[SUBAGENT_PROMPT] != null && facts.raw[SUBAGENT_ROLE] != null
-        if (!named && !shaped) return null
+        if (JsonScalars.str(call, "name") != SUBAGENT_TOOL) return null
         val role = JsonScalars.str(facts.raw, SUBAGENT_ROLE).orEmpty()
         val prompt = JsonScalars.str(facts.raw, SUBAGENT_PROMPT).orEmpty()
         val typeName = JsonScalars.str(facts.raw, SUBAGENT_TYPE).orEmpty()

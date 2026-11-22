@@ -59,19 +59,26 @@ internal class AgyTurn(
     /** [text] said whole as an assistant message: what went wrong, in the conversation. */
     fun say(text: String) {
         stream(TEXT_BLOCK, text)
-        end(null)
+        finish(null)
     }
 
     /** Ends the message still open, with the turn's [stop], pairing any still-open tool call with its `tool_result`
      *  for `claude --resume` and closing open subagent panes as `stopped` when the turn was [cancelled]. */
     fun end(stop: String?, cancelled: Boolean = false) {
         finish(if (draw.callsTools) TOOL_USE_BLOCK else stop)
-        tools.keys.filter { answered.add(it) }.forEach { id -> emitResult(id, "", failed = cancelled) }
-        if (cancelled) {
-            openSubagents.keys.toList().forEach { id ->
-                openSubagents.remove(id)
-                out(taskFrames.notification(id, TASK_STOPPED, ""))
-            }
+        val fallback = if (cancelled) INTERRUPTED_RESULT else ""
+        for (id in tools.keys) {
+            if (answered.add(id)) emitResult(id, fallback, failed = cancelled)
+        }
+        if (cancelled) closeOpenSubagents()
+    }
+
+    /** Closes every still-open subagent pane as `stopped` (used on turn cancellation and when agy exits between
+     *  turns while a background subagent was still running). */
+    fun closeOpenSubagents() {
+        openSubagents.keys.toList().forEach { id ->
+            openSubagents.remove(id)
+            out(taskFrames.notification(id, TASK_STOPPED, ""))
         }
     }
 
@@ -134,3 +141,4 @@ internal class AgyTurn(
 private const val TOOL_COMPLETED = "completed"
 private const val TOOL_FAILED = "failed"
 private const val TASK_STOPPED = "stopped"
+private const val INTERRUPTED_RESULT = "Interrupted"

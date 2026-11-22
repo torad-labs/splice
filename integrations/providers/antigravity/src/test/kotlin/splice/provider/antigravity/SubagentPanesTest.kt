@@ -1,6 +1,6 @@
 // Subagent delegation on agy: `invoke_subagent` renders as a Claude `Task` card with `system/task_started` and
 // `system/task_notification` frames so Claude Desktop opens and closes subagent panes, including when agy finishes a
-// subagent after the turn's `result` or when the user stops the turn.
+// subagent after the turn's `result`, when the user stops the turn, or when agy exits between turns.
 package splice.provider.antigravity
 
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +18,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.util.EnvReader
@@ -106,8 +107,13 @@ internal class SubagentPanesTest {
         assertEquals(listOf("failed", "stopped"), ended.map { it.str("status") })
         assertEquals("crashed", ended[0].str("summary"))
         val results = seen.filter { it.str("type") == "user" }.flatMap { it.blocks() }
+            .filter { it.str("type") == "tool_result" }
+        assertEquals(listOf(CALL_A, CALL_B), results.map { it.str("tool_use_id") })
+        assertTrue(results[1].str("content").isNotEmpty(), "cancelled is_error tool_result keeps non-empty content")
+        val kept = Files.readAllLines(transcript("s-1")).map { Json.parseToJsonElement(it).jsonObject }
+        val keptIds = kept.filter { it.str("type") == "user" }.flatMap { it.blocks() }
             .filter { it.str("type") == "tool_result" }.map { it.str("tool_use_id") }
-        assertEquals(listOf(CALL_A, CALL_B), results)
+        assertEquals(listOf(CALL_A, CALL_B), keptIds)
     }
 
     @Test
@@ -138,54 +144,59 @@ internal class SubagentPanesTest {
         assertEquals("audit ok", after.single().str("summary"))
     }
 
-    private fun runSession(script: String, drive: suspend Driver.() -> Unit): List<JsonObject> = runBlocking {
-        val agy = fakeAgy(script)
-        val project = tmp.resolve("work").also(Files::createDirectories)
-        val claudeDir = tmp.resolve("claude").also(Files::createDirectories)
-        val env = EnvReader(mapOf("HOME" to tmp.toString(), "CLAUDE_CONFIG_DIR" to claudeDir.toString())::get)
-        val toDesktop = PipedOutputStream()
-        val desktopIn = PipedInputStream(toDesktop)
-        val lines = Channel<JsonObject>(Channel.UNLIMITED)
-        val out = object : OutputStream() {
-            private val buf = ByteArrayOutputStream()
+    @Test
+    fun `agy exiting between turns closes any still-running post-turn subagent pane as stopped`() {
+        val script = listOf(
+            opened,
+            "read l",
+            delegated(CALL_A, PROMPT_A, ROLE_A),
+            upd("""{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Started."}}"""),
+            answer(PROMPT_ID, "end_turn"),
+        ).joinToString("\n")
+        val seen = runSession(script) {
+            send(USER_LINE)
+            next { it.str("type") == "result" }
+            next { it.str("type") == "system" && it.str("subtype") == "task_notification" }
+        }
+        val ended = seen.single { it.str("type") == "system" && it.str("subtype") == "task_notification" }
+        assertEquals(CALL_A, ended.str("task_id"))
+        assertEquals("stopped", ended.str("status"))
+    }
 
-            override fun write(b: Int) {
-                if (b == '\n'.code) {
-                    val line = buf.toString(Charsets.UTF_8).trim()
-                    buf.reset()
-                    if (line.isNotEmpty()) lines.trySend(Json.parseToJsonElement(line).jsonObject)
-                } else {
-                    buf.write(b)
+    private fun runSession(script: String, drive: suspend Driver.() -> Unit): List<JsonObject> {
+        val agent = tmp.resolve("fake-agy.sh")
+        Files.writeString(agent, script)
+        Files.createDirectories(project())
+        val args = listOf(
+            "--output-format",
+            "stream-json",
+            "--model=claude-antigravity--gem-4-neon",
+            "--permission-mode=default",
+            "--stands-in-for=/home/me/.config/Claude/claude-code/2.1.328/10f24c9cfcbf/claude",
+        )
+        val env = EnvReader { name -> if (name == "HOME") home().toString() else null }
+        val driver = Driver()
+        runBlocking {
+            withTimeout(TIMEOUT_MS) {
+                val run = async(Dispatchers.IO) {
+                    val agy = listOf("sh", agent.toString())
+                    DesktopAcp(args, project(), env, Dispatchers.IO, LogSink {}, WallClock { CLOCK_MS }, agy)
+                        .run(driver.stdin, driver.stdout)
                 }
+                driver.drive()
+                driver.close()
+                assertEquals(0, run.await())
             }
         }
-        val task = async(Dispatchers.IO) {
-            DesktopAcp(
-                env,
-                project,
-                desktopIn,
-                out,
-                LogSink {},
-                WallClock { CLOCK_MS },
-                AgyLaunch(listOf(agy.toString()), tmp.resolve("scratch")),
-            ).run(listOf("--model", "claude-antigravity--gem-4-neon"))
-        }
-        val seen = mutableListOf<JsonObject>()
-        try {
-            withTimeout(TIMEOUT_MS) { Driver(toDesktop, lines, seen).drive() }
-        } finally {
-            toDesktop.close()
-            withTimeout(TIMEOUT_MS) { task.await() }
-        }
-        seen
+        return driver.seen
     }
 
-    private fun fakeAgy(script: String): Path {
-        val file = tmp.resolve("fake-agy.sh")
-        Files.writeString(file, "#!/bin/sh\n$script\n")
-        file.toFile().setExecutable(true)
-        return file
-    }
+    private fun home(): Path = tmp.resolve("home")
+
+    private fun project(): Path = tmp.resolve("work.dir")
+
+    private fun transcript(id: String): Path = home().resolve(".claude").resolve("projects")
+        .resolve(ProjectFolder().of(project().toString())).resolve("$id.jsonl")
 
     private fun delegated(id: String, prompt: String, role: String): String = upd(
         """{"sessionUpdate":"tool_call","toolCallId":"$id","title":"invoke_subagent","name":"invoke_subagent",""" +
@@ -204,23 +215,39 @@ internal class SubagentPanesTest {
         put("subagent_type", "research")
     }
 
-    private class Driver(
-        private val toDesktop: OutputStream,
-        private val lines: Channel<JsonObject>,
-        private val seen: MutableList<JsonObject>,
-    ) {
+    private class Driver {
+        private val toSession = PipedOutputStream()
+        val stdin = PipedInputStream(toSession, PIPE_SIZE)
+        private val received = Channel<JsonObject>(Channel.UNLIMITED)
+        val seen = mutableListOf<JsonObject>()
+        val stdout: OutputStream = object : OutputStream() {
+            private val buf = ByteArrayOutputStream()
+
+            override fun write(b: Int) {
+                if (b != '\n'.code) {
+                    buf.write(b)
+                    return
+                }
+                val line = buf.toString(Charsets.UTF_8).trim()
+                buf.reset()
+                if (line.isNotEmpty()) received.trySend(Json.parseToJsonElement(line).jsonObject)
+            }
+        }
+
         fun send(line: String) {
-            toDesktop.write((line + "\n").toByteArray(Charsets.UTF_8))
-            toDesktop.flush()
+            toSession.write((line + "\n").toByteArray(Charsets.UTF_8))
+            toSession.flush()
         }
 
         suspend fun next(match: (JsonObject) -> Boolean): JsonObject {
             while (true) {
-                val line = lines.receive()
+                val line = received.receive()
                 seen += line
                 if (match(line)) return line
             }
         }
+
+        fun close() = toSession.close()
     }
 
     private fun JsonObject.str(key: String): String = this[key]?.jsonPrimitive?.content.orEmpty()
@@ -232,7 +259,8 @@ internal class SubagentPanesTest {
 }
 
 private const val TIMEOUT_MS = 15_000L
-private const val CLOCK_MS = 1_000L
+private const val CLOCK_MS = 1_795_300_000_000L
+private const val PIPE_SIZE = 1 shl 16
 private const val PROMPT_ID = 3
 private const val CALL_A = "call_sub_1"
 private const val CALL_B = "call_sub_2"

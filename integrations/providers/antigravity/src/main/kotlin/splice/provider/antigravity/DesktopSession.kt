@@ -87,7 +87,10 @@ internal class DesktopSession(
         session = null
         unusable = reason
         questions.dropped(null)
-        if (prompts.isEmpty()) return
+        if (prompts.isEmpty()) {
+            turn.closeOpenSubagents()
+            return
+        }
         prompts.clear()
         turn.say(reason)
         finish(reason)

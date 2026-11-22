@@ -34,6 +34,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.getAllRoutes
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import splice.app.control.api.ControlAudit
 import splice.app.control.api.ControlHealthReport
@@ -73,6 +74,7 @@ import splice.core.config.ConfigService
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.diagnostics.logs.LogFileSource
+import splice.http.listen.ActiveCallFence
 import splice.launch.recipe.LaunchService
 import splice.lifecycle.restart.DaemonSuccessor
 import splice.lifecycle.restart.ShutdownDaemon
@@ -81,6 +83,9 @@ import splice.sessions.registry.SessionSource
 // ControlServer's lifecycle/limit constants, at their sanctioned file-scope home.
 private const val STOP_GRACE_MS = 100L
 private const val STOP_TIMEOUT_MS = 500L
+
+// why: bound for cancelled control calls to unwind while Netty's event loop is still alive (#525).
+private const val CONTROL_CALL_UNWIND_MS = 200L
 
 /** What a control server reports about its heads: the /health body and the per-head signals (a silent runtime, a
  *  quota reset, a full window) the heads route and the doctor read. */
@@ -238,6 +243,7 @@ internal class ControlServer(
 
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null
+    private val callFence = ActiveCallFence()
 
     /** Set by the first [stop] and never cleared: a server stopped at any point, before its bind included, refuses to bind. */
     private var stopRequested = false
@@ -268,6 +274,7 @@ internal class ControlServer(
      *  through the engine's suspend resolvedConnectors(). */
     public suspend fun start() {
         guard.mintKey() // mint eagerly BEFORE the port opens — a dashboard load must not race it
+        callFence.open()
         val engine = controlEngine()
         refuseWhenStopped()
         engine.start(wait = false)
@@ -301,6 +308,7 @@ internal class ControlServer(
             stopRequested
         }
         if (stoppedWhileBinding) {
+            callFence.cancelAndAwait(CONTROL_CALL_UNWIND_MS)
             engine.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
             throw CancellationException("the control server was stopped while it was binding")
         }
@@ -318,7 +326,9 @@ internal class ControlServer(
                     guard.admit(this)
                     guard.refuseForeignHosts(this)
                     intercept(ApplicationCallPipeline.Call) {
-                        withContext(runtime.callDispatcher) { proceed() }
+                        callFence.track(coroutineContext[Job]) {
+                            withContext(runtime.callDispatcher) { proceed() }
+                        }
                     }
                     routing {
                         get("/health") { call.respondText(readings.health.json(), ContentType.Application.Json) }
@@ -356,6 +366,7 @@ internal class ControlServer(
     public fun stop() {
         stopRequested = true
         stopResources()
+        callFence.cancelAndAwait(CONTROL_CALL_UNWIND_MS)
         server?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
         server = null
         boundPort = null

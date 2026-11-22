@@ -27,6 +27,7 @@ import splice.lifecycle.upgrade.AutoUpdateSettings
 import splice.lifecycle.upgrade.SystemdUpgradeLauncher
 import splice.lifecycle.upgrade.UpgradeAuto
 import splice.lifecycle.upgrade.UpgradeRuns
+import splice.lifecycle.upgrade.UpgradeUnits
 import splice.lifecycle.upgrade.UpgradeVerb
 import splice.lifecycle.upgrade.VersionedRestart
 import splice.topology.TopologyLoader
@@ -111,15 +112,18 @@ internal object LifecycleWiring {
 
     /** `splice upgrade` for the CLI: what it says and where, the restart onto the version it installed, which does
      *  not wait for compactions, the units it lays again, and the update settings it reads. */
-    fun upgradeVerb(): UpgradeVerb = UpgradeVerb(
-        TerminalOutput(::println),
-        TerminalOutput(System.err::println),
-        EnvReader(System::getenv),
-        // The upgrade waited for every turn itself (or was told --now): no second wait here.
-        VersionedRestart { restart(it, waitForCompactions = false, launchJar = installedJar()) },
-        InstallWiring.units(EnvReader(System::getenv)),
-        cliUpdateSettings(),
-    )
+    fun upgradeVerb(): UpgradeVerb {
+        val env = EnvReader(System::getenv)
+        return UpgradeVerb(
+            TerminalOutput(::println),
+            TerminalOutput(System.err::println),
+            env,
+            // The upgrade waited for every turn itself (or was told --now): no second wait here.
+            VersionedRestart { restart(it, waitForCompactions = false, launchJar = installedJar()) },
+            UpgradeUnits(InstallWiring.units(env), InstallWiring.daemonUnits(env)),
+            cliUpdateSettings(),
+        )
+    }
 
     private fun policy(path: Path, log: LogSink): AutoUpdatePolicy? {
         val daemon = Cancellables.runCatchingCancellable { TopologyLoader.parse(Files.readString(path)).daemon }

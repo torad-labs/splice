@@ -13,6 +13,7 @@ import splice.core.config.StatePaths
 import splice.core.util.EnvReader
 import splice.launch.install.InstallLayout
 import splice.lifecycle.hub.HubUnits
+import splice.lifecycle.units.SpliceUnits
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -41,11 +42,13 @@ private const val PRE_ID = """(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)"""
 private const val SEMVER_SEGMENT =
     """$NUM\.$NUM\.$NUM(?:-$PRE_ID(?:\.$PRE_ID)*)?(?:\+[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*)?"""
 
-/** [units] are the MCP hub's systemd units on this machine, or null where the hub's front is not installed. */
+/** [units] are the MCP hub's systemd units on this machine, or null where the hub's front is not installed.
+ *  [daemonUnits] is splice's systemd user units folder on Linux, or null off Linux (#525). */
 internal class UpgradeLayout(
     private val env: EnvReader,
     installLayout: InstallLayout = InstallLayout(),
     val units: HubUnits? = null,
+    val daemonUnits: SpliceUnits? = null,
 ) {
     private val semver = Regex(SEMVER_SEGMENT)
     val share: Path = installLayout.shareDir(env)

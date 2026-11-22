@@ -20,8 +20,8 @@ import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.wire.HttpStatus
 import splice.head.GatewayTurn
-import splice.head.wire.DirectAnthropicTurn
-import splice.head.wire.DirectTurnOutcome
+import splice.head.wire.direct.DirectAnthropicTurn
+import splice.head.wire.direct.DirectTurnOutcome
 import splice.http.JsonReply
 import splice.provider.antigravity.ANTIGRAVITY_KEY
 import splice.provider.antigravity.door.AntigravityDoorEngine

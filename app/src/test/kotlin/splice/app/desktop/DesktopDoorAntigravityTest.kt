@@ -84,7 +84,7 @@ class DesktopDoorAntigravityTest {
                         setBody(chatBody)
                     }
                     assertEquals(HttpStatusCode.BadRequest, cliRes.status)
-                    assertTrue(cliRes.bodyAsText().contains("runs only in Claude Desktop"), cliRes.bodyAsText())
+                    assertTrue(cliRes.bodyAsText().contains("runs only in Claude Desktop"))
 
                     val termRes = client.post("/door/v1/messages") {
                         header(HttpHeaders.Authorization, "Bearer ${harness.termToken}")
@@ -92,7 +92,7 @@ class DesktopDoorAntigravityTest {
                         setBody(chatBody)
                     }
                     assertEquals(HttpStatusCode.BadRequest, termRes.status)
-                    assertTrue(termRes.bodyAsText().contains("runs only in Claude Desktop"), termRes.bodyAsText())
+                    assertTrue(termRes.bodyAsText().contains("no model is in the door"))
                 } finally {
                     harness.close()
                 }

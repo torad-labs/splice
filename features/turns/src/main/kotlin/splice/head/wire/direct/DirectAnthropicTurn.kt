@@ -2,7 +2,7 @@
 // turn through the sole L3 wire terminals (SseEmitter / CollectingTerminal) so non-HTTP providers
 // like Antigravity's `agy acp` speak exact Anthropic SSE/JSON without duplicating wire framing or
 // terminal literals.
-package splice.head.wire
+package splice.head.wire.direct
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
@@ -13,6 +13,12 @@ import splice.core.model.ModelCatalog
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
 import splice.core.util.JsonWire
+import splice.head.wire.CollectingTerminal
+import splice.head.wire.FrameWrite
+import splice.head.wire.SseEmitterFactory
+import splice.head.wire.TurnTerminal
+import splice.head.wire.TurnWiring
+import splice.head.wire.UsagePayloadBuilder
 import splice.http.JsonReply
 import splice.http.SseResponse
 import splice.upstream.sse.WireSink

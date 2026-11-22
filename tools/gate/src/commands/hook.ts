@@ -48,7 +48,11 @@
 // Its proof is then the pull request's checks, which run the same suites on GitHub, and main takes nothing they have
 // not passed. Nov 21, 2026: a build box that was down held every push for an hour and then refused it, and the answer
 // a seat found was to run Gradle on the machine the sessions share. The verdict line and the timing record name such
-// a push apart from a pass. The question is asked here and not in the slot because the slot that runs is the pushed
+// a push apart from a pass. On such a machine the hook also runs none of its other builds, checks and tests: only the legs
+// that read the commit run there (READS_THE_COMMIT), and every test suite, type check and lint is left to the pull
+// request's checks, named in the verdict. (Nov 21, 2026: with Gradle gone, a push still ran the gate's tests, which
+// start Gradle, the console's, which start a browser, and the release tests on the machine the sessions share.)
+// The question is asked here and not in the slot because the slot that runs is the pushed
 // commit's own (its build tree), and a commit from before this change carries a slot that builds in place.
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -65,7 +69,7 @@ import { preparePrePushTree, type PrePushTree, takePrePushTreeNow } from "../lib
 import { type Lane, type LaneOptions, type LaneOutcome, openLane } from "../lib/push-lane.ts";
 import { APP_CHECK, PACKAGED_TEST, packagedTestReason } from "../lib/packaged-worker.ts";
 import { appendPushTiming, type PushTiming, readProfile } from "../lib/prepush-timing.ts";
-import { noMachineFor } from "../lib/elsewhere.ts";
+import { keptOffThisMachine, noMachineFor } from "../lib/elsewhere.ts";
 import { isoSeconds } from "../lib/slot.ts";
 import { exitStatusOf } from "../lib/status.ts";
 import { confineTo, type ImpactInput, impactClause, impactLines, testArgs, testImpact, type TestImpact } from "../lib/test-impact.ts";
@@ -149,6 +153,10 @@ export interface HookDeps {
   /** Why no machine is there to take the Gradle tier of the tree at [root], or undefined when the tier can run. The
    *  default asks rig (elsewhere.ts); a judgement handed its own [gate] and no answer here runs the tier. */
   readonly noMachine?: (root: string) => Promise<string | undefined>;
+  /** Whether the builds, checks and tests of the tree at [root] are kept off this machine, so that only the legs that
+   *  read the commit run here. The default asks elsewhere.ts; a judgement handed its own [gate] and no answer here
+   *  runs every leg where it stands. */
+  readonly keptOff?: (root: string) => boolean;
   /** The linters pre-commit runs over the staged Kotlin. The real ones when absent. */
   readonly lint?: StagedLint;
   /** Who a push in the push lane is, how the lane tells a queued push still runs, and how often it looks. */
@@ -421,6 +429,10 @@ const MOVED_POLL_MS = 20_000;
  *  stopped the run, and the stop also ended the warm pre-push daemon: four ended in one evening, three logging
  *  "cancel requested but timed out", and a cold daemon costs a guessed 50 to 150 CPU-seconds. */
 const NO_CODE_LEGS: ReadonlySet<string> = new Set(["prTitle", "attribution", "noPython", "gateRules"]);
+/** The legs that only read the commit: its title, trailers and text, the allowlist and the module law, and whether the
+ *  hub's binaries are there. They run on any machine. Every other leg builds, tests, type-checks or audits, and on a
+ *  machine whose runs go elsewhere it is not run (elsewhere.ts, keptOffThisMachine). */
+const READS_THE_COMMIT: ReadonlySet<string> = new Set([...NO_CODE_LEGS, "secretScanAllowlist", "moduleLawRead", "mcpHubBinaries"]);
 
 /** The ktlint tasks a module's `check` runs, by name. The plugin wires `check` to one task per source set and to the script task,
  *  never to the `ktlintCheck` aggregate (the dry run of the pre-push task list shows no aggregate in the graph), so excluding the
@@ -461,6 +473,8 @@ export function ktlintFullRunReason(changed: readonly string[], catalog?: Catalo
 /** rig's word for why no machine is there to take the pre-push Gradle tier of the tree at [root] (elsewhere.ts). */
 const absentMachine = (root: string): Promise<string | undefined> =>
   noMachineFor({ buildRoot: root, label: "pre-push", args: [], env: Bun.env });
+/** Whether the tree at [root] has its builds, checks and tests kept off this machine (elsewhere.ts). */
+const keptOffHere = (root: string): boolean => keptOffThisMachine({ buildRoot: root, env: Bun.env });
 
 export function slotRunner(lay: Layout, label: string, echo: boolean, extraOptions: readonly string[] = []): GateRunner {
   return async (tasks, _root, cancel, options = []) => {
@@ -812,7 +826,10 @@ async function judgeIn(
   // ktlint is not run per module on every push (the plugin's lint step is never cached, so each of up to 31 modules in scope re-linted
   // every source it has, however little the push touched). It runs once over the Kotlin the push changes, in the modules gradle would
   // have linted, unless something that moves ktlint's verdict on an untouched file changed too.
-  const fullKtlint = deps.ktlint === undefined ? undefined : ktlintFullRunReason(changed, catalog);
+  // Where this machine runs no builds, checks or tests, the lint is not run here either: gradle lints, on the machine that
+  // takes the tier.
+  const offHere = (deps.keptOff ?? (deps.gate === undefined ? keptOffHere : () => false))(root);
+  const fullKtlint = deps.ktlint === undefined ? undefined : offHere ? "this machine runs no checks" : ktlintFullRunReason(changed, catalog);
   const batchKtlint = deps.ktlint !== undefined && fullKtlint === undefined;
   const ktlintFiles = batchKtlint ? changed.filter((path) => KOTLIN.test(path) && moduleOf(modules, path) !== undefined && existsSync(join(root, path))) : [];
   if (batchKtlint) console.error(`── ktlint: ${ktlintFiles.length} changed Kotlin file(s) in one run; gradle skips its per-module ktlintCheck ──`);
@@ -847,7 +864,15 @@ async function judgeIn(
   };
 
   // A test leg that is one `bun test <dir>` run keeps only the test files the diff can affect.
-  const directLegs = scope.direct.flatMap((leg) => narrowBunTest(root, leg, changed) ?? []);
+  const selectedLegs = scope.direct.flatMap((leg) => narrowBunTest(root, leg, changed) ?? []);
+  // On a machine whose runs go elsewhere, only the legs that read the commit run here. The rest are named and left to the
+  // pull request's checks, which run them on GitHub.
+  const unrunLegs = offHere ? selectedLegs.filter((leg) => !READS_THE_COMMIT.has(leg.task)) : [];
+  const directLegs = selectedLegs.filter((leg) => !unrunLegs.includes(leg));
+  if (unrunLegs.length > 0) {
+    const names = unrunLegs.map((leg) => leg.task).join(", ");
+    console.error(`── not run on this machine, which runs no builds, checks or tests: ${names}. The pull request's checks run them ──`);
+  }
   const noCodeLegs = directLegs.filter((leg) => NO_CODE_LEGS.has(leg.task));
   const codeLegs = directLegs.filter((leg) => !NO_CODE_LEGS.has(leg.task));
   // Every other direct leg runs alongside gradle, so a leg never waits for the slot. The verdict reads both.
@@ -938,12 +963,23 @@ async function judgeIn(
     console.error(`pre-push: name the sha and git sends exactly what the gate judged: ${explicitPush(remoteName, pushed)}`);
     return 1;
   }
+  const legsLeft =
+    unrunLegs.length === 0 ? "" : ` ${unrunLegs.length} check(s) were not run on this machine, which runs none: ${unrunLegs.map((leg) => leg.task).join(", ")}.`;
   if (red.length === 0 && gradleUnrun) {
-    record("sent:gradle-unrun");
+    record(unrunLegs.length === 0 ? "sent:gradle-unrun" : "sent:gradle-legs-unrun");
     console.log(`PRE-PUSH: SENT, GRADLE NOT RUN — judged ${judgedWhat} by its direct legs alone${scopeClause}`);
     console.error(
-      `pre-push: ✓ ${directLegs.length} direct leg(s). Gradle did not run: no machine was there to take it, and it never runs on this one. ` +
+      `pre-push: ✓ ${directLegs.length} direct leg(s). Gradle did not run: no machine was there to take it, and it never runs on this one.${legsLeft} ` +
         `The pull request's checks run the same suites on GitHub, and main takes nothing they have not passed — ${elapsed}`,
+    );
+    return 0;
+  }
+  if (red.length === 0 && unrunLegs.length > 0) {
+    record("sent:legs-unrun");
+    console.log(`PRE-PUSH: SENT, ${unrunLegs.length} CHECK(S) NOT RUN — judged ${judgedWhat} by ${directLegs.length} direct leg(s)${judged ? " and gradle" : ""}${scopeClause}`);
+    console.error(
+      `pre-push: ✓ ${directLegs.length} direct leg(s)${judged ? " and gradle" : ", no gradle"}.${legsLeft} ` +
+        `The pull request's checks run them on GitHub, and main takes nothing they have not passed — ${elapsed}`,
     );
     return 0;
   }

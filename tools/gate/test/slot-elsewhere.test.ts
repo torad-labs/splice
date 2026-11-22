@@ -3,7 +3,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { machine as arch, tmpdir, type } from "node:os";
 import { join } from "node:path";
-import { noMachineFor } from "../src/lib/elsewhere.ts";
+import { keptOffThisMachine, noMachineFor } from "../src/lib/elsewhere.ts";
 import { runUnderSlot } from "../src/lib/slot.ts";
 
 const folders: string[] = [];
@@ -54,6 +54,8 @@ function machine() {
   return {
     run,
     absent,
+    /** What the pre-push hook asks before its other legs: whether this machine runs any build, check or test. */
+    keptOff: (env: Record<string, string | undefined>) => keptOffThisMachine({ buildRoot: dir, env: envOf(env) }),
     builtHere: () => existsSync(receipt),
     rigAsked: () => (existsSync(asked) ? readFileSync(asked, "utf8").trim().split("\n") : null),
   };
@@ -197,6 +199,16 @@ describe("a gradle run with rig on PATH", () => {
     expect(await m.run(["-p", "/tmp/some-project", "test"], { RIG_STATUS: '{"exit":0}' })).toBe(0);
     expect(await m.run(["--init-script=/tmp/ci.init.gradle", "test"], { RIG_STATUS: '{"exit":0}' })).toBe(0);
     expect(m.builtHere()).toBe(true);
+    expect(m.rigAsked()).toBeNull();
+  });
+
+  // Nov 21, 2026: what the hook runs beside Gradle (test suites, a type check, the lint) follows the same answer.
+  test("with rig there, this machine keeps none of the tree's builds, checks and tests, unless it is named for the run", () => {
+    const m = machine();
+    expect(m.keptOff({})).toBe(true);
+    expect(m.keptOff({ SPLICE_GRADLE_HERE: "1" })).toBe(false);
+    expect(m.keptOff({ CI: "true" })).toBe(false);
+    expect(m.keptOff({ PATH: "/usr/bin:/bin" })).toBe(false);
     expect(m.rigAsked()).toBeNull();
   });
 

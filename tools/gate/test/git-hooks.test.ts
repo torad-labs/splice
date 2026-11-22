@@ -619,6 +619,80 @@ describe("pre-push stops a gradle run whose push cannot pass, and records how lo
     expect(text).toContain("PRE-PUSH: FAIL — judged the pushed sha");
   });
 
+  // Nov 21, 2026: with the Gradle tier gone from the machine the sessions share, a push still ran its test suites there
+  // (the gate's start Gradle, the console's a browser). On a machine whose runs go elsewhere, only the legs that read the
+  // commit run; a suite is named and left to the pull request's checks, and neither it nor the lint is started.
+  const marker = (root: string, name: string): string => join(root, "..", `${basename(root)}-${name}.ran`);
+  const marks = (root: string, name: string): string[] => ["bun", "-e", `require("node:fs").writeFileSync(${JSON.stringify(marker(root, name))}, "")`];
+
+  test("on a machine that runs no checks, a push runs only the legs that read the commit, and says which it left", async () => {
+    const root = oneModule();
+    const legs: Leg[] = [
+      { task: "gateRules", command: marks(root, "rules"), inputs: ["**/*.kt"] },
+      { task: "consoleTests", command: marks(root, "console"), inputs: ["**/*.kt"] },
+      { task: "typescriptTypecheck", command: ["bun", "-e", "process.exit(3)"], inputs: ["**/*.kt"] },
+    ];
+    const lines: PushTiming[] = [];
+    let linted = false;
+    const { result, text } = await captured(() =>
+      prePush(lay(root), pushOf(root, head(root)), {
+        gate: compiler(root),
+        keptOff: () => true,
+        openRun: () => null,
+        legs,
+        ktlint: async () => {
+          linted = true;
+          return { findings: [] };
+        },
+        timings: (line) => void lines.push(line),
+      }),
+    );
+    expect(result).toBe(0);
+    expect(existsSync(marker(root, "rules"))).toBe(true);
+    expect(existsSync(marker(root, "console"))).toBe(false);
+    expect(linted).toBe(false);
+    expect(text).toContain("not run on this machine, which runs no builds, checks or tests: consoleTests, typescriptTypecheck. The pull request's checks run them");
+    expect(text).toContain("ktlint: gradle lints every module in scope (this machine runs no checks)");
+    expect(text).toContain("PRE-PUSH: SENT, 2 CHECK(S) NOT RUN — judged the pushed sha");
+    expect(text).not.toContain("PRE-PUSH: PASS");
+    expect(lines.map((line) => line.verdict)).toEqual(["sent:legs-unrun"]);
+  });
+
+  test("on such a machine with no machine for gradle either, the push is sent and names both", async () => {
+    const root = oneModule();
+    const legs: Leg[] = [{ task: "releaseTests", command: marks(root, "release"), inputs: ["**/*.kt"] }];
+    const lines: PushTiming[] = [];
+    const { result, text } = await captured(() =>
+      prePush(lay(root), pushOf(root, head(root)), {
+        gate: compiler(root),
+        keptOff: () => true,
+        noMachine: async () => "rig: no machine",
+        openRun: () => null,
+        legs,
+        timings: (line) => void lines.push(line),
+      }),
+    );
+    expect(result).toBe(0);
+    expect(existsSync(marker(root, "release"))).toBe(false);
+    expect(text).toContain("PRE-PUSH: SENT, GRADLE NOT RUN — judged the pushed sha");
+    expect(text).toContain("1 check(s) were not run on this machine, which runs none: releaseTests.");
+    expect(lines.map((line) => line.verdict)).toEqual(["sent:gradle-legs-unrun"]);
+  });
+
+  test("a red leg that reads the commit still blocks a push on a machine that runs no checks", async () => {
+    const root = oneModule();
+    const legs: Leg[] = [
+      { task: "attribution", command: ["bun", "-e", "process.exit(3)"], inputs: ["**/*.kt"] },
+      { task: "gateTests", command: marks(root, "gate"), inputs: ["**/*.kt"] },
+    ];
+    const { result, text } = await captured(() =>
+      prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root), keptOff: () => true, openRun: () => null, legs }),
+    );
+    expect(result).toBe(1);
+    expect(existsSync(marker(root, "gate"))).toBe(false);
+    expect(text).toContain("PRE-PUSH: FAIL — judged the pushed sha");
+  });
+
   const clean = async (): Promise<LintVerdict> => ({ findings: [] });
   const curlySpacing: LintVerdict = { findings: [{ tool: "ktlint", line: `${TARGET}:3:10: Missing spacing before "{" (standard:curly-spacing)` }] };
 

@@ -11,9 +11,6 @@ import splice.daemonclient.DaemonSettings
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
 
 /** The unit manager's environment block as text, or null when it cannot be had. */
 internal fun interface ManagerEnvironmentBlock {
@@ -24,23 +21,7 @@ internal fun interface ManagerEnvironmentBlock {
  *  answers non-zero, or it does not answer in time. */
 internal class SystemctlEnvironmentBlock(private val timeoutMs: Long = SYSTEMCTL_TIMEOUT_MS) :
     ManagerEnvironmentBlock {
-    override fun invoke(): String? {
-        val process = Cancellables.runCatchingCancellable {
-            UserManagerBus.supply(ProcessBuilder(listOf("systemctl", "--user", "show-environment")))
-                .redirectError(ProcessBuilder.Redirect.DISCARD)
-                .start()
-        }.getOrElse { return null }
-        return try {
-            val bytes = CompletableFuture.supplyAsync { process.inputStream.readAllBytes() }
-                .get(timeoutMs, TimeUnit.MILLISECONDS)
-            val answered = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS) && process.exitValue() == 0
-            bytes.toString(Charsets.UTF_8).takeIf { answered }
-        } catch (_: TimeoutException) {
-            null
-        } finally {
-            process.destroyForcibly()
-        }
-    }
+    override fun invoke(): String? = SystemctlText(timeoutMs).of(listOf("show-environment"))
 }
 
 /** The unit manager's environment block, parsed. */

@@ -15,7 +15,7 @@ try { const saved = localStorage.getItem(DECK_THEME_KEY); if (saved === 'day' ||
 /** The console's pages, in the nav's order: the one list every part of the console names them by (pilot.js too). */
 const DECK_PAGES = [
   ['sessions', 'Sessions'], ['accounts', 'Accounts'], ['teams', 'Teams'],
-  ['providers', 'Providers'], ['activity', 'Activity'], ['settings', 'Settings'],
+  ['providers', 'Providers'], ['activity', 'Activity'], ['server', 'Server'], ['settings', 'Settings'],
 ];
 (() => {
   'use strict';

@@ -1,0 +1,60 @@
+:root {
+  --srv-max: 100rem;
+  --srv-wide: 180rem;
+  --srv-cols-2: 2;
+  --srv-cols-4: 4;
+  --srv-gap: 2.4rem;
+  --srv-fig-gap: 2rem;
+  --srv-form-min: 11rem;
+  --srv-scroll-max: 24rem;
+}
+
+.srv { position: relative; max-width: var(--srv-max); margin: 0 auto; display: grid; gap: var(--sp-7); }
+.srv-head { padding-top: var(--sp-5); display: flex; justify-content: space-between; align-items: flex-end; gap: var(--sp-4); }
+.srv-head h1 { margin: var(--sp-2) 0 0; font-size: var(--fs-title); font-weight: var(--w-med); line-height: var(--lh-tight); }
+
+@media (max-width: 48rem) {
+  .srv { grid-template-columns: minmax(0, 1fr); }
+  .srv-head { flex-direction: column; align-items: stretch; }
+}
+
+.srv-body { display: grid; gap: var(--sp-7); min-width: 0; }
+.srv-summary { display: grid; grid-template-columns: repeat(var(--srv-cols-4), minmax(0, 1fr)); gap: var(--srv-fig-gap); }
+.srv-stat { display: grid; gap: var(--sp-1); padding: var(--pt-pad); border-radius: var(--r-inner); background: var(--pt-rest); }
+.srv-stat b { font-family: var(--font-data); font-weight: var(--w-reg); font-size: var(--fs-figure); line-height: var(--lh-figure); color: var(--ink); }
+.srv-stat span { font-family: var(--font-data); font-size: var(--fs-micro); letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--ink-faint); }
+
+.srv-grid { display: grid; grid-template-columns: repeat(var(--srv-cols-2), minmax(0, 1fr)); gap: var(--srv-gap); align-items: start; }
+@media (max-width: 64rem) {
+  .srv-summary { grid-template-columns: repeat(var(--srv-cols-2), minmax(0, 1fr)); }
+  .srv-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.srv-panel { display: grid; gap: var(--sp-4); padding: var(--pt-pad); border-radius: var(--r-inner); background: var(--pt-rest); min-width: 0; }
+.srv-panel-head { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.srv-panel-head h2 { margin: 0; font-family: var(--font-data); font-size: var(--fs-micro); font-weight: var(--w-med); letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--ink-faint); }
+
+.srv-form { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+.srv-in { flex: 1 1 var(--srv-form-min); min-width: 0; min-height: var(--btn-h); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-btn); background: var(--fill); color: var(--ink); font: inherit; font-size: var(--fs-small); outline: none; }
+.srv-in:focus { box-shadow: inset 0 0 0 var(--hair) var(--ink-quiet); }
+
+.srv-banner { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-item); background: var(--fill); font-family: var(--font-data); font-size: var(--fs-small); color: var(--ink); word-break: break-all; }
+.srv-note { font-size: var(--fs-small); color: var(--ink-quiet); }
+.srv-note.is-err { color: var(--vermilion); }
+
+.srv-list { display: grid; gap: var(--sp-2); max-height: var(--srv-scroll-max); overflow-y: auto; }
+.srv-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-item); background: var(--fill); min-width: 0; }
+.srv-row-main { display: grid; gap: var(--sp-1); min-width: 0; }
+.srv-row-title { display: flex; align-items: center; gap: var(--sp-2); font-family: var(--font-data); font-size: var(--fs-small); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.srv-row-sub { font-size: var(--fs-micro); font-family: var(--font-data); color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.srv-row-acts { display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0; }
+.srv-badge { font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-quiet); padding: 0 var(--sp-2); border-radius: var(--r-btn); background: var(--ground); }
+.srv-badge.is-over { color: var(--vermilion); }
+
+.srv-off { display: grid; gap: var(--sp-3); padding: var(--pt-pad); border-radius: var(--r-inner); background: var(--pt-rest); }
+.srv-off h2 { margin: 0; font-size: var(--fs-figure); font-weight: var(--w-med); color: var(--ink); }
+.srv-off p { margin: 0; font-size: var(--fs-small); color: var(--ink-quiet); line-height: var(--lh); }
+
+@media (min-width: 160rem) {
+  .srv { max-width: var(--srv-wide); }
+}

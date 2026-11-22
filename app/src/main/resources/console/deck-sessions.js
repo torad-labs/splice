@@ -7,17 +7,17 @@
 
    Reads (polled as the old page polled them): /api/sessions, /api/heads and each head's /turns/live every 5 s;
    /api/teams every 5 s; each head's /api/perf/turns over the last hour every 30 s (the activity and state history);
-   /api/accounts every 30 s; a waiting session's /screen; the open session's /transcript (its newest page, then what
-   came after it, every 5 s); /api/sessions/history for a search. Writes go where the old console sent them. */
+   /api/accounts every 30 s; a waiting session's /screen; /api/sessions/history for a search. The open session's
+   conversation is read by the shared session reader's connector (reply-view/connect.js: its /transcript pages and its
+   /live feed). Writes go where the old console sent them. */
 (() => {
   'use strict';
   const { $, h, iconBtn, ICON, ago } = Deck;
   const MIN = 60000, WIN = 60, BAND_MS = 30 * MIN, LOOK_MS = 14 * MIN;
-  const READ_MS = 5000, PERF_MS = 30000, LOG_PAGE = 50;
+  const READ_MS = 5000, PERF_MS = 30000;
   const DPR = Math.min(2, window.devicePixelRatio || 1);
   const RANK = { needs: 0, stalled: 1, working: 2, idle: 3 };
   const PHASE = { connect: 'Sent, no output yet', streaming: 'Streaming' };
-  const VERB = { Bash: 'Ran', Read: 'Read', Edit: 'Edited', Write: 'Wrote', Grep: 'Searched', Glob: 'Searched', SendMessage: 'Messaged' };
   // how a request that held a session back ended, in the console's words (the old kit's OUTCOME_WORD)
   const ENDING = {
     'error:auth-missing': ['signout', 'Signed out', 'Its login is signed out'], 'error:plan-limit': ['limit', 'At limit', 'Its plan is at a limit'],
@@ -34,6 +34,8 @@
   const C = { verd: rgbOf('--verdigris'), verm: rgbOf('--vermilion'), ink: rgbOf('--ink'), prus: rgbOf('--prussian') };
   const rgba = (c, a) => 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')';
   const setTxt = (el, v) => { if (el && el._t !== v) { el._t = v; el.textContent = v; } };
+  /** hides or shows [el] only when that changes: a tick that sets what is already so writes nothing */
+  const setHidden = (el, v) => { if (el && el.hidden !== v) el.hidden = v; };
   const agoText = ms => ms < 1000 ? 'now' : ago(ms) + ' ago';
   const slug = t => t.name.trim().toLowerCase().replace(/\s+/g, '-');
   const enc = encodeURIComponent;
@@ -57,7 +59,7 @@
   const why = res => (res.status === 0 ? 'splice is not answering' : (res.body && (res.body.error || res.body.reason)) || 'splice answered ' + res.status);
 
   /* ---------- the live read: each session in the board's shape ---------- */
-  const S = new Map(), GONE = new Map(), CONV = new Map(), SCREEN = new Map(), seen = new Map();
+  const S = new Map(), GONE = new Map(), SCREEN = new Map(), seen = new Map();
   let heads = [], teamRows = [], accounts = [], perfRows = new Map(), readOk = null, readAt = 0, reading = true;
   let events = [];
 
@@ -162,7 +164,6 @@
     for (const id of [...S.keys()]) if (!here.has(id) && !S.get(id).ended) { S.delete(id); const r = rowEl.get(id); rowEl.delete(id); if (r) r.remove(); if (openId === id) closeOpen(); }
     syncTeams();
     await readScreens();
-    if (openId && S.has(openId)) readNewer(openId);
     renderIfChanged();
     paint();
   }
@@ -301,9 +302,9 @@
   /* ---------- the view state ---------- */
   let openId = null, openEnded = null, filterText = '';
   let boardY = 0, lookAt = Date.now();
-  let F = {}, fleet = {}, runNow = null, lastNeeds = -1, needOnly = false, lastCtx = '', tickN = 0, bandKey = '', boardKey = '';
+  let F = {}, fleet = {}, lastNeeds = -1, needOnly = false, lastCtx = '', tickN = 0, bandKey = '', boardKey = '';
   const rowEl = new Map();
-  const board = $('#board'), convEl = $('#conv'), endEl = $('#endview'), threadEl = $('#thread'), dockEl = $('#dock');
+  const board = $('#board'), convEl = $('#conv'), endEl = $('#endview'), dockEl = $('#dock');
   const bandLanes = $('#bdLanes'), bdAxis = $('#bdAxis'), bdCount = $('#bdCount');
   const qIn = $('#q'), qWrap = $('#qwrap'), backBtn = $('#back');
   const redir = $('#redir'), redirIn = $('#redirIn'), stRedir = $('#stRedir');
@@ -538,12 +539,12 @@
     col.classList.toggle('is-quiet', quiet);
     col.classList.toggle('has-needs', c.needs > 0);
     setTxt(p.kick, kindLabel(t || { kind: 'loose' }));
-    p.body.hidden = quiet && !col._open;
-    p.fold.hidden = !quiet;
+    setHidden(p.body, quiet && !col._open);
+    setHidden(p.fold, !quiet);
     setTxt(p.fold, col._open ? 'Fold' : 'Folded · ' + ms.length + (ms.length === 1 ? ' session' : ' sessions') + ' · show');
     setTxt(p.doing, doingOf(ms, loose));
     p.spark.update(actOf(ids));
-    if (p.n % 5 === 0 || !p.stripped) { p.stripped = true; p.stripSlot.replaceChildren(Deck.strip(segsOf(ids))); }
+    if (p.n % 5 === 0 || !p.stripped) { p.stripped = true; Deck.stripInto(p.stripSlot, segsOf(ids)); }
     p.n++;
     const key = membersOf(id).join(',');
     if (p.key !== key && !p.body.contains(document.activeElement)) {
@@ -601,19 +602,21 @@
     row.classList.toggle('is-dim', (!!filterText && !matches(s)) || (needOnly && s.state !== 'needs'));
     setTxt(p.nm, s.name);
     setTxt(p.st, wordOf(s));
-    setTxt(p.age, ageOf(s)); p.age.title = p.age.textContent;
+    setTxt(p.age, ageOf(s)); if (p.age.title !== p.age.textContent) p.age.title = p.age.textContent;
     setTxt(p.say, sayOf(s));
     const need = s.state === 'needs' && !!s.ask && s.ask.choices.length > 0;
-    p.ask.hidden = !need;
+    setHidden(p.ask, !need);
     if (need) syncAsk(p.ask, s, true);
     else syncAsk(p.ask, { ask: null });
     /* a stalled session carries its one fix on its own row */
     const f = s.state === 'stalled' ? fixOf(s) : null;
-    p.fix.hidden = !f;
+    setHidden(p.fix, !f);
     if (f) { setTxt(p.fixNm, f.label); setTxt(p.fixSub, f.sub); }
   }
 
-  /* ---------- painting: every second, in place ---------- */
+  /* ---------- painting: every second, in place. A tick writes only what changed since the last one: the kit's
+     sparks, strips and rolling numbers draw nothing when handed what they already show, so a board where nothing
+     happened in a second draws nothing in it. ---------- */
   function paint() {
     const c = counts();
     if (c.needs !== lastNeeds) {
@@ -652,8 +655,8 @@
       const named = teams.filter(x => !inferred(x)).length, grouped = teams.length - named;
       setTxt(sub, c.working + ' working · ' + c.stalled + ' stalled · ' + c.idle + ' idle · ' + named + (named === 1 ? ' team' : ' teams') + (grouped ? ' · ' + grouped + (grouped === 1 ? ' group' : ' groups') : ''));
     }
-    qWrap.hidden = !!(openId || openEnded);
-    backBtn.hidden = !(openId || openEnded);
+    setHidden(qWrap, !!(openId || openEnded));
+    setHidden(backBtn, !(openId || openEnded));
     const status = $('.head .status');
     if (status) {
       const off = readOk === false;
@@ -749,7 +752,7 @@
       for (const hist of hists) for (const st of hist) tot[st] = (tot[st] || 0) + 1;
       const all2 = hists.length * WIN || 1;
       const segs = ['working', 'needs', 'stalled', 'idle'].filter(st => tot[st] > 0).map(st => ({ state: st, share: tot[st] / all2 }));
-      fleet.stripSlot.replaceChildren(Deck.strip(segs));
+      Deck.stripInto(fleet.stripSlot, segs);
       setTxt(fleet.shareCap, segs.length ? segs.map(sg => sg.state + ' ' + Deck.pct(sg.share)).join(' · ') + ' · last hour' : 'No session in the last hour');
     }
     const provs = new Map();
@@ -774,7 +777,7 @@
     });
     // each plan login's week, as Accounts reads it: what is left of it, and when it resets
     const weekly = accounts.filter(a => a.seven_day_used_percent != null);
-    fleet.accNone.hidden = weekly.length > 0;
+    setHidden(fleet.accNone, weekly.length > 0);
     for (const a of weekly) {
       const key = (a.heads || []).join('+') + '/' + (a.selector_key || a.label);
       let x = fleet.accRows.get(key);
@@ -791,7 +794,9 @@
       const reset = a.seven_day_reset_epoch_seconds ? new Date(a.seven_day_reset_epoch_seconds * 1000) : null;
       setTxt(x.sub, reset ? 'Week limit, resets ' + reset.toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : 'Week limit');
     }
-    setTxt(fleet.sinceCap, 'Since ' + ago(Date.now() - lookAt) + ' ago, when you left a session or the board');
+    // a caption counts no seconds: in its first minute it says so in words, and the page writes nothing for it
+    const looked = Date.now() - lookAt;
+    setTxt(fleet.sinceCap, 'Since ' + (looked < MIN ? 'a moment' : ago(looked)) + ' ago, when you left a session or the board');
     const since = k => events.filter(e => e.kind === k && e.t >= lookAt).length;
     for (const k of ['finished', 'started', 'asked', 'stuck']) setTxt(fleet.sinceV[k], String(since(k)));
     const byProj = new Map();
@@ -920,209 +925,146 @@
     }
   }
 
-  /* the reader: the conversation, read live from its transcript, newest kept in view */
-  function nearEnd() { return window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - Deck.px('--sp-7') * 4; }
-  function scrollToEnd(force) { if (force || nearEnd()) window.scrollTo(0, document.documentElement.scrollHeight); }
-  const toItem = m => ({ role: m.role, tool: m.tool || null, text: m.text || '', from: m.from || null, t: epoch(m.ts) || Date.now(), index: m.index, kind: m.kind || null });
-  async function readLog(id) {
-    const r = await API.get('/api/sessions/' + enc(id) + '/transcript?before=end&limit=' + LOG_PAGE);
-    const held = { items: [], earlier: null, error: null, off: false };
-    // gone reads No transcript and a failed read Transcript did not load; the daemon's own words go to the browser's log, never the page
-    if (!r.ok) { held.error = r.status === 404 ? 'No transcript' : 'Transcript did not load'; if (r.status !== 404) console.warn('conversation ' + id + ': ' + why(r)); }
-    else if (r.body && r.body.state === 'off') held.off = true;
-    else { held.items = ((r.body && r.body.messages) || []).map(toItem); held.earlier = r.body ? r.body.earlier : null; }
-    CONV.set(id, held);
-    if (openId === id) renderThread(id);
+  /* the reader: the conversation drawn by the shared session reader (reply-view/, Nov 21, 2026) and read through its
+     connector: the transcript's pages, and the reply as it is written (GET /api/sessions/{id}/live). The page keeps
+     what is its own around it: its scroll with the newest line in view, the door to earlier messages, the mark of what
+     is new since he last looked, and what to say where there is nothing to read. The page's own drawing of a
+     conversation (messages, folded runs of tool calls, notes) went with this: the reader draws all of it, here as on
+     every page that reads a session. */
+  /* where the conversation rests: its newest line a gap above what floats over the foot of the page (the composer, and on
+     a phone the night-and-day switch and the waiting count that sit above it). Opening a session, a reply that grows and
+     a question that arrives all rest it there (Nov 21, 2026: a reply that grew used to be followed to the end of the
+     page, which stands a second composer's height below the newest line, so at 900 px the newest line sat mid-screen). */
+  function footTop() {
+    let top = window.innerHeight;
+    for (const el of [$('#compWrap'), document.querySelector('.switch'), document.querySelector('.need-float')]) {
+      const r = el ? el.getBoundingClientRect() : null;
+      if (r && r.height && r.top > window.innerHeight / 2) top = Math.min(top, r.top);
+    }
+    return top;
   }
-  /** what came after the last message he has, as the old page asked for it: a few KB, not the whole page again */
-  async function readNewer(id) {
-    const held = CONV.get(id);
-    if (!held || !held.items.length) { if (held && !held.error && !held.off) return; return readLog(id); }
-    const replied = held.items.map(x => x.role).lastIndexOf('assistant');
-    const open = held.items.slice(replied + 1).find(x => x.role === 'user') || held.items[held.items.length - 1];
-    const r = await API.get('/api/sessions/' + enc(id) + '/transcript?cursor=' + enc('after:' + open.index) + '&limit=' + LOG_PAGE);
-    if (r.status === 400 || (r.body && (r.body.more || r.body.state === 'off'))) return readLog(id);
-    if (!r.ok || !r.body || !Array.isArray(r.body.messages)) return;
-    const page = r.body.messages.map(toItem), from = page.length ? page[0].index : Infinity;
-    const kept = held.items.filter(x => x.index < from);
-    if (JSON.stringify(held.items.slice(kept.length).map(x => [x.index, x.text])) === JSON.stringify(page.map(x => [x.index, x.text]))) return;
-    const shown = held.items.length;
-    held.items = [...kept, ...page];
-    if (openId !== id) return;
-    if (kept.length === shown) for (const it of page) appendThread(it, false);
-    else renderThread(id);
+  /** the room kept between the newest line and the foot: the height the page's lower edge fades over, so the line a
+   *  person reads last is never dimmed */
+  function footGap() { return Deck.px('--sp-6'); }
+  /** the newest thing in the open session: the question it waits on, else the last line drawn */
+  function newest() { return dockEl.childElementCount ? dockEl : lastDrawn(); }
+  /** how far below its resting place the newest line stands: none when it is in sight */
+  function belowRest() {
+    const last = newest();
+    return last ? last.getBoundingClientRect().bottom - (footTop() - footGap()) : 0;
   }
-  async function readEarlier(id) {
-    const held = CONV.get(id);
-    if (!held || held.earlier == null) return;
-    const r = await API.get('/api/sessions/' + enc(id) + '/transcript?before=' + enc(held.earlier) + '&limit=' + LOG_PAGE);
-    if (!r.ok || !r.body || !Array.isArray(r.body.messages)) return;
-    held.items = [...r.body.messages.map(toItem), ...held.items];
-    held.earlier = r.body.earlier;
-    const y = document.documentElement.scrollHeight - window.scrollY;
-    renderThread(id, true);
-    window.scrollTo(0, document.documentElement.scrollHeight - y);
+  function nearEnd() { return belowRest() <= Deck.px('--sp-7') * 2; }
+  function scrollToEnd(force) {
+    if (!force && !nearEnd()) return;
+    const dy = belowRest();
+    if (dy > 0) window.scrollBy(0, dy);
   }
-  function renderThread(id, keep) {
-    threadEl.replaceChildren(); runNow = null;
-    const s = S.get(id), held = CONV.get(id);
-    if (!held) { threadEl.append(h('li', 'cv-mark', '')); threadEl.lastChild.append(h('span', 'rule'), h('span', 'mk-t', 'Reading the conversation'), h('span', 'rule')); return; }
-    if (held.off || !reading) { threadEl.append(msgEl({ role: 'system', text: 'Reading conversations is off. Turn it on in Settings', t: Date.now() })); return; }
-    if (held.error) { threadEl.append(msgEl({ role: 'system', text: held.error, t: Date.now() })); return; }
-    if (held.earlier != null) {
-      const li = h('li', 'cv-run');
-      const b = h('button', 'cv-run-sum press'); b.type = 'button';
+  const noteEl = $('#cvNote'), readerEl = $('#cvReader');
+  let readerMods = null;
+  // a load that failed is asked again by the next conversation opened: only a load that worked is kept
+  const readerParts = () => readerMods || (readerMods = Promise.all([import('/reply-view/reply-view.js'), import('/reply-view/connect.js')])
+    .then(([r, c]) => ({ mount: r.mount, connect: c.connect }), err => { readerMods = null; throw err; }));
+  /** the open conversation: its view and connector, what splice said of its transcript, and whether older pages remain */
+  let rd = null;
+  /** whether the newest line was in view before the conversation last grew: a reply that streams in keeps it there */
+  let atEnd = true;
+  addEventListener('scroll', () => { if (openId) atEnd = nearEnd(); }, { passive: true });
+  const NOTE = { off: 'Reading conversations is off. Turn it on in Settings', gone: 'No transcript', failed: 'Transcript did not load' };
+  function markLine(text, cls) {
+    const el = h('div', 'cv-mark' + (cls ? ' ' + cls : ''));
+    el.append(h('span', 'rule'), h('span', 'mk-t', text), h('span', 'rule'));
+    return el;
+  }
+  /** above the conversation: that it is being read, why there is none, or the door to earlier messages */
+  function paintNote() {
+    noteEl.replaceChildren();
+    if (!rd) return;
+    const st = !reading ? 'off' : rd.state;
+    if (st === null) noteEl.append(markLine('Reading the conversation'));
+    // a read that fails once the conversation is drawn leaves it standing: the connector asks again by itself
+    else if (NOTE[st] && (st !== 'failed' || !rd.drawn)) noteEl.append(markLine(NOTE[st]));
+    else if (rd.more) {
+      const b = h('button', 'cv-door press'); b.type = 'button';
       b.append(h('span', 'sum-t', 'Earlier messages'), h('span', 'sum-x', 'Show'));
-      b.addEventListener('click', () => readEarlier(id));
-      li.append(b); threadEl.append(li);
+      b.addEventListener('click', async () => {
+        const mine = rd;
+        if (!mine || !mine.conn || b.disabled) return;
+        b.disabled = true;
+        // what he is reading stays where it is: the page grows above it
+        const y = document.documentElement.scrollHeight - window.scrollY;
+        mine.holding = true;
+        await mine.conn.earlier();
+        mine.holding = false;
+        if (rd === mine) window.scrollTo(0, document.documentElement.scrollHeight - y);
+        b.disabled = false;
+      });
+      noteEl.append(b);
     }
-    const items = held.items;
-    const newer = items.filter(x => x.t > s.seenAt).length;
-    let marked = false;
-    for (const it of items) {
-      if (!marked && newer && newer < items.length && it.t > s.seenAt) {
-        marked = true;
-        const li = h('li', 'cv-mark is-new');
-        li.append(h('span', 'rule'), h('span', 'mk-t', 'New since you last looked · ' + newer), h('span', 'rule'));
-        threadEl.append(li);
-      }
-      appendThread(it, true);
-    }
-    if (!keep) scrollToEnd(true);
+    readerEl.hidden = st === 'off' || st === 'gone';
   }
-  function callDesc(it) {
-    let o = null;
-    try { o = JSON.parse(it.text); } catch { o = null; }
-    if (!o || typeof o !== 'object') return { d: it.text ? String(it.text).slice(0, 160) : (it.tool || 'Tool'), c: '' };
-    const d = o.description || o.file_path || o.pattern || o.query || o.command || o.to || it.tool || 'Tool';
-    return { d: String(d), c: o.command && o.command !== d ? String(o.command) : '' };
+  /** the first messages handed on say which are new since he last looked: where some but not all are, a line stands
+   *  above the first of them */
+  function markNew(mine, messages) {
+    if (mine.marked) return;
+    mine.marked = true;
+    const fresh = messages.filter(m => (epoch(m.ts) || 0) > mine.seenAt);
+    if (!fresh.length || fresh.length === messages.length) return;
+    mine.newFrom = Math.min(...fresh.map(m => m.index)); mine.newCount = fresh.length;
   }
-  function whenEl(t) { const w = h('span', 'when', agoText(Date.now() - t)); w.dataset.abs = String(t); return w; }
-  function updateAges() {
-    if (!openId) return;
-    threadEl.querySelectorAll('[data-abs]').forEach(el => setTxt(el, agoText(Date.now() - Number(el.dataset.abs))));
+  function placeNewMark(mine) {
+    if (mine.newFrom == null || mine.newPlaced) return;
+    let el = readerEl.querySelector('.rv-history [data-index="' + mine.newFrom + '"]');
+    // a result is drawn inside its call: the line stands above the call that holds it
+    while (el && el.parentElement && !el.parentElement.classList.contains('rv-history')) el = el.parentElement;
+    if (!el) return;
+    mine.newPlaced = true;
+    el.before(markLine('New since you last looked · ' + mine.newCount, 'is-new'));
   }
-  // WHAT THE CLIENT PUT INTO THE CONVERSATION IS ONE LINE, in plain words, that opens in place to the text as written
-  const SYS_LINES = [
-    [/^(?:This session is being continued from a previous conversation|Conversation compacted)/i, () => 'Summary of the earlier conversation'],
-    [/^Base directory for this skill:\s*(\S+)/i, m => 'Skill · ' + String(m[1]).split('/').filter(Boolean).pop()],
-    [/^\[Cross-session delivery notice\]/i, () => 'Delivery notice'],
-    [/^\[Cross-session idle notice\]/i, () => 'Idle notice'],
-    [/^Cross-session message released/i, () => 'Message released'],
-    [/^(?:A process claiming the address|uds:\/)/i, () => 'Address notice'],
-    [/^\[Your previous response had no visible/i, () => 'Reminder about an empty reply'],
-    [/^API Error/i, () => 'API error'],
-  ];
-  const sysWord = text => { const s = String(text || '').trim(); for (const [re, word] of SYS_LINES) { const m = s.match(re); if (m) return word(m); } return null; };
-  function sysEl(it, word) {
-    const li = h('li', 'cv-run');
-    const sum = h('button', 'cv-run-sum press'); sum.type = 'button'; sum.setAttribute('aria-expanded', 'false');
-    const sumX = h('span', 'sum-x', 'Show');
-    sum.append(h('span', 'sum-t', word), sumX);
-    const pre = h('pre', 'cv-pre', it.text); pre.hidden = true;
-    sum.addEventListener('click', () => { pre.hidden = !pre.hidden; sum.setAttribute('aria-expanded', String(!pre.hidden)); setTxt(sumX, pre.hidden ? 'Show' : 'Hide'); });
-    li.append(sum, pre);
-    return li;
+  /** the newest thing drawn: the reply being written, else the last message */
+  function lastDrawn() {
+    const live = readerEl.querySelector('.rv-live'), hist = readerEl.querySelector('.rv-history');
+    return (live && live.lastElementChild) || (hist && hist.lastElementChild) || null;
   }
-  /** a slash command he ran, as he typed it, and what it printed */
-  function slashText(text) {
-    const name = (text.match(/<command-name>([^<]*)<\/command-name>/) || [])[1], args = (text.match(/<command-args>([^<]*)<\/command-args>/) || [])[1];
-    const out = (text.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/) || [])[1];
-    if (!name && !out) return null;
-    return [name ? (name.trim().startsWith('/') ? name.trim() : '/' + name.trim()) + (args && args.trim() ? ' ' + args.trim() : '') : '', out ? out.trim() : ''].filter(Boolean).join('\n');
+  function closeReader() {
+    if (!rd) return;
+    if (rd.conn) rd.conn.close();
+    if (rd.view) rd.view.destroy();
+    rd = null;
+    readerEl.replaceChildren(); noteEl.replaceChildren();
   }
-  function msgEl(it) {
-    if (it.role !== 'assistant') { const word = sysWord(it.text); if (word) return sysEl(it, word); }
-    if (it.role === 'user') { const slash = slashText(it.text); if (slash) it = Object.assign({}, it, { text: slash }); }
-    if (it.role === 'system') {
-      const li = h('li', 'cv-mark');
-      const t = h('span', 'mk-t', it.text + ' · ');
-      t.append(whenEl(it.t));
-      li.append(h('span', 'rule'), t, h('span', 'rule'));
-      return li;
-    }
-    const kind = it.role === 'user' ? 'user' : it.role === 'peer' ? 'peer' : 'agent';
-    const li = h('li', 'cv-msg ' + kind);
-    const label = kind === 'user' ? 'You' : kind === 'peer' ? 'From ' + (it.from || 'another session') : 'Agent';
-    const who = h('div', 'eyebrow');
-    who.append(label + ' · ', whenEl(it.t));
-    li.append(who, h('p', 'cv-say', it.text));
-    return li;
+  /** opens [id]'s conversation in the reader; [none] is a session splice holds no transcript for, which is said at once */
+  function openReader(id, none) {
+    closeReader();
+    const s = S.get(id);
+    const mine = rd = { id, view: null, conn: null, state: none ? 'gone' : null, more: false, drawn: false, holding: false,
+      marked: false, newFrom: null, newCount: 0, newPlaced: false, seenAt: s ? s.seenAt : 0 };
+    atEnd = true;
+    paintNote();
+    if (none || !reading) return;
+    readerParts().then(({ mount, connect }) => {
+      if (rd !== mine) return;
+      mine.view = mount(readerEl, {});
+      const feed = { addHistory: ms => { markNew(mine, ms); mine.view.addHistory(ms); }, addLive: ev => mine.view.addLive(ev) };
+      mine.conn = connect(feed, {
+        session: id,
+        onLocked: () => { if (rd === mine) { mine.state = 'failed'; paintNote(); } },
+        onEarlier: more => { if (rd === mine) { mine.more = more; paintNote(); } },
+        // splice's own words for a read it refused go to the browser's log, never the page
+        onState: (st, said) => {
+          if (rd !== mine) return;
+          if (st === 'failed' && said) console.warn('conversation ' + id + ': ' + said);
+          mine.state = st; paintNote();
+        },
+      });
+    }, () => { if (rd === mine) { mine.state = 'failed'; paintNote(); } });
   }
-  function makeRun() {
-    const el = h('li', 'cv-run');
-    const sum = h('button', 'cv-run-sum press'); sum.type = 'button'; sum.setAttribute('aria-expanded', 'false');
-    const sumT = h('span', 'sum-t'), sumX = h('span', 'sum-x', 'Show');
-    sum.append(sumT, sumX);
-    const list = h('ol', 'cv-calls'); list.hidden = true;
-    sum.addEventListener('click', () => {
-      const open = list.hidden; list.hidden = !open;
-      sum.setAttribute('aria-expanded', String(open));
-      setTxt(sumX, open ? 'Hide' : 'Show');
-    });
-    el.append(sum, list);
-    return { el, sumT, list, calls: [] };
-  }
-  function runSummary(run) {
-    const by = new Map();
-    run.calls.forEach(c => { const v = VERB[c.tool] || c.tool; by.set(v, (by.get(v) || 0) + 1); });
-    const n = run.calls.length;
-    return n + (n === 1 ? ' tool call' : ' tool calls') + ' · ' + [...by].map(([v, k]) => v + (k > 1 ? ' ' + k : '')).join(' · ');
-  }
-  function togglePre(btn, pre, label) {
-    pre.hidden = !pre.hidden;
-    btn.setAttribute('aria-expanded', String(!pre.hidden));
-    btn.textContent = pre.hidden ? label : 'Hide ' + label.toLowerCase();
-  }
-  function renderCall(run, c) {
-    const li = h('li', 'cv-call');
-    const hd = h('div', 'cv-call-hd');
-    hd.append(h('span', 'cv-verb', VERB[c.tool] || c.tool), h('span', 'cv-what', c.d));
-    const tools = h('div', 'cv-tools');
-    let cmdPre = null;
-    if (c.cmd) {
-      cmdPre = h('pre', 'cv-pre is-cmd', c.cmd); cmdPre.hidden = true;
-      const b = h('button', 'btn quiet press cv-tog', 'Command'); b.type = 'button'; b.setAttribute('aria-expanded', 'false');
-      b.addEventListener('click', () => togglePre(b, cmdPre, 'Command'));
-      tools.append(b);
-    }
-    const rb = h('button', 'btn quiet press cv-tog', 'Result'); rb.type = 'button'; rb.hidden = true; rb.setAttribute('aria-expanded', 'false');
-    const resPre = h('pre', 'cv-pre'); resPre.hidden = true;
-    rb.addEventListener('click', () => togglePre(rb, resPre, 'Result'));
-    tools.append(rb);
-    li.append(hd, tools);
-    if (cmdPre) li.append(cmdPre);
-    li.append(resPre);
-    run.list.append(li);
-    c.rb = rb; c.pre = resPre;
-  }
-  function addCall(it) {
-    if (!runNow) { runNow = makeRun(); threadEl.append(runNow.el); }
-    const d = callDesc(it);
-    const c = { tool: it.tool || 'Tool', d: d.d, cmd: d.c, res: null };
-    runNow.calls.push(c);
-    renderCall(runNow, c);
-    setTxt(runNow.sumT, runSummary(runNow));
-    return c;
-  }
-  function attachResult(c, text) {
-    c.res = text || '';
-    c.pre.textContent = c.res || '(no output)';
-    c.rb.hidden = false;
-  }
-  function appendThread(it, bulk) {
-    const stick = !bulk && nearEnd();
-    if (it.role === 'assistant' && it.tool) addCall(it);
-    else if (it.role === 'tool') {
-      const last = runNow && runNow.calls[runNow.calls.length - 1];
-      if (last && last.res == null) attachResult(last, it.text);
-      else attachResult(addCall({ tool: it.tool || 'Tool', text: '' }), it.text);
-    } else {
-      runNow = null;
-      threadEl.append(msgEl(it));
-    }
-    if (stick) scrollToEnd(true);
-  }
+  readerEl.addEventListener('replyview:change', () => {
+    if (!rd) return;
+    const first = !rd.drawn; rd.drawn = true;
+    placeNewMark(rd);
+    if (first) { paintNote(); requestAnimationFrame(revealNewest); }
+    else if (atEnd && !rd.holding) scrollToEnd(true);
+  });
 
   /* the question waiting on him: a Deck.answer just above the composer */
   function syncDock(s) {
@@ -1133,7 +1075,8 @@
       dockEl.replaceChildren(Deck.answer(s.ask, { waited: waitText(s), onAnswer: (i, label, typed) => answerSession(s.id, i, typed, k) }));
       const box = dockEl.firstElementChild;
       if (box && !isTyping()) box.focus({ preventScroll: true });
-      if (nearEnd()) scrollToEnd(true);
+      // a question that arrives while the newest line was in sight comes into sight itself
+      if (atEnd) scrollToEnd(true);
     }
     const w = dockEl.querySelector('.ask-wait'); if (w) setTxt(w, waitText(s));
   }
@@ -1213,7 +1156,7 @@
     }
     setTxt(F.account.v, loginNameOf(s) || 'None');
     setTxt(F.stateV, ago(Date.now() - s.since));
-    if (!F.stripDone || tickN % 5 === 0) { F.stripDone = true; F.stateSlot.replaceChildren(Deck.strip(histOf(s).map(st => ({ state: st, share: 1 / WIN })))); }
+    if (!F.stripDone || tickN % 5 === 0) { F.stripDone = true; Deck.stripInto(F.stateSlot, histOf(s).map(st => ({ state: st, share: 1 / WIN }))); }
     if (s.request) {
       const r = s.request, age = Date.now() - r.startAbs;
       setTxt(F.reqV, r.compact ? 'Compacting' : r.phase === 'streaming' ? 'Streaming' : r.phase === 'queued' ? 'In line' : 'Sent');
@@ -1372,14 +1315,15 @@
     $('#steer').hidden = mode === 'conv' && S.get(openId) && S.get(openId).ended;
   }
   function revealNewest() {
-    const last = dockEl.childElementCount ? dockEl : threadEl.lastElementChild;
+    const last = newest();
     window.scrollTo(0, 0);
     if (!last) return;
-    const band = $('#band'), comp = $('#compWrap'), gap = Deck.px('--sp-4');
+    const band = $('#band'), gap = Deck.px('--sp-4');
     const r = last.getBoundingClientRect();
-    const bandFloor = parseFloat(getComputedStyle(band).top) + band.offsetHeight;
-    const compTop = comp ? comp.getBoundingClientRect().top : window.innerHeight;
-    const dy = Math.min(r.bottom - (compTop - gap), r.top - (bandFloor + gap));
+    // the lanes stay under the bar on a wide screen and ride up with the page on a phone
+    const stays = getComputedStyle(band).position === 'sticky';
+    const roof = stays ? parseFloat(getComputedStyle(band).top) + band.offsetHeight : Deck.px('--top-clear');
+    const dy = Math.min(r.bottom - (footTop() - footGap()), r.top - (roof + gap));
     if (dy > 0) window.scrollTo(0, dy);
   }
 
@@ -1394,8 +1338,7 @@
     showView('conv');
     const s = S.get(id), p = providerOf(s);
     dockEl._k = ''; dockEl.replaceChildren();
-    renderThread(id);
-    if (!held) readLog(id).then(() => requestAnimationFrame(revealNewest));
+    openReader(id, !!held);
     buildBand(s);
     buildFacts();
     if (p) composer.setModel(p.id, modelLabel(s) || (p.models[0] ? p.models[0][0] : ''));
@@ -1408,6 +1351,7 @@
     if (!openId && !openEnded) return;
     if (openId && S.get(openId)) { S.get(openId).seenAt = Date.now(); if (S.get(openId).ended) S.delete(openId); }
     openId = null; openEnded = null; bandKey = '';
+    closeReader();
     if (location.hash) history.replaceState(history.state, '', location.pathname + location.search);
     doorDone = '';
     showView('board');
@@ -1650,7 +1594,6 @@
     if (tickN % 60 === 0) events = events.filter(e => e.t > Date.now() - 130 * MIN);
     paint();
     drawBand();
-    updateAges();
     setClock();
   }
 
@@ -1671,7 +1614,6 @@
     const s = sessionOf({ session_id: id, name: null, title: null, availability: 'stale', status: 'idle' }, new Map(), new Map());
     s.ended = true; s.name = id.slice(0, 8);
     S.set(id, s);
-    CONV.set(id, { items: [], earlier: null, error: 'No transcript', off: false });
     openSession(id, true);
   }
   addEventListener('hashchange', () => { doorDone = ''; openDoor(); });

@@ -123,19 +123,28 @@
   function paintHead() {
     const working = T.teams.reduce((n, t) => n + t.members.filter(m => m.state === 'working').length, 0);
     const members = T.teams.reduce((n, t) => n + t.members.length, 0);
-    $('#tmEyebrow').textContent = readOk === false && !readAt ? 'splice is not answering' : `${Deck.count(T.teams.length, 'team')} · ${Deck.count(members, 'member')}`;
-    const st = $('#tmStatus');
-    st.replaceChildren(Deck.lamp(readOk === false ? 'stalled' : 'working'), h('span', '', readOk === false ? 'Not answering' : `${working} working`), h('span', 'faint', '·'), h('span', '', clockNow()));
+    const say = (el, v) => { if (el.textContent !== v) el.textContent = v; };
+    say($('#tmEyebrow'), readOk === false && !readAt ? 'splice is not answering' : `${Deck.count(T.teams.length, 'team')} · ${Deck.count(members, 'member')}`);
+    const st = $('#tmStatus'), state = readOk === false ? 'stalled' : 'working';
+    // the lamp is made again only when its state changes: made on every read, it was always just coming alive
+    if (st._state !== state) { st._state = state; st.replaceChildren(Deck.lamp(state), h('span'), h('span', 'faint', '·'), h('span')); }
+    say(st.children[1], readOk === false ? 'Not answering' : `${working} working`);
+    say(st.lastElementChild, clockNow());
   }
   function draw() {
     const needs = T.teams.flatMap(t => t.members.filter(m => m.state === 'needs').map(m => [t, m]));
     paintHead();
     Deck.setNeed(needs.length, 'needs you', () => { const [t, m] = needs[0]; open(t, m); });
     const order = [...T.teams].sort((a, b) => rank(b) - rank(a));
-    $('#bands').replaceChildren(...(order.length ? order.map(band) : [h('p', 'faint', readOk === false ? 'splice is not answering' : 'No teams')]));
+    // the bands are built on every read and stand in the page only when they differ from the ones there: built in
+    // again each time, every lamp in them was always just coming alive. The wires are drawn again when the bands
+    // changed, or what they draw did: who is working, and how many messages passed between whom.
+    const placed = Deck.put($('#bands'), order.length ? order.map(band) : [h('p', 'faint', readOk === false ? 'splice is not answering' : 'No teams')]);
     more();
-    requestAnimationFrame(wiresAll);
+    const wired = JSON.stringify(order.map(t => [t.id, t.members.map(m => m.id + ':' + m.state), t.messages.map(x => x.from_slot + '>' + x.to_slot)]));
+    if (placed || wired !== drawnWires) { drawnWires = wired; requestAnimationFrame(wiresAll); }
   }
+  let drawnWires = '';
   const rank = t => t.members.some(m => m.state === 'needs') * 100 + t.members.filter(m => m.state === 'working').length;
 
   function band(t) {
@@ -217,7 +226,6 @@
 
   /* ---------- under the teams ---------- */
   function more() {
-    const box = $('#more'); box.replaceChildren();
     const loose = h('button', 'pt press'); loose.type = 'button'; loose.dataset.open = 'loose';
     const chips = h('div', 'chips');
     T.loose.slice(0, 8).forEach(s => { const c = h('span'), i = h('i'); i.style.setProperty('--pc', pc(s.head)); c.append(i, s.name.length > 22 ? s.name.slice(0, 21) + '…' : s.name); chips.append(c); });
@@ -230,7 +238,7 @@
     const week = T.ended.filter(e => Date.now() - e.endedMs < WEEK_MS).length;
     const f3 = h('span', 'pt-fig', String(week)); f3.append(' ', h('small', '', 'this week'));
     en.append(goMark(), h('span', 'pt-name', 'Ended teams'), f3, h('span', 'pt-cap', T.ended[0] ? `Last: ${T.ended[0].name}` : 'None'));
-    box.append(loose, nw, en);
+    Deck.put($('#more'), [loose, nw, en]);
   }
 
   /* ---------- the lens: grown out of what was pressed ---------- */

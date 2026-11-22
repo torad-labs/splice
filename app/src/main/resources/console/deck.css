@@ -27,8 +27,6 @@
   --floor-step-y: 6.6rem;
   --beam: rgb(198 231 225 / 0.16);
   --beam-glow: rgb(177 227 221 / 0.04);
-  --room-rate: 0.12;
-  --room-drift-max: 18rem;
   --room-persp: 900px;
   --floor-persp: 600px;
   --room-glow-r: 6rem;
@@ -47,7 +45,6 @@
   --far-4: linear-gradient(transparent, transparent);
   --grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.045 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");  --far-rate: 0.3;
   --far-overscan: 40rem;
-  --scroll-y: 0px;
   --pool-w: 22rem;
   --pool-h: 3.4rem;
   --pool-a: 0.13;
@@ -84,6 +81,15 @@
   --vermilion: rgb(226 86 59);
   --ormolu: rgb(231 192 105);
   --prussian: rgb(111 168 207);
+  /* a pigment as running text (highlighted code, an error's sentence): itself on the night ground, where each reads at
+     4:1 or more; on the day ground its day value below */
+  --verdigris-text: var(--verdigris);
+  --vermilion-text: var(--vermilion);
+  --ormolu-text: var(--ormolu);
+  --prussian-text: var(--prussian);
+  /* a changed line's ground: taken out, put in */
+  --tint-out: color-mix(in srgb, var(--vermilion) 18%, transparent);
+  --tint-in: color-mix(in srgb, var(--verdigris) 18%, transparent);
 
   /* provider colour: dot and meters only */
   --p-claude: rgb(232 132 86);
@@ -340,7 +346,8 @@
   --ask-pad: 1.4rem;
   --say-h: 2.6rem;
   --bottom-edge-h: calc(var(--comp-stack-h) + var(--edge) + var(--sp-6));
-  --phone-comp-clear: 16rem;
+  /* a phone's foot: the composer, and the switch and the waiting count that sit above it there (max-width: 48rem) */
+  --phone-comp-clear: calc(var(--edge) + var(--comp-stack-h) + var(--gap) + var(--bar-h) + var(--gap));
   --phone-switch-w: 10rem;
 
   --z-field: 0;
@@ -373,6 +380,12 @@
   --ink: rgb(14 16 18 / 0.94);
   --ink-quiet: rgb(14 16 18 / 0.68);
   --ink-faint: rgb(14 16 18 / 0.52);
+  /* on the day ground a pigment reads at under 2:1 as text (ormolu 1.3:1), so each is mixed toward the ink until it
+     reads at 5:1 on the ground code stands on (Nov 21, 2026, computed as the browser mixes them) */
+  --verdigris-text: color-mix(in oklab, var(--verdigris) 50%, var(--ink));
+  --vermilion-text: color-mix(in oklab, var(--vermilion) 60%, var(--ink));
+  --ormolu-text: color-mix(in oklab, var(--ormolu) 42%, var(--ink));
+  --prussian-text: color-mix(in oklab, var(--prussian) 50%, var(--ink));
   --mark-hour: rgb(0 0 0 / 0.06);
   --mark-day: rgb(0 0 0 / 0.14);
   --mark-lane: rgb(0 0 0 / 0.07);
@@ -405,7 +418,7 @@ button { font: inherit; color: inherit; }
 /* ============ the field: the deck itself, full bleed, scrolls under the glass ============ */
 .deck-light { position: fixed; inset: 0; z-index: var(--z-field); pointer-events: none; background: var(--grain), var(--stage-light), var(--far-light-a), var(--far-light-b), var(--edge-dark); }
 /* the far plane: out-of-focus lights well behind the deck, drifting slower than the page when it scrolls */
-.deck-far { position: fixed; top: 0; left: 0; right: 0; bottom: calc(-1 * var(--far-overscan)); z-index: var(--z-field); pointer-events: none; background: var(--far-1), var(--far-2), var(--far-3), var(--far-4); transform: translate3d(0, max(calc(var(--scroll-y) * var(--far-rate)), calc(-1 * var(--far-overscan))), 0); will-change: transform; }
+.deck-far { position: fixed; top: 0; left: 0; right: 0; bottom: calc(-1 * var(--far-overscan)); z-index: var(--z-field); pointer-events: none; background: var(--far-1), var(--far-2), var(--far-3), var(--far-4); transform: translateZ(0); will-change: transform; }
 .field { position: relative; z-index: var(--z-field); min-height: var(--viewport-h); padding: var(--top-clear) 0 var(--comp-clear); }
 /* the centre column sits between the rails; the time axis lives inside it */
 .centre { position: relative; margin: 0 calc(var(--edge) + var(--rail-w) + var(--gap)); }
@@ -416,7 +429,10 @@ button { font: inherit; color: inherit; }
 /* ============ lanes: one per account, tall ============ */
 .lamp { flex: none; width: var(--lamp); height: var(--lamp); border-radius: 50%; background: var(--c); }
 .lamp.ring { background: transparent; box-shadow: inset 0 0 0 var(--lamp-ring) var(--c); }
-.lamp.live { animation: pulse var(--pulse) ease-in-out infinite; }
+/* a lamp that has just come alive pulses twice and then rests, lit. It pulsed for as long as it was alive, and one
+   endless animation keeps a browser drawing the whole page on every frame: on a 3840 px screen five small lamps held a
+   whole core, with nobody touching the page (Nov 21, 2026). A page at rest draws nothing. */
+.lamp.live { animation: pulse var(--pulse) ease-in-out 2; }
 @keyframes pulse { 50% { opacity: var(--pulse-min); } }
 .meter { position: relative; width: var(--meter-w); height: var(--meter-h); border-radius: var(--meter-h); background: var(--track); overflow: hidden; }
 .meter i { position: absolute; inset: 0 auto 0 0; width: calc(var(--u) * 100%); background: var(--pc, var(--p-claude)); border-radius: inherit; transition: width var(--dur) var(--ease); }
@@ -442,11 +458,15 @@ a.btn { text-decoration: none; }
   isolation: isolate;
   border: 0;
   color: var(--ink);
-  background: radial-gradient(var(--tint-shape),
-    rgb(from var(--tint-core) r g b / calc(var(--core-a) * var(--mat))) 0,
-    rgb(from var(--tint-core) r g b / calc(var(--core-a) * var(--tint-mid-k) * var(--mat))) var(--tint-mid-stop),
-    rgb(from var(--tint-rim) r g b / calc(var(--tint-rim-a) * var(--mat))) 100%);
-  backdrop-filter: var(--lens, blur(calc(var(--fallback-frost) * var(--mat))) saturate(var(--fallback-sat)));
+  /* A panel is solid: it filters nothing behind it. It was glass, blurring and bending the page under it, and that
+     filter is drawn again on every frame anything near it changes. Measured Nov 21, 2026 on a 3840 px screen, with a
+     real 100-message session open: a keystroke reached the screen in 291 ms with the glass, 198 ms with the blur alone,
+     32 ms with neither, and the page at rest held a quarter of a core against none. The person who uses this console
+     found it too slow to use. The solid panel is the one the kit already drew for people who ask for less
+     transparency; its rim, its shadow and its light are unchanged. */
+  background: var(--opaque-glass);
+  /* a panel that opens comes in with its --mat, as the glass's tint did */
+  opacity: var(--mat);
   transition: --mat var(--dur) var(--ease);
 }
 .glass::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none; box-shadow: 0 var(--glass-shadow-y) var(--glass-shadow-blur) rgb(from var(--glass-shadow) r g b / calc(alpha * var(--mat))); }
@@ -476,7 +496,7 @@ a.btn { text-decoration: none; }
 .switch button { position: relative; border: 0; background: transparent; border-radius: var(--r-thumb); color: var(--ink-quiet); font-size: var(--fs-nav); font-weight: var(--w-med); cursor: pointer; overflow: hidden; transition: color var(--dur-fast); }
 .switch button[aria-checked="true"] { color: var(--ink); }
 /* soft scroll edge under the bars: a fade and a slight blur, never a band */
-.scroll-edge { position: fixed; z-index: var(--z-edge); left: 0; right: 0; top: 0; height: calc(var(--top-clear) + var(--edge-fade-h)); pointer-events: none; backdrop-filter: blur(var(--edge-fade-blur)); background: linear-gradient(var(--ground), rgb(from var(--ground) r g b / var(--edge-fade-a)) var(--edge-fade-mid), transparent); mask-image: linear-gradient(black var(--edge-mask-stop), transparent); }
+.scroll-edge { position: fixed; z-index: var(--z-edge); left: 0; right: 0; top: 0; height: calc(var(--top-clear) + var(--edge-fade-h)); pointer-events: none; background: linear-gradient(var(--ground), rgb(from var(--ground) r g b / var(--edge-fade-a)) var(--edge-fade-mid), transparent); mask-image: linear-gradient(black var(--edge-mask-stop), transparent); }
 .scroll-edge.bottom { top: auto; bottom: 0; height: var(--bottom-edge-h); background: linear-gradient(to top, var(--ground), rgb(from var(--ground) r g b / var(--edge-fade-a)) var(--edge-fade-mid), transparent); mask-image: linear-gradient(to top, black var(--edge-mask-stop), transparent); }
 /* rails: one glass each, sections divided by space and hairlines */
 .rail { z-index: var(--z-rail); top: calc(var(--edge) + var(--bar-h) + var(--gap)); bottom: var(--edge); width: var(--rail-w); border-radius: var(--r-rail); padding: var(--rail-pad); overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; gap: var(--sp-5);
@@ -488,6 +508,17 @@ a.btn { text-decoration: none; }
 .sec h2 { margin: 0; }
 .big { font-family: var(--font-data); font-size: var(--fs-big); line-height: 1; }
 .lede { font-size: var(--fs-name); font-weight: var(--w-med); line-height: var(--lh-tight); display: flex; align-items: center; gap: var(--sp-2); }
+/* the session reader (reply-view/) in the kit's dress, night and day: its --rv-* properties from the kit's tokens, set
+   once. Every page that shows a conversation puts this class on the element the reader is mounted in. Code is coloured
+   with the kit's pigments and its inks, never a provider's colour; a comment is a sentence someone reads, so it takes
+   the quiet ink (the faint one reads at 3.6:1 on the day ground) and is told apart by its slant. */
+.reader {
+  --rv-text: var(--ink); --rv-muted: var(--ink-quiet); --rv-border: var(--hairline); --rv-bubble: var(--fill); --rv-hover: var(--fill-hover);
+  --rv-code-bg: var(--fill); --rv-code-text: var(--ink); --rv-link: var(--ink); --rv-focus: var(--focus-ring); --rv-error: var(--vermilion-text);
+  --rv-code-keyword: var(--prussian-text); --rv-code-string: var(--verdigris-text); --rv-code-number: var(--ormolu-text);
+  --rv-code-comment: var(--ink-quiet); --rv-code-title: var(--ink); --rv-code-type: var(--ormolu-text); --rv-code-attr: var(--verdigris-text);
+  --rv-diff-del: var(--tint-out); --rv-diff-add: var(--tint-in); --rv-mono: var(--font-data); --rv-radius: var(--r-menu);
+}
 .quiet { color: var(--ink-quiet); }
 .faint { color: var(--ink-faint); }
 .small { font-size: var(--fs-small); }
@@ -558,8 +589,8 @@ a.btn { text-decoration: none; }
 .cbtn.icon { width: var(--cbtn-h); padding: 0; justify-content: center; }
 .cbtn .pdot { width: var(--pdot); height: var(--pdot); border-radius: 50%; background: var(--pc); flex: none; }
 .cbtn .chev { width: var(--chev); height: var(--chev); fill: none; stroke: currentColor; stroke-width: var(--ico-stroke); opacity: var(--chev-op); }
-#micBtn[aria-pressed="true"] { color: var(--vermilion); }
-#micBtn[aria-pressed="true"] .ico { animation: pulse var(--pulse) ease-in-out infinite; }
+[data-comp="mic"][aria-pressed="true"] { color: var(--vermilion); }
+[data-comp="mic"][aria-pressed="true"] .ico { animation: pulse var(--pulse) ease-in-out infinite; }
 .glyph { width: var(--glyph-w); height: var(--glyph-h); flex: none; fill: currentColor; }
 .glyph .off { opacity: var(--glyph-off); }
 .send { flex: none; position: relative; overflow: hidden; display: grid; place-items: center; width: var(--send-d); height: var(--send-d); margin-left: var(--sp-1); border: 0; border-radius: 50%; background: var(--primary-bg); color: var(--primary-ink); cursor: pointer; transition: transform var(--dur-fast) var(--ease), background var(--dur-fast); }
@@ -616,11 +647,9 @@ a.btn { text-decoration: none; }
 .sg-row .key { font-family: var(--font-data); color: var(--ink-quiet); }
 /* fallbacks: opaque surfaces when transparency is reduced or contrast is raised */
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
-  .glass { background: var(--opaque-glass); backdrop-filter: none; }
-  .scroll-edge { backdrop-filter: none; background: var(--ground); }
+  .scroll-edge { background: var(--ground); }
 }
 @media (prefers-reduced-motion: reduce) {
-  :root { --far-rate: 0; }
   .lens, .menu, .lane, .meter i, .bars i { transition: none; }
   .lamp.live { animation: none; }
 }
@@ -641,7 +670,8 @@ a.btn { text-decoration: none; }
   .need-float { top: auto; right: auto; left: var(--edge); bottom: calc(var(--edge) + var(--comp-stack-h) + var(--gap)); }
   .figs, .scale span.zone-label { display: none; }
   .lens { width: calc(100% - var(--side-clear) - var(--side-clear)); }
-  #modeBtn .label, #micBtn, .comp-context .keys { display: none; }
+  /* a phone: the composer keeps what it needs to send — the mode is its shield alone, dictation and the key hints go */
+  [data-comp="mode"] .label, [data-comp="mic"], .comp-context .keys { display: none; }
   .picker { width: calc(100% - var(--edge) - var(--edge)); grid-template-columns: var(--pk-rail-w) 1fr; }
   .pk-effort { display: none; }
 }
@@ -746,13 +776,12 @@ body.no-comp .scroll-edge.bottom { height: var(--nocomp-edge-h); }
 
 /* the room the deck floats in: lit, with orbits and a floor in perspective, so nothing sits on a flat ground */
 .deck-room { position: fixed; inset: 0; z-index: var(--z-field); overflow: hidden; pointer-events: none; background: var(--room-wash-a), var(--room-wash-b), var(--room-wash-c), var(--room-base); }
-.deck-room i { position: absolute; display: block; --drift: max(calc(var(--scroll-y) * var(--room-rate)), calc(-1 * var(--room-drift-max))); }
+.deck-room i { position: absolute; display: block; }
 .room-orbit { border: var(--hair) solid var(--orbit-a); border-radius: 50%; box-shadow: 0 var(--sp-5) var(--room-glow-r) var(--orbit-glow), inset 0 var(--hair) var(--hair) var(--orbit-glow); }
-.room-orbit.a { width: var(--orbit-a-w); height: var(--orbit-a-h); left: var(--orbit-a-x); top: var(--orbit-a-y); transform: perspective(var(--room-persp)) rotateX(var(--orbit-a-rx)) rotateZ(var(--orbit-a-rz)) translateY(var(--drift)); }
-.room-orbit.b { width: var(--orbit-b-w); height: var(--orbit-b-h); left: var(--orbit-b-x); top: var(--orbit-b-y); border-color: var(--orbit-b); transform: perspective(var(--room-persp)) rotateX(var(--orbit-b-rx)) rotateZ(var(--orbit-b-rz)) translateY(var(--drift)); }
+.room-orbit.a { width: var(--orbit-a-w); height: var(--orbit-a-h); left: var(--orbit-a-x); top: var(--orbit-a-y); transform: perspective(var(--room-persp)) rotateX(var(--orbit-a-rx)) rotateZ(var(--orbit-a-rz)); }
+.room-orbit.b { width: var(--orbit-b-w); height: var(--orbit-b-h); left: var(--orbit-b-x); top: var(--orbit-b-y); border-color: var(--orbit-b); transform: perspective(var(--room-persp)) rotateX(var(--orbit-b-rx)) rotateZ(var(--orbit-b-rz)); }
 .room-floor { inset: var(--floor-inset); background: repeating-linear-gradient(var(--floor-dir-x), transparent 0 calc(var(--floor-step-x) - var(--hair)), var(--floor-line) calc(var(--floor-step-x) - var(--hair)) var(--floor-step-x)), repeating-linear-gradient(var(--floor-dir-y), transparent 0 calc(var(--floor-step-y) - var(--hair)), var(--floor-line) calc(var(--floor-step-y) - var(--hair)) var(--floor-step-y)); transform: perspective(var(--floor-persp)) rotateX(var(--floor-rx)); mask-image: radial-gradient(ellipse, black, transparent var(--floor-mask)); }
-.room-beam { width: var(--beam-w); height: var(--hair); left: var(--beam-x); top: var(--beam-y); background: var(--beam); transform: rotate(var(--beam-rz)) translateY(var(--drift)); box-shadow: 0 var(--sp-5) var(--room-glow-r) var(--beam-spread) var(--beam-glow); }
-@media (prefers-reduced-motion: reduce) { .deck-room i { --drift: 0; } }
+.room-beam { width: var(--beam-w); height: var(--hair); left: var(--beam-x); top: var(--beam-y); background: var(--beam); transform: rotate(var(--beam-rz)); box-shadow: 0 var(--sp-5) var(--room-glow-r) var(--beam-spread) var(--beam-glow); }
 .lens.xwide { width: var(--lens-w-xwide); }
 /* a long menu scrolls instead of running off the screen */
 .menu.is-long { max-height: var(--menu-max-h); overflow-y: auto; overscroll-behavior: contain; }

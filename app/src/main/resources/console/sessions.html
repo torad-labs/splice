@@ -8,6 +8,7 @@
 <link rel="icon" href="brand/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="brand/splice-app-256.png">
 <link rel="stylesheet" href="deck.css">
+<link rel="stylesheet" href="reply-view/reply-view.css">
 <link rel="stylesheet" href="deck-sessions.css">
 </head>
 <body class="no-rail-l">
@@ -46,7 +47,10 @@
         <input type="text" id="redirIn" placeholder="Stop and tell it…" aria-label="Stop and tell this session what to do">
         <button class="btn quiet press" type="submit">Send</button>
       </form>
-      <ol class="cv-thread" id="thread"></ol>
+      <div class="cv-thread" id="thread">
+        <div class="cv-note" id="cvNote"></div>
+        <div class="cv-reader reader" id="cvReader"></div>
+      </div>
       <div class="cv-end">
         <div class="cv-dock" id="dock"></div>
       </div>

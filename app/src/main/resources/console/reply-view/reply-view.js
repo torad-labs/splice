@@ -1019,7 +1019,9 @@ export function mount(container, { history = [], live = [] } = {}) {
 
 // ---------- vendored ----------
 // marked v18.2.1, lib/marked.umd.js from the npm package marked@18.2.1 (https://github.com/markedjs/marked), MIT.
-// Pasted whole inside a function scope, so it assigns no global: the UMD wrapper sees `exports` and `module` here.
+// Pasted inside a function scope, so it assigns no global: the UMD wrapper sees `exports` and `module` here. Two of its
+// patterns are changed (README.md, "Vendored libraries"): an HTML comment also ends at `--!>`, and a link label repeats
+// at most 999 times.
 const marked = (function () {
   var exports = {};
   var module = { exports: exports };
@@ -1117,7 +1119,8 @@ if(__exports != exports)module.exports = exports;return module.exports}));
 })();
 
 // highlight.js v11.12.0, highlight.min.js (the common-languages build) from the npm package @highlightjs/cdn-assets@11.12.0
-// (https://github.com/highlightjs/highlight.js), BSD-3-Clause. Pasted whole inside a function scope, so `hljs` stays local.
+// (https://github.com/highlightjs/highlight.js), BSD-3-Clause. Pasted inside a function scope, so `hljs` stays local, with one
+// pattern changed (README.md, "Vendored libraries"): an XML comment also ends at `--!>`.
 const hljs = (function () {
 /*!
   Highlight.js v11.12.0 (git: f7f7d3803b)

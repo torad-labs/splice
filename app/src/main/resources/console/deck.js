@@ -49,7 +49,6 @@ const DECK_PAGES = [
       + '<div class="comp-context"></div></div>', 'after', last);
   }
   // every glass on the page is registered once the page's own script has drawn it
-  document.addEventListener('DOMContentLoaded', () => DeckLens.scan());
 })();
 
 window.Deck = (() => {
@@ -124,7 +123,6 @@ window.Deck = (() => {
     if (origin) { el.style.setProperty('--ox', origin[0] + 'px'); el.style.setProperty('--oy', origin[1] + 'px'); }
     el.classList.add('is-entering', 'no-t');
     el.style.setProperty('--mat', 0);
-    DeckLens.add(el); DeckLens.redraw(el);
     DeckLens.materialise(el, false, 0);
     void el.offsetWidth;
     el.classList.remove('no-t');
@@ -229,21 +227,31 @@ window.Deck = (() => {
   }
   favicon();
   $$('[data-theme-set]').forEach(b => b.addEventListener('click', () => setTheme(b.dataset.themeSet)));
-  let scrollFrame = 0;
-  addEventListener('scroll', () => { if (scrollFrame) return; scrollFrame = requestAnimationFrame(() => { scrollFrame = 0; document.documentElement.style.setProperty('--scroll-y', (-scrollY) + 'px'); }); }, { passive: true });
+  // The room behind the page stays where it is when the page scrolls. It drifted: each scroll frame wrote the scroll
+  // position on the root element, which restyles every element of the page, and moved the room's layers under every
+  // panel. On a 3840 px screen a scroll step over an open session took 169 ms with the drift and 84 ms without.
   /** set the floating alert next to the switch: n things need him, and what pressing it does */
   function setNeed(n, word, onPress) {
     const b = $('#needBtn'); if (!b) return;
     // "need you" agrees with its count, whichever form a page passes: 1 needs you, 2 need you
     const said = !word || /^needs? you$/.test(word) ? (n === 1 ? 'needs you' : 'need you') : word;
-    b.hidden = !n; b.querySelector('span:last-child').textContent = said.includes('{n}') ? said.replace('{n}', n) : n + ' ' + said;
+    const text = said.includes('{n}') ? said.replace('{n}', n) : n + ' ' + said;
     b.onclick = () => { const on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', on); onPress && onPress(on); };
+    // a page sets it on every read: told what it already says, it writes nothing and measures nothing
+    if (b._said === text && b.hidden === !n) return;
+    b._said = text; b.hidden = !n; b.querySelector('span:last-child').textContent = text;
     fitNeed();
   }
-  /** the alert never reaches into the nav: it takes the room between the nav and the switch, and ellipsises past it */
+  /** the alert never reaches into the nav or the switch: beside the nav it takes the room between the two, and on a
+   *  phone, where it sits above the composer, the room from its own left to the switch; past that it ellipsises
+   *  (Nov 21, 2026: the phone's room was measured from the nav, which is on another row there, so it came to nothing
+   *  and the alert showed its lamp without its words) */
   function fitNeed() {
     const b = $('#needBtn'), nav = $('.nav'), sw = $('.switch'); if (!b || !nav || !sw) return;
-    b.style.maxWidth = Math.max(0, sw.getBoundingClientRect().left - nav.getBoundingClientRect().right - 2 * px('--gap')) + 'px';
+    b.style.maxWidth = '';
+    const br = b.getBoundingClientRect(), nr = nav.getBoundingClientRect(), sr = sw.getBoundingClientRect();
+    const from = br.top < nr.bottom && br.bottom > nr.top ? nr.right + px('--gap') : br.left;
+    b.style.maxWidth = Math.max(0, sr.left - px('--gap') - from) + 'px';
   }
   addEventListener('resize', fitNeed);
 
@@ -314,28 +322,58 @@ window.Deck = (() => {
     draw(cur);
     el.classList.add('is-drawing');
     requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove('is-drawing')));
+    // what the spark shows or is easing toward. A page hands it its values on every tick, changed or not; handed
+    // the same ones it draws nothing. (Nov 21, 2026: every call eased for two beats whatever it was handed, so a
+    // page that ticks each second never stopped drawing, and the browser's compositor ran flat out behind it.)
+    let aim = values.join();
     return {
       el,
       update(next) {
+        const key = next.join();
+        if (key === aim) return;
+        aim = key;
         const from = cur.slice(), t0 = performance.now(), ms = px('--dur') * 2;
         while (from.length < next.length) from.unshift(from[0] || 0);
         while (from.length > next.length) from.shift();
         // a frame can be handed a timestamp from before the count began (a busy page): that reads as its start, never a step back
-    const step = now => { const p = Math.max(0, Math.min(1, (now - t0) / ms)), e = 1 - (1 - p) ** 3; draw(next.map((v, i) => from[i] + (v - from[i]) * e)); if (p < 1) requestAnimationFrame(step); else cur = next.slice(); };
+    // an ease overtaken by newer values stops where it is: the newer one starts from the values it had reached
+    const step = now => { if (aim !== key) return; const p = Math.max(0, Math.min(1, (now - t0) / ms)), e = 1 - (1 - p) ** 3; cur = next.map((v, i) => from[i] + (v - from[i]) * e); draw(cur); if (p < 1) requestAnimationFrame(step); else cur = next.slice(); };
         if (matchMedia('(prefers-reduced-motion: reduce)').matches) { cur = next.slice(); draw(cur); } else requestAnimationFrame(step);
       },
     };
   }
+  /** puts [nodes] in [slot] unless they are the markup it was last given: a page that builds what it shows again on
+   *  every read changes the screen only when the read changed it, and a lamp it holds is not made again to pulse
+   *  again. True when it replaced what stood there. What a page adds to the nodes afterwards is not compared. */
+  function put(slot, nodes) {
+    const key = nodes.map(n => n.outerHTML || n.textContent || '').join('\n');
+    if (slot._put === key) return false;
+    slot._put = key; slot.replaceChildren(...nodes);
+    return true;
+  }
+  /** what a strip of these segments shows, as one string: two strips with the same key look the same */
+  const stripKey = segments => segments.map(s => (s.state || '') + ':' + (s.c || '') + ':' + Number(s.share).toFixed(4)).join('|');
+  /** puts a strip of [segments] in [slot] unless the strip standing there shows the same: a slot repainted on a timer
+   *  is rebuilt only when its segments changed */
+  function stripInto(slot, segments) {
+    const now = slot.firstElementChild;
+    if (now && slot.childElementCount === 1 && now._key === stripKey(segments)) return;
+    slot.replaceChildren(strip(segments));
+  }
   /** a strip of states over a window: segments [{ state, share }] (shares sum to 1), drawn left to right */
   function strip(segments) {
     const el = h('div', 'strip'); el.setAttribute('aria-hidden', 'true');
+    el._key = stripKey(segments);
     segments.forEach(s => { const i = h('i'); i.style.setProperty('--share', s.share); i.style.setProperty('--c', s.c || (STATES[s.state] || {}).c || 'var(--ink-faint)'); el.append(i); });
     return el;
   }
   /** a number that rolls to its new value instead of jumping */
   function roll(el, to, format = fmt) {
-    const from = parseFloat(el.dataset.v ?? to); el.dataset.v = to;
-    if (from === to || matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = format(to); return; }
+    const from = parseFloat(el.dataset.v ?? to), text = format(to);
+    // rolled to the value it already shows, it writes nothing: a page rolls its numbers on every tick
+    if (from === to && el._rolled === text) return;
+    el.dataset.v = to; el._rolled = text;
+    if (from === to || matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = text; return; }
     const t0 = performance.now(), ms = px('--dur') * 2;
     // a frame can be handed a timestamp from before the count began (a busy page): that reads as its start, never a step back
     const step = now => { const p = Math.max(0, Math.min(1, (now - t0) / ms)), e = 1 - (1 - p) ** 3; el.textContent = format(from + (to - from) * e); if (p < 1) requestAnimationFrame(step); };
@@ -539,6 +577,6 @@ window.Deck = (() => {
   }
 
   const PAGES = DECK_PAGES.map(([file, name]) => ({ file: file + '.html', name }));
-  const api = { PAGES, setTheme, $, $$, h, fmt, count, clock, money, pct, css, rem, px, ago, STATES, lamp, ICON, iconBtn, show, hide, glass, layer, openMenu, closeMenu, inspector, setNeed, answer, spark, strip, roll, meter, choice, notch, saveState, setting, signRows };
+  const api = { PAGES, setTheme, $, $$, h, fmt, count, clock, money, pct, css, rem, px, ago, STATES, lamp, ICON, iconBtn, show, hide, glass, layer, openMenu, closeMenu, inspector, setNeed, answer, spark, strip, stripInto, put, roll, meter, choice, notch, saveState, setting, signRows };
   return api;
 })();

@@ -64,5 +64,17 @@
 .rail-r .acct[data-id] { align-items: center; min-height: var(--btn-h); border-radius: var(--r-inner); padding: 0 var(--sp-2); margin: 0 calc(var(--sp-2) * -1); cursor: pointer; }
 .rail-r .acct[data-id]:hover, .rail-r .acct[data-id].is-open { background: var(--fill); }
 .rail-add { justify-self: start; margin-left: calc(var(--sp-4) * -1); }
+/* a Claude login's limit resets in its glass: a kind per row with how many are left and its one act at the row's end,
+   why one cannot be used now under its name, the question a spend asks on a line of its own with its two answers
+   under it, and what splice answered a spend */
+.lens .resets { display: grid; grid-template-columns: max-content minmax(0, 1fr) auto; column-gap: var(--sp-4); row-gap: var(--sp-2); }
+.lens .resets > * { grid-column: 1 / -1; }
+/* the kinds share the part's three columns, so every count starts on one line and every act ends on one */
+.lens .rs { display: grid; grid-template-columns: subgrid; align-items: center; row-gap: var(--sp-1); font-size: var(--fs-small); }
+.lens .rs-left { font-family: var(--font-data); color: var(--ink-quiet); }
+.lens .rs-why { grid-column: 1 / -1; font-size: var(--fs-small); color: var(--ink-faint); }
+.lens .rs .lr-ask { flex-wrap: wrap; justify-content: flex-end; }
+.lens .rs .lr-ask span { flex: 1 1 100%; }
+.lens .rs-said { font-size: var(--fs-small); color: var(--verdigris); }
 /* the glass never runs under the composer: a tall one scrolls inside itself */
 .lens[data-id] { max-height: var(--lens-room); overflow-y: auto; overscroll-behavior: contain; }

@@ -205,3 +205,20 @@ test("the need float counts the sessions waiting on the person, and pressing it 
     await page.close();
   }
 }, 30_000);
+
+test("on a phone the need float keeps its words, clear of the switch beside it", async () => {
+  waiting = true;
+  const page = await open(390, 844);
+  try {
+    const words = page.locator("#needBtn span").last();
+    await expect(words).toHaveText("1 needs you");
+    const box = async (sel: string) => (await page.locator(sel).boundingBox())!;
+    await expect.poll(async () => (await words.boundingBox())!.width).toBeGreaterThan(40);
+    const need = await box("#needBtn"), sw = await box(".switch");
+    bunExpect(need.x + need.width).toBeLessThanOrEqual(sw.x);
+    bunExpect(await words.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  } finally {
+    waiting = false;
+    await page.close();
+  }
+}, 30_000);

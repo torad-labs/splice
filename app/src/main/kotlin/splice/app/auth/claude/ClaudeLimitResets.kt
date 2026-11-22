@@ -59,6 +59,11 @@ private const val CLAUDE_RESET_SPEND_PATH = "/reset_rate_limits"
 // why: the program name Claude Code sends with every spend, the same word that names the block in the usage reply.
 private const val CLAUDE_RESET_PROGRAM = "cedar_ember"
 
+// why: Anthropic offers a login's resets to Claude Code in a terminal. A read that names another client, as Claude
+// Desktop's sessions do (`local-agent`), is answered "surface" with no grants, whatever the login holds (Nov 21, 2026:
+// every login read "no limit resets now (surface)" once Desktop's sessions were the newest client splice had seen).
+private const val TERMINAL_CLIENT = "(external, cli)"
+
 // why: Claude Code gives a spend 25 seconds before it calls the answer unconfirmed.
 private const val CLAUDE_RESET_TIMEOUT_MS = 25_000L
 
@@ -279,8 +284,11 @@ internal class ClaudeLimitResets(
         request.header("Authorization", "Bearer $token")
         if (beta) request.header("anthropic-beta", CLAUDE_OAUTH_BETA)
         request.header("Accept", "application/json")
-        userAgent.latest()?.let { request.header("User-Agent", it) }
+        userAgent.latest()?.let { request.header("User-Agent", terminal(it)) }
     }
+
+    /** [agent] with Claude Code's terminal named as its client: `claude-cli/2.1.328 (external, cli)`. */
+    private fun terminal(agent: String): String = "${agent.substringBefore('(').trim()} $TERMINAL_CLIENT"
 
     private data class ResetClaim(val status: HttpStatusCode, val body: String)
 }

@@ -15,9 +15,7 @@
   --read-w: 66rem;
   --q-w: 34rem;
   --req-h: 0.6rem;
-  --res-max: 18rem;
   --call-pad: 1.2rem;
-  --tog-min: 2.4rem;
   --ghost-w: 27rem;
   --ghost-a: 0.94;
   --rename-w: 100%;
@@ -108,6 +106,15 @@ body.is-dragging { cursor: grabbing; user-select: none; }
 .bd-lane.is-cur .bd-nm { color: var(--ink); }
 .bd-lane:not(.is-cur) .bd-nm { color: var(--ink-quiet); }
 .bd-cv { display: block; width: 100%; height: var(--band-lane-h); }
+/* a phone: the lanes ride up with the page (held under the bar they left the conversation a slit of the screen), each
+   name takes less of its row, and the band's two labels keep to one line */
+@media (max-width: 48rem) {
+  :root { --band-label-w: 9rem; }
+  .bd { position: static; }
+  .bd-head { padding-left: 0; }
+  .bd-head > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bd-head .eyebrow { flex: none; }
+}
 
 .cv-steer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); padding: var(--sp-2) 0 var(--sp-3); }
 .cv-redir { display: flex; gap: var(--sp-2); max-width: var(--read-w); padding-bottom: var(--sp-3); }
@@ -115,31 +122,25 @@ body.is-dragging { cursor: grabbing; user-select: none; }
 .cv-redir input::placeholder { color: var(--ink-faint); }
 .cv-redir input:focus-visible { outline: var(--focus-w) solid var(--focus-ring); outline-offset: var(--focus-w); }
 
-.cv-thread { list-style: none; display: grid; gap: var(--sp-5); max-width: var(--read-w); margin: 0; padding: var(--sp-4) 0 0; }
-.cv-msg { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-1); min-width: 0; }
-.cv-say { margin: 0; font-size: var(--fs-body); line-height: var(--lh); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); }
-.cv-msg.agent .cv-say { color: var(--ink-quiet); }
-.cv-msg.peer .cv-say { color: var(--ink-quiet); }
+/* the conversation: the shared session reader's (reply-view/), in the kit's dress (its .reader class), night and day,
+   and given the reading width. The page's own parts stand around it: the line that says
+   it is being read or why there is none, the door to earlier messages, and the mark of what is new. */
+.cv-thread { display: grid; gap: var(--sp-4); max-width: var(--read-w); padding: var(--sp-4) 0 0; }
+.cv-note { display: grid; gap: var(--sp-2); justify-items: start; }
+.cv-note:empty { display: none; }
+.cv-note .cv-mark { justify-self: stretch; }
+.cv-reader { min-width: 0; font-size: var(--fs-body); line-height: var(--lh); }
 .cv-mark { display: flex; align-items: center; gap: var(--sp-3); }
 .cv-mark .rule { flex: 1; height: var(--hair); background: var(--hairline); }
 .cv-mark .mk-t { font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-faint); white-space: nowrap; }
+.cv-mark.is-new { margin: var(--sp-3) 0; }
 .cv-mark.is-new .mk-t { color: var(--prussian); }
 .cv-mark.is-new .rule { background: var(--prussian); }
 
-.cv-run { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-1); justify-items: start; min-width: 0; }
-.cv-run-sum { display: flex; align-items: center; gap: var(--sp-3); max-width: 100%; min-height: var(--btn-h); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-btn); background: transparent; color: var(--ink-quiet); font: inherit; font-size: var(--fs-small); text-align: left; cursor: pointer; }
-.cv-run-sum:hover, .cv-run-sum[aria-expanded="true"] { background: var(--fill); color: var(--ink); }
-.cv-run-sum .sum-t { overflow-wrap: anywhere; min-width: 0; }
-.cv-run-sum .sum-x { flex: none; font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-faint); }
-.cv-calls { list-style: none; margin: 0 0 0 var(--sp-3); padding: var(--sp-1) 0 var(--sp-1) var(--sp-4); display: grid; gap: var(--sp-3); border-left: var(--hair) solid var(--hairline); max-width: 100%; }
-.cv-call { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-1); justify-items: start; min-width: 0; max-width: 100%; }
-.cv-call-hd { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); min-width: 0; max-width: 100%; }
-.cv-verb { font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-faint); text-transform: uppercase; letter-spacing: var(--track-eyebrow); }
-.cv-what { font-size: var(--fs-body); color: var(--ink); overflow-wrap: anywhere; min-width: 0; }
-.cv-tools { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
-.cv-tog { min-height: var(--tog-min); padding: 0 var(--sp-3); font-size: var(--fs-micro); }
-.cv-pre { margin: 0; max-width: 100%; max-height: var(--res-max); overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-data); font-size: var(--fs-small); color: var(--ink-quiet); }
-.cv-pre.is-cmd { color: var(--ink); }
+.cv-door { display: flex; align-items: center; gap: var(--sp-3); max-width: 100%; min-height: var(--btn-h); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-btn); background: transparent; color: var(--ink-quiet); font: inherit; font-size: var(--fs-small); text-align: left; cursor: pointer; }
+.cv-door:hover { background: var(--fill); color: var(--ink); }
+.cv-door .sum-t { overflow-wrap: anywhere; min-width: 0; }
+.cv-door .sum-x { flex: none; font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-faint); }
 .cv-end { max-width: var(--read-w); padding-top: var(--sp-4); padding-bottom: var(--comp-clear); }
 .cv-dock { display: grid; gap: var(--sp-2); }
 .cv-dock:empty { display: none; }

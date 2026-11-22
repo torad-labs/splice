@@ -31,6 +31,7 @@ export interface Seen {
 }
 
 const ASSET = /^((fonts|brand)\/)?[a-z0-9][a-z0-9-]*\.(html|css|js|woff2|svg|png)$/;
+const READER = /^reply-view\/[a-z0-9][a-z0-9-]*\.(html|css|js)$/;
 const TYPES: Record<string, string> = {
   html: "text/html; charset=utf-8", css: "text/css", js: "text/javascript", woff2: "font/woff2", svg: "image/svg+xml", png: "image/png",
 };
@@ -68,7 +69,7 @@ export function daemon(answers: Record<string, Answer> = {}): Daemon {
       }
       const name = path.slice(1);
       const file = join(CONSOLE, name);
-      if (!ASSET.test(name) || !existsSync(file)) return new Response("", { status: 404 });
+      if (!(ASSET.test(name) || READER.test(name)) || !existsSync(file)) return new Response("", { status: 404 });
       return new Response(readFileSync(file), { headers: { "content-type": TYPES[name.split(".").pop()!]! } });
     },
   });

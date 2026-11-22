@@ -3,7 +3,7 @@
 // does not need this file; it feeds the view (reply-view.js) itself.
 //
 //   import { connect } from "/reply-view/connect.js";
-//   const conn = connect(view, { session, onLocked, onEarlier });   // view: anything with addHistory and addLive
+//   const conn = connect(view, { session, onLocked, onEarlier, onState });   // view: anything with addHistory and addLive
 //   await conn.earlier();                                           // the page before the oldest one handed on
 //   conn.close();                                                   // stops every read
 //
@@ -23,7 +23,7 @@ const FEED_MAX_MS = 30_000;
 /** A splice that refuses the feed (a 404, a 5xx) is asked again after this. */
 const FEED_REFUSED_MS = 30_000;
 
-export function connect(view, { session, onLocked, onEarlier } = {}) {
+export function connect(view, { session, onLocked, onEarlier, onState } = {}) {
   const base = `/api/sessions/${encodeURIComponent(session)}`;
   const aborts = new Set();
   const timers = new Set();
@@ -31,6 +31,14 @@ export function connect(view, { session, onLocked, onEarlier } = {}) {
   const handed = new Map();
   let closed = false;
   let locked = false;
+  /** What splice last answered of the transcript, told to the host when it changes: "read" (a page of it), "off"
+   *  (reading conversations is turned off), "gone" (it holds no transcript for the session) or "failed". */
+  let state = null;
+  const tell = (now, detail = "") => {
+    if (now === state || closed || locked) return;
+    state = now;
+    if (onState) onState(now, detail);
+  };
   let earliest = null; // the cursor of the page before the oldest one handed on, or null when none is older
   let highest = -1;
   let feedOpen = false;
@@ -112,11 +120,36 @@ export function connect(view, { session, onLocked, onEarlier } = {}) {
   };
 
   const transcript = async (query) => {
-    const res = await get(`${base}/transcript?${query}`, "application/json");
-    if (!res || !res.ok) return null;
+    let res;
     try {
-      return await res.json();
+      res = await get(`${base}/transcript?${query}`, "application/json");
     } catch {
+      tell("failed");
+      return null;
+    }
+    if (!res) return null;
+    if (!res.ok) {
+      // splice's own words for the refusal go to the host with the state, which decides where they are said
+      let said = "";
+      try {
+        const body = await res.json();
+        if (body && typeof body.error === "string") said = body.error;
+      } catch {
+        /* a refusal with no body says nothing more */
+      }
+      tell(res.status === 404 ? "gone" : "failed", said);
+      return null;
+    }
+    try {
+      const page = await res.json();
+      if (page && page.state === "off") {
+        tell("off");
+        return null;
+      }
+      tell("read");
+      return page;
+    } catch {
+      tell("failed");
       return null;
     }
   };

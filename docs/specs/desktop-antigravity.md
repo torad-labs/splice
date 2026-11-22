@@ -1,6 +1,6 @@
 # Gemini in Claude Desktop through Antigravity (`desktop-antigravity`)
 
-Plan, Nov 21, 2026. Nothing built yet.
+Plan, Nov 21, 2026. Step 1 is built (Gemini rows in Desktop's picker); step 2 is next.
 
 ## What a person gets
 
@@ -35,20 +35,23 @@ splice already builds Desktop's picker this way. `PublishedCatalog.publish` take
 
 Antigravity is added as one more source:
 
-- **When:** while `agy` is installed and signed in.
 - **Where the models come from:** splice asks agy what it offers, using ACP `initialize` and `session/new` (no prompt),
   then closes the session.
 - **What goes in:** the `model` option's values become the catalog's entries, with prefix `claude-antigravity--`, and
-  each model's level suffixes in `models.availableModels` become its `efforts` (see "What agy offers").
-- **When:** at daemon start, in the background, since agy asks Google. Once the models arrive, Antigravity joins the
-  providers (`ServedProviderAssembly.joinAntigravity`), and Desktop's list is published again. A sign-in made later
-  shows after a splice restart.
-- **What a turn on it does at the door:** Antigravity is a `ServedProvider` (`AntigravityProvider`), so `DoorRouting`
-  is unchanged. Its `serve` answers a turn that reaches the door, as when a live Claude session is switched to an
-  Antigravity model, with "start a new session on this model".
+  each model's level suffixes in `models.availableModels` become its `efforts` (see "What agy offers"). agy's Claude
+  models are left out. Desktop reads a Claude id as Claude's own model and runs it on Claude Code, so such a row would
+  stand in for the real Claude row and never run on agy.
+- **When:** at daemon start, in the background, since agy asks Google (`AntigravityJoin`). A failed try is tried again
+  after half a minute and after two more minutes. A signed-out agy isn't retried: a later sign-in shows after a splice
+  restart. Once the models arrive, Desktop's list is published again.
+- **It's a provider only Desktop runs.** `AntigravityJoin` hands it to the door as `DesktopLineup.desktopOnly`, apart
+  from the door's providers. Its models are in Desktop's lists (`inferenceModels`, discovery, `splice desktop --json`)
+  and in nothing else: not the terminal's picker, another machine's, the team door's or a starting model, and the door
+  routes no turn to it. Until the launcher runs agy (step 2), a Gemini session's turns reach the door and are refused
+  as any model it doesn't serve.
 
 The code is in `integrations/providers/antigravity`: `AcpConnection` (the ACP client), `AgyModels`, `AgyRoster` and
-`AntigravityCatalog`.
+`AntigravityCatalog`. App side: `app/.../provider/AntigravityProvider.kt` (`AntigravityJoin`, `AntigravityProvider`).
 
 ### 2. The launcher picks the program
 
@@ -92,17 +95,37 @@ The model name maps back to agy's id through `ReadableNames.upstreamOf`.
 Like `claude`, it writes `~/.claude/projects/<cwd>/<id>.jsonl` and `~/.claude/sessions/<pid>.json`, which Desktop and
 seatd already read.
 
-The ACP client goes in `integrations/acp`, the translator in `app/.../desktop/acp/`.
+The ACP client is `AcpConnection` in `integrations/providers/antigravity` (step 1). The translator's mapping goes in
+that module beside it, and its `splice desktop acp` subcommand in `app/.../desktop/acp/`.
+
+### 5. A live session switches to Gemini and back (Marcos, Nov 21, 2026)
+
+Desktop changes a running session's model with `set_model` on the stdin of the process it already runs. It starts no
+new process, so the program itself has to change underneath the session. seatd-pipe is the one place that can do that:
+it wraps every Desktop session and relays its stdin, and it gives the session's stdout straight to the program, so it
+can give that same stdout to a new program without ever reading it. splice can't do it from the door: a turn that
+reaches the door comes from Claude Code, and Claude Code driving agy is what Google forbids.
+
+- **seatd-pipe (seatd's owner builds this):** it keeps the session's first line (`initialize`). When it relays a
+  `set_model` to a `claude-antigravity--` model, it ends `claude`, starts the translator with the same session id,
+  replays the kept `initialize`, then the `set_model`. A `set_model` back to any other model does the reverse:
+  it ends the translator and starts `claude --resume <session id>`. The seat, its scope and its name stay the same.
+- **The translator (splice):** started mid-session, it answers the replayed `initialize` (Desktop ignores an answer
+  to a request it already had answered) and the `set_model`. It opens an agy session and gives it the conversation
+  so far, read from the session's Claude transcript. That handoff is lossy: Claude's reasoning and tool details
+  don't carry over, as T3 Code documents for its own switch.
+- **Back to Claude:** the translator writes Claude-format transcript lines, so `claude --resume` picks the
+  conversation up, Gemini's turns included.
 
 ## Not built (agreed Nov 21, 2026)
 
 Each of these came up and was dropped. They stay out unless Marcos asks for them again.
 
-- **No new provider type, dialect or `splice add` profile.** Antigravity is one more `ServedProvider` in the
-  providers list. It needs one because `DoorCatalog` lists only the models a served provider serves. Its `serve`
-  answers a turn that reaches the door by saying to start a new session on the model.
+- **No new provider type, dialect or `splice add` profile.** Antigravity is a `ServedProvider` held apart from the
+  door's, in `DesktopLineup.desktopOnly`, because `DoorCatalog` builds Desktop's list from served providers.
 - **No change to `DoorRouting`.** It already refuses a model it doesn't serve.
-- **No seatd profile, no `harness-profiles.json` entry and no seatd code.** The translator is named `claude`.
+- **No seatd profile and no `harness-profiles.json` entry.** The translator is named `claude`. seatd code is needed
+  only for the live switch (decision 5), which Marcos asked for on Nov 21.
 - **No sender check of any kind,** in seatd or in the translator.
 - **No filtering of prompts Desktop writes itself:** `send_message`, dispatch, scheduled tasks, usage-limit
   auto-resume and the skipped-form line. They are part of the gap.
@@ -123,8 +146,8 @@ Each of these came up and was dropped. They stay out unless Marcos asks for them
   - Claude Opus 5.5 and Claude Sonnet 5.5;
   - GPT-OSS 120B.
 
-  These are the catalog's entries. agy offers its Claude and GPT models to this client too, so the catalog lists
-  whatever agy offers.
+  These are the catalog's entries, except agy's Claude Opus and Sonnet (decision 1 says why). agy offers its Claude
+  and GPT models to this client too.
 - **Reasoning levels:** they come per model from `models.availableModels`, whose ids are the base id plus a level
   suffix:
   - Neon and Hydrogen: low, medium, high, xhigh;
@@ -146,10 +169,11 @@ Each of these came up and was dropped. They stay out unless Marcos asks for them
    agy 1.5.14 was installed on Nov 21 into `~/.local/bin/agy` from Google's release manifest, checksum checked. Its
    shell-setup step (`agy install`) was skipped, since `~/.local/bin` is already on PATH. Marcos signed in the same
    day, and the probe ran (see "What agy offers"). **Done.**
-1. `integrations/acp` and the Antigravity catalog source. Gemini rows appear in Desktop's picker with their
-   reasoning levels.
+1. The ACP client and the Antigravity catalog source. Gemini rows appear in Desktop's picker with their reasoning
+   levels. **Built Nov 21** (commit 361a0fb2c, then the review fixes).
 2. The translator, its `claude` shim and the launcher line. A Gemini session works end to end.
-3. Desktop's in-app tools for Gemini, so a Gemini session can orchestrate: the translator passes Desktop's MCP servers
+3. The live switch (decision 5): seatd-pipe's swap, with seatd's owner, and the translator's mid-session start.
+4. Desktop's in-app tools for Gemini, so a Gemini session can orchestrate: the translator passes Desktop's MCP servers
    to agy in `session/new`.
 
 ## The live test

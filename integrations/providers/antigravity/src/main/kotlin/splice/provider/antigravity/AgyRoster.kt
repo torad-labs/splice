@@ -10,11 +10,11 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
 
 /** One model agy offers: its id, its name, the reasoning levels it takes and the one a session starts it at. */
-public data class AgyModel(val id: String, val label: String, val efforts: List<String>, val defaultEffort: String?)
+internal data class AgyModel(val id: String, val label: String, val efforts: List<String>, val defaultEffort: String?)
 
 /** What agy offers this account: its models, the context window it gives every one of them, and the model a new
  *  session starts on. */
-public data class AgyRoster(val models: List<AgyModel>, val contextWindow: Long, val current: String?)
+internal data class AgyRoster(val models: List<AgyModel>, val contextWindow: Long, val current: String?)
 
 /** Reads an [AgyRoster] out of agy's answer to `session/new`. */
 internal class AgyRosterReader {

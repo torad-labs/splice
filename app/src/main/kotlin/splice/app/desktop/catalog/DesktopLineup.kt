@@ -43,6 +43,10 @@ internal data class DesktopLineup(
     val leftOut: List<LeftOut>,
     val aliases: SelectorAliases,
     val catalog: ProviderCatalog = ProviderCatalog(),
+    /** desktop-antigravity: the providers only Claude Desktop runs, through its own launcher, and their models. They
+     *  are in Desktop's lists alone (DoorCatalog's Desktop lists), never in a picker the door serves or on a route. */
+    val desktopOnly: List<ServedProvider> = emptyList(),
+    val desktopModels: List<DoorModel> = emptyList(),
 ) {
     /** The rows of a terminal session's picker (docs/specs/door-default.md, decision 4): every model of a provider
      *  called with a login splice holds, and of a provider on an API key or a local server the models splice.toml
@@ -72,12 +76,15 @@ internal data class DesktopLineup(
      *  and the catalog rows of those models, so every list and every route read from it serves no other. */
     fun serving(allowed: ProviderSelection): DesktopLineup {
         val serving = providers.filter { allowed(it) }
-        val kept = serving.mapTo(HashSet()) { it.key }
+        val desktop = desktopOnly.filter { allowed(it) }
+        val kept = (serving + desktop).mapTo(HashSet()) { it.key }
         return copy(
             providers = serving,
             models = models.filter { it.provider in kept },
             leftOut = leftOut.filter { it.provider in kept },
             catalog = ProviderCatalog(catalog.models.filter { it.provider in kept }),
+            desktopOnly = desktop,
+            desktopModels = desktopModels.filter { it.provider in kept },
         )
     }
 
@@ -102,9 +109,11 @@ internal fun interface ProviderSelection {
 
 /** The door's providers, read from the [serving] providers at each use, and the model catalog [published] for them:
  *  built from the providers signed in at the daemon's start and again when a provider's credential changes
- *  ([publish]), never at a request. [aliases] reads an old selector as a provider's. */
+ *  ([publish]), never at a request. [aliases] reads an old selector as a provider's. [desktopOnly] are the providers
+ *  only Claude Desktop runs (desktop-antigravity). */
 internal class DesktopProviders(
     private val serving: ServingProviders,
+    private val desktopOnly: ServingProviders,
     private val aliases: SelectorAliases,
     private val published: PublishedCatalog,
 ) {
@@ -132,7 +141,15 @@ internal class DesktopProviders(
                 }
             }
         }
-        return DesktopLineup(providers, models, leftOut, aliases)
+        val desktop = desktopOnly()
+        return DesktopLineup(
+            providers,
+            models,
+            leftOut,
+            aliases,
+            desktopOnly = desktop,
+            desktopModels = desktop.flatMap(::modelsOf),
+        )
     }
 
     private fun modelsOf(provider: ServedProvider): List<DoorModel> {

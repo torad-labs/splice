@@ -61,6 +61,32 @@ internal class DoorPickerRowsTest {
     }
 
     @Test
+    fun `a provider only Desktop runs is in Desktop's list and in no picker the door serves`() {
+        val neon = ModelEntry("gemini-4-neon", "Gemini 4 Neon", contextWindow = 1_048_576)
+        val lineup = DesktopLineup(
+            listOf(provider("work-a")),
+            listOf(model("work-a", "m")),
+            emptyList(),
+            SelectorAliases(listOf("work-a")),
+            desktopOnly = listOf(provider("antigravity", login = true, rows = listOf(neon))),
+            desktopModels = listOf(model("antigravity", "gemini-4-neon")),
+        )
+        val catalog = DoorCatalog(catalogued(lineup))
+        assertEquals(listOf("work-a--m"), catalog.picker().map { it.model })
+        assertEquals(
+            listOf("work-a--m", "antigravity--gem-4-neon"),
+            catalog.inferenceModels(null).map { it.jsonObject["name"]?.jsonPrimitive?.content },
+        )
+        assertNull(lineup.find("antigravity--gemini-4-neon"))
+        val ids = { surface: ModelDiscovery ->
+            catalog.discovery(surface = surface).getValue("data").jsonArray
+                .map { it.jsonObject["id"]?.jsonPrimitive?.content }
+        }
+        assertEquals(listOf("work-a--m", "antigravity--gem-4-neon"), ids(ModelDiscovery.DESKTOP))
+        assertEquals(listOf("work-a--m"), ids(ModelDiscovery.GATEWAY))
+    }
+
+    @Test
     fun `a model added on a custom API's key is in the picker beside the signed-in accounts' models`() {
         val lineup = lineupOf(
             provider("codex", login = true) to listOf(

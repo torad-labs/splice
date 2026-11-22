@@ -81,16 +81,20 @@ internal class DoorCatalog(private val lineup: DesktopLineup) {
         .toMap()
     private val wire = DoorModelWire(tiers, newest)
 
-    /** Claude Desktop's list: one per id it asks by, so a Claude model two providers serve is listed once, on the
-     *  first. */
-    private val desktop: List<ServedModel> = served.distinctBy { it.desktopId }
+    /** The door's list, as any caller but Claude Desktop discovers it: one per id Desktop asks by, so a Claude model two
+     *  providers serve is listed once, on the first. */
+    private val door: List<ServedModel> = served.distinctBy { it.desktopId }
+
+    /** Claude Desktop's list: the door's, then the models of the providers only Desktop runs (desktop-antigravity),
+     *  which are in this list alone. */
+    private val desktop: List<ServedModel> = (door + desktopOnly).distinctBy { it.desktopId }
 
     /** Both paths use the same model-list format, with each caller's selector for each model. */
     fun discovery(
         first: String? = null,
         surface: ModelDiscovery = ModelDiscovery.GATEWAY,
     ): JsonObject = buildJsonObject {
-        val rows = ordered(first)
+        val rows = ordered(first, if (surface == ModelDiscovery.DESKTOP) desktop else door)
         put("data", JsonArray(rows.map { wire.discovered(it, surface.id(it)) }))
         put("has_more", false)
         put("first_id", rows.firstOrNull()?.let(surface::id))
@@ -105,14 +109,14 @@ internal class DoorCatalog(private val lineup: DesktopLineup) {
      *  these settings while discovery supplies descriptions; the names and order must match discovery exactly. */
     fun inferenceModels(first: String?): JsonArray = DesktopModelSettings(tiers, newest).models(ordered(first))
 
-    /** Desktop's list: Claude's models first, newest to oldest, then the model whose rows hold [first] (Desktop's own
+    /** [list] (Desktop's, unless a caller names another): Claude's models first, newest to oldest, then the model whose rows hold [first] (Desktop's own
      *  default, `splice desktop on --model`) when it is another lab's, then the rest in their order. Desktop opens a
      *  new session on the first model it lists, so with a Claude model in the door that is the newest one. */
-    private fun ordered(first: String?): List<ServedModel> {
-        val lead = first?.let { picked -> desktop.firstOrNull { model -> model.rows.any { it.model == picked } } }
+    private fun ordered(first: String?, list: List<ServedModel> = desktop): List<ServedModel> {
+        val lead = first?.let { picked -> list.firstOrNull { model -> model.rows.any { it.model == picked } } }
             ?.takeIf { it.claude == null }
-            ?: return desktop
-        val (claude, others) = desktop.partition { it.claude != null }
+            ?: return list
+        val (claude, others) = list.partition { it.claude != null }
         return claude + lead + others.filterNot { it === lead }
     }
 
@@ -143,6 +147,17 @@ internal class DoorCatalog(private val lineup: DesktopLineup) {
                 put("command", row.provider)
             }
         }
+    }
+
+    /** Each catalog model of a provider only Desktop runs, with that provider's rows of it. None is Claude's: those
+     *  providers list no Claude id (AntigravityCatalog). */
+    private val desktopOnly: List<ServedModel> get() = lineup.catalog.models.mapNotNull { fact ->
+        val id = ModelTierSuffix.strip(fact.id)
+        val rows = lineup.desktopModels
+            .filter { it.provider == fact.provider && ModelTierSuffix.strip(it.upstream) == id }
+        lineup.desktopOnly.firstOrNull { it.key == fact.provider }
+            ?.takeIf { rows.isNotEmpty() }
+            ?.let { ServedModel(fact, it, rows, null) }
     }
 
     private fun served(fact: CatalogModel): ServedModel? {

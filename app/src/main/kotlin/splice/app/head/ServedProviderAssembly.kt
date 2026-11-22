@@ -5,12 +5,10 @@
 package splice.app.head
 
 import splice.app.head.books.BooksKeys
-import splice.app.provider.AntigravityProvider
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderLogins
 import splice.app.provider.ServedProvider
 import splice.app.provider.ServingProviders
-import splice.core.config.ConfigService
 import splice.core.config.PROVIDER_LAYER_PREFIX
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
@@ -19,9 +17,6 @@ import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.head.ProviderRuntime
-import splice.provider.antigravity.AgyModels
-import splice.provider.antigravity.AgyRead
-import splice.provider.antigravity.AntigravityCatalog
 import java.util.concurrent.CopyOnWriteArrayList
 
 internal class ServedProviderAssembly(
@@ -34,9 +29,6 @@ internal class ServedProviderAssembly(
     private val logins = ProviderLogins()
     private val served = CopyOnWriteArrayList<ServedProvider>()
     private val runtimes = CopyOnWriteArrayList<ProviderRuntime>()
-
-    @Volatile
-    private var antigravity: ServedProvider? = null
 
     /** The model rosters the gateway needs beside the heads': one per provider, under the key its books are kept under, so
      *  a head of the same identity and the gateway read one roster and the endpoint is asked once. */
@@ -55,20 +47,7 @@ internal class ServedProviderAssembly(
         }
     }
 
-    override fun invoke(): List<ServedProvider> = served.toList() + listOfNotNull(antigravity)
-
-    /** desktop-antigravity: Antigravity joins the providers once [agy] says what it offers the account signed in to
-     *  it, read with [config]'s limits. True when it joined, so the caller publishes the catalog again. */
-    suspend fun joinAntigravity(agy: AgyModels, config: ConfigService): Boolean {
-        val catalog = when (val read = agy.read()) {
-            is AgyRead.Offered -> AntigravityCatalog().of(read.roster)
-            AgyRead.SignedOut -> null.also { log("[antigravity] not served: agy is signed in to no account\n") }
-            is AgyRead.Failed -> null.also { log("[antigravity] not served: ${read.reason}\n") }
-        } ?: return false
-        antigravity = AntigravityProvider(catalog, config)
-        log("[antigravity] served: ${catalog.models.size} models from agy\n")
-        return true
-    }
+    override fun invoke(): List<ServedProvider> = served.toList()
 
     /** The direct routes join the heads in the daemon's drain and handover phases. */
     fun running(): List<ProviderRuntime> = runtimes.toList()

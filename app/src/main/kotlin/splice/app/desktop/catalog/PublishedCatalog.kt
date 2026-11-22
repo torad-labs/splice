@@ -27,7 +27,8 @@ internal class PublishedCatalog(
     /** The catalog of the providers signed in to [lineup], each provider's models in splice.toml's order, written and
      *  then served. Two publications never interleave, so the file and what is served are the same catalog. */
     suspend fun publish(lineup: DesktopLineup) = lock.withLock {
-        val signedIn = lineup.providers.map { CatalogSource(it.key, it.catalog, it.effortVocabulary) }
+        val signedIn = (lineup.providers + lineup.desktopOnly)
+            .map { CatalogSource(it.key, it.catalog, it.effortVocabulary) }
         val catalog = build.of(signedIn)
         withContext(io) { file.keep(catalog) }
         current = catalog

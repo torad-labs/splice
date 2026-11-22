@@ -5,5 +5,4 @@ plugins {
 
 dependencies {
     implementation(project(":core"))
-    testImplementation(libs.kotlinx.coroutines.test)
 }

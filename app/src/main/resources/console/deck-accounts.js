@@ -524,6 +524,7 @@
   /** starts splice's sign-in for [a] (a new login when [a] is null: Claude's, or [p]'s when a provider is named), held
    *  in the account's glass while it runs */
   function signIn(a, p) {
+    const account = a || null;
     const key = a ? a.id : p ? 'add:' + p.key : 'add';
     const s = signs.get(key) || {};
     const hd = a ? headOf(a) : p ? p.key : head;
@@ -531,8 +532,16 @@
     s.on = {
       held: () => signs.get(key) === s,
       draw: () => { if (openId === key) refill(); },
-      // keep the done sign-in visible in the open glass so the person sees "Signed in as <label>" without a reload
-      done: () => { read().then(() => refill()); },
+      // an added login that came back through a restart closes the Add glass onto its row;
+      // a sign-in that landed directly keeps "Signed in as <label>" visible without a reload
+      done: () => {
+        if (!account && s.back) {
+          signs.delete(key);
+          read().then(() => (openId === key ? closeLens() : refill()));
+          return;
+        }
+        read().then(() => refill());
+      },
       failed: () => refill(),
     };
     signs.set(key, s);

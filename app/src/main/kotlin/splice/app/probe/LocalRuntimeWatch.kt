@@ -56,6 +56,12 @@ internal class LocalRuntimeWatch(
     @Volatile
     private var dead = false
 
+    // #703: remote `local = true` runtimes outside loopback are probed every 60 s instead of every 5 s.
+    private val remoteEveryTicks: Long = (REMOTE_WATCH_INTERVAL_MS / intervalMs.coerceAtLeast(1L)).coerceAtLeast(1L)
+
+    @Volatile
+    private var ticks = 0L
+
     /** Head key to the endpoint (`:8099`) of each local head whose runtime did not answer at the last
      *  probe. Empty before the first probe lands and after the watch died: no claim either way. */
     fun notAnswering(): Map<String, String> = silent.get().orEmpty()
@@ -95,6 +101,7 @@ internal class LocalRuntimeWatch(
         job.invokeOnCompletion { cause ->
             if (cause == null || cause is CancellationException) return@invokeOnCompletion
             silent.set(null)
+            ticks = 0L
             if (!dead) {
                 log(
                     "[daemon] LOCAL RUNTIME WATCH DIED ($cause); local runtimes read as checking until it " +
@@ -108,22 +115,28 @@ internal class LocalRuntimeWatch(
     }
 
     /** A runtime that answers is asked again what it serves, so a runtime that came up after the daemon, or
-     *  loaded a model since boot, moves its head's window instead of keeping the boot answer (#399). */
-    private fun refreshAnswering(silentNow: Map<String, String>) {
+     *  loaded a model since boot, moves its head's window instead of keeping the boot answer (#399).
+     *  Remote `local = true` runtimes refresh only on remote ticks (#703). */
+    private fun refreshAnswering(silentNow: Map<String, String>, includeRemote: Boolean) {
         topology.heads.forEach { (key, head) ->
             val provider = topology.providers[head.provider]?.takeIf { it.isLocal } ?: return@forEach
-            if (key !in silentNow) windows.refresh(key, head, provider)
+            val due = includeRemote || reach.isLoopback(provider.baseUrl)
+            if (due && key !in silentNow) windows.refresh(key, head, provider)
         }
     }
 
     /** One probe of every local runtime, then a line for each runtime that changed. Exposed for tests,
      *  which drive ticks directly instead of waiting on the loop. */
     internal fun tick() {
-        val now = reach.notAnswering(topology)
+        val includeRemote = ticks % remoteEveryTicks == 0L
+        ticks++
+        val probed = reach.notAnswering(topology, includeRemote = includeRemote)
+        val previous = silent.get().orEmpty()
+        val now = if (includeRemote) probed else mergeUnprobedRemote(probed, previous)
         val before = silent.getAndSet(now).orEmpty()
         if (dead) log("[daemon] local runtime watch running again.\n")
         dead = false
-        refreshAnswering(now)
+        refreshAnswering(now, includeRemote)
         now.filterKeys { it !in before }.forEach { (head, endpoint) ->
             log("[$head] runtime not answering on $endpoint; the console reads the head as down.\n")
         }
@@ -131,11 +144,22 @@ internal class LocalRuntimeWatch(
             log("[$head] runtime answering again on $endpoint.\n")
         }
     }
+
+    private fun mergeUnprobedRemote(
+        probed: Map<String, String>,
+        previous: Map<String, String>,
+    ): Map<String, String> = probed + previous.filterKeys { key ->
+        val provider = topology.heads[key]?.let { topology.providers[it.provider] }
+        provider != null && provider.isLocal && !reach.isLoopback(provider.baseUrl)
+    }
 }
 
-// How often each local runtime is asked. A runtime that comes back reads as such within a tick, and a
-// refused connection answers at once, so the cost is one short request per local runtime per tick.
+// How often each loopback runtime is asked. A runtime that comes back reads as such within a tick, and a
+// refused connection answers at once, so the cost is one short request per loopback runtime per tick.
 private const val WATCH_INTERVAL_MS = 5_000L
+
+// #703: remote `local = true` runtimes (outside loopback) are probed once a minute instead of every 5 s.
+private const val REMOTE_WATCH_INTERVAL_MS = 60_000L
 
 // why: the restart line names the interval in seconds, the unit a person reads it in.
 internal const val MS_PER_SECOND = 1_000L

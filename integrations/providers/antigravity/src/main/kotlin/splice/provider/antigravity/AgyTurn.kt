@@ -20,8 +20,10 @@ internal class AgyTurn(
     private val transcript: ClaudeTranscript,
 ) {
     private val cards = ToolCards()
-    private val tools = HashMap<String, ToolCard>()
+    private val taskFrames = TaskFrames(frames.sessionId)
+    private val tools = LinkedHashMap<String, ToolCard>()
     private val answered = HashSet<String>()
+    private val openSubagents = LinkedHashMap<String, SubagentCall>()
 
     /** The message being drawn, the model it names and the context it reports. */
     val draw: MessageDraw = MessageDraw(frames, out)
@@ -36,6 +38,15 @@ internal class AgyTurn(
         }
     }
 
+    /** A `tool_call_update` arriving after the turn's `result`: closes an open subagent pane without starting or
+     *  ending another turn or duplicating its `tool_result`. */
+    fun afterTurn(update: JsonObject) {
+        if (JsonScalars.str(update, "sessionUpdate") != "tool_call_update") return
+        val id = JsonScalars.str(update, "toolCallId") ?: return
+        val status = JsonScalars.str(update, "status")?.takeIf { it == TOOL_COMPLETED || it == TOOL_FAILED } ?: return
+        if (openSubagents.remove(id) != null) out(taskFrames.notification(id, status, cards.resultText(update)))
+    }
+
     /** The card of the call agy asks permission for, drawn first when agy has not shown it yet; the message that
      *  carries it is ended, so Desktop has it before it asks. */
     fun asking(call: JsonObject): ToolCard? {
@@ -48,19 +59,39 @@ internal class AgyTurn(
     /** [text] said whole as an assistant message: what went wrong, in the conversation. */
     fun say(text: String) {
         stream(TEXT_BLOCK, text)
-        end(null)
+        finish(null)
     }
 
-    /** Ends the message still open, with the turn's [stop]. */
-    fun end(stop: String?) = finish(if (draw.callsTools) TOOL_USE_BLOCK else stop)
+    /** Ends the message still open, with the turn's [stop], pairing any still-open tool call with its `tool_result`
+     *  for `claude --resume` and closing open subagent panes as `stopped` when the turn was [cancelled]. */
+    fun end(stop: String?, cancelled: Boolean = false) {
+        finish(if (draw.callsTools) TOOL_USE_BLOCK else stop)
+        val fallback = if (cancelled) INTERRUPTED_RESULT else ""
+        for (id in tools.keys) {
+            if (answered.add(id)) emitResult(id, fallback, failed = cancelled)
+        }
+        if (cancelled) closeOpenSubagents()
+    }
+
+    /** Closes every still-open subagent pane as `stopped` (used on turn cancellation and when agy exits between
+     *  turns while a background subagent was still running). */
+    fun closeOpenSubagents() {
+        openSubagents.keys.toList().forEach { id ->
+            openSubagents.remove(id)
+            out(taskFrames.notification(id, TASK_STOPPED, ""))
+        }
+    }
 
     /** An ACP `tool_call` or `tool_call_update`: its card when it is new, its result once it completed or failed. */
     private fun tool(call: JsonObject) {
         val id = JsonScalars.str(call, "toolCallId") ?: return
         if (id !in tools) started(id, call)
-        val status = JsonScalars.str(call, "status")
+        val status = JsonScalars.str(call, "status") ?: return
         val over = status == TOOL_COMPLETED || status == TOOL_FAILED
-        if (over && answered.add(id)) result(id, call, status == TOOL_FAILED)
+        if (!over) return
+        val text = cards.resultText(call)
+        if (answered.add(id)) emitResult(id, text, status == TOOL_FAILED)
+        if (openSubagents.remove(id) != null) out(taskFrames.notification(id, status, text))
     }
 
     /** A chunk of text or thought; after a tool call it begins a new message. */
@@ -74,17 +105,21 @@ internal class AgyTurn(
         val card = cards.of(call)
         tools[id] = card
         draw.toolUse(id, card)
+        card.subagent?.let { sub ->
+            openSubagents[id] = sub
+            out(taskFrames.started(id, sub))
+        }
         return card
     }
 
-    private fun result(id: String, call: JsonObject, failed: Boolean) {
+    private fun emitResult(id: String, text: String, failed: Boolean) {
         finish(TOOL_USE_BLOCK)
         val content = buildJsonArray {
             add(
                 buildJsonObject {
                     put("type", "tool_result")
                     put("tool_use_id", id)
-                    put("content", cards.resultText(call))
+                    put("content", text)
                     put("is_error", failed)
                 },
             )
@@ -105,3 +140,5 @@ internal class AgyTurn(
 
 private const val TOOL_COMPLETED = "completed"
 private const val TOOL_FAILED = "failed"
+private const val TASK_STOPPED = "stopped"
+private const val INTERRUPTED_RESULT = "Interrupted"

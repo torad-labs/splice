@@ -82,7 +82,7 @@ to agy:
 | new session / `--resume=<id>` | `session/new` / `session/resume` |
 | `user` line, also mid-turn | `session/prompt` (agy steers a running turn) |
 | text and thinking stream, `assistant` | `agent_message_chunk`, `agent_thought_chunk` |
-| tool cards (`Bash`, `Edit`, `Read`, `Grep`, `WebFetch`) | `tool_call` / `tool_call_update` by kind |
+| tool cards (`Bash`, `Edit`, `Read`, `Grep`, `WebFetch`, `Task` + `system/task_started` / `system/task_notification`) | `tool_call` / `tool_call_update` by kind (`invoke_subagent` → `Task`) |
 | `can_use_tool` | `session/request_permission` |
 | `interrupt` | `session/cancel` |
 | `set_model`, effort (`--effort`, `apply_flag_settings`) | `session/set_config_option` (`model`, `thought_level`) |

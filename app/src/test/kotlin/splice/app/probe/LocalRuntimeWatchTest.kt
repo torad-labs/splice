@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.function.ThrowingSupplier
 import splice.app.cli.status.LocalRuntimeReach
+import splice.app.provider.local.LocalProbeInputs
 import splice.core.topology.AuthConfig
 import splice.core.topology.ClaudeWrapperConfig
 import splice.core.topology.Dialect
@@ -19,6 +20,7 @@ import splice.core.util.LogSink
 import splice.upstream.transport.LocalHttp
 import splice.upstream.transport.LocalHttpReply
 import java.time.Duration
+import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -105,6 +107,74 @@ class LocalRuntimeWatchTest {
         assertEquals(emptyMap<String, String>(), watch.notAnswering())
         assertTrue(logged.any { it.contains("DIED") }, logged.toString())
     }
+
+    private fun remoteWatch(reachUrls: MutableList<String>, refreshUrls: MutableList<String>): LocalRuntimeWatch {
+        val remoteProvider = ProviderConfig(
+            dialect = Dialect.OPENAI_CHAT,
+            baseUrl = "https://gateway.example.invalid/v1",
+            auth = AuthConfig(kind = "api-key", env = "TEST_REMOTE_LOCAL_KEY"),
+            local = true,
+        )
+        val mixed = Topology(
+            providers = mapOf("bonsai-rt" to local(8099), "remote-rt" to remoteProvider),
+            heads = linkedMapOf("bonsai" to head("bonsai-rt", 3108), "remote" to head("remote-rt", 3112)),
+        )
+        val probeInputs = LocalProbeInputs(
+            LocalHttp { method, url, _ ->
+                refreshUrls += "$method $url"
+                when {
+                    url.endsWith("/v1/models") -> LocalHttpReply(200, """{"data":[{"id":"m"}]}""")
+                    url.endsWith("/props") -> LocalHttpReply(200, """{"default_generation_settings":{"n_ctx":65536}}""")
+                    else -> LocalHttpReply(404, "{}")
+                }
+            },
+        )
+        return LocalRuntimeWatch(
+            topology = mixed,
+            log = LogSink { logged += it },
+            windows = LocalWindowRefresh { _, head, provider ->
+                probeInputs.check(provider, "secret", provider.catalogFor(head))
+            },
+            reach = LocalRuntimeReach(
+                http = LocalHttp { _, url, _ ->
+                    reachUrls += url
+                    LocalHttpReply(200, "{}")
+                },
+                waitMs = PROBE_WAIT_MS,
+            ),
+        )
+    }
+
+    @Test
+    fun `a remote local=true provider polls at 60 s cadence and refreshes llama-server through props alone`() {
+        val reachUrls = Collections.synchronizedList(mutableListOf<String>())
+        val refreshUrls = Collections.synchronizedList(mutableListOf<String>())
+        val watch = remoteWatch(reachUrls, refreshUrls)
+
+        watch.tick()
+        assertEquals(1, reachUrls.count { it.contains("gateway.example.invalid") })
+        assertEquals(
+            listOf(
+                "GET https://gateway.example.invalid/api/version",
+                "GET https://gateway.example.invalid/api/v0/models",
+                "GET https://gateway.example.invalid/v1/models",
+                "GET https://gateway.example.invalid/props",
+            ),
+            refreshUrls.filter { it.contains("gateway.example.invalid") },
+        )
+
+        refreshUrls.clear()
+        repeat(REMOTE_SKIP_TICKS) { watch.tick() }
+        assertEquals(1, reachUrls.count { it.contains("gateway.example.invalid") })
+        assertEquals(emptyList<String>(), refreshUrls.filter { it.contains("gateway.example.invalid") })
+
+        watch.tick()
+        assertEquals(2, reachUrls.count { it.contains("gateway.example.invalid") })
+        assertEquals(
+            listOf("GET https://gateway.example.invalid/props"),
+            refreshUrls.filter { it.contains("gateway.example.invalid") },
+        )
+    }
 }
 
 // why: a bound on the probe and on the read is only a ceiling, so a loaded machine never reads a runtime that
@@ -112,3 +182,4 @@ class LocalRuntimeWatchTest {
 private const val PROBE_WAIT_MS = 30_000L
 private const val READ_BOUND_MS = 10_000L
 private const val WEDGE_S = 60L
+private const val REMOTE_SKIP_TICKS = 11

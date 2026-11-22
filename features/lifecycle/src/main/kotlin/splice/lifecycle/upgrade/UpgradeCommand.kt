@@ -21,7 +21,8 @@ import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import splice.daemonclient.DaemonProbe
 import splice.daemonclient.DaemonSettings
-import splice.lifecycle.hub.HubUnits
+import splice.lifecycle.units.UpgradeDaemonUnit
+import splice.lifecycle.units.UpgradeUnits
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -39,8 +40,8 @@ public class UpgradeVerb(
     private val errors: TerminalOutput,
     private val env: EnvReader,
     private val restart: VersionedRestart,
-    /** The MCP hub's systemd units, for the front's reload after the hub's programs are swapped in; null off Linux. */
-    private val units: HubUnits? = null,
+    /** The systemd units on Linux: the MCP hub's (for front reload) and splice's own folder (for `splice.service`). */
+    private val units: UpgradeUnits = UpgradeUnits(),
     /** splice.toml's update channel, which `--check` follows. */
     private val channel: AutoUpdateSettings = AutoUpdateSettings { null },
 ) {
@@ -57,7 +58,8 @@ public class UpgradeVerb(
             },
             userUnit = settings.supervisorUnit(env),
         )
-        return UpgradeCommand(output, env, daemon, layout = UpgradeLayout(env, units = units)).upgrade(args)
+        val layout = UpgradeLayout(env, units = units.hub, daemonUnits = units.daemon)
+        return UpgradeCommand(output, env, daemon, layout = layout).upgrade(args)
     }
 }
 
@@ -73,6 +75,7 @@ internal class UpgradeCommand(
     private val layout: UpgradeLayout = UpgradeLayout(env),
 ) {
     private val activation = UpgradeActivation(output, layout, wrapper)
+    private val daemonUnit = UpgradeDaemonUnit(env, output, layout.daemonUnits)
     private val lock = UpgradeLock(layout)
     private val parser = UpgradeArgParser(output)
 
@@ -156,6 +159,7 @@ internal class UpgradeCommand(
         return activation.activate(version, installed).then {
             layout.markManaged()
             layout.prunable().forEach(layout::discard)
+            daemonUnit.refresh(layout.liveJar)
             when (val verdict = finish(version, installed, a.now)) {
                 is Finished.Passed -> Upgraded.Ok(true).also { layout.rejected.forgive(version) }
                 is Finished.Failed -> putBack(version, installed, verdict)
@@ -170,6 +174,7 @@ internal class UpgradeCommand(
         output.line("  $RED✗$RESET ${"putting back".padEnd(UPGRADE_PAD)} $installed, since $version failed its checks")
         return activation.activate(installed, version).then {
             if (verdict.releaseAtFault) refuse(version)
+            daemonUnit.refresh(layout.liveJar)
             restarted(installed, now = true)
             Upgraded.Ok(false)
         }
@@ -210,6 +215,7 @@ internal class UpgradeCommand(
         }
         return activation.activate(previous, installed).then {
             refuse(installed)
+            daemonUnit.refresh(layout.liveJar)
             Upgraded.Ok(finish(previous, installed, a.now) is Finished.Passed)
         }
     }

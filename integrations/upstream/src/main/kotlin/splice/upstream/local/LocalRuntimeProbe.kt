@@ -139,12 +139,11 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
         }
 
     private fun genericModels(runtime: LocalRuntime): List<LocalModel>? = get("$v1/models")?.let { body ->
-        val settings = if (runtime.kind == LocalRuntimeKind.OPENAI_COMPATIBLE) {
-            get("$root/props")?.get("default_generation_settings") as? JsonObject
+        val allocated = if (runtime.kind == LocalRuntimeKind.OPENAI_COMPATIBLE) {
+            LocalPropsWindow(v1, http).read()
         } else {
             null
         }
-        val allocated = JsonScalars.long(settings, "n_ctx")?.takeIf { it > 0 }
         data(body).map { m ->
             val trained = JsonScalars.long(m["meta"] as? JsonObject, "n_ctx_train")?.takeIf { it > 0 }
             val served = JsonScalars.long(m, "max_model_len")?.takeIf { it > 0 } ?: allocated ?: trained

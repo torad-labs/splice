@@ -15,14 +15,23 @@ import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 
+/** One subagent delegation carried on an ACP tool call (`invoke_subagent`). */
+internal data class SubagentCall(val description: String, val prompt: String, val subagentType: String)
+
 /** One tool card: the Claude tool's [name], its [input], and agy's [title] for it. */
-internal data class ToolCard(val name: String, val input: JsonObject, val title: String)
+internal data class ToolCard(
+    val name: String,
+    val input: JsonObject,
+    val title: String,
+    val subagent: SubagentCall? = null,
+)
 
 /** Builds the card and the result of an ACP tool call. */
 internal class ToolCards {
     /** The card of [call], an ACP `tool_call` (or the `toolCall` of a permission request). */
     fun of(call: JsonObject): ToolCard {
         val facts = CallFacts(call)
+        subagentOf(call, facts)?.let { return it }
         return when (JsonScalars.str(call, "kind")) {
             "execute" -> facts.card("Bash", "command" to facts.text(COMMAND_KEYS), "description" to facts.title)
             "edit" -> edit(facts)
@@ -35,6 +44,21 @@ internal class ToolCards {
                 facts.title,
             )
         }
+    }
+
+    /** Translates agy's `invoke_subagent` delegation into Claude Code's `Task` card so Desktop draws a subagent pane
+     *  and agy's own tool name never reaches the wire or transcript. */
+    private fun subagentOf(call: JsonObject, facts: CallFacts): ToolCard? {
+        if (JsonScalars.str(call, "name") != SUBAGENT_TOOL) return null
+        val role = JsonScalars.str(facts.raw, SUBAGENT_ROLE).orEmpty()
+        val prompt = JsonScalars.str(facts.raw, SUBAGENT_PROMPT).orEmpty()
+        val typeName = JsonScalars.str(facts.raw, SUBAGENT_TYPE).orEmpty()
+        val input = buildJsonObject {
+            put("description", role)
+            put("prompt", prompt)
+            if (typeName.isNotEmpty()) put("subagent_type", typeName)
+        }
+        return ToolCard(TASK_TOOL, input, role.ifEmpty { TASK_TOOL }, SubagentCall(role, prompt, typeName))
     }
 
     /** What [call] (its `tool_call_update`) came to, as Desktop shows a tool's result. */
@@ -96,10 +120,15 @@ private class CallFacts(call: JsonObject) {
 }
 
 /** The Claude tools agy's calls are drawn as, which `system/init` lists. */
-internal val claudeToolNames: List<String> = listOf("Bash", "Edit", "Write", "Read", "Grep", "WebFetch")
+internal val claudeToolNames: List<String> = listOf("Bash", "Edit", "Write", "Read", "Grep", "WebFetch", "Task")
 
 /** A call with no kind Desktop knows, no name and no title. */
 private const val OTHER_TOOL = "Tool"
+private const val SUBAGENT_TOOL = "invoke_subagent"
+private const val TASK_TOOL = "Task"
+private const val SUBAGENT_PROMPT = "Prompt"
+private const val SUBAGENT_ROLE = "Role"
+private const val SUBAGENT_TYPE = "TypeName"
 
 private const val TOOL_FILE_PATH = "file_path"
 private const val TOOL_CONTENT = "content"

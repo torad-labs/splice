@@ -39,7 +39,7 @@ internal data class TurnEnd(
 )
 
 /** Builds the lines of session [sessionId]. */
-internal class DesktopFrames(private val sessionId: String) {
+internal class DesktopFrames(internal val sessionId: String) {
     fun controlOk(requestId: String, response: JsonObject = JsonObject(emptyMap())): JsonObject =
         control(requestId) {
             put(SUBTYPE, "success")
@@ -87,7 +87,7 @@ internal class DesktopFrames(private val sessionId: String) {
     fun replay(line: JsonObject, uuid: String): JsonObject = JsonObject(
         line + mapOf(
             "uuid" to JsonPrimitive(uuid),
-            "session_id" to JsonPrimitive(sessionId),
+            SESSION_ID_KEY to JsonPrimitive(sessionId),
             "isReplay" to JsonPrimitive(true),
         ),
     )
@@ -175,7 +175,7 @@ internal class DesktopFrames(private val sessionId: String) {
         put("type", type)
         body()
         put("uuid", uuid)
-        put("session_id", sessionId)
+        put(SESSION_ID_KEY, sessionId)
     }
 
     private fun commandsOf(commands: List<AgyCommand>): JsonArray = buildJsonArray {
@@ -191,7 +191,36 @@ internal class DesktopFrames(private val sessionId: String) {
     }
 }
 
+/** System task lifecycle frames that open and close Claude Desktop's subagent panes. */
+internal class TaskFrames(private val sessionId: String) {
+    fun started(id: String, subagent: SubagentCall): JsonObject = buildJsonObject {
+        put("type", "system")
+        put(SUBTYPE, "task_started")
+        put("task_id", id)
+        put(TOOL_USE_ID_KEY, id)
+        put("description", subagent.description)
+        if (subagent.subagentType.isNotEmpty()) put("subagent_type", subagent.subagentType)
+        put("task_type", "local_agent")
+        put("is_backgrounded", false)
+        put("uuid", UUID.randomUUID().toString())
+        put(SESSION_ID_KEY, sessionId)
+    }
+
+    fun notification(id: String, status: String, summary: String): JsonObject = buildJsonObject {
+        put("type", "system")
+        put(SUBTYPE, "task_notification")
+        put("task_id", id)
+        put(TOOL_USE_ID_KEY, id)
+        put("status", status)
+        put("summary", summary)
+        put("uuid", UUID.randomUUID().toString())
+        put(SESSION_ID_KEY, sessionId)
+    }
+}
+
 private const val OUTPUT_STYLE = "default"
+private const val SESSION_ID_KEY = "session_id"
+private const val TOOL_USE_ID_KEY = "tool_use_id"
 
 /** The member that says which kind of control message or system message a line is. */
 private const val SUBTYPE = "subtype"

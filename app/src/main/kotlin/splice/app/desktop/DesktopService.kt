@@ -79,25 +79,28 @@ internal class DesktopService(
         }
     }
 
-    /** What `splice claude --json` says: the lane, and on the door the door, the model a session starts on and why,
-     *  the picker's rows and the providers left out with the reason. On its head (decision 9): the rows it adds after
-     *  Claude Code's own models and the providers left out, less `claude`'s, whose models are Claude's. */
+    /** What `splice claude --json` says: the lane, the Splice gateway's address and the window every session on it
+     *  holds (head-catalog: every head's command starts on it, on either lane), and on the door the model a session
+     *  starts on and why, the gateway's models and the providers left out with the reason. On its head: the gateway's
+     *  models and the providers left out, less `claude`'s, whose models are Claude's. */
     suspend fun claudeState(): JsonObject {
         val lane = claude.lane()
+        val lineup = providers.lineup()
         if (lane != DOOR_LANE) {
-            val lineup = providers.lineup()
             return buildJsonObject {
                 put("lane", lane)
+                put("door", claude.door)
+                put("window", claude.window(lineup))
                 put("models", DoorCatalog(lineup).pickerJson())
                 put("left_out", lineupJson.leftOut(lineup.leftOut.filterNot { it.forwardsClientAuth }))
                 providersJson(this, lineup)
             }
         }
-        val lineup = providers.lineup()
         val (starting, why) = claude.starting(lineup)
         return buildJsonObject {
             put("lane", lane)
             put("door", claude.door)
+            put("window", claude.window(lineup))
             put("default_model", starting)
             put("default_from", why)
             put("models", DoorCatalog(lineup).pickerJson())

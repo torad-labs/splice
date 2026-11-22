@@ -69,7 +69,7 @@ public class DesktopAppConfig(private val env: EnvReader = EnvReader(System::get
     public fun config(door: String, helper: String, policy: JsonObject = JsonObject(emptyMap())): JsonObject {
         val connection = buildJsonObject {
             put("inferenceProvider", "gateway")
-            put(GATEWAY_BASE_URL, door)
+            put(APP_GATEWAY_BASE_URL, door)
             put("inferenceGatewayAuthScheme", "bearer")
             put("inferenceCredentialHelper", helper)
             put("inferenceCredentialHelperTtlSec", HELPER_TTL_SEC)
@@ -89,7 +89,7 @@ public class DesktopAppConfig(private val env: EnvReader = EnvReader(System::get
     public fun withPolicy(config: JsonObject, policy: JsonObject): JsonObject = policies.filled(config, policy)
 
     /** The door address configuration [config] gives Desktop, or null when it gives none. */
-    public fun door(config: JsonObject): String? = JsonScalars.str(config, GATEWAY_BASE_URL)
+    public fun door(config: JsonObject): String? = JsonScalars.str(config, APP_GATEWAY_BASE_URL)
 
     /** The configuration [meta] applies, or null when it applies none. */
     public fun applied(meta: JsonObject): String? = JsonScalars.str(meta, APPLIED_ID)?.ifEmpty { null }
@@ -157,7 +157,7 @@ private const val DOT_CONFIG = ".config"
 private const val APP_DATA = "Claude-3p"
 private const val LIBRARY = "configLibrary"
 private const val LIBRARY_FILE_SUFFIX = ".json"
-private const val GATEWAY_BASE_URL = "inferenceGatewayBaseUrl"
+private const val APP_GATEWAY_BASE_URL = "inferenceGatewayBaseUrl"
 
 /** Desktop's key for the headers every request of its carries, [APP_MODE_HEADER] among them. */
 internal const val APP_HEADERS: String = "inferenceCustomHeaders"

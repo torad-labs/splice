@@ -3,10 +3,9 @@ package splice.client
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -19,14 +18,9 @@ import java.nio.file.attribute.PosixFilePermissions
 
 class ClaudeConfigMaterializerSettingsTest {
 
-    private val optionsCache = buildJsonObject { put("cache", "codex-models") }
-
     private fun spec(configDir: Path) = MaterializeSpec(
         configDir = configDir,
         policy = ClaudePolicy(share = setOf("agents"), isolate = emptySet()),
-        availableModelIds = listOf("m1"),
-        defaultModel = "m1",
-        modelOptionsCache = optionsCache,
         statuslineCommand = "curl",
         signIn = MaterializeSignIn(
             loginCommand = "claudex login",
@@ -59,7 +53,7 @@ class ClaudeConfigMaterializerSettingsTest {
     }
 
     @Test
-    fun `a non-primitive saved model falls back to the default instead of aborting`(@TempDir home: Path) {
+    fun `a pre-existing saved model is not kept`(@TempDir home: Path) {
         Files.createDirectories(home.resolve(".claude").resolve("agents"))
         val configDir = Files.createDirectories(home.resolve(".claude-head"))
         val settings = configDir.resolve("settings.json")
@@ -69,10 +63,11 @@ class ClaudeConfigMaterializerSettingsTest {
         }
         assertTrue(
             outcome.isSuccess,
-            "a non-primitive saved model must not throw out of materialize: ${outcome.exceptionOrNull()}",
+            "materialize with a pre-existing settings.json must succeed: ${outcome.exceptionOrNull()}",
         )
         val written = Files.readString(settings).filterNot { it.isWhitespace() }
-        assertTrue(written.contains("\"model\":\"m1\""), "an unusable saved model falls back to the default: $written")
+        // head-catalog: settings.json is written whole, and it carries no model choice.
+        assertFalse(written.contains("\"model\""), "a saved model is not kept: $written")
     }
 
     private fun sharing(configDir: Path, share: Set<String>, isolate: Set<String> = emptySet()) =
@@ -106,7 +101,7 @@ class ClaudeConfigMaterializerSettingsTest {
         assertEquals(JsonPrimitive(true), settings["includeCoAuthoredBy"], "the head's own value wins: $settings")
         assertEquals(JsonPrimitive("Learning"), settings["outputStyle"], "an inherited key follows global: $settings")
         assertNull(settings["cleanupPeriodDays"], "a key global dropped goes from the head: $settings")
-        assertEquals(JsonPrimitive("m1"), settings["model"])
+        assertFalse(settings.containsKey("model"), "no model choice is written: $settings")
         assertTrue(settings["statusLine"].toString().contains("curl"), "splice's own keys are still written: $settings")
     }
 

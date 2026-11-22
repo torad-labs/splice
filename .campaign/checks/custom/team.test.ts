@@ -35,6 +35,7 @@ auth = { kind = "command", credential_command = "acme-ai token --json", login_co
 local = false
 error_messages = "whole"
 send_version = true
+model_slots = { opus = "${MODEL}", sonnet = "${MODEL}", haiku = "${MODEL}", fable = "${MODEL}" }
 
 [[providers.acme.models]]
 id = "${MODEL}"
@@ -46,7 +47,6 @@ max_output_tokens = 16384
 [heads.acme]
 provider = "acme"
 pinned_model = "${MODEL}"
-model_slots = { opus = "${MODEL}", sonnet = "${MODEL}", haiku = "${MODEL}", fable = "${MODEL}" }
 
 [door.commands.claude-acme]
 head = "acme"

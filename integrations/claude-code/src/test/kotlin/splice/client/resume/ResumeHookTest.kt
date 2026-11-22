@@ -7,11 +7,9 @@ package splice.client.resume
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -41,9 +39,6 @@ class ResumeHookTest {
             MaterializeSpec(
                 configDir = configDir,
                 policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
-                availableModelIds = listOf("gpt-5.6-sol"),
-                defaultModel = "gpt-5.6-sol",
-                modelOptionsCache = buildJsonObject { put("cache", "x") },
                 statuslineCommand = "curl :3096/statusline",
                 signIn = MaterializeSignIn(
                     headKey = "codex",

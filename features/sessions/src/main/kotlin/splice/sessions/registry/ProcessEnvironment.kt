@@ -15,13 +15,17 @@
 // started with, which name the MCP config file its launch wrote. The arguments come from /proc/<pid>/cmdline, or on
 // macOS from ProcessHandle, and are scanned by the caller and kept nowhere. door-sessions (Nov 20, 2026): a launch
 // record whose base URL is a door, this machine's or another machine's, places the session on that door (LaunchDoors,
-// the reader record-launch wrote the record with), before any head is asked.
+// the reader record-launch wrote the record with), before any head is asked. head-catalog (Nov 19, 2026) narrows it: a
+// head's command starts its session on this machine's Splice gateway, whose address is the door's, so a record naming a
+// head other than `claude` there is that head's session, not a door session.
 package splice.sessions.registry
 
 import splice.core.config.StatePaths
 import splice.core.process.LaunchOwner
 import splice.core.process.LaunchOwners
+import splice.core.topology.CLAUDE_COMMAND
 import splice.core.topology.LaunchDoors
+import splice.core.turn.GATEWAY_PATH
 import splice.core.util.Cancellables
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -44,6 +48,7 @@ public class ProcessEnvironment(
     private val darwin: DarwinPs = DarwinPs(),
 ) {
     private val localHead = Regex("^https?://127\\.0\\.0\\.1:(\\d+)")
+    private val onGateway = Regex("^https?://127\\.0\\.0\\.1:\\d+(?:/door|${Regex.escape(GATEWAY_PATH)})/?$")
     private val wanted = listOf("$SPLICE_MARKER=").map { it.toByteArray() }
     private val configHome = listOf("$CONFIG_HOME_VARIABLE=").map { it.toByteArray() }
 
@@ -95,13 +100,25 @@ public class ProcessEnvironment(
     public fun route(pid: Long, doors: LaunchDoors?, headOf: HeadOfPort): SessionRoute {
         val launch = owners.read(pid) ?: return unlaunched(pid)
         if (launch.kind != "session") return SessionRoute.Unknown
-        return doors?.of(launch.head, launch.baseUrl)?.let(SessionRoute::Door) ?: onHead(launch, headOf)
+        return gatewayHead(launch)
+            ?: doors?.of(launch.head, launch.baseUrl)?.let(SessionRoute::Door)
+            ?: onHead(launch, headOf)
     }
 
-    /** The head [launch] declared, when [headOf] still names that head on the declared port; else UNKNOWN. */
+    /** head-catalog: a head's command starts its session on the Splice gateway, which no head's port answers, and its
+     *  launch records the head it serves (GatewayLaunch, LaunchOwnerCommand), so this machine's gateway does not make
+     *  it a door session. `claude` on the gateway is the door's, and reads as one. */
+    private fun gatewayHead(launch: LaunchOwner): SessionRoute.Head? = launch.head
+        .takeIf { it != CLAUDE_COMMAND && onGateway.containsMatchIn(launch.baseUrl) }
+        ?.let(SessionRoute::Head)
+
+    /** The head [launch] declared, when [headOf] still names that head on the declared port, or when the launch's
+     *  base URL is the Splice gateway, which no head's port answers and which names its head by the launch itself;
+     *  else UNKNOWN. */
     private fun onHead(launch: LaunchOwner, headOf: HeadOfPort): SessionRoute {
         val port = localHead.find(launch.baseUrl)?.groupValues?.get(1)?.toIntOrNull()
-        val head = port?.let(headOf::invoke)
+        val gateway = launch.head != CLAUDE_COMMAND && onGateway.containsMatchIn(launch.baseUrl)
+        val head = if (gateway) launch.head else port?.let(headOf::invoke)
         return if (head == launch.head) SessionRoute.Head(head) else SessionRoute.Unknown
     }
 

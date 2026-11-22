@@ -4,8 +4,6 @@
 // operator's splice.toml exercises (share names projects -> the link; isolate names it -> private).
 package splice.client.wrap
 
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -62,9 +60,6 @@ class ProjectsLinkTest {
         val spec = MaterializeSpec(
             configDir = configDir,
             policy = policy,
-            availableModelIds = listOf("m"),
-            defaultModel = "m",
-            modelOptionsCache = buildJsonObject { put("cache", "x") },
             statuslineCommand = "curl :3096/statusline",
             signIn = MaterializeSignIn(
                 headKey = "codex",

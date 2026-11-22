@@ -2,7 +2,6 @@
 // and its own config root are facts of one request and travel together; LaunchService reads each of them from here.
 package splice.launch.recipe
 
-import splice.client.desktop.DoorPicker
 import splice.client.wrap.WrappedLaunch
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -17,9 +16,12 @@ public data class LaunchCaller(
     val inheritedConfigDir: String? = null,
     /** MCP hub step 6: the launcher's own pid, which exec keeps for Claude Code; null from a shim before shim-20. */
     val launch: String? = null,
-    /** door-default, decision 9: the rows a launch of `claude` on its head adds to `/model` after Claude Code's own;
-     *  null for every other launch, and with no account signed in. */
-    val picker: DoorPicker? = null,
+    /** head-catalog: the Splice gateway a head's command starts its session on, in Claude Code's gateway mode; null
+     *  for a head that forwards the person's own Claude login, a command another machine serves, and a daemon with no
+     *  gateway open. */
+    val gateway: GatewayAt? = null,
+    /** The command the person typed, which the launch's notice names (head-catalog); null where none is known. */
+    val command: String? = null,
 ) {
     /** The cwd as an absolute path, or null when the shim sent none or a relative one. */
     internal fun absoluteCwd(): Path? = cwd?.let { Paths.get(it) }?.takeIf { it.isAbsolute }

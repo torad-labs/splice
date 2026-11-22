@@ -160,9 +160,6 @@ class ForegroundHookTest {
         val spec = MaterializeSpec(
             configDir = head,
             policy = ClaudePolicy(share = setOf("settings"), isolate = emptySet()),
-            availableModelIds = listOf("synthetic-model"),
-            defaultModel = "synthetic-model",
-            modelOptionsCache = buildJsonObject { },
             statuslineCommand = "",
             signIn = MaterializeSignIn(
                 headKey = "synthetic",
@@ -189,9 +186,6 @@ class ForegroundHookTest {
         val spec = MaterializeSpec(
             configDir = head,
             policy = ClaudePolicy(share = setOf("settings"), isolate = emptySet()),
-            availableModelIds = listOf("synthetic-model"),
-            defaultModel = "synthetic-model",
-            modelOptionsCache = buildJsonObject { },
             statuslineCommand = "",
             signIn = MaterializeSignIn(
                 headKey = "synthetic",
@@ -228,9 +222,6 @@ class ForegroundHookTest {
         val spec = MaterializeSpec(
             configDir = head,
             policy = ClaudePolicy(share = setOf("settings"), isolate = emptySet()),
-            availableModelIds = listOf("synthetic-model"),
-            defaultModel = "synthetic-model",
-            modelOptionsCache = buildJsonObject { },
             statuslineCommand = "",
             signIn = MaterializeSignIn(
                 headKey = "synthetic",

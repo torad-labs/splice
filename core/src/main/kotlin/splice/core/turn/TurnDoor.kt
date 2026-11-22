@@ -18,5 +18,9 @@ public const val TERMINAL_DOOR: String = "terminal"
 /** The terminal's `claude` on its head, which hands a model of another head to that head (door-default, decision 9). */
 public const val CLAUDE_DOOR: String = "claude"
 
+/** Where the door, the Splice gateway, is answered on the control port. head-catalog: every head's command starts its
+ *  session there too, so a session whose base URL is the gateway's is named its head by its launch, not by a port. */
+public const val GATEWAY_PATH: String = "/desktop"
+
 /** Every name a row's door can carry. */
 public val turnDoors: Set<String> = setOf(DESKTOP_DOOR, TERMINAL_DOOR, CLAUDE_DOOR)

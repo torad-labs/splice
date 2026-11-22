@@ -6,10 +6,8 @@ package splice.client.wrap
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.client.Keys
 import splice.client.SessionHelpers
@@ -88,18 +86,16 @@ public class WrappedLaunch internal constructor(public val configDir: Path) {
         return if (isHead) listOf("CLAUDE_CONFIG_DIR") else emptyList()
     }
 
-    /** The `--settings` JSON a wrapped launch hands Claude Code in place of a materialized settings.json: the
-     *  head's model roster (as an enforced allowlist, so the picker offers what the head serves) and its status
-     *  line. The client merges it over the operator's own settings for this run only, so nothing is written to
-     *  ~/.claude/settings.json and a plain `claude` afterwards reads the file it always read. A null roster is a
-     *  head whose client picks its own models (V4-449): the overlay then carries the status line alone. [marked] adds
+    /** The `--settings` JSON a wrapped launch hands Claude Code in place of a materialized settings.json: the head's
+     *  status line, and no model list (head-catalog, Nov 19, 2026: the one list is the Splice gateway's). The client
+     *  merges it over the operator's own settings for this run only, so nothing is written to
+     *  ~/.claude/settings.json and a plain `claude` afterwards reads the file it always read. [marked] adds
      *  splice's launch mark (LaunchMarker), which a launch on macOS carries. [helpers] are the `apiKeyHelper` of a
      *  head that checks the turn key (key rotation, Oct 26) and the `otelHeadersHelper` of a command whose server relays
      *  its telemetry (server mode, F8): with no settings.json written, the overlay is the one place the session can
      *  read them from. [hooks] are the head's hooks by event, its startup hook (round 6 of #247),
      *  which Claude Code runs beside the operator's own. */
     public fun settingsOverlay(
-        availableModelIds: List<String>?,
         statuslineCommand: String,
         marked: Boolean = false,
         helpers: SessionHelpers = SessionHelpers(),
@@ -107,10 +103,6 @@ public class WrappedLaunch internal constructor(public val configDir: Path) {
     ): String =
         buildJsonObject {
             helpers.writeInto(this)
-            if (availableModelIds != null) {
-                putJsonArray(Keys.AVAILABLE_MODELS) { availableModelIds.forEach { add(it) } }
-                put("enforceAvailableModels", true)
-            }
             putJsonObject(Keys.STATUS_LINE) {
                 put("type", "command")
                 put("command", statuslineCommand)

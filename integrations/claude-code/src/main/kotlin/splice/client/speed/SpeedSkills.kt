@@ -30,7 +30,7 @@ import kotlin.io.path.isDirectory
 import kotlin.io.path.isSymbolicLink
 
 private const val SKILLS_DIR = "skills"
-private const val SKILL_FILE = "SKILL.md"
+internal const val SKILL_FILE: String = "SKILL.md"
 
 /** The speed skills of one head. */
 internal class SpeedSkills(private val log: LogSink) {
@@ -74,7 +74,7 @@ internal class SpeedSkills(private val log: LogSink) {
         Files.deleteIfExists(dir)
     }
 
-    private fun isOwn(dir: Path): Boolean = try {
+    fun isOwn(dir: Path): Boolean = try {
         bodyOf(Files.readString(dir.resolve(SKILL_FILE))).startsWith("$SPEED_SENTINEL ")
     } catch (_: NoSuchFileException) {
         false

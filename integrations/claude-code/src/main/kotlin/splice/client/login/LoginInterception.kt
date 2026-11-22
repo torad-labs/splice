@@ -73,8 +73,8 @@ internal class HookInstaller(
 }
 
 internal object LoginInterception {
-    private const val CAPTURE_HOOK_SH = "splice-key-capture-hook.sh"
-    private const val KEYSETUP_HOOK_SH = "splice-keysetup-hook.sh"
+    const val CAPTURE_HOOK_SH: String = "splice-key-capture-hook.sh"
+    const val KEYSETUP_HOOK_SH: String = "splice-keysetup-hook.sh"
     const val USER_PROMPT_SUBMIT: String = "UserPromptSubmit"
 
     /**
@@ -161,13 +161,6 @@ internal object LoginInterception {
         }
         return leg.getOrElse { emptyMap() }
     }
-
-    /** Exact generated commands, so preserving local hooks never revives an obsolete capture hook. */
-    fun ownedHookCommands(configDir: Path): Set<String> = setOf(
-        configDir.resolve(LOGIN_HOOK_SH).toString(),
-        configDir.resolve(CAPTURE_HOOK_SH).toString(),
-        configDir.resolve(KEYSETUP_HOOK_SH).toString(),
-    )
 
     /** Concatenate two hook-addition maps per event — a plain map `+` would silently overwrite
      *  a duplicate event key (e.g. capture hook + login hook both landing on UserPromptSubmit). */

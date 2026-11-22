@@ -8,6 +8,7 @@
 // its configuration, or since the picker changed, since Desktop reads both only at launch.
 package splice.diagnostics.doctor
 
+import splice.core.head.DeprecatedHeads
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
 
@@ -32,13 +33,17 @@ public fun interface ClaudeLaneRead {
 /** The doctor's checks of the lane [read] reads, which passes on either lane and says which one it is, and of Claude
  *  Desktop where the reading carries it. */
 internal class ClaudeLaneCheck(private val read: ClaudeLaneRead) {
-    /** None with no [topology] read, or where nothing reads the lane. */
+    /** None with no [topology] read, or where nothing reads the lane. head-catalog: a warning row per custom head the
+     *  install still has, saying it is deprecated, what to type instead and how to retire it. */
     fun checks(topology: Topology?, env: EnvReader): List<DoctorCheck> {
         val reading = topology?.let { read(it, env) } ?: return emptyList()
         val desktop = reading.desktop?.let {
             DoctorCheck(DESKTOP_CHECK, if (it.warn) CheckStatus.WARN else CheckStatus.OK, it.said, it.fix)
         }
-        return listOfNotNull(DoctorCheck(LANE_CHECK, CheckStatus.OK, reading.said, reading.fix), desktop)
+        val deprecated = DeprecatedHeads(topology, env).all(reading.onDoor).map {
+            DoctorCheck("head ${it.command}", CheckStatus.WARN, it.text)
+        }
+        return listOfNotNull(DoctorCheck(LANE_CHECK, CheckStatus.OK, reading.said, reading.fix), desktop) + deprecated
     }
 }
 

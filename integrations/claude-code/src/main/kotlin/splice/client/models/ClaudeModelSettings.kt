@@ -1,56 +1,47 @@
 package splice.client.models
 
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
+import splice.client.ClaudeModelLists
 import splice.client.Keys
-import splice.client.MaterializeSpec
 import splice.client.desktop.DesktopSettings
+import splice.client.desktop.GATEWAY_BASE_URL
+import splice.client.desktop.GATEWAY_DISCOVERY
+import splice.client.desktop.GATEWAY_TOKEN
+import splice.client.desktop.GatewayMode
 
-/** Pure model-selection and picker policy; the materializer owns filesystem writes and hooks. */
+/** What a head's own settings.json carries of the person's settings, and what its .claude.json keeps. head-catalog
+ *  (Marcos, Nov 19, 2026: one list, the Splice gateway's): no model list and no model choice, of splice's or carried
+ *  from the person's file. Not `availableModels`, `enforceAvailableModels`, `modelPicker`, `modelOverrides` or `model`,
+ *  no variable in `env` that lays a list or sends a session past the gateway, and no `additionalModelOptionsCache`. An
+ *  older launch's are taken out at the next one, since settings.json is written whole and the cache key is dropped. The
+ *  person's other keys in a head's own file keep working, as they did. */
 internal object ClaudeModelSettings {
-    private const val MODEL_OPTIONS_CACHE = "additionalModelOptionsCache"
     private val desktop = DesktopSettings()
+    private val lists = ClaudeModelLists.settingsKeys.toSet() + Keys.MODEL
+    private val pastGateway = GatewayMode().unset.toSet() + GATEWAY_BASE_URL + GATEWAY_TOKEN + GATEWAY_DISCOVERY + MODEL
 
-    /** What a head takes from the person's [global] settings. desktop-door: a head with a folder of its own carries
-     *  nothing of the door the person's file may hold. */
-    fun inherited(global: JsonObject, spec: MaterializeSpec): JsonObject =
-        JsonObject(desktop.inherited(global).filterKeys { carried(it, clientPicks = spec.availableModelIds == null) })
+    /** What a head takes from the person's [global] settings: desktop-door's inherited keys, less anything that would
+     *  lay a model list of its own. */
+    fun inherited(global: JsonObject): JsonObject =
+        JsonObject(desktop.inherited(global).filterKeys(::carried))
 
-    /** [fromGlobal] with the head's [own] keys over it, which no more send its sessions past it than global's do. */
-    fun base(fromGlobal: JsonObject, own: JsonObject, saved: String?, spec: MaterializeSpec): JsonObject {
-        val allow = spec.availableModelIds
-        return buildJsonObject {
-            (fromGlobal + desktop.inherited(own)).forEach { (key, value) -> put(key, value) }
-            if (allow != null) {
-                putJsonArray(Keys.AVAILABLE_MODELS) { allow.forEach { add(it) } }
-                put("enforceAvailableModels", true)
+    /** [fromGlobal] with the head's [own] keys over it, which no more lay a model list than global's do. */
+    fun base(fromGlobal: JsonObject, own: JsonObject): JsonObject = buildJsonObject {
+        (fromGlobal + desktop.inherited(own)).forEach { (key, value) ->
+            when {
+                key == ENV && value is JsonObject -> put(key, JsonObject(value - pastGateway))
+                carried(key) -> put(key, value)
             }
-            chosen(saved, spec)?.let { put(Keys.MODEL, it) }
         }
     }
 
-    /** Head overrides win their keys; a client-owned mapping of any other model remains intact. */
-    fun overrides(global: JsonObject, own: Map<String, String>): JsonObject? {
-        if (own.isEmpty()) return null
-        val shared = (global[Keys.MODEL_OVERRIDES] as? JsonObject).orEmpty()
-        return JsonObject(shared + own.mapValues { (_, id) -> JsonPrimitive(id) })
-    }
+    /** [local], a head's .claude.json, without the picker cache an older launch laid there. */
+    fun withoutLaunchCache(local: JsonObject): JsonObject = JsonObject(local - ClaudeModelLists.STATE_CACHE)
 
-    fun withLaunchCache(local: JsonObject, cache: JsonElement?): JsonObject =
-        JsonObject(if (cache == null) local - MODEL_OPTIONS_CACHE else local + (MODEL_OPTIONS_CACHE to cache))
-
-    /** With no head roster, preserve the client's saved choice without inventing one. */
-    private fun chosen(saved: String?, spec: MaterializeSpec): String? {
-        val allow = spec.availableModelIds ?: return saved
-        return if (saved != null && saved in allow) saved else spec.defaultModel
-    }
-
-    private fun carried(key: String, clientPicks: Boolean): Boolean =
-        key != Keys.STATUS_LINE && key != Keys.HOOKS &&
-            (clientPicks || key != Keys.MODEL && key != Keys.AVAILABLE_MODELS)
+    private fun carried(key: String): Boolean = key != Keys.STATUS_LINE && key != Keys.HOOKS && key !in lists
 }
+
+private const val ENV = "env"
+private const val MODEL = "ANTHROPIC_MODEL"

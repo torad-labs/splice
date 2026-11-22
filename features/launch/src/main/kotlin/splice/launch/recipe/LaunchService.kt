@@ -4,12 +4,14 @@
 // version broke two things: (1) Claude Code fell back to Anthropic /login because it saw a custom
 // ANTHROPIC_API_KEY instead of an ANTHROPIC_AUTH_TOKEN bearer; (2) only the pinned model showed
 // because CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY wasn't set, so the /model picker never queried
-// /v1/models. The bearer stays. Discovery was RETIRED (2026-08-30): the materialized roster —
-// settings.json availableModels + .claude.json additionalModelOptionsCache, both from the head's
-// selected catalog — is the picker's ONE source now, all bare ids. Discovery re-served the same
-// models under wrapped /v1/models ids, so every picker row appeared twice, and a wrapped ACTIVE id
-// makes Claude Code ignore CLAUDE_CODE_MAX_CONTEXT_TOKENS (ab5ca6b: honored for unwrapped names
-// only), which per-head context windows depend on.
+// /v1/models. The bearer stays. Discovery was retired on 2026-08-30 for a materialized roster per head, and came
+// back with head-catalog (Nov 19, 2026; Marcos: one list, the Splice gateway's, in every session): a head's command
+// starts Claude Code in its gateway mode at the Splice gateway (GatewayMode), in the head's own folder and on the
+// head's own model, and splice hands it no list of its own anywhere: no roster, no picker cache, no modelOverrides
+// and no tier variables. The gateway's /v1/models is the one list (GatewayModels), and its routing runs a turn on the
+// head and login of the model it names. A head that forwards the person's own Claude login, which the gateway never
+// carries, keeps its own way to Anthropic, with no list of splice's either; a command another machine serves (LAN
+// share) keeps its own address and its tiers.
 package splice.launch.recipe
 
 import splice.client.ClaudeConfigMaterializer
@@ -19,6 +21,7 @@ import splice.client.MaterializeSignIn
 import splice.client.MaterializeSpec
 import splice.client.SessionHelpers
 import splice.client.TrustedLaunch
+import splice.client.desktop.GATEWAY_DISCOVERY
 import splice.client.desktop.providerSwitches
 import splice.client.mcp.HubLaunchArgs
 import splice.client.mcp.HubLaunchFor
@@ -98,6 +101,9 @@ public class LaunchService(
      *  requests; null launches `claude` on its head, as before. */
     public var door: ClaudeDoor? = null
 
+    /** head-catalog: what a head's command changes in its launch to start on the Splice gateway. */
+    private val onGateway = GatewayLaunch()
+
     /** What a launch of `claude` on the [door] runs. */
     internal val onDoor = DoorRecipe(wrap, wrapState, claudeBinary)
 
@@ -137,21 +143,20 @@ public class LaunchService(
         if (chosen is ClaudeToRun.Refused) return LaunchOutcome.Refused(chosen.reason)
         val claude = (chosen as? ClaudeToRun.Wrapped)?.path ?: claudeBinary
         val wrapped = caller.wrapped
-        val keyed = if (keyPresentNow) withoutTokenCapture(spec) else spec
+        val captured = if (keyPresentNow) withoutTokenCapture(spec) else spec
+        // head-catalog: a session on the gateway holds the gateway's key alone, as `claude` does: no helper of the head's
+        // own turn key beside it (Claude Code 2.1.329 warns "Both ANTHROPIC_AUTH_TOKEN and apiKeyHelper set")
+        val keyed = onGateway.keyed(captured, caller.gateway)
         val tree = wrapped?.let { keyed.copy(trees = keyed.trees.copy(own = it.configDir)) } ?: keyed
         // Telemetry the command's managed settings set is theirs, and splice then sends none (server mode, F8).
         val effective = withManagedTelemetry(tree)
-        val slots = LaunchAliasSlots.of(effective)
+        val slots = onGateway.slots(effective, caller.gateway)
         // V4-358: every choice above is made on the rows' own ids; what the client is HANDED is spelled here.
         val held = effort.given(effective.heldByClient(), extraArgs)
-        // V4-449: client-login heads author no roster or picker cache; an explicit pin is a launch default only.
-        val roster = held.models.availableModelIds.takeUnless { held.gateway.clientModels }
+        // head-catalog: no head authors a roster, a picker cache or a saved model choice; the gateway's list is the one.
         val materialize = MaterializeSpec(
             configDir = effective.trees.own,
             policy = effective.policy,
-            availableModelIds = roster,
-            defaultModel = held.models.pinnedModel,
-            modelOptionsCache = held.models.modelOptionsCache,
             statuslineCommand = effective.gateway.statuslineCommand,
             signIn = MaterializeSignIn(
                 loginCommand = effective.signIn.loginCommand,
@@ -166,12 +171,9 @@ public class LaunchService(
         // the resume of a move in flight, the folder it is moving out of: the one way home is ever trusted.
         val trust = caller.absoluteCwd()
             ?.let { TrustedLaunch(it, effective.trees.siblings, resume.movingFolder(extraArgs)) }
-        // V4-232: a head's presented rows enter its OWN settings.json only. V4-445: a wrapped launch materializes
-        // NOTHING: it runs over the operator's own ~/.claude and ~/.claude.json, which stay as they are, and
-        // carries the head's settings as a --settings overlay below.
-        val modelOverrides = effective.models.tiers.modelOverrides
-            .takeUnless { effective.gateway.clientModels }.orEmpty()
-        val speed = materializeLaunch(materialize, trust, modelOverrides, effective.helpers, wrapped)
+        // V4-445: a wrapped launch materializes NOTHING: it runs over the operator's own ~/.claude and ~/.claude.json,
+        // which stay as they are, and carries the head's settings as a --settings overlay below.
+        val speed = materializeLaunch(materialize, trust, effective.helpers, wrapped)
         // V4-276: a launch never writes a head's .credentials.json. V4-129 copied the selected stored
         // login over it here, and Claude Code's refresh tokens rotate, so every launch put back a
         // superseded token and upstream revoked the login (V4-237, V4-250). The live login is
@@ -189,7 +191,7 @@ public class LaunchService(
         val adoption = resume.adopt(held, asked, caller.cwd)
         // V4-445: Claude Code reads ~/.claude.json only while CLAUDE_CONFIG_DIR is unset. Set to the vanilla dir it
         // reads ~/.claude/.claude.json, a file that holds none of the operator's mcpServers, projects or account.
-        val environment = speed.environment(launchEnvironment(spec, held, slots, wrapped, caller.inheritedConfigDir))
+        val environment = speed.environment(launchEnvironment(spec, held, slots, caller))
         val hub = hubArgs(caller, wrapped, effective, claude)
         val argv = buildList {
             // V4-129: the real absolute path when `claude` on PATH is currently the wrap shim itself
@@ -199,7 +201,7 @@ public class LaunchService(
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             // a launch on macOS carries splice's mark in its --settings, the one sign of it a hardened claude's
             // arguments keep there (LaunchMarker); elsewhere the arguments are as they were
-            addAll(LaunchMarker.settingsArgs(overlayOf(caller, roster, held, keyed)))
+            addAll(LaunchMarker.settingsArgs(overlayOf(caller, held, keyed)))
             addAll(hub.args + effort.args(held)) // the effort after the hub's: a relaunch reads it as its own
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
@@ -207,30 +209,27 @@ public class LaunchService(
             addAll(resume.resumingAs(asked, adoption))
         }
         val warnings = listOf(resume.warning(adoption), bounded.warning, hub.warning)
-        // door-default (docs/specs/door-default.md, decision 7): the launch of another provider's own command says it is
-        // deprecated and what to type in `claude` for its model. A launch of `claude` says nothing of it, on its head as
-        // on the door (DoorRecipe): it is the command the notice sends a person to, and on its head it carries the
-        // door's models (decision 9). `claude` runs them already where it has a head here, or is linked on the door.
-        val notice = HeadsDeprecated(door, linked = chosen is ClaudeToRun.Wrapped).said(spec).takeIf { wrapped == null }
-        val warning = launchWarning(spec, dangerouslySkipPermissions, warnings + notice)
+        val warning = warningOf(spec, dangerouslySkipPermissions, warnings, caller)
+        onGateway.record(caller.launch, spec.signIn.headKey, caller.gateway)
         return LaunchOutcome.Ready(environment.recipe(argv, warning))
     }
 
-    /** A wrapped launch's --settings overlay: the roster, the status line, splice's launch mark on macOS, the key
-     *  helper of a head that checks the turn key (Oct 26), and [head]'s startup hook, so the session is recorded as
-     *  the head's (round 6 of #247); and for `claude` on its head, the picker rows the [caller] adds after Claude
-     *  Code's own models (door-default, decision 9). Null for a launch that materialized its own settings. */
-    private fun overlayOf(
-        caller: LaunchCaller,
-        roster: List<String>?,
-        held: LaunchSpec,
-        head: LaunchSpec,
-    ): String? {
+    /** The launch's warnings in one line, and on a line of its own after them the notice of a custom head:
+     *  door-default, decision 7 as head-catalog changed it, every custom head's launch says custom heads are deprecated
+     *  and will be removed in a coming release, and what to type instead, `claude` on its head too (a head itself);
+     *  `claude` on the Splice gateway runs no head and says nothing of it (DoorRecipe). */
+    private fun warningOf(spec: LaunchSpec, skip: Boolean, warnings: List<String?>, caller: LaunchCaller): String? {
+        val notice = caller.command?.let { HeadsDeprecated().said(it, spec, caller.gateway, door) }
+        return listOfNotNull(launchWarning(spec, skip, warnings), notice).takeIf { it.isNotEmpty() }?.joinToString("\n")
+    }
+
+    /** A wrapped launch's --settings overlay: the status line, splice's launch mark on macOS, the key helper of a head
+     *  that checks the turn key (Oct 26), and [head]'s startup hook, so the session is recorded as the head's (round 6
+     *  of #247). No model list (head-catalog). Null for a launch that materialized its own settings. */
+    private fun overlayOf(caller: LaunchCaller, held: LaunchSpec, head: LaunchSpec): String? {
         val wrapped = caller.wrapped ?: return null
         val hooks = materializer.startupHook(head.trees.own, head.signIn.headKey)
-        val marked = LaunchMarker.here
-        val overlay = wrapped.settingsOverlay(roster, held.gateway.statuslineCommand, marked, held.helpers, hooks)
-        return caller.picker?.addedTo(overlay) ?: overlay
+        return wrapped.settingsOverlay(held.gateway.statuslineCommand, LaunchMarker.here, held.helpers, hooks)
     }
 
     /** MCP hub step 6: what the hub adds to this launch. A wrapped launch reads the user's own config home and falls
@@ -260,12 +259,11 @@ public class LaunchService(
     private fun materializeLaunch(
         spec: MaterializeSpec,
         trust: TrustedLaunch?,
-        modelOverrides: Map<String, String>,
         helpers: SessionHelpers,
         wrapped: WrappedLaunch?,
     ): SpeedOffer {
         val tiers = speeds?.takeIf { wrapped == null }?.offered(spec.signIn.headKey)
-        if (wrapped == null) materializer.materialize(spec, trust, modelOverrides, helpers, tiers)
+        if (wrapped == null) materializer.materialize(spec, trust, helpers, tiers)
         return SpeedOffer(tiers)
     }
 
@@ -304,9 +302,10 @@ public class LaunchService(
         spec: LaunchSpec,
         held: LaunchSpec,
         slots: List<Pair<String, String>>,
-        wrapped: WrappedLaunch?,
-        inheritedConfigDir: String?,
+        caller: LaunchCaller,
     ): LaunchEnvironment {
+        val wrapped = caller.wrapped
+        val gateway = caller.gateway
         val auth = if (spec.gateway.forwardClientAuth) {
             emptyList()
         } else {
@@ -319,25 +318,24 @@ public class LaunchService(
         val emitted = slots.map { it.first }.toSet()
         val absentTiers = ClaudeTiers.names.filterNot { it in emitted }.flatMap(ClaudeTiers::variables)
         val dirs = listOf(spec.trees.own) + spec.trees.siblings
-        val config = wrapped?.configRootUnsets(inheritedConfigDir, dirs).orEmpty()
+        val config = wrapped?.configRootUnsets(caller.inheritedConfigDir, dirs).orEmpty()
         // V4-449: what this head no longer plants must not leak in from an outer head's session either.
-        val planted = buildEnv(held, slots) + effort.env(held)
+        val planted = (gateway?.let { onGateway.env(buildEnv(held, emptyList()), held, it) } ?: buildEnv(held, slots)) +
+            effort.env(held)
         val clientModels = if (spec.gateway.clientModels) {
             LaunchModelEnvironment.inherited(planted)
         } else {
             emptyList()
         }
         val env = if (wrapped == null) planted else planted - CONFIG_DIR_ENV
-        return LaunchEnvironment(
-            env,
-            // Claude Code's provider switches, cleared from every launch: a shell inside a Code tab session carries
-            // the desktop door's, and a session that inherits any of them goes past its head.
-            // (4) the word that the address is Anthropic's own, which only a head that reaches Anthropic plants: a
-            // translated head launched from inside a Claude session must not inherit it.
-            auth + "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY" + absentTiers + clientModels + config +
-                providerSwitches + listOfNotNull(FIRST_PARTY_ENV.takeUnless { spec.gateway.reachesAnthropic }) +
-                LaunchTelemetry.cleared(held),
-        )
+        // Claude Code's provider switches, cleared from every launch: a shell inside a Code tab session carries the
+        // desktop door's, and a session that inherits any of them goes past its head. (4) the word that the address is
+        // Anthropic's own, which only a head that reaches Anthropic plants: a translated head launched from inside a
+        // Claude session must not inherit it. On the gateway: every way past it and every list but its own.
+        val unset = auth + GATEWAY_DISCOVERY + absentTiers + clientModels + config + providerSwitches +
+            listOfNotNull(FIRST_PARTY_ENV.takeUnless { spec.gateway.reachesAnthropic }) +
+            LaunchTelemetry.cleared(held) + gateway?.let { onGateway.unset }.orEmpty()
+        return LaunchEnvironment(env, unset.distinct() - env.keys)
     }
 
     /** Oct 26 (key rotation): Claude Code prefers an ANTHROPIC_AUTH_TOKEN over the key helper and then never runs the
@@ -448,4 +446,4 @@ private const val OWN_MCP_CALLER_HEAD = "head"
 
 /** Claude Code's word that ANTHROPIC_BASE_URL is Anthropic's own API behind another address (read in the 2.1.326
  *  client, where it is that variable's declared companion). */
-private const val FIRST_PARTY_ENV = "_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL"
+internal const val FIRST_PARTY_ENV = "_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL"

@@ -19,7 +19,8 @@ internal class DoorRecipe(
     private val claudeBinary: String,
 ) {
     /** The launch [door] carries, with the person's [extraArgs]. An inherited CLAUDE_CONFIG_DIR that is one of
-     *  [headDirs] (a session started inside a head's) is taken out, and a root of the person's own is kept. */
+     *  [headDirs] (a session started inside a head's) is taken out, and a root of the person's own is kept; [door]'s
+     *  notice, what that head's own launch would say (head-catalog), is on a line of its own. */
     fun outcome(
         door: DoorLaunchSpec,
         extraArgs: List<String>,
@@ -41,7 +42,8 @@ internal class DoorRecipe(
             addAll(merged.args)
         }
         val config = wrap.ownHome().configRootUnsets(caller.inheritedConfigDir, headDirs)
-        val warning = "dangerouslySkipPermissions engaged: $DANGER".takeIf { dangerouslySkipPermissions }
+        val danger = "dangerouslySkipPermissions engaged: $DANGER".takeIf { dangerouslySkipPermissions }
+        val warning = listOfNotNull(danger, door.notice).takeIf { it.isNotEmpty() }?.joinToString("\n")
         return LaunchOutcome.Ready(LaunchEnvironment(door.env, door.unset + config).recipe(argv, warning))
     }
 }

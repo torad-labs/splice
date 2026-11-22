@@ -3,6 +3,14 @@
 ## Unreleased: a provider is served with no head, Claude Desktop sets itself up, and one model catalog
 
 ### Highlights
+- **Custom heads are deprecated and will be removed in a coming release.** One Claude Code replaces them: `claude`
+  through the Splice gateway, in Claude Code's gateway mode, whose `/model` is the gateway's one list (its
+  `/v1/models`, which Claude Code discovers), the same in every session. Type `claude` and `/model <selector>` for a
+  head's model: every model name of today keeps working. Until they go, every head's command starts Claude Code
+  through the Splice gateway with no model list of its own, and says when it starts that it is going and what to type.
+  `splice claude retire --all` (or `retire <command>`) retires heads now, with a dated backup; `splice claude
+  restore` brings one back exactly as it was; `splice claude check` says whether `claude` on the Splice gateway is the
+  one way Claude Code starts here, with the one list.
 - **A provider is served with no head.** Every provider in `splice.toml` is assembled for the gateway from its own
   table, so the door, the door on your network, a team's door, `splice status` and `splice doctor` all read
   providers, and a `splice.toml` with no `[heads.*]` block serves all three provider formats. A provider carries

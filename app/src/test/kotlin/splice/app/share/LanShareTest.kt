@@ -242,14 +242,14 @@ class LanShareTest {
     private fun tierModels(env: Map<String, String>): Set<String> =
         env.filterKeys { Regex("ANTHROPIC_DEFAULT_[A-Z]+_MODEL").matches(it) }.values.toSet()
 
-    /** The models the session's /model picker lists, each by the server model its row names: Claude Code draws the
-     *  picker from the options cache in its config folder's .claude.json. */
-    private fun pickerModels(env: Map<String, String>): Set<String> {
-        val config = Path.of(env.getValue("CLAUDE_CONFIG_DIR")).resolve(".claude.json").readText()
-        val rows = Json.parseToJsonElement(config).jsonObject.getValue("additionalModelOptionsCache").jsonArray
-        return rows.map { row -> row.jsonObject.getValue("value").jsonPrimitive.content }
-            .map { value -> listOf(SOL, MINI).firstOrNull { it in value } ?: value }
-            .toSet()
+    /** A node's launch writes no model list of its own: the session's /model is the Splice gateway's, read at start. */
+    private fun noList(env: Map<String, String>) {
+        val dir = Path.of(env.getValue("CLAUDE_CONFIG_DIR"))
+        val state = Json.parseToJsonElement(dir.resolve(".claude.json").readText()).jsonObject
+        val settings = Json.parseToJsonElement(dir.resolve("settings.json").readText()).jsonObject
+        assertFalse("additionalModelOptionsCache" in state, state.keys.toString())
+        assertFalse("availableModels" in settings, settings.keys.toString())
+        assertFalse("modelOverrides" in settings)
     }
 
     @Test
@@ -264,7 +264,7 @@ class LanShareTest {
         val secrets = listOf(macKey, TurnKey(MgmtKey(macState)).get(), PRIMARY_TOKEN, WORK_TOKEN)
         assertTrue(env.values.none { value -> secrets.any { it in value } }, "a node's session holds no credential")
         assertTrue(tierModels(env).all { it.contains(SOL) || it.contains(MINI) }, env.toString())
-        assertEquals(setOf(SOL, MINI), pickerModels(env), "the node's /model picker lists the server's models")
+        noList(env)
     }
 
     /** The launch shim records each session it starts, `splice record-launch <pid> <command> <base url> session …`, with
@@ -321,7 +321,7 @@ class LanShareTest {
         assertTrue(tierModels(env).isNotEmpty() && tierModels(env).all { it.contains(MINI) }, env.toString())
         val settings = Path.of(env.getValue("CLAUDE_CONFIG_DIR")).resolve("settings.json").readText()
         assertFalse(settings.contains(SOL), settings)
-        assertEquals(setOf(MINI), pickerModels(env), "the node's /model picker lists only the address's models")
+        noList(env)
     }
 
     @Test

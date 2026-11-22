@@ -22,10 +22,11 @@
 //   - .claude.json: additionalModelOptionsCache = the catalog, MCP inherit from ~/.claude.json,
 //     portKeys inherit (only when absent locally), hasCompletedOnboarding = true.
 // isolate list overrides share per item (an isolated item gets a seeded copy, not a link).
+// head-catalog: what this lays in a head folder is named once in HeadFolderLayout (its files, hook scripts, links and
+// .claude.json keys), which HookSettings reads for the hooks it owns and `splice claude retire` reads for what to move.
 package splice.client
 
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -105,9 +106,8 @@ public class ClaudeConfigMaterializer(
     /** Materialize a head's isolated CLAUDE_CONFIG_DIR from [spec]. [trust] carries the folder-trust
      *  records the operator already granted for the launch's cwd into the head (V4-283, FolderTrust);
      *  null carries none. Beside the spec, not in it: MaterializeSpec is at its constructor-width
-     *  baseline. [modelOverrides] (V4-232, ModelCatalog.presented) is written as settings.json
-     *  `modelOverrides`, a Claude model the client knows -> the row id it stands for; empty writes
-     *  nothing and leaves a shared value as it was. A wrapped `claude` never comes through here:
+     *  baseline. head-catalog (Nov 19, 2026): no model list is written, in settings.json or .claude.json
+     *  (ClaudeModelSettings); the session's `/model` is the Splice gateway's. A wrapped `claude` never comes through here:
      *  it writes nothing into the operator's own ~/.claude, which this entry point refuses (V4-445). [helpers] are
      *  written as settings.json `apiKeyHelper`, the command a session of a head that checks the turn key reads it
      *  through (key rotation, Oct 26), and `otelHeadersHelper`, the one its telemetry export reads its headers from
@@ -117,7 +117,6 @@ public class ClaudeConfigMaterializer(
     public fun materialize(
         spec: MaterializeSpec,
         trust: TrustedLaunch? = null,
-        modelOverrides: Map<String, String> = emptyMap(),
         helpers: SessionHelpers = SessionHelpers(),
         speedTiers: List<ServiceTier>? = null,
     ): MaterializeResult {
@@ -168,15 +167,14 @@ public class ClaudeConfigMaterializer(
                 ),
             ),
         )
-        writeSettings(spec, hookAdditions, existingSettings, LaunchSettings(modelOverrides, helpers), hookOrigins)
+        writeSettings(spec, hookAdditions, existingSettings, helpers, hookOrigins)
         val mcpCount = writeClaudeJson(
             spec.configDir,
-            spec.modelOptionsCache.takeIf { spec.availableModelIds != null },
             mcpHead = spec.signIn.headKey.takeIf { spec.policy.sharesMcp() },
             local = localClaudeJson,
             trust = trust,
         )
-        return MaterializeResult(spec.configDir, spec.availableModelIds?.size ?: 0, mcpCount)
+        return MaterializeResult(spec.configDir, mcpCount)
     }
 
     /** A wrapped launch's one hook (round 6 of #247): the head's resume hook on `startup` only, its script staged in
@@ -329,7 +327,6 @@ public class ClaudeConfigMaterializer(
 
     /** What one launch adds to the head's settings beside its [MaterializeSpec]: the presented rows' model overrides
      *  and the session's helpers. One value, so writeSettings stays within its parameter budget. */
-    private data class LaunchSettings(val modelOverrides: Map<String, String>, val helpers: SessionHelpers)
 
     // [existing] is the DR-105 preflight read from materialize() — the one aborting read this
     // function used to perform itself, after the mutations it must now precede.
@@ -337,7 +334,7 @@ public class ClaudeConfigMaterializer(
         spec: MaterializeSpec,
         hookAdditions: Map<String, List<JsonObject>>,
         existing: JsonObject,
-        launch: LaunchSettings,
+        helpers: SessionHelpers,
         hookOrigins: JsonObject,
     ) {
         val dst = spec.configDir.resolve(Keys.SETTINGS_FILE_NAME)
@@ -346,16 +343,11 @@ public class ClaudeConfigMaterializer(
         } else {
             EMPTY_JSON
         }
-        // DR-136: the LAST aborting read, and the one the DR-105 hoist missed — the hoist moved
-        // readSettingsModelBase up but left this EXTRACTION here, after linkShared and the one-way
-        // sessions migration. `?.jsonPrimitive?.content` throws on a non-primitive, so a head
-        // settings.json whose "model" is an object parses cleanly, escapes the corrupt-content
-        // rebuild, and then throws from here — the half-built config dir the header forbids.
-        // JsonScalars is the sanctioned throw-free read (and filters JsonNull, which this chain
-        // used to leak as the literal string "null"; both shapes now fall back to the default).
-        val fromGlobal = ClaudeModelSettings.inherited(global, spec)
+        // head-catalog: the saved model choice is no longer read back: settings.json carries no model of splice's, and
+        // the session starts on ANTHROPIC_MODEL. The person's other keys, and the head's own, still carry as before.
+        val fromGlobal = ClaudeModelSettings.inherited(global)
         val own = OwnSettings.own(existing, fromGlobal, hookOrigins)
-        val base = ClaudeModelSettings.base(fromGlobal, own, JsonScalars.str(existing[Keys.MODEL]), spec)
+        val base = ClaudeModelSettings.base(fromGlobal, own)
         val inherited = HookSettings.inherited(hookOrigins, existing[Keys.HOOKS])
         val hooks = HookSettings.merge(
             global[Keys.HOOKS],
@@ -366,7 +358,7 @@ public class ClaudeConfigMaterializer(
         )
         val merged = buildJsonObject {
             base.forEach { (key, value) -> put(key, value) }
-            launch.helpers.writeInto(this)
+            helpers.writeInto(this)
             put(
                 Keys.STATUS_LINE,
                 buildJsonObject {
@@ -377,7 +369,6 @@ public class ClaudeConfigMaterializer(
                 },
             )
             hooks.hooks?.let { put(Keys.HOOKS, it) }
-            ClaudeModelSettings.overrides(global, launch.modelOverrides)?.let { put(Keys.MODEL_OVERRIDES, it) }
         }
         // The one atomic-write primitive (DR-11b): a LIVE Claude Code re-reads this file, and the
         // old truncate-then-write let it observe a torn settings.json mid-launch.
@@ -425,10 +416,9 @@ public class ClaudeConfigMaterializer(
             }
     }
 
-    /** A null [modelOptionsCache] is a head whose client picks its models: an earlier launch's cache is removed. */
+    /** The head's .claude.json, with no picker cache: an earlier launch's is removed (head-catalog). */
     private fun writeClaudeJson(
         configDir: Path,
-        modelOptionsCache: JsonElement?,
         mcpHead: String?,
         local: JsonObject,
         trust: TrustedLaunch?,
@@ -439,7 +429,7 @@ public class ClaudeConfigMaterializer(
         // mutation (DR-11 redo). global stays a tolerant SOURCE read here — it never aborts.
         var mcpCount = 0
         val built = buildJsonObject {
-            ClaudeModelSettings.withLaunchCache(local, modelOptionsCache).forEach { (k, v) -> put(k, v) }
+            ClaudeModelSettings.withoutLaunchCache(local).forEach { (k, v) -> put(k, v) }
             val globalMcp = (global[Keys.MCP_SERVERS] as? JsonObject)?.takeIf { mcpHead != null }
             if (globalMcp != null) {
                 mcpCount = globalMcp.size

@@ -6,12 +6,9 @@ package splice.client
 // deleted, .claude.json gets modelOptionsCache + MCP inherit + PORT_KEYS + onboarding, isolate
 // overrides share.
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -49,7 +46,7 @@ class ClaudeConfigMaterializerTest {
         configDir.resolve(".claude.json").writeText(corrupt)
 
         assertThrows(IOException::class.java) {
-            materializer(home).materialize(configDir, allPolicy, listOf("m1"), "m1", optionsCache)
+            materializer(home).materialize(configDir, allPolicy)
         }
         assertEquals(
             corrupt,
@@ -66,7 +63,7 @@ class ClaudeConfigMaterializerTest {
         seedGlobal(home)
         val configDir = home.resolve(".claude-head")
 
-        materializer(home).materialize(configDir, allPolicy, listOf("m1"), "m1", optionsCache)
+        materializer(home).materialize(configDir, allPolicy)
 
         val perms = { p: Path -> PosixFilePermissions.toString(Files.getPosixFilePermissions(p)) }
         assertEquals("rw-------", perms(configDir.resolve("settings.json")))
@@ -77,7 +74,6 @@ class ClaudeConfigMaterializerTest {
         share = setOf("settings", "mcps", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md"),
         isolate = emptySet(),
     )
-    private val optionsCache = buildJsonObject { put("cache", "codex-models") }
     private val statusline = "\"/usr/bin/curl\" -s :3096/statusline"
 
     private fun materializer(home: Path) = ClaudeConfigMaterializer(home)
@@ -99,7 +95,7 @@ class ClaudeConfigMaterializerTest {
         val log = mutableListOf<String>()
 
         ClaudeConfigMaterializer(home, log = LogSink { log += it })
-            .materialize(configDir, allPolicy, listOf("m1"), "m1", optionsCache)
+            .materialize(configDir, allPolicy)
 
         assertTrue(
             log.any { it.contains("'agents'") && it.contains("not linked") },
@@ -112,16 +108,12 @@ class ClaudeConfigMaterializerTest {
         )
     }
 
-    // Test shim: materialize() now takes a MaterializeSpec; supply a fixed statusline so the
-    // existing positional call sites read unchanged.
+    // Test shim: materialize() signature changed in head-catalog (Nov 19, 2026): no model list.
     private fun ClaudeConfigMaterializer.materialize(
         configDir: Path,
         policy: ClaudePolicy,
-        availableModelIds: List<String>,
-        defaultModel: String,
-        modelOptionsCache: JsonElement,
     ) = materialize(
-        MaterializeSpec(configDir, policy, availableModelIds, defaultModel, modelOptionsCache, statusline),
+        MaterializeSpec(configDir, policy, statusline),
     )
 
     private fun seedGlobal(home: Path) {
@@ -141,47 +133,36 @@ class ClaudeConfigMaterializerTest {
             materializer(tmp).materialize(
                 tmp.resolve("other"),
                 allPolicy,
-                listOf("gpt-5.6-sol"),
-                "gpt-5.6-sol",
-                optionsCache,
             )
         }
     }
 
     @Test
-    fun `settings is a real merged file with allowlist, enforce, statusline`(@TempDir tmp: Path) {
+    fun `settings is a real merged file with statusline`(@TempDir tmp: Path) {
         seedGlobal(tmp)
         val dir = tmp.resolve(".claude-codex")
-        materializer(tmp).materialize(dir, allPolicy, listOf("gpt-5.6-sol", "gpt-5.4"), "gpt-5.6-sol", optionsCache)
+        materializer(tmp).materialize(dir, allPolicy)
         val settings = dir.resolve("settings.json")
         assertFalse(settings.isSymbolicLink()) // never a symlink (would clobber global)
         val obj = Json.parseToJsonElement(settings.readText()).jsonObject
-        assertEquals(
-            listOf("gpt-5.6-sol", "gpt-5.4"),
-            obj["availableModels"]!!.jsonArray.map { it.jsonPrimitive.content },
-        )
-        assertEquals("true", obj["enforceAvailableModels"]?.jsonPrimitive?.content)
-        assertEquals("gpt-5.6-sol", obj["model"]?.jsonPrimitive?.content)
+        // head-catalog (Nov 19, 2026): no availableModels or enforceAvailableModels written
+        assertFalse("availableModels" in obj, "availableModels not written per head-catalog")
+        assertFalse("enforceAvailableModels" in obj, "enforceAvailableModels not written per head-catalog")
+        assertFalse("model" in obj, "no model choice is written: $obj")
         assertEquals("dark", obj["theme"]?.jsonPrimitive?.content) // global merged in
         assertTrue(obj["statusLine"]!!.jsonObject["command"]?.jsonPrimitive?.content!!.contains("statusline"))
     }
 
     @Test
-    fun `preserves a saved model choice when still allowed`(@TempDir tmp: Path) {
+    fun `a saved model choice is not kept`(@TempDir tmp: Path) {
         seedGlobal(tmp)
         val dir = tmp.resolve(".claude-codex")
         Files.createDirectories(dir)
         dir.resolve("settings.json").writeText("""{"model":"gpt-5.4"}""")
-        materializer(tmp).materialize(dir, allPolicy, listOf("gpt-5.6-sol", "gpt-5.4"), "gpt-5.6-sol", optionsCache)
+        // head-catalog (Nov 19, 2026): settings.json is written whole, and it carries no model choice.
+        materializer(tmp).materialize(dir, allPolicy)
         val obj = Json.parseToJsonElement(dir.resolve("settings.json").readText()).jsonObject
-        assertEquals("gpt-5.4", obj["model"]?.jsonPrimitive?.content) // preserved (still allowed)
-        // a disallowed saved choice falls back to default
-        dir.resolve("settings.json").writeText("""{"model":"gpt-4o"}""")
-        materializer(tmp).materialize(dir, allPolicy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
-        val obj2 = Json
-            .parseToJsonElement(dir.resolve("settings.json").readText())
-            .jsonObject
-        assertEquals("gpt-5.6-sol", obj2["model"]?.jsonPrimitive?.content)
+        assertFalse("model" in obj, "a saved model is not kept: $obj")
     }
 
     @Test
@@ -189,20 +170,21 @@ class ClaudeConfigMaterializerTest {
         seedGlobal(tmp)
         val dir = tmp.resolve(".claude-codex")
         Files.createDirectories(dir.resolve("agents")) // a REAL dir the operator made
-        materializer(tmp).materialize(dir, allPolicy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
+        materializer(tmp).materialize(dir, allPolicy)
         assertTrue(dir.resolve("commands").isSymbolicLink()) // fresh link
         assertFalse(dir.resolve("agents").isSymbolicLink()) // real dir preserved, not replaced
         assertTrue(Files.isDirectory(dir.resolve("agents")))
     }
 
     @Test
-    fun `claude json gets model cache, mcp inherit, port keys, onboarding`(@TempDir tmp: Path) {
+    fun `claude json gets mcp inherit, port keys, onboarding`(@TempDir tmp: Path) {
         seedGlobal(tmp)
         val dir = tmp.resolve(".claude-codex")
-        val result = materializer(tmp).materialize(dir, allPolicy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
+        val result = materializer(tmp).materialize(dir, allPolicy)
         assertEquals(1, result.mcpServers)
         val obj = Json.parseToJsonElement(dir.resolve(".claude.json").readText()).jsonObject
-        assertTrue(obj["additionalModelOptionsCache"]!!.jsonObject.containsKey("cache"))
+        // head-catalog (Nov 19, 2026): no additionalModelOptionsCache written
+        assertFalse("additionalModelOptionsCache" in obj, "model cache not written per head-catalog")
         assertTrue(obj["mcpServers"]!!.jsonObject.containsKey("fs"))
         assertEquals("true", obj["verbose"]?.jsonPrimitive?.content) // PORT_KEY inherited
         assertEquals("true", obj["hasCompletedOnboarding"]?.jsonPrimitive?.content)
@@ -213,7 +195,7 @@ class ClaudeConfigMaterializerTest {
         seedGlobal(tmp)
         val dir = tmp.resolve(".claude-codex")
         val policy = ClaudePolicy(share = allPolicy.share, isolate = setOf("commands"))
-        materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
+        materializer(tmp).materialize(dir, policy)
         assertFalse(Files.exists(dir.resolve("commands"), NOFOLLOW_LINKS)) // isolated: no link
         assertTrue(dir.resolve("agents").isSymbolicLink()) // still shared
     }
@@ -229,7 +211,7 @@ class ClaudeConfigMaterializerTest {
         headSessions.resolve("12345.json").writeText("""{"pid":12345}""")
         headSessions.resolve("12345.abc.key").writeText("k")
         val policy = ClaudePolicy(share = allPolicy.share + "sessions", isolate = emptySet())
-        materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
+        materializer(tmp).materialize(dir, policy)
         assertTrue(headSessions.isSymbolicLink())
         assertEquals(globalSessions, Files.readSymbolicLink(headSessions))
         // registrations moved with the dir swap: a live session keeps writing through the link
@@ -244,7 +226,7 @@ class ClaudeConfigMaterializerTest {
         Files.createDirectories(globalSessions)
         val dir = tmp.resolve(".claude-codex")
         val policy = ClaudePolicy(share = allPolicy.share + "sessions", isolate = emptySet())
-        repeat(2) { materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache) }
+        repeat(2) { materializer(tmp).materialize(dir, policy) }
         assertTrue(dir.resolve("sessions").isSymbolicLink())
         assertEquals(globalSessions, Files.readSymbolicLink(dir.resolve("sessions")))
     }
@@ -264,7 +246,7 @@ class ClaudeConfigMaterializerTest {
         val headSessions = dir.resolve("sessions")
         Files.createDirectories(headSessions)
         val policy = ClaudePolicy(share = allPolicy.share + "sessions", isolate = emptySet())
-        materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
+        materializer(tmp).materialize(dir, policy)
         assertTrue(Files.isDirectory(tmp.resolve(".claude/sessions")), "the registry must be created")
         assertTrue(headSessions.isSymbolicLink(), "a sharing head must end up linked, not left private")
         assertEquals(tmp.resolve(".claude/sessions"), Files.readSymbolicLink(headSessions))
@@ -278,7 +260,7 @@ class ClaudeConfigMaterializerTest {
         val headSessions = dir.resolve("sessions")
         Files.createDirectories(headSessions)
         val policy = ClaudePolicy(share = allPolicy.share + "sessions", isolate = setOf("sessions"))
-        materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
+        materializer(tmp).materialize(dir, policy)
         assertFalse(headSessions.isSymbolicLink())
         assertTrue(Files.isDirectory(headSessions, NOFOLLOW_LINKS))
     }
@@ -291,7 +273,7 @@ class ClaudeConfigMaterializerTest {
         val headSessions = dir.resolve("sessions")
         Files.createDirectories(headSessions.resolve("weird-subdir"))
         val policy = ClaudePolicy(share = allPolicy.share + "sessions", isolate = emptySet())
-        materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
+        materializer(tmp).materialize(dir, policy)
         assertFalse(headSessions.isSymbolicLink())
         assertTrue(Files.isDirectory(headSessions.resolve("weird-subdir")))
     }
@@ -305,7 +287,7 @@ class ClaudeConfigMaterializerTest {
             share = setOf("settings", "mcps", "skills", "hooks", "agents", "commands", "plugins", "claude_md"),
             isolate = emptySet(),
         )
-        val result = materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
+        val result = materializer(tmp).materialize(dir, policy)
         // CLAUDE.md shares despite the "claude_md" alias (the bug this pins) — and agents/commands too
         assertTrue(dir.resolve("CLAUDE.md").isSymbolicLink())
         assertTrue(dir.resolve("agents").isSymbolicLink())
@@ -322,7 +304,7 @@ class ClaudeConfigMaterializerTest {
         seedGlobal(tmp)
         val dir = tmp.resolve(".claude-codex")
         val policy = ClaudePolicy(share = setOf("claude_md", "mcps"), isolate = setOf("claude_md"))
-        val result = materializer(tmp).materialize(dir, policy, listOf("m"), "m", optionsCache)
+        val result = materializer(tmp).materialize(dir, policy)
         assertFalse(Files.exists(dir.resolve("CLAUDE.md"), NOFOLLOW_LINKS)) // isolated
         assertEquals(1, result.mcpServers) // mcps still shared
     }
@@ -336,9 +318,6 @@ class ClaudeConfigMaterializerTest {
             MaterializeSpec(
                 configDir = dir,
                 policy = allPolicy,
-                availableModelIds = listOf("gpt-5.6-sol"),
-                defaultModel = "gpt-5.6-sol",
-                modelOptionsCache = optionsCache,
                 statuslineCommand = statusline,
                 signIn = MaterializeSignIn(loginCommand = "claude-grok login"),
             ),
@@ -364,7 +343,7 @@ class ClaudeConfigMaterializerTest {
     fun `no login interception when loginCommand is blank`(@TempDir tmp: Path) {
         seedGlobal(tmp)
         val dir = tmp.resolve(".claude-codex")
-        materializer(tmp).materialize(dir, allPolicy, listOf("m"), "m", optionsCache) // shim: loginCommand=""
+        materializer(tmp).materialize(dir, allPolicy) // shim: loginCommand=""
         assertFalse(Files.exists(dir.resolve("splice-login-hook.sh")))
         assertTrue(dir.resolve("commands").isSymbolicLink()) // stays a plain shared symlink
     }
@@ -382,9 +361,6 @@ class ClaudeConfigMaterializerTest {
             MaterializeSpec(
                 configDir = dir,
                 policy = allPolicy,
-                availableModelIds = listOf("m"),
-                defaultModel = "m",
-                modelOptionsCache = optionsCache,
                 statuslineCommand = statusline,
                 signIn = openRouterSignIn.copy(tokenCapture = null), // the daemon withholds it once the key resolves
             ),
@@ -407,9 +383,6 @@ class ClaudeConfigMaterializerTest {
             MaterializeSpec(
                 configDir = dir,
                 policy = allPolicy,
-                availableModelIds = listOf("m"),
-                defaultModel = "m",
-                modelOptionsCache = optionsCache,
                 statuslineCommand = statusline,
                 signIn = MaterializeSignIn(
                     loginCommand = "claude-fireworks login",
@@ -431,9 +404,6 @@ class ClaudeConfigMaterializerTest {
             MaterializeSpec(
                 configDir = dir,
                 policy = allPolicy,
-                availableModelIds = listOf("m"),
-                defaultModel = "m",
-                modelOptionsCache = optionsCache,
                 statuslineCommand = statusline,
                 signIn = openRouterSignIn,
             ),
@@ -473,9 +443,6 @@ class ClaudeConfigMaterializerTest {
             MaterializeSpec(
                 configDir = dir,
                 policy = allPolicy,
-                availableModelIds = listOf("m"),
-                defaultModel = "m",
-                modelOptionsCache = optionsCache,
                 statuslineCommand = statusline,
                 signIn = openRouterSignIn.copy(advertiseKeySetup = true),
             ),

@@ -37,10 +37,11 @@ let gw: { base: string; key: string };
 
 const terra = () => gptHead({ key: "terra", command: "claude-terra", port: terraPort, backend: terraBackend.url, model: "gpt-6.1-terra", dir: logins });
 
-/** The id the gateway lists for a model `splice claude --json` lists: a Claude model of the claude head by its own
- *  Anthropic id, a selector that names no Claude with `claude-` before it, any other by its selector. */
+/** The id the gateway lists for a model `splice claude --json` lists: a Claude model of the `anthropic` provider by
+ *  its own Anthropic id (the provider's selector prefix taken off), a selector that names no Claude with `claude-`
+ *  before it, any other by its selector. */
 function idOf(m: { model: string; head: string }): string {
-  if (m.head === "claude") return m.model.replace(/^claude--/, "");
+  if (m.head === "anthropic") return m.model.replace(/^.*--/, "");
   return /claude|anthropic/i.test(m.model) ? m.model : `claude-${m.model}`;
 }
 
@@ -60,7 +61,7 @@ beforeAll(async () => {
     prefixedHead({ key: "zeta", command: "zeta", prefix: "zeta--", port: await freePort(), url: zeta.url, model: "zeta-large" }) +
     terra();
   s = await Splice.create(toml, gptEnv(astraBackend.url));
-  addClaudeAccount(s, "claude", "work", "sk-ant-oat01-added-work-account");
+  addClaudeAccount(s, "anthropic", "work", "sk-ant-oat01-added-work-account");
   await s.start();
   toDoor(s);
   // the terminal's key and the gateway's address, as a launch of `claude` hands them to Claude Code (Mantle's names
@@ -71,7 +72,11 @@ beforeAll(async () => {
     key: x.sets.AWS_BEARER_TOKEN_BEDROCK ?? x.sets.ANTHROPIC_AUTH_TOKEN ?? "",
   };
   expect(gw.base).toBe(lane(s).door!);
-  await until("every head is in the gateway", () => (lane(s).models ?? []).some((m) => m.model === TERRA) && (lane(s).models ?? []).some((m) => m.head === "claude"), 60_000);
+  await until(
+    "every head is in the gateway",
+    () => (lane(s).models ?? []).some((m) => m.model === TERRA) && (lane(s).models ?? []).some((m) => m.head === "anthropic"),
+    60_000,
+  );
 }, 300_000);
 
 afterAll(async () => {

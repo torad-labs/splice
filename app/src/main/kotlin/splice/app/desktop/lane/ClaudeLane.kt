@@ -53,7 +53,11 @@ internal class ClaudeLane(
     fun starting(lineup: DesktopLineup): Pair<String?, String> = chain.of(lineup)
 
     /** The window the terminal's sessions declare, fixed the first time it is asked for: the starting model's in
-     *  [lineup], or [NO_HEAD_WINDOW] with no provider in the door. */
+     *  [lineup], or [NO_HEAD_WINDOW] with no provider in the door. head-catalog: every session on the Splice gateway, in
+     *  Claude Code's gateway mode, holds this window, since the launch sets CLAUDE_CODE_MAX_CONTEXT_TOKENS to it, and
+     *  the gateway reports every count as a share of it. Seen on Claude Code 2.1.329, Nov 19, 2026: for a selector the
+     *  variable is honoured (200000 held 200k, 400000 held 400k), and with it unset the session holds 1M, Claude Code's
+     *  default for a model it does not know. */
     fun window(lineup: DesktopLineup): Long = records.get().window ?: run {
         val found = starting(lineup).first?.let(lineup::find)
         val window = found?.let { (provider, model) -> provider.catalog.contextWindowFor(model.upstream) }
@@ -96,8 +100,8 @@ internal class ClaudeLane(
         // with the next `splice claude door`. On Nov 17, 2026 a Grok named at 9:33 AM, moved back from a minute later,
         // came back that evening, and every `claude` session started or restarted with no model named ran on Grok.
         records.update { it.copy(lane = HEAD_LANE, defaultModel = null) }
-        val moved = "claude is on its head, with the models of your signed-in accounts beside Claude's: a new " +
-            "`claude` session starts there, and sessions already on the door keep running on it"
+        val moved = "claude is on its head, on your own Claude login with Claude Code's own models: a new " +
+            "`claude` session starts there, and sessions already on the Splice gateway keep running on it"
         DesktopAct.Done(listOfNotNull(moved, login.removed()).joinToString("; "))
     }
 }

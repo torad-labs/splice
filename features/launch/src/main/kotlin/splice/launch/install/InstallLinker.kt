@@ -45,6 +45,7 @@ internal class InstallLinker(
     private val heads: InstallHeads = InstallHeads(output),
     private val claim: WrapperClaim = ExclusiveSymlinkClaim,
 ) {
+    private val retired = InstallRetired(output)
 
     internal fun install(headArg: String?, env: EnvReader): InstallResult {
         val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath(env))
@@ -52,7 +53,8 @@ internal class InstallLinker(
         shimRefusal(launchShim)?.let { return InstallResult.Refused(it) }
         val bin = layout.localBin(env)
         Files.createDirectories(bin)
-        val selected = selected(topology, headArg) ?: return InstallResult.Declined
+        val selected = selected(topology, headArg)?.let { retired.kept(it, topology, env) }
+            ?: return InstallResult.Declined
         val refusal = unwrappedClaude(topology, headArg, env)
             ?: collisionRefusal(topology)
             ?: linkRefusal(bin, selected, launchShim)

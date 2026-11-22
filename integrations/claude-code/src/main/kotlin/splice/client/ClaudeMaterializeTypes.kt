@@ -4,11 +4,10 @@
 // keep splice.client.{MaterializeResult,ClaudePolicy,MaterializeSpec}.
 package splice.client
 
-import kotlinx.serialization.json.JsonElement
 import splice.client.login.TokenCaptureSpec
 import java.nio.file.Path
 
-public data class MaterializeResult(val configDir: Path, val models: Int, val mcpServers: Int)
+public data class MaterializeResult(val configDir: Path, val mcpServers: Int)
 
 public data class ClaudePolicy(
     val share: Set<String>,
@@ -34,15 +33,11 @@ public data class ClaudePolicy(
     public fun sharesMcp(): Boolean = shares(Keys.MCPS)
 }
 
-/** Everything a single head needs materialized. availableModelIds REPLACES the picker;
- *  modelOptionsCache is the catalog for .claude.json; defaultModel is the pinned fallback. A null
- *  availableModelIds leaves the client's saved choice intact and writes no head roster or picker cache. */
+/** Everything a single head needs materialized. No model list (head-catalog): the session's `/model` is the Splice
+ *  gateway's. */
 public data class MaterializeSpec(
     val configDir: Path,
     val policy: ClaudePolicy,
-    val availableModelIds: List<String>?,
-    val defaultModel: String,
-    val modelOptionsCache: JsonElement,
     val statuslineCommand: String,
     /** How the head's provider sign-in is offered inside the client. */
     val signIn: MaterializeSignIn = MaterializeSignIn(),

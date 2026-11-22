@@ -25,9 +25,6 @@ class ClaudeConfigMaterializerMcpTest {
     private fun spec(dir: Path) = MaterializeSpec(
         dir,
         policy,
-        listOf("gpt-5.6-sol"),
-        "gpt-5.6-sol",
-        buildJsonObject { put("cache", "x") },
         "\"/usr/bin/curl\" -s :3096/statusline",
     )
 

@@ -51,9 +51,6 @@ class ClaudeConfigFolderTrustTest {
     private fun spec(configDir: Path) = MaterializeSpec(
         configDir,
         ClaudePolicy(share = emptySet(), isolate = emptySet()),
-        listOf("gpt-6-sol"),
-        "gpt-6-sol",
-        buildJsonObject { },
         "\"/usr/bin/curl\" -s :3096/statusline",
     )
 

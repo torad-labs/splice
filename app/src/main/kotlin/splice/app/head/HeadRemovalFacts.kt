@@ -34,6 +34,11 @@ internal class HeadRemovalFacts(
     fun liveOn(key: String): List<SessionRecord> = sessions()?.read().orEmpty()
         .filter { it.head == key && it.availability == SessionAvailability.LIVE }
 
+    /** head-catalog (gw-retire): every session whose process still runs on [key], heard from lately or not (a STALE
+     *  one is alive and quiet), which retiring the head's command refuses on. */
+    fun runningOn(key: String): List<SessionRecord> = sessions()?.read().orEmpty()
+        .filter { it.head == key && it.availability != SessionAvailability.GONE }
+
     fun sessionList(records: List<SessionRecord>) = buildJsonArray {
         records.forEach { record ->
             add(

@@ -8,9 +8,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -124,17 +122,15 @@ class OneMillionSpellingLaunchTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `settings json and the picker cache carry the spelled ids, and the allowlist keeps the bare ones too`() {
+    fun `settings json and the claude json carry no list of the head's own`() {
         launch(catalog(sol, mid))
 
-        assertEquals("gpt-6-sol[1m]", settings()["model"]?.jsonPrimitive?.content)
-        val allowed = settings()["availableModels"]!!.jsonArray.map { it.jsonPrimitive.content }
-        assertTrue("gpt-6-sol[1m]" in allowed, "$allowed")
-        assertTrue("gpt-6-sol" in allowed, "a session written before this still resumes on it: $allowed")
-        assertTrue("gpt-5.6-sol" in allowed && "gpt-5.6-sol[1m]" !in allowed, "$allowed")
-        val cache = claudeJson()["additionalModelOptionsCache"]!!.jsonArray
-        val rows = cache.map { it.jsonObject["value"]!!.jsonPrimitive.content }
-        assertEquals(listOf("gpt-6-sol[1m]", "gpt-5.6-sol"), rows, "one picker row per model, none twice")
+        // head-catalog: the session's /model is the Splice gateway's, so a head's folder keeps no model, allowlist
+        // or picker cache of its own.
+        assertFalse("model" in settings(), settings().toString())
+        assertFalse("availableModels" in settings())
+        assertFalse("enforceAvailableModels" in settings())
+        assertFalse("additionalModelOptionsCache" in claudeJson())
     }
 
     @Test

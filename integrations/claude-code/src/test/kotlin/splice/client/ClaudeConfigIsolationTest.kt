@@ -29,8 +29,6 @@
 // Any OTHER path under the vanilla tree is a hole, and both assertions fail on it by name.
 package splice.client
 
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -71,9 +69,6 @@ class ClaudeConfigIsolationTest {
             MaterializeSpec(
                 configDir = configDir,
                 policy = ClaudePolicy(share = share, isolate = emptySet()),
-                availableModelIds = listOf("head-model"),
-                defaultModel = "head-model",
-                modelOptionsCache = buildJsonObject { put("cache", "x") },
                 statuslineCommand = "curl :3096/statusline",
                 signIn = MaterializeSignIn(
                     headKey = "codex",

@@ -7,9 +7,6 @@ package splice.client
 // (3) the shared-link swap never destroys the operator's pre-existing file when a symlink create
 // fails. Fixtures are duplicated deliberately — a shared object would need a member-extension the
 // no-top-level-function law makes awkward to import, and the copies are a handful of lines.
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -31,7 +28,6 @@ class ClaudeConfigMaterializerSafetyTest {
         share = setOf("settings", "mcps", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md"),
         isolate = emptySet(),
     )
-    private val optionsCache: JsonElement = buildJsonObject { put("cache", "codex-models") }
     private val statusline = "\"/usr/bin/curl\" -s :3096/statusline"
 
     private fun seedGlobal(home: Path) {
@@ -46,7 +42,7 @@ class ClaudeConfigMaterializerSafetyTest {
     }
 
     private fun spec(configDir: Path) =
-        MaterializeSpec(configDir, allPolicy, listOf("m1"), "m1", optionsCache, statusline)
+        MaterializeSpec(configDir, allPolicy, statusline)
 
     // DR-11 redo (codex mutation-ordering catch): the strict .claude.json read used to run at the
     // END of writeClaudeJson, so a corrupt local aborted AFTER settings.json had already been
@@ -145,9 +141,6 @@ class ClaudeConfigMaterializerSafetyTest {
     private fun agentsOnlySpec(configDir: Path) = MaterializeSpec(
         configDir,
         ClaudePolicy(share = setOf("agents"), isolate = emptySet()),
-        listOf("m1"),
-        "m1",
-        optionsCache,
         statusline,
     )
 
@@ -258,7 +251,6 @@ class JsonStateReadsSafetyTest {
         share = setOf("settings", "mcps", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md"),
         isolate = emptySet(),
     )
-    private val optionsCache: JsonElement = buildJsonObject { put("cache", "codex-models") }
     private val statusline = "\"/usr/bin/curl\" -s :3096/statusline"
 
     private fun seedGlobal(home: Path) {
@@ -272,7 +264,7 @@ class JsonStateReadsSafetyTest {
     }
 
     private fun spec(configDir: Path) =
-        MaterializeSpec(configDir, allPolicy, listOf("m1"), "m1", optionsCache, statusline)
+        MaterializeSpec(configDir, allPolicy, statusline)
 
     // codex's red repro: a REAL local .claude.json under an untraversable head dir read as absent
     // through the pre-gate, and materialize rebuilt the file over the operator's keys. The

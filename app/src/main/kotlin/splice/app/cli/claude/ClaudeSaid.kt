@@ -1,5 +1,5 @@
 // NEW: door-default (docs/specs/door-default.md, decisions 1, 4 and 9). `splice claude` in words: the lane, what a new
-// session meets there, and the rows its picker lists beside or in place of Claude Code's own.
+// session meets there, and the Splice gateway's models, the one list every session on it discovers (head-catalog).
 package splice.app.cli.claude
 
 import kotlinx.serialization.json.JsonArray
@@ -24,10 +24,10 @@ internal class ClaudeSaid(private val out: TerminalOutput) : DoorSaid {
         out.line(if (own == null) SHARED_LOGIN else "/login: $THEIRS_IN_THE_WAY $own, so splice's is not laid")
     }
 
-    /** The picker's rows and the providers left out of it, or [none] with no rows. */
+    /** The gateway's models and the heads left out of it, or [none] with no model. */
     private fun picker(state: JsonObject, none: String) {
         val models = (state["models"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
-        out.line(if (models.isEmpty()) none else "Picker:")
+        out.line(if (models.isEmpty()) none else MODELS)
         models.forEach { m ->
             out.line("  ${text(m, "model")}  ${text(m, "label")}  (${text(m, "provider")})")
         }
@@ -41,20 +41,23 @@ internal class ClaudeSaid(private val out: TerminalOutput) : DoorSaid {
     private fun text(from: JsonObject, key: String): String = JsonScalars.str(from, key).orEmpty()
 }
 
-// What `splice claude` says first on the head lane (door-default, decision 9).
-private const val ON_ITS_HEAD = "claude: on its head, on your own Claude login; /model lists Claude's models and, " +
-    "after them, the models below"
+// What `splice claude` says first on the head lane.
+private const val ON_ITS_HEAD = "claude: on its head, on your own Claude login, with Claude Code's own /model; " +
+    "`splice claude door` puts it on the Splice gateway, whose models every session there lists"
 
-// What the picker line says on the head lane with no account signed in.
+// What the models line says on the head lane with no account signed in.
 private const val NO_ADDED =
-    "Picker: Claude Code's own models alone, as no other account is signed in; `splice console` signs one in"
+    "Models: none in the Splice gateway, as no other account is signed in; `splice console` signs one in"
+
+// What heads the gateway's models.
+private const val MODELS = "Models, the Splice gateway's list in every session's /model:"
 
 // What the /login line says when the person's own is in the way of splice's, before where it is.
 private const val THEIRS_IN_THE_WAY = "yours, not splice's accounts page: your own /login is in the way at"
 
-// What the picker line says with no account signed in.
+// What the models line says with no account signed in.
 private const val NO_PICKER =
-    "Picker: Claude Code's own models, as no account is signed in; /login in a session opens splice's accounts"
+    "Models: none, as no account is signed in; /login in a session opens splice's accounts"
 
 // What the /login line says while splice's is laid: it is in the person's own Claude folder, so a Claude Code splice
 // did not start runs it too, for its own /login row as well (Claude Code 2.1.326).

@@ -352,6 +352,63 @@
   const lens = Deck.glass('lens', field); lens.setAttribute('aria-label', 'Account'); lens.setAttribute('role', 'dialog');
   let openId = null, lensOff = null;
   const signs = new Map();             /* the sign-in each account is in, as api.js's SIGNIN holds it */
+  /* ---------- a Claude login's limit resets ----------
+     Anthropic gives some plans a few resets to spend, and splice lists and spends them (GET …/resets, POST …/reset).
+     The glass reads a login's resets from the provider when it opens and again after RESET_REASK_MS, because that read
+     is rate limited. A spend cannot be taken back, so it takes two presses, and the second says what it clears. */
+  const RESET_REASK_MS = 10 * 60000, RESET_RETRY_MS = 60000;
+  const resetsOf = new Map();          /* account id -> { state, login, why, arm, spending, said, again } */
+  const hasResets = a => byId[a.id] === a && a.state !== 'out';
+  async function readResets(a, said, force) {
+    const seen = resetsOf.get(a.id);
+    if (seen && (seen.state === 'reading' || seen.spending || (!force && Date.now() < seen.again))) return;
+    resetsOf.set(a.id, { state: 'reading' });
+    const res = await API.get('/api/auth/' + enc(head) + '/resets?label=' + enc(labelOn(a.row, head)));
+    // a daemon that answers and lists nothing for this login has no resets to show for it
+    const login = res.ok ? (res.body && (res.body.logins || [])[0]) || { kinds: [] } : null, now = Date.now();
+    resetsOf.set(a.id, login ? { state: 'read', login, said, again: now + (login.refusal ? RESET_RETRY_MS : RESET_REASK_MS) }
+      : { state: 'failed', why: why(res), said, again: now + RESET_RETRY_MS });
+    if (openId === a.id) refill();
+  }
+  function resetsPart(a) {
+    const r = resetsOf.get(a.id), part = h('div', 'resets');
+    part.append(h('div', 'eyebrow', 'Limit resets'));
+    if (!r || r.state === 'reading') { part.append(h('div', 'mono small faint', 'Reading')); return part; }
+    if (r.said) part.append(h('div', r.said.ok ? 'rs-said' : 'lr-why', r.said.text));
+    if (r.state === 'failed') { part.append(h('div', 'lr-why', 'Not read: ' + r.why)); return part; }
+    const kinds = r.login.kinds || [];
+    if (!kinds.length) part.append(h('div', 'mono small faint', r.login.refusal || r.login.not_offered || 'None on this login'));
+    for (const k of kinds) {
+      // splice names a kind "Fable reset", "weekly reset", "full reset" or "5-hour reset" (ResetKinds.name)
+      const row = h('div', 'rs');
+      row.append(h('span', 'rs-nm', k.name.charAt(0).toUpperCase() + k.name.slice(1)), h('span', 'rs-left', k.left > 0 ? k.left + ' of ' + k.total + ' left' : 'None left'));
+      const can = k.left > 0 && k.usable_now, spending = r.spending === k.kind, asking = can && r.arm === k.kind && !spending;
+      if (can && !asking) {
+        const b = h('button', 'btn press', spending ? 'Resetting' : 'Use one'); b.type = 'button'; b.dataset.act = 'reset-arm'; b.dataset.k = k.kind;
+        b.disabled = !!r.spending; row.append(b);
+      } else if (k.left > 0 && !can) row.append(h('div', 'rs-why', k.not_now || 'Not usable now'));
+      if (asking) {
+        const ask = h('div', 'lr-ask'), limit = k.kind === 'full' ? 'every limit' : 'the ' + k.name.replace(/ reset$/i, '') + ' limit';
+        ask.append(h('span', '', 'Clears ' + limit + ' now, ' + (k.left - 1) + ' left after. It cannot be undone.'));
+        const no = h('button', 'btn quiet press', 'Cancel'), yes = h('button', 'btn primary press', 'Reset now');
+        no.type = yes.type = 'button'; no.dataset.act = 'reset-keep'; yes.dataset.act = 'reset-use'; yes.dataset.k = k.kind;
+        ask.append(no, yes); row.append(ask);
+      }
+      part.append(row);
+    }
+    return part;
+  }
+  async function useReset(id, kind) {
+    const a = acct(id), r = resetsOf.get(id);
+    if (!a || !r || r.state !== 'read' || r.spending || r.arm !== kind) return;
+    r.spending = kind; refill();
+    const res = await API.post('/api/auth/' + enc(head) + '/reset', { label: labelOn(a.row, head), kind });
+    const text = res.body && typeof res.body.said === 'string' && res.body.said ? res.body.said : res.ok ? 'Reset' : 'Not reset: ' + why(res);
+    r.spending = null;
+    await readResets(acct(id) || a, { text, ok: res.ok }, true);
+    if (res.ok) read();
+  }
+
   function fillLens(a) {
     lens.textContent = '';
     const hd = h('div', 'hd'), title = h('div');
@@ -382,6 +439,7 @@
       }
       lens.append(two);
     }
+    if (hasResets(a)) lens.append(resetsPart(a));
     const ses = h('div'); ses.append(h('div', 'eyebrow', 'Sessions on it · ' + a.sessions));
     const ul = h('ul');
     a.sessionNames.slice(0, 5).forEach(n => { const li = h('li'); li.append(h('span', '', n)); ul.append(li); });
@@ -409,6 +467,7 @@
     unmark();
     openId = id; lens.dataset.id = id;
     mark(id);
+    if (hasResets(a)) readResets(a);
     fillLens(a);
     lens.hidden = false;
     Deck.show(lens, placeLens());
@@ -629,6 +688,11 @@
     if (k === 'copy') copyLogin(id);
     if (k === 'signout') signOut(id);
     if (k === 'signin') { const add = adding(id); add ? signIn(null, add.p) : signIn(acct(id)); }
+    if (k === 'reset-arm' || k === 'reset-keep') {
+      const r = resetsOf.get(id);
+      if (r && r.state === 'read' && !r.spending) { r.arm = k === 'reset-arm' ? act.dataset.k : null; r.said = null; refill(); const yes = lens.querySelector('[data-act="reset-use"]'); yes && yes.focus(); }
+    }
+    if (k === 'reset-use') useReset(id, act.dataset.k);
     if (k === 'cancel-signin') { const s = signs.get(id); if (s) SIGNIN.cancel(s, s.on).then(over => { if (over) signs.delete(id); refill(); }); }
   });
   $('#backList').addEventListener('click', e => { const li = e.target.closest('li'); if (li && refs[li.dataset.id]) { refs[li.dataset.id].lane.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => openLens(li.dataset.id), 350); } });

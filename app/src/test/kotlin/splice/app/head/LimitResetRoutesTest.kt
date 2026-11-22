@@ -75,6 +75,12 @@ private const val RESETS_REPLY = """{"five_hour":{"utilization":12.0},"cedar_emb
 {"id":"weekly_grant","label":"Weekly","resets_total":1,"resets_left":1,"clears":["seven_day"],"paused":false,
 "usable_now":false,"type":"weekly","gives_back_weekly":false,"unavailable_reason":"needs_limit"}]}}"""
 
+// What Anthropic answers a read whose User-Agent names a client it offers no resets to.
+private const val SURFACE_REPLY = """{"cedar_ember":{"eligible":false,"ineligible_reason":"surface","grants":[]}}"""
+
+// The User-Agent Claude Desktop's sessions send, the newest client a daemon serving Desktop has seen.
+private const val DESKTOP_AGENT = "claude-cli/2.1.328 (external, local-agent, agent-sdk/0.3.328)"
+
 class LimitResetRoutesTest {
     @TempDir
     lateinit var dir: Path
@@ -89,7 +95,9 @@ class LimitResetRoutesTest {
         return when {
             request.url.encodedPath == "/api/oauth/usage" -> {
                 assertEquals("1", request.url.parameters["cedar_ember"])
-                respond(RESETS_REPLY, HttpStatusCode.OK, json)
+                // As Anthropic answers a read that names Claude Desktop's sessions: no resets for that client.
+                val desktop = request.headers[HttpHeaders.UserAgent].orEmpty().contains("local-agent")
+                respond(if (desktop) SURFACE_REPLY else RESETS_REPLY, HttpStatusCode.OK, json)
             }
             request.url.encodedPath == "/api/oauth/profile" ->
                 respond("""{"account":{"uuid":"a"},"organization":{"uuid":"$ORG"}}""", HttpStatusCode.OK, json)
@@ -101,9 +109,9 @@ class LimitResetRoutesTest {
         }
     }
 
-    private fun ApplicationTestBuilder.routes(claudeLogins: Boolean = true) {
+    private fun ApplicationTestBuilder.routes(claudeLogins: Boolean = true, agent: String = "claude-cli/2.1.325") {
         val client = ClaudeLimitResets(
-            { "claude-cli/2.1.325" },
+            { agent },
             {},
             AuthClient { HttpClient(MockEngine { anthropic(it) }) { install(HttpTimeout) } },
         )
@@ -187,6 +195,17 @@ class LimitResetRoutesTest {
             body,
         )
         assertEquals(emptyList<JsonObject>(), spends, "listing spends nothing")
+    }
+
+    @Test
+    fun `a login's resets are listed when the newest client splice has seen is Claude Desktop`() = testApplication {
+        routes(agent = DESKTOP_AGENT)
+
+        val body = client.get("/api/auth/$HEAD/resets").bodyAsText()
+
+        val login = parsed(body)["logins"]?.jsonArray?.single()?.jsonObject
+        val kinds = login?.get("kinds")?.jsonArray?.map { text(it.jsonObject, "kind") }
+        assertEquals(listOf("fable", "weekly"), kinds, body)
     }
 
     @Test

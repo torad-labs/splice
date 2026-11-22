@@ -131,6 +131,7 @@ const conn = connect(view, {
   session: "<session id>",
   onLocked: () => { /* a 401: this browser is not signed in; nothing more is read until the page reloads */ },
   onEarlier: (more) => { /* whether older messages remain */ },
+  onState: (state, said) => { /* what splice answered of the transcript, when it changes */ },
 });
 await conn.earlier(); // reads the page before the oldest one handed on, hands it to the view, then resolves
 conn.close();         // aborts every read and timer
@@ -141,6 +142,10 @@ conn.close();         // aborts every read and timer
 - It reads the feed with `fetch` and a stream reader (an EventSource cannot send the key in a header, and the key never
   goes in an address), hands each event on in order, and drops `: ping` comments. When the stream ends it joins again
   after 1 s, doubling to at most 30 s while joins keep failing.
+- `onState` is told what splice last answered of the transcript, each time it changes: `"read"` (a page of it),
+  `"off"` (reading conversations is turned off), `"gone"` (splice holds no transcript for the session) or `"failed"`,
+  with splice's own words for a refusal as the second argument. The connector draws none of it: the host says it its
+  own way.
 - A 401 from either route calls `onLocked()` once and stops reading. A feed that answers 404 or 5xx is not a lock:
   history is polled every 5 s and the feed is asked again after 30 s.
 
@@ -183,7 +188,10 @@ For night and day, set the properties per theme on the container:
 [data-theme="day"] #conversation { color-scheme: light; --rv-text: #1f1e1c; --rv-bubble: #f0eee9; --rv-code-bg: #f6f5f2; }
 ```
 
-splice's own page (`page.css`) sets every colour property from splice's brand tokens this way.
+splice's own pages set every colour property this way, once: the console's kit (`/deck.css`) has a `.reader` class
+that sets them from its tokens for night and day, and the reader's page and the Sessions page put that class on the
+element the reader is mounted in. A colour that is a pigment at night is mixed toward the text colour for day, so
+highlighted code reads on both grounds.
 
 ## Content-Security-Policy
 
@@ -202,6 +210,13 @@ no `unsafe-eval`.
 
 ## Vendored libraries
 
-`reply-view.js` pastes two libraries whole, each inside a function scope of its own so neither sets a global: marked
+`reply-view.js` pastes two libraries, each inside a function scope of its own so neither sets a global: marked
 18.2.1 (MIT), the Markdown parser, and highlight.js 11.12.0 (BSD-3-Clause, the common-languages build), the highlighter.
+Each is its published build with these patterns changed here, and nothing else:
+
+- marked's HTML comment, as a block and inside a line, also ends at `--!>`, where a browser ends one;
+- marked's link label repeats at most 999 times, so text built to make that pattern backtrack cannot stall the page;
+- highlight.js's XML comment also ends at `--!>`.
+
+A later version of either library is pasted with these changes made again, or without one once the library carries it.
 Their notices and license texts are in splice's `THIRD_PARTY_NOTICES.md`.

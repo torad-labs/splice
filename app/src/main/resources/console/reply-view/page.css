@@ -1,6 +1,6 @@
 /* The reader's own page: a plain one-column reading page in the console's dress. Every colour, face and size comes from
    the Night Deck kit (/deck.css, night and day through its [data-theme] blocks, and its type that grows with the
-   screen); this file sets the reader's --rv-* properties from the kit's tokens and lays out the page's own few parts.
+   screen); the reader wears the kit's dress (its .reader class sets the --rv-* properties), and this file lays out the page's own few parts.
    Nov 21, 2026: it was dressed from /tokens.css, the stylesheet the Night Deck replaced. Its classes carry rvp- so
    that none meets a kit class of the same name (the kit's .bar is the nav, its .picker the model picker). */
 
@@ -11,29 +11,6 @@ body {
   background: var(--ground);
   color: var(--ink);
   -webkit-text-size-adjust: 100%;
-
-  --rv-text: var(--ink);
-  --rv-muted: var(--ink-quiet);
-  --rv-border: var(--hairline);
-  --rv-bubble: var(--fill);
-  --rv-hover: var(--fill-hover);
-  --rv-code-bg: var(--fill);
-  --rv-code-text: var(--ink);
-  --rv-link: var(--ink);
-  --rv-focus: var(--focus-ring);
-  --rv-error: var(--vermilion);
-  /* code is coloured with the kit's four pigments and its inks, never a provider's colour */
-  --rv-code-keyword: var(--prussian);
-  --rv-code-string: var(--verdigris);
-  --rv-code-number: var(--ormolu);
-  --rv-code-comment: var(--ink-faint);
-  --rv-code-title: var(--ink);
-  --rv-code-type: var(--ormolu);
-  --rv-code-attr: var(--verdigris);
-  --rv-diff-del: color-mix(in srgb, var(--vermilion) 18%, transparent);
-  --rv-diff-add: color-mix(in srgb, var(--verdigris) 18%, transparent);
-  --rv-mono: var(--font-data);
-  --rv-radius: var(--r-menu);
 }
 
 a { color: inherit; }

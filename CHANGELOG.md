@@ -27,13 +27,17 @@
   a command of its own on the door.
 
 - **The console is rebuilt: six pages on one design.** Sessions shows teams as columns of their sessions, and a
-  session opens into its conversation. Accounts sets each Claude account on a time axis at the moment it is usable
+  session opens into its conversation, read through the session reader below: Markdown, highlighted code, each tool
+  call one line that opens, earlier messages one press away, and the reply streaming in as it is written. The open
+  session fits a phone. Accounts sets each Claude account on a time axis at the moment it is usable
   again, with the order splice moves through them; the other providers' logins stand beside it, and each opens the
   same glass to use it now, rename it, sign it out or sign it in, with Add login for a provider that signs in with
   one. Teams draws each team as its goal and members. Providers holds every provider, each command's own settings
   and sign-in, and Compare models. Activity holds the window's requests and where they went, and a request opens
   whole. Settings draws splice as what it is, each part opening its own controls, Modes among them. It has a night
-  and a day look, and its type and layout grow with the screen up to a 3840 px desk screen.
+  and a day look, and its type and layout grow with the screen up to a 3840 px desk screen. A page nothing is
+  happening on draws nothing, so the console stays quick on that screen: its panels are solid, a lamp pulses when
+  it comes alive and then rests, and what a page shows is redrawn only when it changed.
 
 ### Upgrading
 - **A value only a head holds stops the daemon from starting, and the fix session offers the move.** A head's

@@ -118,31 +118,34 @@
 
   /* ---------- the field ---------- */
   function paintHead() {
-    $('#pvEyebrow').textContent = readOk === false && !readAt ? 'splice is not answering' : `${Deck.count(P.providers.length, 'provider')} · last 7 days`;
-    $('#pvRunning').textContent = readOk === false ? 'Not answering' : `${Deck.count(P.providers.reduce((a, p) => a + p.inflight, 0), 'request')} running`;
+    const say = (el, v) => { if (el.textContent !== v) el.textContent = v; };
+    say($('#pvEyebrow'), readOk === false && !readAt ? 'splice is not answering' : `${Deck.count(P.providers.length, 'provider')} · last 7 days`);
+    say($('#pvRunning'), readOk === false ? 'Not answering' : `${Deck.count(P.providers.reduce((a, p) => a + p.inflight, 0), 'request')} running`);
   }
   function draw() {
     const T = P.totals, cloud = P.providers.filter(p => !p.local).sort((a, b) => (b.week.requests || 0) - (a.week.requests || 0)), loc = P.providers.filter(p => p.local);
     paintHead();
-    const hero = $('#hero'); hero.replaceChildren();
+    // every part below is built on each read and placed only when it differs from what stands there (Deck.put)
+    const hero = [];
     const figs = h('div', 'pv-figs');
     [[n(T.week), 'Requests'], [money(T.apiValue), 'At API prices'], [pct(T.dayFailure), 'Failure rate, 24 h'], [secs(T.dayMedianMs), 'Median response time, 24 h']].forEach(([v, w]) => { const f = h('div', 'pv-fig'); f.append(h('b', '', v), h('span', '', w)); figs.append(f); });
-    hero.append(figs);
+    hero.push(figs);
     const used = cloud.filter(p => p.week.requests > 0);
     if (used.length && T.week) {
       const share = h('div', 'pv-share'), strip = Deck.strip(used.map(p => ({ share: p.week.requests / T.week })));
       [...strip.children].forEach((seg, i) => seg.style.setProperty('--c', used[i].color));
       const key = h('div', 'pv-key');
       used.forEach(p => { const k = h('span'), d = h('i'); d.style.setProperty('--pc', p.color); const u = p.week.requests / T.week; k.append(d, used.filter(x => x.provider === p.provider).length < 2 ? p.provider : `${p.provider} · ${p.cmd}`, h('b', '', u < 0.01 ? '<1%' : pct(u))); key.append(k); });
-      share.append(strip, key); hero.append(share);
+      share.append(strip, key); hero.push(share);
     }
-    $('#cloud').replaceChildren(...cloud.map(card));
-    $('#local').replaceChildren(...loc.map(localCard));
-    $('#localSec').hidden = !loc.length;
+    Deck.put($('#hero'), hero);
+    Deck.put($('#cloud'), cloud.map(card));
+    Deck.put($('#local'), loc.map(localCard));
+    if ($('#localSec').hidden !== !loc.length) $('#localSec').hidden = !loc.length;
     tool($('[data-part="add"]'), 'Add provider', `${P.add.filter(a => !a.installed).length}`, 'not added yet', 'ChatGPT, Grok, DeepSeek, OpenRouter, local servers');
     const models = P.providers.reduce((a, p) => a + p.models.length, 0);
     tool($('[data-part="compare"]'), 'Compare models', String(models), models === 1 ? 'model' : 'models', 'Price, context window, response time');
-    if (openKey) { const a = pv.querySelector(`[data-key="${CSS.escape(openKey)}"], [data-part="${CSS.escape(openKey)}"]`); if (a) a.setAttribute('aria-expanded', 'true'); }
+    if (openKey) { const a = pv.querySelector(`[data-key="${CSS.escape(openKey)}"], [data-part="${CSS.escape(openKey)}"]`); if (a && a.getAttribute('aria-expanded') !== 'true') a.setAttribute('aria-expanded', 'true'); }
     paintNeed();
   }
   function head(el, p) {
@@ -172,11 +175,10 @@
     return el;
   }
   function tool(el, name, fig, unit, cap) {
-    el.replaceChildren();
     const go = h('span', 'pt-go'); go.innerHTML = GO;
     const nm = h('div', 'pt-name'); nm.append(h('b', '', name));
     const f = h('span', 'pt-fig', fig); f.append(' ', h('small', '', unit));
-    el.append(go, nm, f, h('span', 'pt-cap', cap));
+    Deck.put(el, [go, nm, f, h('span', 'pt-cap', cap)]);
   }
   /** saved changes that take effect when their command restarts, gathered in the need float */
   function paintNeed() {
@@ -200,7 +202,6 @@
     const p = openKey && P.providers.find(x => x.cmd === openKey);
     if (!p || ins.el.hidden) return;
     ins.el.textContent = ''; providerLens(ins.el, p);
-    if (window.DeckLens) DeckLens.redraw(ins.el);
   }
   function openWith(anchor, fillBody, key, focus) {
     $$('[aria-expanded="true"]', pv).forEach(x => x.setAttribute('aria-expanded', 'false'));

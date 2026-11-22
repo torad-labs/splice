@@ -68,7 +68,7 @@ const API = (() => {
     const centre = field.querySelector(".centre") || field;
     const head = centre.querySelector(":scope > .head");
     if (head) head.after(box); else centre.prepend(box);
-    if (typeof DeckLens !== "undefined") { DeckLens.add(box); DeckLens.redraw(box); }
+
     return box;
   }
   function lock() {

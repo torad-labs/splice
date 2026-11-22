@@ -87,7 +87,7 @@ internal class DesktopFrames(internal val sessionId: String) {
     fun replay(line: JsonObject, uuid: String): JsonObject = JsonObject(
         line + mapOf(
             "uuid" to JsonPrimitive(uuid),
-            SESSION_ID_KEY to JsonPrimitive(sessionId),
+            FRAME_SESSION_ID to JsonPrimitive(sessionId),
             "isReplay" to JsonPrimitive(true),
         ),
     )

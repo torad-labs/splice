@@ -52,6 +52,8 @@ internal object LifecycleWiring {
         expectedVersion: String = GATEWAY_VERSION,
         waitForCompactions: Boolean = true,
         launchJar: RunningJar = jar,
+        now: Boolean = false,
+        waitAll: Boolean = false,
     ): Boolean =
         RestartCommand(
             output,
@@ -63,9 +65,9 @@ internal object LifecycleWiring {
         ).let { command ->
             val sockets = InstallWiring.listenerSockets(EnvReader(System::getenv))
             if (sockets == null) {
-                command.restart(expectedVersion, waitForCompactions)
+                command.restart(expectedVersion, waitForCompactions, now = now, waitAll = waitAll)
             } else {
-                command.restart(expectedVersion, waitForCompactions, sockets)
+                command.restart(expectedVersion, waitForCompactions, sockets, now = now, waitAll = waitAll)
             }
         }
 

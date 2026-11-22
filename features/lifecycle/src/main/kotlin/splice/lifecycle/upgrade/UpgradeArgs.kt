@@ -9,12 +9,13 @@ import splice.core.terminal.TerminalOutput
 internal data class UpgradeArgs(
     val to: String? = null,
     val now: Boolean = false,
+    val wait: Boolean = false,
     val rollback: Boolean = false,
     val auto: Boolean = false,
     val check: Boolean = false,
 ) {
-    /** --auto always names the release it found and never rolls back; --check stands alone. */
-    val coherent: Boolean get() = autoNamed && (!check || this == UpgradeArgs(check = true))
+    /** --auto always names the release it found and never rolls back; --check stands alone; --now and --wait conflict. */
+    val coherent: Boolean get() = autoNamed && !(now && wait) && (!check || this == UpgradeArgs(check = true))
 
     private val autoNamed: Boolean get() = !auto || (to != null && !rollback)
 }
@@ -27,6 +28,7 @@ private fun interface FlagSetting {
 /** The flags that take no value, each with what it sets. */
 private val FLAGS: Map<String, FlagSetting> = mapOf(
     "--now" to FlagSetting { it.copy(now = true) },
+    "--wait" to FlagSetting { it.copy(wait = true) },
     "--rollback" to FlagSetting { it.copy(rollback = true) },
     "--auto" to FlagSetting { it.copy(auto = true) },
     "--check" to FlagSetting { it.copy(check = true) },
@@ -48,7 +50,7 @@ internal class UpgradeArgParser(private val output: TerminalOutput) {
     }
 
     fun usage(): Boolean {
-        output.line("usage: splice upgrade [--to vX.Y.Z] [--now] [--rollback] | splice upgrade --check")
+        output.line("usage: splice upgrade [--to vX.Y.Z] [--wait] [--now] [--rollback] | splice upgrade --check")
         return false
     }
 }

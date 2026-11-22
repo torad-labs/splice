@@ -50,8 +50,8 @@ You: `free` (run it), `ask` (person's yes first), `person` (the person runs it i
 | `listeners` | The ports this build would listen on, for a socket manager | none | no | no | ask (read-only) |
 | `capabilities` | What this build can do about inherited sockets | none | no | no | ask (read-only) |
 | `shim-version` | Prints the launch-shim version this jar expects | none | no | no | ask (read-only) |
-| `restart` | Stops the daemon and starts it again | `--now` | starts it | yes | ask |
-| `upgrade` | Fetches, verifies and activates a release, restarts, runs doctor | `--to vX.Y.Z`, `--now`, `--rollback`, `--check` | no (restarts it) | yes | ask (`--check` is read-only) |
+| `restart` | Restarts the daemon (hands over at once under systemd) | `--wait`, `--now` | starts it | yes | ask |
+| `upgrade` | Fetches, verifies and activates a release, restarts, runs doctor | `--to vX.Y.Z`, `--wait`, `--now`, `--rollback`, `--check` | no (restarts it) | yes | ask (`--check` is read-only) |
 | `console` | Bare: starts the daemon if needed and opens the console in the person's browser, unlocked. With an action: drives the console the person has open | `<action> [words]`, `--note TEXT`, `--clear`, `--json` | yes (with an action) | yes | bare: person. Actions: free to look and point, ask before an act |
 | `claude` | The lane the terminal's `claude` runs on: the Splice gateway (the door), or its head, which is deprecated. The gateway's address and window, the model a session starts on and why, the gateway's models (the one list every session's `/model` discovers) and each head left out. `door` puts `claude` on the gateway and links it to splice; `head` puts it back on its head and replaces the terminal's key. `retire` retires custom heads (deprecated and will be removed in a coming release) into a dated backup, `restore` brings them back exactly as they were, `check` says how Claude Code starts on this machine and what list each start gets | `[--json]`, `door [--model <selector>]`, `head`, `retire <command\|key>... \| --all`, `restore <command\|key>... \| --all`, `check [--json]` | yes | yes | bare and `check`: free. `door`, `head`, `retire`, `restore`: ask |
 | `login` | Signs in to a head (browser or device flow, or a masked key prompt) | `<head>`, `--label <name>`, `--discard` | no | no | person |
@@ -304,13 +304,15 @@ Ask before `retire` and `restore`: they move the person's commands. `check` is f
 
 ```
 splice restart
+splice restart --wait
 splice restart --now
 ```
 
-Stops the daemon (every head with it) and cold-starts it from the CLI's shell. Say plainly before you ask:
-**a restart cuts every turn in flight in every session on this machine, including yours.** Sessions retry on
-their own and come back. Without `--now` it first waits for running compactions, up to 30 minutes. `--now`
-skips that wait. A systemd user unit that runs the daemon restarts through the unit instead.
+Restarts the daemon. Under splice's systemd unit, it hands over at once: answers and compactions already arriving
+finish on the running daemon (except on Muse or a local runtime with `slot_affinity`, whose running compactions are
+waited on first); turns not yet answering end with the restart line and Claude Code sends them again. Outside the unit
+(or on macOS), the daemon stops whole and waits first for running compactions. `--wait` waits for running compactions
+on every command even under the unit; `--now` skips every compaction wait.
 
 The new daemon reads its API-key environment variables from the shell that ran `restart` (or the unit's
 environment). A restart run from your pane would carry YOUR environment, not the person's, so prefer the console's "Restart

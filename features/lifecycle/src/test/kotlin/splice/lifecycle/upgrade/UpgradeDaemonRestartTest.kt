@@ -48,12 +48,20 @@ class UpgradeDaemonRestartTest {
     /** RED before V4-220 (as UpgradeCommandTest's arm, 2026-09-25): the unit restarted with both compaction
      *  reads still unmade, "expected: <0> but was: <2>". */
     @Test
-    fun `a compaction in flight is waited for before the unit restarts`(@TempDir home: Path) {
+    fun `a compaction in flight is waited for before the unit restarts when --wait is requested`(@TempDir home: Path) {
         val jar = home.resolve("splice.jar")
         reads = ArrayDeque(listOf(compaction, compaction))
-        assertEquals(DaemonRestarted.Serving, daemon(jar).restart(jar, VERSION, now = false))
+        assertEquals(DaemonRestarted.Serving, daemon(jar).restart(jar, VERSION, now = false, waitAll = true))
         assertEquals(0, unreadAtRestart, "the unit restarted while a compaction was in flight: $lines")
         assertTrue(lines.any { it.contains("waiting for 1 compaction (claudex") }, "$lines")
+    }
+
+    @Test
+    fun `default unit restart hands over at once when only hands_over heads are compacting`(@TempDir home: Path) {
+        val jar = home.resolve("splice.jar")
+        reads = ArrayDeque(listOf(compaction, compaction))
+        assertEquals(DaemonRestarted.Serving, daemon(jar).restart(jar, VERSION, now = false, waitAll = false))
+        assertEquals(1, unreadAtRestart, "default unit restart should not wait on hands_over heads: $lines")
     }
 
     @Test

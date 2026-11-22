@@ -78,6 +78,9 @@ internal class LifecyclePorts {
      *  leaves a restart this daemon takes on as the drain it always was. */
     var handOver: HandOver? = null
 
+    /** True when this daemon runs under systemd AND its launcher supervises side-by-side hand-overs. */
+    fun handsOver(): Boolean = supervised?.invoke() == true && handOver != null
+
     /** #523: what a restart this daemon takes on runs when its turn comes (the console's Restart, a save that needs
      *  one). Under the launcher's supervisor, in a unit systemd owns, that is a request for the next daemon, which
      *  takes over beside this one while the answers in progress finish. Anywhere else, or when the launcher could

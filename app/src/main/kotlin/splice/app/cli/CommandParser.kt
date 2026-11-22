@@ -137,7 +137,7 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
     // 2026-09-22: `splice models [provider]` — the endpoint's own roster beside the declared one.
     "models" to CommandRegistration("[provider] [--all]", CommandFactory { a -> Command.Models(a.drop(1)) }),
     "upgrade" to CommandRegistration(
-        "[--to vX.Y.Z] [--now] [--rollback]",
+        "[--to vX.Y.Z] [--wait] [--now] [--rollback]",
         CommandFactory { a -> Command.Upgrade(a.drop(1)) },
     ),
     "status" to CommandRegistration("", CommandFactory.Alone(Command.Status)),
@@ -148,11 +148,12 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
         CommandFactory { a -> Command.Mcp(a.drop(1)) },
     ),
     "restart" to CommandRegistration(
-        "[--now]",
+        "[--wait] [--now]",
         CommandFactory { a ->
             when (a.drop(1)) {
                 emptyList<String>() -> Command.Restart()
                 listOf("--now") -> Command.Restart(now = true)
+                listOf("--wait") -> Command.Restart(wait = true)
                 else -> null
             }
         },

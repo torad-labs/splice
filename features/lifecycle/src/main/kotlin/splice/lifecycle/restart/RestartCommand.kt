@@ -6,6 +6,7 @@
 package splice.lifecycle.restart
 
 import splice.core.GATEWAY_VERSION
+import splice.core.SHIM_VERSION
 import splice.core.config.RunningJar
 import splice.core.listen.ListenerNames
 import splice.core.terminal.TerminalOutput
@@ -17,6 +18,7 @@ import splice.daemonclient.MgmtKeyRead
 import splice.lifecycle.start.DaemonColdStart
 import splice.lifecycle.units.RestartSockets
 import splice.lifecycle.upgrade.CompactionWait
+import splice.lifecycle.upgrade.CompactionWaitMode
 import splice.lifecycle.upgrade.JdkUpgradeInflight
 import splice.topology.LocalRowFindings
 import splice.topology.TopologyStatePaths
@@ -52,7 +54,10 @@ public class RestartCommand(
         expectedVersion: String = GATEWAY_VERSION,
         waitForCompactions: Boolean = true,
         sockets: RestartSockets = RestartSockets { _, _ -> },
+        now: Boolean = false,
+        waitAll: Boolean = false,
     ): Boolean {
+        if (now) output.line("splice: --now is no longer needed; restarting without waiting")
         // Load topology once: controlPort AND the FALLBACK head ports come from it. The head ports feed
         // the stop check so a restart never declares success while a head port is still bound (F3).
         // A file that cannot serve stops the verb here, before anything is stopped: the daemon that
@@ -65,13 +70,20 @@ public class RestartCommand(
         val names = ListenerNames()
         val heads = topology.heads.map { (key, head) -> names.head(key) to head.port }
         val listeners = mapOf(names.control to port) + heads
+        val policy = when {
+            !waitForCompactions -> WaitPolicy.NONE
+            waitAll -> WaitPolicy.ALL
+            else -> WaitPolicy.DEFAULT
+        }
         return if (refusal == null) {
-            restartOwn(listeners, port, expectedVersion, waitForCompactions, sockets)
+            restartOwn(listeners, port, expectedVersion, policy, sockets)
         } else {
             output.line(refusal)
             false
         }
     }
+
+    private enum class WaitPolicy { NONE, DEFAULT, ALL }
 
     /** The daemon on [port] is this home's, or no unit claims it: restart it through its unit when the
      *  unit runs it, else stop it here (the head ports [tomlPorts] must free too) and cold-start. */
@@ -79,19 +91,25 @@ public class RestartCommand(
         listeners: Map<String, Int>,
         port: Int,
         expectedVersion: String,
-        waitForCompactions: Boolean,
+        policy: WaitPolicy,
         sockets: RestartSockets,
     ): Boolean {
         val unit = coldStart.activeUnit()
         if (unit != null) {
-            if (waitForCompactions && DaemonProbe.healthVersion(port) != null) {
-                CompactionWait(output, JdkUpgradeInflight(env, port)).await()
+            val view = DaemonProbe.healthView(port)
+            if (policy != WaitPolicy.NONE && view != null) {
+                val mode = if (policy == WaitPolicy.ALL || view.process.launcher != SHIM_VERSION) {
+                    CompactionWaitMode.ALL_REQUESTED
+                } else {
+                    CompactionWaitMode.STOPS_WHOLE_ONLY
+                }
+                CompactionWait(output, JdkUpgradeInflight(env, port)).await(mode)
             }
             sockets.prepare(unit, listeners)
             return restartThroughUnit(unit, port, expectedVersion)
         }
         val tomlPorts = listeners.filterKeys { it != ListenerNames().control }.values.toList()
-        return if (stopIfRunning(port, tomlPorts, waitForCompactions)) {
+        return if (stopIfRunning(port, tomlPorts, policy != WaitPolicy.NONE, policy == WaitPolicy.ALL)) {
             coldStart.ensureDaemon(port, expectedVersion).also { started ->
                 if (started) output.line("splice: daemon restarted")
             }
@@ -114,10 +132,18 @@ public class RestartCommand(
     // The env is the constructor's (the splitBrainChecks / DaemonSettings idiom) so the stop decision
     // and its message are drivable against a temp CLAUDEX_STATE_DIR — DR-174's arms drive THIS
     // function, not the helper under it.
-    internal fun stopIfRunning(port: Int, tomlPorts: List<Int>, waitForCompactions: Boolean = true): Boolean {
+    internal fun stopIfRunning(
+        port: Int,
+        tomlPorts: List<Int>,
+        waitForCompactions: Boolean = true,
+        waitAll: Boolean = false,
+    ): Boolean {
         val running = running(port) ?: return true
         val key = stopKeyOrExplain() ?: return false
-        if (waitForCompactions) CompactionWait(output, JdkUpgradeInflight(env, port)).await()
+        if (waitForCompactions) {
+            val mode = if (waitAll) CompactionWaitMode.ALL_REQUESTED else CompactionWaitMode.ALL_NO_UNIT
+            CompactionWait(output, JdkUpgradeInflight(env, port)).await(mode)
+        }
         val scope = StopScope(DaemonProbe.headPorts(port, key), tomlPorts)
         scope.unseen?.let { why ->
             output.line(

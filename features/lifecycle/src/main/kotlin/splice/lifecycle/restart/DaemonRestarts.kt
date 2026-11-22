@@ -29,18 +29,25 @@ public class DaemonRestarts(private val restart: RestartAfterCompactions) {
         synchronized(lock) { successor = value }
     }
 
-    /** Takes a restart on; [now] skips the compaction wait, as `splice restart --now` does. */
-    public fun take(now: Boolean, shutdown: ShutdownDaemon, supervised: DaemonSupervised?): RestartTaken =
+    /** Takes a restart on; [now] skips the compaction wait, [waitAll] waits for every compaction even when the
+     *  daemon [handsOver]. */
+    public fun take(
+        now: Boolean,
+        shutdown: ShutdownDaemon,
+        supervised: DaemonSupervised?,
+        waitAll: Boolean = false,
+        handsOver: Boolean = false,
+    ): RestartTaken =
         synchronized(lock) {
             when {
                 supervised == null -> RestartTaken.Refused(RESTART_SUPERVISION_UNWIRED, unwired = true)
-                supervised() -> RestartTaken.Accepted(restart.request(now, shutdown))
+                supervised() -> RestartTaken.Accepted(restart.request(now, shutdown, waitAll, handsOver))
                 successor == null -> RestartTaken.Refused(RESTART_UNSUPERVISED, unwired = false)
                 !successorArmed && successor?.start() != true ->
                     RestartTaken.Refused("could not arm a detached restart; the daemon remains up", unwired = false)
                 else -> {
                     successorArmed = true
-                    RestartTaken.Accepted(restart.request(now, shutdown))
+                    RestartTaken.Accepted(restart.request(now, shutdown, waitAll, handsOver = false))
                 }
             }
         }

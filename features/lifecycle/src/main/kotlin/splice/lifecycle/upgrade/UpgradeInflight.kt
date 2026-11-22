@@ -39,7 +39,11 @@ private const val HTTP_OK = 200
  *  [Count.compactions] are the turns among them that are compactions (V4-213's live rows), which a
  *  restart waits for; a daemon that lists no live rows has none to show. */
 internal sealed class InflightRead {
-    data class Count(val turns: Int, val compactions: List<CompactionSlot> = emptyList()) : InflightRead()
+    data class Count(
+        val turns: Int,
+        val compactions: List<CompactionSlot> = emptyList(),
+        val stopWholeHeads: Set<String> = emptySet(),
+    ) : InflightRead()
     data object NoDaemon : InflightRead()
     data class Unknown(val reason: String) : InflightRead()
 }
@@ -50,10 +54,10 @@ public data class CompactionSlot(val head: String, val ageMs: Long)
 internal fun interface UpgradeInflight {
     operator fun invoke(): InflightRead
 
-    /** Holds new compactions on every head for [forMs] (CompactionWait, before its first read): null once they are
-     *  held, else why they could not be (a daemon from before the hold, a refused key), which the wait says and goes
-     *  on without. A read with no daemon behind it holds nothing. */
-    fun hold(forMs: Long): String? = null
+    /** Holds new compactions on [heads] (every head when null) for [forMs] (CompactionWait, before its first read):
+     *  null once they are held, else why they could not be (a daemon from before the hold, a refused key), which the
+     *  wait says and goes on without. A read with no daemon behind it holds nothing. */
+    fun hold(forMs: Long, heads: Collection<String>? = null): String? = null
 }
 
 internal class JdkUpgradeInflight(
@@ -65,10 +69,11 @@ internal class JdkUpgradeInflight(
     private val client = HttpClient.newHttpClient()
 
     /** POST /api/daemon/compactions/hold with the mgmt key, the daemon that reads /api/heads for the same restart. */
-    override fun hold(forMs: Long): String? {
+    override fun hold(forMs: Long, heads: Collection<String>?): String? {
         val key = (MgmtKeyFile().read(env) as? MgmtKeyRead.Present)?.key ?: return "the mgmt key is not readable"
+        val query = if (heads.isNullOrEmpty()) "ms=$forMs" else "ms=$forMs&heads=${heads.joinToString(",")}"
         return Cancellables.runCatchingCancellable {
-            val request = HttpRequest.newBuilder(URI("http://127.0.0.1:$port/api/daemon/compactions/hold?ms=$forMs"))
+            val request = HttpRequest.newBuilder(URI("http://127.0.0.1:$port/api/daemon/compactions/hold?$query"))
                 .timeout(Duration.ofSeconds(PROBE_TIMEOUT_S))
                 .header("Authorization", "Bearer $key")
                 .POST(HttpRequest.BodyPublishers.noBody())
@@ -114,8 +119,11 @@ internal class JdkUpgradeInflight(
         }
         val missing = heads.filterIndexed { i, _ -> counts[i] == null }
             .map { JsonScalars.str(it, "key") ?: "?" }
+        val stopWhole = heads.filter { JsonScalars.str(it, "hands_over") == "false" }
+            .mapNotNull { JsonScalars.str(it, "key") }
+            .toSet()
         return if (missing.isEmpty()) {
-            InflightRead.Count(counts.sumOf { it ?: 0 }, heads.flatMap(::compactions))
+            InflightRead.Count(counts.sumOf { it ?: 0 }, heads.flatMap(::compactions), stopWhole)
         } else {
             InflightRead.Unknown("no in-flight count for head(s) $missing")
         }

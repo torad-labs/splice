@@ -116,9 +116,17 @@ internal class UpgradeDaemon(
      *  V4-220: the release activated AFTER [waitIdle], and a compaction that started meanwhile is the one
      *  turn a restart must not cut, so either path first takes the wait the console's restart and `splice
      *  restart` take (CompactionWait). [now] skips it, as `--now` skips [waitIdle]. */
-    fun restart(liveJar: Path, version: String, now: Boolean): DaemonRestarted {
-        if (!now) CompactionWait(output, inflight, pacing.pollMs).await()
-        if (unit.supervises(liveJar)) {
+    fun restart(liveJar: Path, version: String, now: Boolean, waitAll: Boolean = false): DaemonRestarted {
+        val supervises = unit.supervises(liveJar)
+        if (!now) {
+            val mode = when {
+                waitAll -> CompactionWaitMode.ALL_REQUESTED
+                supervises -> CompactionWaitMode.STOPS_WHOLE_ONLY
+                else -> CompactionWaitMode.ALL_NO_UNIT
+            }
+            CompactionWait(output, inflight, pacing.pollMs).await(mode)
+        }
+        if (supervises) {
             unit.restart()
         } else {
             restartVerb(version)

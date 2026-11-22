@@ -39,7 +39,7 @@ window.SETTINGS_LIVE = (() => {
 
   const S = { configRead: false, fmt: { dur, bytes, exact }, knobs: [], commands: [], week: {}, mcp: { shared: true, bytesNow: null, bytesIfShared: null, servers: [], sessions: null },
     data: { stores: [] }, projects: { list: [], folders: [] }, alerts: { command: null, desktop: false, webhook: null }, version: { installed: null, previous: null, latest: null },
-    paths: {}, running: { requests: 0, sessions: 0 }, topology: null, history: null,
+    paths: {}, running: { requests: 0, cutRequests: 0, sessions: 0 }, restartState: { status: 'idle', handsOver: false, drainMs: null, compactions: 0 }, upgradeRun: null, topology: null, history: null,
     // the modes splice carries, as GET /api/modes lists them (modes/README.md); null until read, or when splice did not answer
     modes: null };
   const K = {};
@@ -143,10 +143,12 @@ window.SETTINGS_LIVE = (() => {
   S.checkVersion = async () => { const res = await API.post('/api/upgrade/check', {}); if (res.ok) readVersion(res.body); return res.ok ? { state: 'applied' } : { state: 'refused', why: why(res) }; };
   S.upgrade = async () => { const res = await API.post('/api/upgrade', { to: S.version.latest }); return res.ok ? { state: 'applied', word: 'Upgrading' } : { state: 'refused', why: why(res) }; };
   S.goBack = async () => { const res = await API.post('/api/upgrade', { rollback: true }); return res.ok ? { state: 'applied', word: 'Rolling back' } : { state: 'refused', why: why(res) }; };
-  /** restart splice now (?now=1, as `splice restart --now`), or once the compactions in flight end; back once it answers idle */
-  S.restart = async now => {
-    const res = await API.post('/api/daemon/restart' + (now ? '?now=1' : ''), {});
+  /** restart splice: default hands over at once under systemd (?wait=1 waits for all compactions; ?now=1 skips every wait). */
+  S.restart = async (mode = 'default') => {
+    const query = mode === 'wait' ? '?wait=1' : mode === true || mode === 'now' ? '?now=1' : '';
+    const res = await API.post('/api/daemon/restart' + query, {});
     if (!res.ok) return { state: 'refused', why: why(res) };
+    if (res.body && typeof res.body.hands_over === 'boolean') S.restartState.handsOver = res.body.hands_over;
     for (let i = 0; i < 90; i++) {
       await new Promise(r => setTimeout(r, 2000));
       const st = await API.get('/api/daemon/restart');
@@ -272,8 +274,8 @@ window.SETTINGS_LIVE = (() => {
       longestSilenceMs: (at('waited') || {}).longest_silence_ms ?? null, peakToday: held ? held.peak : null, peakAt: held ? held.at : null };
   }
   S.read = async () => {
-    const [cfg, hd, al, up, ss, mcp, mem, stores, labels, edges, hist, pr, topo, modes] = await Promise.all(['/api/config', '/api/heads', '/api/alerts', '/api/upgrade', '/api/sessions',
-      '/api/mcp', '/api/mcp/memory', '/api/kept/stores', '/api/kept/labels', '/api/kept/edges', '/api/history', '/api/projects', '/api/topology', '/api/modes'].map(get));
+    const [cfg, hd, al, up, ss, mcp, mem, stores, labels, edges, hist, pr, topo, modes, rst, upr] = await Promise.all(['/api/config', '/api/heads', '/api/alerts', '/api/upgrade', '/api/sessions',
+      '/api/mcp', '/api/mcp/memory', '/api/kept/stores', '/api/kept/labels', '/api/kept/edges', '/api/history', '/api/projects', '/api/topology', '/api/modes', '/api/daemon/restart', '/api/upgrade/run'].map(get));
     if (!cfg) return false;
     // a splice that answers without its settings is drawn at splice's defaults, every row saying they were not read
     S.configRead = !!(cfg.effective && typeof cfg.effective === 'object');
@@ -295,8 +297,11 @@ window.SETTINGS_LIVE = (() => {
     }
     S.knobs = Object.values(K);
     const cfgOf = (key, cmd) => S.valueOf(key, cmd);
-    S.commands = ((hd && hd.heads) || []).map(x => ({ key: x.key, label: x.label || x.key, gate: x.gate || {} }));
+    S.restartState = { status: (rst && rst.status) || 'idle', handsOver: !!(rst && rst.hands_over), drainMs: (rst && rst.drain_ms) ?? null, compactions: (rst && rst.compactions) || 0 };
+    S.upgradeRun = (upr && upr.run) || null;
+    S.commands = ((hd && hd.heads) || []).map(x => ({ key: x.key, label: x.label || x.key, gate: x.gate || {}, handsOver: x.hands_over !== false }));
     S.running.requests = S.commands.reduce((n, c) => n + (c.gate.inflight || 0), 0);
+    S.running.cutRequests = S.restartState.handsOver ? S.commands.filter(c => !c.handsOver).reduce((n, c) => n + (c.gate.inflight || 0), 0) : S.running.requests;
     S.running.sessions = ((ss && ss.sessions) || []).filter(s => s.availability === 'live').length;
     if (al) S.alerts = { command: S.alerts.command, desktop: !!al.desktop, webhook: al.webhook_url || null };
     S.topology = topo && topo.topology ? topo.topology : S.topology;

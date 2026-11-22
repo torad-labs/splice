@@ -36,6 +36,7 @@ public object HeadStatus {
         put("wantVersion", GATEWAY_VERSION)
         put("running", h.running)
         put("healthy", h.ok)
+        put("hands_over", head.handsOver)
         put("last_provider_answer", providerAnswerJson(head))
         put("version", if (h.running) GATEWAY_VERSION else null as String?)
         put("versionMatch", if (h.running) true else null as Boolean?)

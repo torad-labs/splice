@@ -90,6 +90,7 @@ public class HeadServer(
 
     override val key: String get() = provider.key
     override val label: String get() = provider.label
+    override val handsOver: Boolean get() = provider.finishesTurnsWhenRetired
 
     /** The port this head listens on: the one its connector BOUND while running (the OS-assigned
      *  port when [listenPort] is 0, which is how a test gets a port with no lease-then-bind window),

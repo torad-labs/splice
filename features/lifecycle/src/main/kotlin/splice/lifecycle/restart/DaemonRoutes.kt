@@ -64,11 +64,20 @@ public fun interface DaemonSupervised {
     public operator fun invoke(): Boolean
 }
 
+/** Checks whether splice.toml can boot on the next daemon before a restart asks the launcher; null when valid. */
+public fun interface RestartConfigCheck {
+    public fun refusal(): String?
+}
+
 /** [restarts] is the daemon's one decision and wait-then-drain: every restart the daemon itself takes
  *  on goes through it, a console add's save included. [drainMs] is how long each command's drain lets a request in
  *  flight finish before it is cut, said in every phase so the console names the real wait (Settings' armed Restart);
  *  null where the wiring gives none, and the field is then left out. */
-public class DaemonRoutes(private val restarts: DaemonRestarts, private val drainMs: Long? = null) {
+public class DaemonRoutes(
+    private val restarts: DaemonRestarts,
+    private val drainMs: Long? = null,
+    private val configCheck: RestartConfigCheck = RestartConfigCheck { null },
+) {
 
     /** [shutdown] and [supervised] ARRIVE AT CALL TIME: the routing lambda reads the server's own
      *  properties as it calls, so neither is captured, and a route that captured them would answer
@@ -77,16 +86,26 @@ public class DaemonRoutes(private val restarts: DaemonRestarts, private val drai
         call: ApplicationCall,
         shutdown: ShutdownDaemon,
         supervised: DaemonSupervised?,
+        handsOver: Boolean = false,
     ) {
         val now = call.request.queryParameters["now"] in NOW_VALUES
+        val wait = call.request.queryParameters["wait"] in NOW_VALUES
+        if (now && wait) {
+            refuse(call, "cannot combine now and wait on /api/daemon/restart", HttpStatusCode.BadRequest)
+            return
+        }
+        configCheck.refusal()?.let { why ->
+            refuse(call, why, HttpStatusCode.UnprocessableEntity)
+            return
+        }
         // DaemonRestarts arms the detached successor before accepting an unsupervised drain.
-        when (val taken = restarts.take(now, shutdown, supervised)) {
+        when (val taken = restarts.take(now, shutdown, supervised, waitAll = wait, handsOver = handsOver)) {
             is RestartTaken.Refused -> {
                 val status = if (taken.unwired) HttpStatusCode.ServiceUnavailable else HttpStatusCode.Conflict
                 refuse(call, taken.reason, status)
             }
             is RestartTaken.Accepted -> {
-                val body = phaseJson(taken.phase).toString()
+                val body = phaseJson(taken.phase, handsOver).toString()
                 call.respondText(body, ContentType.Application.Json, HttpStatusCode.Accepted)
                 if (taken.phase is RestartPhase.Draining) shutdown()
             }
@@ -94,11 +113,11 @@ public class DaemonRoutes(private val restarts: DaemonRestarts, private val drai
     }
 
     /** GET /api/daemon/restart: where a restart the daemon took on stands. */
-    public suspend fun statusJson(call: ApplicationCall) {
-        call.respondText(phaseJson(restarts.phase()).toString(), ContentType.Application.Json)
+    public suspend fun statusJson(call: ApplicationCall, handsOver: Boolean = false) {
+        call.respondText(phaseJson(restarts.phase(), handsOver).toString(), ContentType.Application.Json)
     }
 
-    private fun phaseJson(phase: RestartPhase): JsonObject = buildJsonObject {
+    private fun phaseJson(phase: RestartPhase, handsOver: Boolean): JsonObject = buildJsonObject {
         when (phase) {
             RestartPhase.Idle -> put("status", IDLE)
             RestartPhase.Draining -> put("status", DRAINING)
@@ -108,6 +127,7 @@ public class DaemonRoutes(private val restarts: DaemonRestarts, private val drai
                 put("compactions", phase.compactions.size)
             }
         }
+        put("hands_over", handsOver)
         drainMs?.let { put("drain_ms", it) }
     }
 

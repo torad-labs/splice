@@ -185,9 +185,10 @@ internal class DaemonLaunch(
      *  the unit the way it always has. */
     private fun rolled(unit: String, port: Int, expectedVersion: String, from: Long?): Boolean {
         output.line(
-            "splice: starting the next daemon beside the running one. An answer already arriving finishes, except " +
-                "on a Muse command or a local runtime that pins conversations to slots. A turn not yet answering " +
-                "ends with the restart line and Claude Code sends it again; new requests go to the next daemon…",
+            "splice: starting the next daemon beside the running one; the change applies as soon as it answers. " +
+                "An answer or compaction already arriving finishes on the running one, except on a Muse command " +
+                "or a local runtime that pins conversations to slots. A turn not yet answering ends with the " +
+                "restart line and Claude Code sends it again; new requests go to the next daemon…",
         )
         val up = supervised.roll(unit) && waitUntilNext(port, expectedVersion, from)
         if (!up) output.line("splice: the next daemon did not take over; restarting $unit instead")

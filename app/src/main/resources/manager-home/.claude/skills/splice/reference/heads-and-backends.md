@@ -184,8 +184,9 @@ Each recipe below ends with these checks. Steps 3 to 5 need the person's yes.
    cloud head.
 3. The key: the person runs `splice key set <ENV name from auth.env>`, a masked prompt. A stored key is used by
    the next request, with no restart. A new head's command, `<command> login`, does the same.
-4. `splice restart`. Say first that it cuts every turn in flight on the machine, yours included, and that
-   sessions retry on their own. A new provider or head is read only at boot.
+4. `splice restart`. Under splice's systemd unit, answers already arriving finish (except on Muse or a local runtime
+   with `slot_affinity`) and turns not yet answering retry; outside the unit, running turns are cut and retry. Say so
+   first. A new provider or head is read only at boot.
 5. `splice install <command>` links the new command.
 6. `splice status` shows the head and its port. `splice logs --tail 100` shows a line
    `[<head>] models: ...` saying what the endpoint listed, or why it listed nothing.

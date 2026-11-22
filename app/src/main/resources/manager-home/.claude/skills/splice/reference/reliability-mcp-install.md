@@ -199,9 +199,11 @@ Source: `Knob.kt` (the header comment on which knobs are live, and the `MAX_INFL
 
 - There is one daemon JVM. `splice restart` cuts the turns in flight on every head and every session on the
   machine, the manager's own included.
-- `splice restart` first waits for running compactions, up to 30 minutes, unless `--now`. Then the daemon ends every
-  ordinary turn still running at once, each with the line "splice restarted during this turn.", and the next
-  daemon takes over.
+- Under splice's systemd unit, `splice restart` hands over at once: answers and compactions already arriving finish
+  on the running daemon, and only compactions on heads that stop whole (Muse or a local runtime with `slot_affinity`)
+  are waited on first. Outside the unit, it waits first for running compactions on every command. Pass `--wait` to wait
+  for compactions on every command even under the unit, or `--now` to skip every wait. Turns not yet answering end with
+  "splice restarted during this turn.", and the next daemon takes over.
 - systemd holds splice's ports (`splice-control.socket`, `splice-head-<key>.socket`, laid by `splice restart`), so a
   request that arrives during the restart waits in the kernel queue and the next daemon answers it. A head on its
   own port, with no such socket, closes the connection instead, and Claude Code retries on a new one.

@@ -3,6 +3,11 @@
 ## Unreleased: a provider is served with no head, Claude Desktop sets itself up, and one model catalog
 
 ### Highlights
+- **Restarts and upgrades hand over at once.** `splice restart`, `splice upgrade` and `POST /api/daemon/restart` no
+  longer wait by default for turns or compactions on commands that hand over under systemd (`hands_over = true`). Only
+  compactions that a restart would cut — on Muse, a local runtime with `slot_affinity`, or a daemon outside the unit —
+  are waited on by default. Pass `--wait` (or `?wait=1`) to restore the full wait; `--now` skips every wait and prints
+  once that it is no longer needed.
 - **Sharing is a machine's door alone.** `splice share on` puts this machine's door on its LAN and prints the one
   `splice remote add http://<box>` line, with how many models it serves and the variables a Claude Code without splice
   runs on it with. An address naming one command, or picking a login or models, is refused: the door serves every model

@@ -200,9 +200,12 @@ public sealed class Command {
         }
     }
 
-    /** `splice restart [--now]`: waits for compactions in flight unless [now] (V4-216). */
-    public data class Restart(val now: Boolean = false) : Command() {
-        override suspend fun run(): Int = outcomeExitCode(LifecycleWiring.restart(waitForCompactions = !now))
+    /** `splice restart [--wait] [--now]`: hands over at once under the unit (waiting only for compactions on
+     *  commands that stop whole), or waits for all compactions with [wait] or off the unit; [now] skips the wait. */
+    public data class Restart(val now: Boolean = false, val wait: Boolean = false) : Command() {
+        override suspend fun run(): Int = outcomeExitCode(
+            LifecycleWiring.restart(waitForCompactions = !now, now = now, waitAll = wait),
+        )
     }
     public data class Key(val args: List<String>) : Command() {
         override suspend fun run(): Int = outcomeExitCode(KeyCommand().key(args))

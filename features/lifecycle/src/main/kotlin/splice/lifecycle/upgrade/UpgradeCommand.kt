@@ -83,6 +83,7 @@ internal class UpgradeCommand(
         val parsed = parser.parse(args) ?: return parser.usage()
         // --check is answered by the verb (UpgradeCheckLine) before an upgrade is built; here it has nothing to run.
         if (parsed.check) return parser.usage()
+        if (parsed.now) output.line("splice: --now is no longer needed; upgrading without waiting")
         val answer = if (parsed.rollback && parsed.to != null) {
             Upgraded.Refused("--rollback takes no --to: it repoints at the previous release only")
         } else {
@@ -147,24 +148,28 @@ internal class UpgradeCommand(
             listOf(JAR_ASSET, SHIM_ASSET, HUB_HOLDER, HUB_FRONT).map(dir::resolve).filter { Files.exists(it) }
                 .forEach { output.line("      ${release.verifyLater(it)}") }
         }
-        if (!daemon.waitIdle(a.now)) {
-            if (!a.auto) {
-                output.line("  $YELLOW!$RESET ${"waiting".padEnd(UPGRADE_PAD)} $STILL_BUSY; the candidate stays staged")
-                return Upgraded.Ok(false)
-            }
-            // The updater restarts at the first moment no turn is in flight, or once the wait is spent.
-            val label = "waiting".padEnd(UPGRADE_PAD)
-            output.line("  $YELLOW!$RESET $label the wait for turns is spent; auto-update restarts now")
-        }
+        if (!waitIfRequested(a)) return Upgraded.Ok(false)
         return activation.activate(version, installed).then {
             layout.markManaged()
             layout.prunable().forEach(layout::discard)
             daemonUnit.refresh(layout.liveJar)
-            when (val verdict = finish(version, installed, a.now)) {
+            when (val verdict = finish(version, installed, a.now, a.wait)) {
                 is Finished.Passed -> Upgraded.Ok(true).also { layout.rejected.forgive(version) }
                 is Finished.Failed -> putBack(version, installed, verdict)
             }
         }
+    }
+
+    private fun waitIfRequested(a: UpgradeArgs): Boolean {
+        if (!a.wait || daemon.waitIdle(a.now)) return true
+        if (!a.auto) {
+            output.line("  $YELLOW!$RESET ${"waiting".padEnd(UPGRADE_PAD)} $STILL_BUSY; the candidate stays staged")
+            return false
+        }
+        // The updater restarts at the first moment no turn is in flight, or once the wait is spent.
+        val label = "waiting".padEnd(UPGRADE_PAD)
+        output.line("  $YELLOW!$RESET $label the wait for turns is spent; auto-update restarts now")
+        return true
     }
 
     /** [version] was activated and failed its checks: [installed] is activated again and restarted at once, since the
@@ -175,7 +180,7 @@ internal class UpgradeCommand(
         return activation.activate(installed, version).then {
             if (verdict.releaseAtFault) refuse(version)
             daemonUnit.refresh(layout.liveJar)
-            restarted(installed, now = true)
+            restarted(installed, now = true, waitAll = false)
             Upgraded.Ok(false)
         }
     }
@@ -209,14 +214,14 @@ internal class UpgradeCommand(
         }
 
     private fun rollBackTo(previous: String, installed: String, a: UpgradeArgs): Upgraded<Boolean> {
-        if (!daemon.waitIdle(a.now)) {
+        if (a.wait && !daemon.waitIdle(a.now)) {
             output.line("  $YELLOW!$RESET ${"waiting".padEnd(UPGRADE_PAD)} $STILL_BUSY; nothing changed")
             return Upgraded.Ok(false)
         }
         return activation.activate(previous, installed).then {
             refuse(installed)
             daemonUnit.refresh(layout.liveJar)
-            Upgraded.Ok(finish(previous, installed, a.now) is Finished.Passed)
+            Upgraded.Ok(finish(previous, installed, a.now, a.wait) is Finished.Passed)
         }
     }
 
@@ -241,8 +246,8 @@ internal class UpgradeCommand(
 
     /** Restarts on [version], then runs the live jar's doctor: it passes only when /health serves [version] with its
      *  heads ready AND the doctor is green. Both verdicts count; neither is only printed. */
-    private fun finish(version: String, from: String, now: Boolean): Finished {
-        val restart = restarted(version, now)
+    private fun finish(version: String, from: String, now: Boolean, waitAll: Boolean): Finished {
+        val restart = restarted(version, now, waitAll)
         output.line("")
         val green = daemon.doctor(java, layout.liveJar)
         if (!green) output.line("  $RED✗$RESET ${"doctor".padEnd(UPGRADE_PAD)} red on $version (from $from)")
@@ -251,8 +256,8 @@ internal class UpgradeCommand(
     }
 
     /** Restarts the daemon on [version] and says what /health answered. */
-    private fun restarted(version: String, now: Boolean): DaemonRestarted {
-        val restart = daemon.restart(layout.liveJar, version, now)
+    private fun restarted(version: String, now: Boolean, waitAll: Boolean): DaemonRestarted {
+        val restart = daemon.restart(layout.liveJar, version, now, waitAll)
         val glyph = if (restart is DaemonRestarted.Serving) "$GREEN✓$RESET" else "$RED✗$RESET"
         val outcome = when (restart) {
             DaemonRestarted.Serving -> "restarted, serving $version"

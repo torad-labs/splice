@@ -11,14 +11,21 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import splice.app.cli.ConfigPreflight
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
+import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.head.HeadDeps
 import splice.lifecycle.restart.CompactionsInFlight
 import splice.lifecycle.restart.DaemonRestarts
 import splice.lifecycle.restart.DaemonRoutes
 import splice.lifecycle.restart.RestartAfterCompactions
+import splice.lifecycle.restart.RestartConfigCheck
 import splice.lifecycle.restart.ShutdownDaemon
 import splice.lifecycle.upgrade.CompactionSlot
 import splice.lifecycle.upgrade.UpgradeCheckRoutes
@@ -43,8 +50,15 @@ internal class LifecycleMount(
             managed.head.healthSnapshot().gate.live.filter { it.compact }.map { CompactionSlot(key, it.ageMs) }
         }
 
-        override fun hold(forMs: Long): String? {
-            heads.values.forEach { it.head.compactionHold?.hold(forMs) }
+        override fun stopWholeHeads(): Set<String> = heads.filterValues { !it.head.handsOver }.keys
+
+        override fun hold(forMs: Long, heads: Collection<String>?): String? {
+            val targets = if (heads == null) {
+                this@LifecycleMount.heads.values
+            } else {
+                heads.mapNotNull { this@LifecycleMount.heads[it] }
+            }
+            targets.forEach { it.head.compactionHold?.hold(forMs) }
             return null
         }
     }
@@ -54,7 +68,11 @@ internal class LifecycleMount(
     internal val restarts = DaemonRestarts(restart)
 
     // the drain cap the commands themselves stop with (HeadServerFactory builds every head on HeadPolicy's default)
-    private val daemonRoutes = DaemonRoutes(restarts, HeadDeps.HeadPolicy().stopDrainMs)
+    private val daemonRoutes = DaemonRoutes(
+        restarts,
+        HeadDeps.HeadPolicy().stopDrainMs,
+        RestartConfigCheck { ConfigPreflight(EnvReader(System::getenv)).refusal() },
+    )
     private val upgradeRoute = UpgradeRoute()
     private val upgradeRuns = UpgradeRunRoutes(UpgradeRunsSource { ports.lifecycle.upgradeRuns }, log)
     private val upgradeChecks =
@@ -73,10 +91,17 @@ internal class LifecycleMount(
         // side, the restart asks it for the next one instead, and this daemon hands over to it.
         route.post("/api/daemon/restart") {
             guard.guarded(call) {
-                daemonRoutes.restartJson(call, ports.lifecycle.restartBy(shutdownDaemon), ports.lifecycle.supervised)
+                daemonRoutes.restartJson(
+                    call,
+                    ports.lifecycle.restartBy(shutdownDaemon),
+                    ports.lifecycle.supervised,
+                    ports.lifecycle.handsOver(),
+                )
             }
         }
-        route.get("/api/daemon/restart") { guard.guarded(call) { daemonRoutes.statusJson(call) } }
+        route.get("/api/daemon/restart") {
+            guard.guarded(call) { daemonRoutes.statusJson(call, ports.lifecycle.handsOver()) }
+        }
         // #523: the next daemon, started beside this one, asks it to hand over. The 202 goes out first, as on
         // shutdown: the hand-over closes this server.
         route.post("/api/daemon/retire") {
@@ -97,27 +122,43 @@ internal class LifecycleMount(
         // A restart run from a shell (`splice restart`, `splice upgrade`) holds new compactions before it reads
         // the ones in flight (CompactionWait); the console's restart holds them in-process through [compactions].
         // The hold lapses by itself, so it is bounded here: a typo cannot hold compactions for a day.
-        route.post("/api/daemon/compactions/hold") {
-            guard.guarded(call) {
-                val ms = call.request.queryParameters["ms"]?.toLongOrNull()?.takeIf { it in 1..MAX_COMPACTION_HOLD_MS }
-                if (ms == null) {
-                    call.respondText(
-                        """{"error":"ms must be a hold in milliseconds, at most $MAX_COMPACTION_HOLD_MS"}""",
-                        ContentType.Application.Json,
-                        HttpStatusCode.BadRequest,
-                    )
-                } else {
-                    val _ = compactions.hold(ms)
-                    call.respondText("""{"held_ms":$ms}""", ContentType.Application.Json, HttpStatusCode.OK)
-                }
-            }
-        }
+        route.post("/api/daemon/compactions/hold") { guard.guarded(call) { holdCompactions(call) } }
         // Key rotation (Oct 26, 2026): `splice rotate-key`. The answer is paths and words, never a key.
         route.post("/api/mgmt-key/rotate") { guard.guarded(call) { rotateKey(call) } }
         route.get("/api/upgrade") { guard.guarded(call) { upgradeRoute.upgradeJson(call, ports.lifecycle.upgrade) } }
         route.post("/api/upgrade") { guard.guarded(call) { upgradeRuns.start(call) } }
         route.get("/api/upgrade/run") { guard.guarded(call) { upgradeRuns.status(call) } }
         route.post("/api/upgrade/check") { guard.guarded(call) { upgradeChecks.check(call) } }
+    }
+
+    private suspend fun holdCompactions(call: ApplicationCall) {
+        val ms = call.request.queryParameters["ms"]?.toLongOrNull()?.takeIf { it in 1..MAX_COMPACTION_HOLD_MS }
+        if (ms == null) {
+            call.respondText(
+                """{"error":"ms must be a hold in milliseconds, at most $MAX_COMPACTION_HOLD_MS"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.BadRequest,
+            )
+            return
+        }
+        val rawHeads = call.request.queryParameters["heads"]?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+        val unknown = rawHeads.orEmpty().filterNot { it in heads }
+        if (unknown.isNotEmpty()) {
+            call.respondText(
+                buildJsonObject { put("error", "unknown head(s): ${unknown.joinToString(", ")}") }.toString(),
+                ContentType.Application.Json,
+                HttpStatusCode.BadRequest,
+            )
+            return
+        }
+        val targets = rawHeads?.takeIf { it.isNotEmpty() }
+        val _ = compactions.hold(ms, targets)
+        val held = targets ?: heads.keys.toList()
+        val reply = buildJsonObject {
+            put("held_ms", ms)
+            putJsonArray("heads") { held.forEach { add(it) } }
+        }
+        call.respondText(reply.toString(), ContentType.Application.Json, HttpStatusCode.OK)
     }
 
     private suspend fun rotateKey(call: ApplicationCall) {

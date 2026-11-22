@@ -611,7 +611,14 @@ auth_config() {
 # A listener is valid only when it is splice and its version matches the installed JAR/shim. New daemons can shut
 # themselves down cleanly for an automatic upgrade. Legacy daemons without that route fail loudly instead of
 # silently serving an incompatible API forever.
+#
+# The supervising unit's own daemon is replaced by its unit (restart_through_unit): systemd stops it, which drains
+# its turns, and starts the next at once with the restart counter reset. Asked to shut itself down, with the unit
+# started after, the start reached a unit still active in its shutdown tail, a no-op, and the daemon's exit then
+# waited out the unit's restart backoff: V4-243 for `splice restart`, and on Nov 21, 2026 an install's first launch,
+# 46 s at the sixth restart.
 replace_stale_daemon() {
+  # replace_stale_daemon UNIT MANAGER_HOME PRESENT
   rsd_running=$(health_field version)
   [ -n "$rsd_running" ] || fail "splice: port $CONTROL_PORT is occupied by a non-splice or malformed health endpoint"
   [ "$rsd_running" = "$SPLICE_GATEWAY_VERSION" ] && return 0
@@ -619,6 +626,10 @@ replace_stale_daemon() {
   [ -n "$rsd_key" ] || fail "splice: daemon version $rsd_running is stale, but $KEY_FILE is unavailable; stop it and retry"
   refuse_unbootable_config "$rsd_running"
   warn "splice: replacing stale daemon $rsd_running with $SPLICE_GATEWAY_VERSION…"
+  if [ "${3-}" = 1 ] && same_home "${2-}" && unit_defaults; then
+    restart_through_unit "$1"
+    return 0
+  fi
   rsd_status=$(auth_config "$rsd_key" | curl -s -m 3 -K - -X POST -o /dev/null -w '%{http_code}' "$CONTROL/api/daemon/shutdown" 2>/dev/null) || rsd_status=000
   case $rsd_status in
     000 | [45]??) fail "splice: stale daemon cannot self-stop; terminate it once, then retry" ;;
@@ -690,6 +701,28 @@ $rue_text
 EOF
   blank "$MANAGED_HOME" && MANAGED_HOME=$(passwd_home)
   return 0
+}
+
+# The unit restarted whole, and the daemon it then runs waited for: HEALTH_JSON is that daemon's answer when this
+# returns, so start_through_unit after it has nothing to start.
+restart_through_unit() {
+  SUPERVISOR_UNIT=$1
+  (
+    if [ -z "${XDG_RUNTIME_DIR-}" ] && [ -z "${DBUS_SESSION_BUS_ADDRESS-}" ] && [ -d "/run/user/$(id -u)" ]; then
+      XDG_RUNTIME_DIR=/run/user/$(id -u)
+      export XDG_RUNTIME_DIR
+    fi
+    systemctl --user restart "$SUPERVISOR_UNIT" >/dev/null 2>&1
+  ) || true # the wait below reports the outcome; a failed restart never answers with the installed version
+  rtu_wait=${SPLICE_UNIT_WAIT_SECONDS:-30}
+  case $rtu_wait in '' | *[!0-9]*) rtu_wait=30 ;; esac
+  rtu_deadline=$(($(date +%s) + rtu_wait))
+  while [ "$(date +%s)" -lt "$rtu_deadline" ]; do
+    HEALTH_JSON=$(health)
+    [ -n "$HEALTH_JSON" ] && [ "$(health_field version)" = "$SPLICE_GATEWAY_VERSION" ] && return 0
+    nap 0.2
+  done
+  fail "splice: $1 did not come back answering /health with $SPLICE_GATEWAY_VERSION within ${rtu_wait}s. See: systemctl --user status $1; journalctl --user -u $1 -n 50"
 }
 
 start_through_unit() {
@@ -1082,8 +1115,9 @@ main() {
   fi
   need_curl
   HEALTH_JSON=$(health)
-  [ -z "$HEALTH_JSON" ] || replace_stale_daemon
-  if [ "$managed" = 1 ]; then start_through_unit "$unit" "$MANAGED_HOME" "$present"; else start_through_unit "$unit" "" "$present"; fi
+  if [ "$managed" = 1 ]; then rsd_home=$MANAGED_HOME; else rsd_home=""; fi
+  [ -z "$HEALTH_JSON" ] || replace_stale_daemon "$unit" "$rsd_home" "$present"
+  start_through_unit "$unit" "$rsd_home" "$present"
   cold_start
   handshake
   warnings

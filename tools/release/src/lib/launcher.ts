@@ -84,7 +84,7 @@ interface Ctx {
   readonly env: Record<string, string>;
   /** the harness's own daemon: the selectors that aim the shim at this sandbox */
   readonly harness: Record<string, string>;
-  readonly captures: { java: string; javaArgv: string; unit: string; pwned: string; bootLog: string };
+  readonly captures: { java: string; javaArgv: string; unit: string; unitRestarts: string; pwned: string; bootLog: string };
   readonly stateDir: string;
   readonly daemonState: string;
   /** a memory limit, like systemd's MemoryMax=8G, that the arms sizing by memory run the shim and its JVM under, the
@@ -374,6 +374,23 @@ const ARMS: readonly Arm[] = [
       await ctx.launch({ LAUNCHER_UNIT_PRESENT: "0" });
       if (existsSync(ctx.captures.unit)) return "no unit on the box means no unit start";
       return read(ctx.captures.java) === "spawned" ? null : "without a unit the cold start is the raw spawn";
+    },
+  },
+  {
+    // Nov 21, 2026: with no selector the unit serves this home, so its stale daemon is the unit's to replace. RED on
+    // the shim before: it asked the daemon to shut itself down and then started the unit, a start that reaches a unit
+    // still active in its shutdown tail and does nothing.
+    name: "a stale daemon the unit runs is restarted through the unit",
+    run: async (ctx) => {
+      writeFileSync(ctx.daemonState, "old\n");
+      ctx.daemon.forget();
+      rmSync(ctx.captures.unitRestarts, { force: true });
+      const run = await ctx.launch({});
+      if (ctx.daemon.lastShutdown) return `the unit's stale daemon was asked to shut itself down: ${run.output}`;
+      if (read(ctx.captures.unitRestarts) !== "splice.service") {
+        return `the unit must be restarted, got ${read(ctx.captures.unitRestarts) || "<nothing>"}: ${run.output}`;
+      }
+      return read(ctx.daemonState) === "new" ? null : `the stale daemon was not replaced: ${run.output}`;
     },
   },
   {
@@ -1063,6 +1080,7 @@ export async function launcherRehearsal(shim: string, options: RehearsalOptions 
     java: join(dir, "java-spawns"),
     javaArgv: join(dir, "java-argv"),
     unit: join(dir, "unit-starts"),
+    unitRestarts: join(dir, "unit-restarts"),
     pwned: join(dir, "pwned"),
     // the shim's LOGS_DIR is <state dir>/../logs
     bootLog: join(dir, "logs", "daemon-boot.log"),
@@ -1100,6 +1118,7 @@ export async function launcherRehearsal(shim: string, options: RehearsalOptions 
     base.LAUNCHER_JAVA_CAPTURE = captures.java;
     base.LAUNCHER_JAVA_ARGV = captures.javaArgv;
     base.LAUNCHER_START_CAPTURE = captures.unit;
+    base.LAUNCHER_RESTART_CAPTURE = captures.unitRestarts;
     base.LAUNCHER_UNIT_PRESENT = "1";
     base.LAUNCHER_UNIT_BOOTS = "1";
     base.LAUNCHER_UNIT_HOME = base.HOME;
@@ -1310,6 +1329,12 @@ function writeMocks(bin: string): void {
       '  if (process.env.LAUNCHER_UNIT_STATE_DIR) process.stdout.write(`SPLICE_STATE_DIR=${process.env.LAUNCHER_UNIT_STATE_DIR}\\n`);\n' +
       '  process.exit(0);\n' +
       '}\n' +
+      // `restart <unit>` is recorded apart from a start, and brings the next daemon up as a start does
+      'if (argv[1] === "restart") {\n' +
+      '  appendFileSync(process.env.LAUNCHER_RESTART_CAPTURE, `${argv[2] ?? ""}\\n`);\n' +
+      '  if (process.env.LAUNCHER_UNIT_BOOTS === "1") { writeFileSync(process.env.LAUNCHER_DAEMON_STATE, "new\\n"); process.exit(0); }\n' +
+      "  process.exit(1);\n" +
+      "}\n" +
       'if (argv[1] === "start") {\n' +
       '  appendFileSync(process.env.LAUNCHER_START_CAPTURE, `${argv[2] ?? ""}\\n`);\n' +
       '  if (process.env.LAUNCHER_UNIT_BOOTS === "1") { writeFileSync(process.env.LAUNCHER_DAEMON_STATE, "new\\n"); process.exit(0); }\n' +

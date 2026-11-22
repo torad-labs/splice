@@ -227,7 +227,7 @@ export async function runUnderSlot(options: SlotOptions): Promise<number> {
     return NO_TASKS_EXIT;
   }
 
-  // Another of the developer's machines builds it when one has room (elsewhere.ts); otherwise it builds here.
+  // With rig on PATH another of the developer's machines builds it, and this one never does in its place (elsewhere.ts).
   const elsewhere = await gradleElsewhere({ buildRoot: options.layout.buildRoot, label, args, env });
   if (elsewhere !== undefined) return elsewhere;
 

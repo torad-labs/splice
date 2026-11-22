@@ -188,6 +188,22 @@ class DesktopSetupTest {
     }
 
     @Test
+    fun `the default policy asks Desktop to offer the Claude Code sessions on this computer`() {
+        val shipped = DesktopPolicyDefaults().read().getValue("claudeAiImport").jsonObject
+        assertEquals("true", shipped.getValue("enabled").jsonPrimitive.content, "the import is on")
+        assertEquals(
+            "show",
+            shipped.getValue("bannerBehavior").jsonPrimitive.content,
+            "gateway mode has no claude.ai account for detect to resolve, so only show raises Desktop's offer",
+        )
+        assertEquals(
+            "10",
+            shipped.getValue("bannerMaxDismissals").jsonPrimitive.content,
+            "the offer returns until it is accepted, so sessions started later come in the same way",
+        )
+    }
+
+    @Test
     fun `a managed configuration refuses splice's, which then changes nothing`() = managedHere {
         Files.createDirectories(tmp.resolve("etc"))
         Files.writeString(tmp.resolve("etc/managed-settings.json"), "{}")

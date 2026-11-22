@@ -29,6 +29,7 @@
   "deploymentDisplayName": "Splice",
   "claudeAiImport": {
     "enabled": true,
-    "bannerBehavior": "detect"
+    "bannerBehavior": "show",
+    "bannerMaxDismissals": 10
   }
 }

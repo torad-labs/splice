@@ -114,7 +114,7 @@ private const val REMOTE = "Remote Control and cloud environments"
 private const val CONNECTORS = "claude.ai connectors"
 private const val SSH = "SSH sessions"
 private const val CODE_SESSIONS = "your Claude Code sessions"
-private const val PROJECTS = "projects"
+private const val FEATURE_PROJECTS = "projects"
 private const val FEATURE_USAGE = "usage display"
 
 // Desktop's session list is its own, and its one bridge to the sessions on this computer is its import, which copies
@@ -137,15 +137,15 @@ private val APP_OFF = mapOf(
 // What Claude Desktop partly supports in third-party mode, and why.
 private val APP_PARTLY = mapOf(
     CODE_SESSIONS to CODE_SESSIONS_WHY,
-    PROJECTS to PROJECTS_WHY,
+    FEATURE_PROJECTS to PROJECTS_WHY,
 )
 
 private const val SSH_WHY = "the door listens on 127.0.0.1 only, which a session on another machine can't reach"
 
 // The features, in the order the spec names them (desktop-full, df-features).
 private val NAMES = listOf(
-    "auto mode", FEATURE_EFFORT, "context window and compaction", CODE_SESSIONS, PROJECTS, TITLES, "subagents", WEB,
-    FILES, "MCP", "scheduled tasks", FAST, REMOTE, CONNECTORS, SSH, FEATURE_USAGE,
+    "auto mode", FEATURE_EFFORT, "context window and compaction", CODE_SESSIONS, FEATURE_PROJECTS, TITLES, "subagents",
+    WEB, FILES, "MCP", "scheduled tasks", FAST, REMOTE, CONNECTORS, SSH, FEATURE_USAGE,
 )
 
 private const val WORKS = "works"

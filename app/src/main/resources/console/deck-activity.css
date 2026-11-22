@@ -31,6 +31,15 @@
 .ac { position: relative; max-width: var(--ac-max); margin: 0 auto; display: grid; gap: var(--sp-6); }
 .ac-head { padding-top: var(--sp-5); display: flex; justify-content: space-between; align-items: flex-end; gap: var(--sp-4); }
 .ac-head h1 { margin: var(--sp-2) 0 0; font-size: var(--fs-title); font-weight: var(--w-med); line-height: var(--lh-tight); }
+/* a phone: the header stacks as the kit's .head does, so the title, the window choice and the status each take the
+   page's own width instead of running past its edge */
+@media (max-width: 48rem) {
+  /* the page's one column is the page's width: a column sized by the widest row's content stretched the header past
+     the screen along with it */
+  .ac { grid-template-columns: minmax(0, 1fr); }
+  .ac-head { flex-direction: column; align-items: stretch; }
+  .ac-head-r { flex-wrap: wrap; }
+}
 .ac-h2 { margin: 0; font-size: var(--fs-name); font-weight: var(--w-med); }
 .ac-sec { display: grid; gap: var(--sp-4); }
 

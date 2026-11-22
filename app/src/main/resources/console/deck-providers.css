@@ -28,6 +28,11 @@
 .pv { position: relative; max-width: var(--pv-max); margin: 0 auto; display: grid; gap: var(--sp-7); }
 .pv-head { padding-top: var(--sp-5); display: flex; justify-content: space-between; align-items: flex-end; gap: var(--sp-4); }
 .pv-head h1 { margin: var(--sp-2) 0 0; font-size: var(--fs-title); font-weight: var(--w-med); line-height: var(--lh-tight); }
+/* a phone: the header stacks as the kit's .head does, so the title and the status each take the page's own width */
+@media (max-width: 48rem) {
+  .pv { grid-template-columns: minmax(0, 1fr); }
+  .pv-head { flex-direction: column; align-items: stretch; }
+}
 
 /* the week across every provider: four figures and each provider's share */
 .pv-hero { display: grid; gap: var(--sp-4); }

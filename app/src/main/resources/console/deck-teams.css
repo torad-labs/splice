@@ -30,6 +30,11 @@
 .tm { position: relative; max-width: var(--tm-max); margin: 0 auto; display: grid; gap: var(--sp-7); }
 .tm-head { padding-top: var(--sp-5); display: flex; justify-content: space-between; align-items: flex-end; gap: var(--sp-4); }
 .tm-head h1 { margin: var(--sp-2) 0 0; font-size: var(--fs-title); font-weight: var(--w-med); line-height: var(--lh-tight); }
+/* a phone: the header stacks as the kit's .head does, so the title and the status each take the page's own width */
+@media (max-width: 48rem) {
+  .tm { grid-template-columns: minmax(0, 1fr); }
+  .tm-head { flex-direction: column; align-items: stretch; }
+}
 
 /* a pressable part: content on the field, with a resting fill, an open mark and a lift on hover */
 .pt { position: relative; display: grid; align-content: start; gap: var(--sp-2); min-width: 0; padding: var(--pt-pad); border: 0; border-radius: var(--r-inner); background: var(--pt-rest); color: var(--ink); text-align: left; font: inherit; cursor: pointer; transition: background var(--dur-fast), transform var(--dur) var(--spring), box-shadow var(--dur) var(--ease); }

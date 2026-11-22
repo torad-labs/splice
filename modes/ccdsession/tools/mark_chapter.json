@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Short noun-phrase chapter title (under 40 characters) shown on the session timeline."
+    },
+    "summary": {
+      "type": "string",
+      "description": "Optional one-line summary describing what this chapter covers."
+    }
+  },
+  "required": ["title"]
+}

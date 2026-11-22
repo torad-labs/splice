@@ -70,7 +70,8 @@ internal class AgyTurn(
      *  are paired with a failed `tool_result` first so the error message never separates a `tool_use` from its result. */
     fun say(text: String) {
         closePendingTools(UNFINISHED_TOOL_RESULT, failed = true)
-        stream(TEXT_BLOCK, text)
+        val chunk = if (draw.streamingText) "\n\n$text" else text
+        stream(TEXT_BLOCK, chunk)
         finish(null)
     }
 
@@ -114,10 +115,9 @@ internal class AgyTurn(
         if (openSubagents.remove(id) != null) out(taskFrames.notification(id, status, text))
     }
 
-    /** A chunk of text or thought; after a tool call it begins a new message. */
+    /** A chunk of text or thought on the open message (or a new one once a tool result closed the previous). */
     private fun stream(type: String, chunk: String) {
         if (chunk.isEmpty()) return
-        if (draw.callsTools) finish(TOOL_USE_BLOCK)
         draw.stream(type, chunk)
     }
 

@@ -165,9 +165,9 @@ internal class SubagentPanesTest {
         val ended = seen.single { it.str("type") == "system" && it.str("subtype") == "task_notification" }
         assertEquals(CALL_A, ended.str("task_id"))
         assertEquals("stopped", ended.str("status"))
-        val keptResults = Files.readAllLines(transcript("s-1"))
-            .map { Json.parseToJsonElement(it).jsonObject }
-            .filter { it.str("type") == "user" }.flatMap { it.blocks() }
+        val kept = Files.readAllLines(transcript("s-1")).map { Json.parseToJsonElement(it).jsonObject }
+        assertEquals(listOf("user", "assistant", "user"), kept.map { it.str("type") })
+        val keptResults = kept.filter { it.str("type") == "user" }.flatMap { it.blocks() }
             .filter { it.str("type") == "tool_result" }
         assertEquals(listOf(CALL_A), keptResults.map { it.str("tool_use_id") })
     }
@@ -216,6 +216,15 @@ internal class SubagentPanesTest {
         assertEquals(CALL_A, ended.str("task_id"))
         assertEquals("stopped", ended.str("status"))
         assertEquals("true", seen.last().str("is_error"))
+        val toolUseIdx = seen.indexOfFirst { it.str("type") == "assistant" }
+        val toolResultIdx = seen.indexOfFirst {
+            it.str("type") == "user" && it.blocks().any { b -> b.str("type") == "tool_result" }
+        }
+        val errorMsgIdx = seen.indexOfLast { it.str("type") == "assistant" }
+        val notifIdx = seen.indexOfFirst { it.str("type") == "system" && it.str("subtype") == "task_notification" }
+        assertTrue(toolUseIdx in 0 until toolResultIdx, "tool_result must follow assistant tool_use")
+        assertTrue(toolResultIdx < errorMsgIdx, "tool_result must precede error assistant message")
+        assertTrue(errorMsgIdx < notifIdx, "task_notification closes before turn result")
         val kept = Files.readAllLines(transcript("s-1")).map { Json.parseToJsonElement(it).jsonObject }
         assertEquals(listOf("user", "assistant", "user", "assistant"), kept.map { it.str("type") })
         val toolResult = kept[2].blocks().single()
@@ -223,6 +232,32 @@ internal class SubagentPanesTest {
         assertEquals(CALL_A, toolResult.str("tool_use_id"))
         assertEquals("true", toolResult.str("is_error"))
         assertTrue(toolResult.str("content").isNotEmpty(), "error-turn tool_result keeps non-empty content")
+        assertTrue("boom" in kept[3].blocks().single().str("text"))
+    }
+
+    @Test
+    fun `interleaved text after pending subagent keeps tool_use adjacent to tool_result on error`() {
+        val script = listOf(
+            opened,
+            "read l",
+            delegated(CALL_A, PROMPT_A, ROLE_A),
+            upd("""{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Started."}}"""),
+            """echo '{"jsonrpc":"2.0","id":$PROMPT_ID,"error":{"code":-32001,"message":"boom"}}'""",
+            "read l",
+        ).joinToString("\n")
+        val seen = runSession(script) {
+            send(USER_LINE)
+            next { it.str("type") == "result" }
+        }
+        assertEquals("true", seen.last().str("is_error"))
+        val kept = Files.readAllLines(transcript("s-1")).map { Json.parseToJsonElement(it).jsonObject }
+        assertEquals(listOf("user", "assistant", "user", "assistant"), kept.map { it.str("type") })
+        assertEquals(listOf("tool_use", "text"), kept[1].blocks().map { it.str("type") })
+        val toolResult = kept[2].blocks().single()
+        assertEquals("tool_result", toolResult.str("type"))
+        assertEquals(CALL_A, toolResult.str("tool_use_id"))
+        assertEquals("true", toolResult.str("is_error"))
+        assertTrue(toolResult.str("content").isNotEmpty())
         assertTrue("boom" in kept[3].blocks().single().str("text"))
     }
 
@@ -312,14 +347,14 @@ internal class SubagentPanesTest {
 
         fun close() = toSession.close()
     }
-
-    private fun JsonObject.str(key: String): String = this[key]?.jsonPrimitive?.content.orEmpty()
-
-    private fun JsonObject.obj(key: String): JsonObject = this[key]?.jsonObject ?: JsonObject(emptyMap())
-
-    private fun JsonObject.blocks(): List<JsonObject> =
-        ((obj("message")["content"] as? JsonArray)?.map { it.jsonObject }).orEmpty()
 }
+
+private fun JsonObject.str(key: String): String = this[key]?.jsonPrimitive?.content.orEmpty()
+
+private fun JsonObject.obj(key: String): JsonObject = this[key]?.jsonObject ?: JsonObject(emptyMap())
+
+private fun JsonObject.blocks(): List<JsonObject> =
+    ((obj("message")["content"] as? JsonArray)?.map { it.jsonObject }).orEmpty()
 
 private const val TIMEOUT_MS = 15_000L
 private const val CLOCK_MS = 1_795_300_000_000L

@@ -194,11 +194,12 @@ internal class DesktopSession(
         val result = message["result"] as? JsonObject
         stop = JsonScalars.str(result, "stopReason") ?: stop
         (result?.get("usage") as? JsonObject)?.let { usage = lists.usage(it) }
+        if (prompts.isNotEmpty()) return
         val failure = error?.let {
             if (JsonScalars.int(it, "code") == AUTH_REQUIRED) AGY_SIGN_IN else "agy: ${JsonScalars.str(it, "message")}"
         }
         if (failure != null) turn?.say(failure)
-        if (prompts.isEmpty()) finish(failure)
+        finish(failure)
     }
 
     private fun finish(error: String?) {

@@ -118,6 +118,10 @@
   model takes.
 
 ### Fixed
+- **An open glass on the console's Teams page stays as you left it.** With a member's or a team's glass open, the
+  page drew the glass again after every read, every five seconds, whether or not anything had changed: a menu opened
+  in it closed by itself, and a click could land on nothing. The glass is drawn again only when the page under it
+  changed.
 - **`splice restart` no longer stops the service's own daemon by signal while systemd is starting or stopping it.**
   A restart that ran in either window (right after an install, say) took the daemon for one outside the service,
   stopped it itself and failed, and the service then waited out a growing restart delay. It now asks systemd what

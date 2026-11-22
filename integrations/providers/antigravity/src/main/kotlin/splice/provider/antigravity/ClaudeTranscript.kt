@@ -13,7 +13,7 @@ import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
-import splice.core.util.ClaudeProjectFolder
+import splice.core.client.ClaudeProjectFolder
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.util.JsonlSink

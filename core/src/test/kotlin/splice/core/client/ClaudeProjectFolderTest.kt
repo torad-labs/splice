@@ -2,7 +2,7 @@
 // contract read back by Claude Code and Desktop whenever they reopen history or memory beside it. Every expected
 // name below is written once, by hand, from Desktop 6.28899.2's rule (its `sf`); a silent change strands Gemini
 // transcripts where neither client can find them again.
-package splice.core.util
+package splice.core.client
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test

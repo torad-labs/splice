@@ -2,7 +2,7 @@
 // writer and reader of that tree. It used to live twice: the antigravity transcript writer named its file's folder from
 // Desktop 6.28899.2 (its `sf`) in full, while the sessions' projects read beside head memory carried only the slug half,
 // disagreeing on any path past 200 characters.
-package splice.core.util
+package splice.core.client
 
 import kotlin.math.abs
 
@@ -16,14 +16,16 @@ public object ClaudeProjectFolder {
      *  [ClaudeProjectFolderTest] holds exact names for every branch. */
     public fun of(path: String): String {
         val name = NOT_PROJECT_CHARS.replace(path, "-")
-        if (name.length <= MAX_NAME_CHARS) return name
+        if (name.length <= MAX_PROJECT_FOLDER_CHARS) return name
         // abs is taken on the widened value, not the int: Int.MIN_VALUE has no positive int self.
-        return name.take(MAX_NAME_CHARS) + "-" + abs(path.hashCode().toLong()).toString(RADIX)
+        return name.take(MAX_PROJECT_FOLDER_CHARS) + "-" + abs(path.hashCode().toLong()).toString(PROJECT_HASH_RADIX)
     }
 
-    private const val MAX_NAME_CHARS = 200
+    // why: Claude Desktop 6.28899.2 (`sf`) truncates project folder slugs at 200 characters before appending the hash.
+    private const val MAX_PROJECT_FOLDER_CHARS = 200
 
-    private const val RADIX = 36
+    // why: Claude Desktop 6.28899.2 (`sf`) encodes the collision-avoiding path hash in base 36.
+    private const val PROJECT_HASH_RADIX = 36
 
     private val NOT_PROJECT_CHARS = Regex("[^a-zA-Z0-9]")
 }

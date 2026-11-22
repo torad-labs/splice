@@ -6,7 +6,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.core.util.ClaudeProjectFolder
+import splice.core.client.ClaudeProjectFolder
 import splice.core.util.PathProbe
 import splice.sessions.query.SessionHead
 import java.nio.file.Files

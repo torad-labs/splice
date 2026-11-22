@@ -21,13 +21,13 @@ rates = { input = 2.0, cache_read = 0.5, output = 8.0 }
 dialect = "openai-chat"
 base_url = "${o.url}"
 auth = { kind = "api-key", env = "MOCK_UPSTREAM_KEY" }
+model_slots = { opus = "${o.big}", sonnet = "${o.big}", haiku = "${o.small}" }
 ${model(o.big)}${model(o.small)}
 [heads.${o.key}]
 provider = "${o.key}"
 port = ${o.port}
 discovery_prefix = "claude-${o.key}--"
 pinned_model = "${o.big}"
-model_slots = { opus = "${o.big}", sonnet = "${o.big}", haiku = "${o.small}" }
 [heads.${o.key}.claude]
 command = "${o.command}"
 `;

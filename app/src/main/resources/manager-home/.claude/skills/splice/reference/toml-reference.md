@@ -103,7 +103,7 @@ restart a running daemon; the daemon reads them only at its start.
 | `[share]` `enabled` | bool | false | the share listener opens on this machine's LAN, with no login, token or encryption: any device there can run these heads |
 | `[share]` `port` | int | 3097 | the LAN port; `splice share on` refuses one another program holds |
 | `[share]` `hostnames` | array of strings | empty | names for this machine beyond its host name and `.lan`, `.local`, `.home` and `.internal`, such as one a router hands out under another domain |
-| `[remote.<command>]` `url` | string | none | the address `splice share status` prints on the server, `http://<server>/<head>`, optionally ending `?auth=<login>` (run on that login) and `?models=<id>,<id>` (show only those); nothing else is kept, no credential or model copy |
+| `[remote.<command>]` `url` | string | none | the door `splice share status` prints on the server, `http://<server>/door`; nothing else is kept, no credential or model copy. An entry from the per-command days still loads and its launch prints the server's door add |
 
 Source: core/src/main/kotlin/splice/core/topology/LanShareConfig.kt; splice.example.toml ("LAN share"); docs/specs/lan-share.md.
 

@@ -35,13 +35,11 @@ internal class ServedHeads(private val all: SharedHeads, private val commands: L
     override fun offered(): List<SharedHead> = all.offered().filter { it.command in commands || it.key in commands }
 }
 
-/** How the listener reaches this machine's heads: the turn key they admit, the control port beside them, and the board
- *  they say on how each turn the listener handed them went (F5); the environment a bucket export's key is read
- *  from (F5); and the [gateway] that serves a team's turns at `/door` on the providers, with no head, once the daemon
- *  opened it. */
+/** How the listener reaches this machine's heads: the turn key they admit, and the board they say on how each turn the
+ *  listener handed them went (F5); the environment a bucket export's key is read from (F5); and the [gateway] that
+ *  serves a team's turns at `/door` on the providers, with no head, once the daemon opened it. */
 public data class ServerReach(
     val turnKey: TurnKey,
-    val controlPort: Int,
     val served: ServedTurnBoard = ServedTurnBoard(),
     val env: EnvReader = EnvReader { null },
     val gateway: TeamGateway? = null,
@@ -107,7 +105,7 @@ public class ServerMode(
             limits = limits,
             heads = served,
             carriers = TurnCarriers(
-                ShareRelay(reach.turnKey, reach.controlPort, heads.machine, io, log, speaker, RelayClock(waiter)),
+                ShareRelay(reach.turnKey, heads.machine, log, speaker, RelayClock(waiter)),
                 reach.gateway,
             ),
             people = people,

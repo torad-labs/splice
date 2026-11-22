@@ -1,11 +1,12 @@
 // NEW: LAN share (docs/specs/lan-share.md). `splice remote add`: an address is checked against the server it names
 // before anything is kept, so a typo is said now, never found out as a launch that fails or runs on the wrong login.
-// The server must answer, offer the command, and have the login `auth=` names and every model `models=` lists. An
-// address naming the server alone adds every command it offers. A name this machine already runs (a head here, or
-// another address under that name) is refused with how to give the new one another: `--as <command>`. A relay the first
-// LAN-share build wrote under that name is the one exception: the address replaces it, and its share token leaves
-// keys.toml in the same add. `claude` is added only where `claude` is wrapped: an unwrapped `claude` is Claude Code
-// itself, which never asks splice where to run, so the address would change nothing.
+// A machine that shares splice shares its door and no command of its own (door-network): an address naming the server
+// alone links that machine's door as `claude` or the name `--as` gives, and an address naming one of its commands is
+// refused with that door's add. A name this machine already runs (a head here, or another address under that name) is
+// refused with how to give the new one another: `--as <command>`. A relay the first LAN-share build wrote under that
+// name is the one exception: the address replaces it, and its share token leaves keys.toml in the same add. `claude`
+// is added only where `claude` is wrapped: an unwrapped `claude` is Claude Code itself, which never asks splice where
+// to run, so the address would change nothing.
 //
 // A team's server (docs/specs/server-mode.md, F7) this laptop holds a key for is asked for its profile instead: every
 // command the profile lists is linked, each at `<server>/<command>`, and the laptop keeps the list, so
@@ -16,8 +17,8 @@
 // door-network (docs/specs/door-network.md): a machine whose door is on its network is added by its name alone. The
 // address naming the machine and nothing more (`http://devbox`, the share port taken when it names none) links
 // `claude`, or the name `--as` gives, to that machine's door: `[remote.claude] url = "http://devbox:3097/door"`. Its
-// commands one by one are left out: the door serves every one of their models. A machine on an older splice, which
-// answers no door, is added as before, every command it offers.
+// commands one by one are left out: the door serves every one of their models, and a machine on an older splice that
+// answers no door is refused with what to run on it instead.
 package splice.app.cli.share
 
 import splice.core.terminal.TerminalOutput
@@ -29,7 +30,6 @@ import splice.core.topology.RemoteAddresses
 import splice.core.topology.RemoteConfig
 import splice.core.topology.Topology
 import splice.share.Asked
-import splice.share.DOOR_STARTING
 import splice.share.ServerLogins
 import splice.share.ServerProfile
 import splice.share.ServerProfiles
@@ -107,20 +107,15 @@ internal class RemoteAdd(
         return RemoteAdded(wanted, fresh.keys.toList(), offered.machine, free.complete)
     }
 
-    /** Every command [server] offers, each at its own address: the ones its profile lists, on a team server this
-     *  laptop holds a key for; or, on a machine whose door is on its network, that door, as `claude` or [name]. */
+    /** Every command [server] offers: the ones its profile lists, on a team server this laptop holds a key for; or, on
+     *  a machine that shares its door, that door, as `claude` or [name]. */
     private suspend fun every(server: String, name: String?): Offered? {
         val held = asks.profiles.held(server)
-        val read = if (held == null) door(names.onSharePort(server), name) else null
-        return when {
-            read is Asked.Had -> read.value
-            // A door that is only starting is said, not mistaken for a machine with none: its commands linked one by
-            // one would take the name `claude` from the door.
-            read is Asked.Refused && DOOR_STARTING in read.why -> names.refused(read.why)
-            name != null ->
-                names.refused("--as names one command; add the server's commands one at a time to name each")
-            held != null -> profiled(server, held)
-            else -> shared(server)
+        if (held != null) return profiled(server, held)
+        // A door that is only starting is said, not mistaken for a machine with none.
+        return when (val read = door(names.onSharePort(server), name)) {
+            is Asked.Had -> read.value
+            is Asked.Refused -> names.refused(read.why)
         }
     }
 
@@ -133,14 +128,6 @@ internal class RemoteAdd(
         }
     }
 
-    /** Every command a LAN share at [server] offers. */
-    private suspend fun shared(server: String): Offered? {
-        val info = info(server) ?: return null
-        val entries = info.commands.associate { it.command to names.at(server, it.command) }
-        if (entries.isEmpty()) return names.refused("${info.machine} offers no command")
-        return Offered(info.machine, entries)
-    }
-
     /** Every command the profile [read] at [server] lists. */
     private fun profiled(server: String, read: Asked<ServerProfile>): Offered? {
         val offer = names.profiled(server, read) ?: return null
@@ -148,16 +135,26 @@ internal class RemoteAdd(
         return Offered(server, offer.entries, server, offer)
     }
 
-    /** The one command [text] names, once its server has it, with the login and models the address asks for. */
+    /** The one command [text] names, once its server has it, with the login and models the address asks for. A machine
+     *  that shares its door has no command of its own to add: its door serves every model. */
     private suspend fun one(text: String, name: String?): Offered? {
         val address = when (val read = RemoteAddresses.read(text)) {
             is RemoteAddressRead.Refused ->
                 return names.refused("$text is not an address a command can run on: ${read.why}")
             is RemoteAddressRead.Read -> read.address
         }
-        if (address.head == DOOR_SEGMENT) return doorAt(address, name)
-        return info(address.server)?.let { offered(it, address, RemoteConfig(text), name) }
+        return when {
+            address.head == DOOR_SEGMENT -> doorAt(address, name)
+            asks.profiles.held(address.server) == null -> names.refused(doorOnly(address.server))
+            else -> info(address.server)?.let { offered(it, address, RemoteConfig(text), name) }
+        }
     }
+
+    /** Why a command's own address on [server] is refused: the machine shares its door alone, and the line that links
+     *  that door. */
+    private fun doorOnly(server: String): String =
+        "$server shares its door, not one command at an address of its own; on another machine, run: " +
+            "splice remote add $server"
 
     /** The door [address] names, as [name], or refused: a door serves every model of every account, so no login or
      *  model can be asked of it. */

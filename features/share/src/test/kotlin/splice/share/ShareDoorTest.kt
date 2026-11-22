@@ -11,17 +11,12 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
-import splice.core.config.MgmtKey
-import splice.core.config.StatePaths
-import splice.core.config.TurnKey
 import splice.core.testing.TestPorts
 import splice.core.topology.ShareConfig
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
-import java.nio.file.Path
 
 internal class ShareDoorTest {
     private val sharePort = TestPorts.reserve()
@@ -47,16 +42,10 @@ internal class ShareDoorTest {
         }
     }
 
-    private fun listening(state: Path, withDoor: Boolean) {
+    private fun listening(withDoor: Boolean) {
         listener = ShareListener(
             ShareConfig(enabled = true, port = sharePort),
-            object : SharedHeads {
-                override val machine: String = "devbox"
-
-                override fun offered(): List<SharedHead> = emptyList()
-            },
-            TurnKey(MgmtKey(StatePaths(baseOverride = state))),
-            controlPort = TestPorts.reserve(),
+            machine = "devbox",
             io = Dispatchers.IO,
             log = {},
             door = door.takeIf { withDoor },
@@ -78,8 +67,8 @@ internal class ShareDoorTest {
     }
 
     @Test
-    fun `another machine reads the models, window and machine its claude launches with`(@TempDir state: Path) {
-        listening(state, withDoor = true)
+    fun `another machine reads the models, window and machine its claude launches with`() {
+        listening(withDoor = true)
         val (status, body) = send("/door/launch")
         assertEquals(200, status)
         val read = Json.decodeFromString(SharedDoorLaunch.serializer(), body)
@@ -87,40 +76,40 @@ internal class ShareDoorTest {
     }
 
     @Test
-    fun `a turn and a count posted to the door reach it`(@TempDir state: Path) {
-        listening(state, withDoor = true)
+    fun `a turn and a count posted to the door reach it`() {
+        listening(withDoor = true)
         assertEquals(200 to "answered", send("/door/v1/messages?beta=true", post = true))
         assertEquals(200 to "counted", send("/door/v1/messages/count_tokens", post = true))
     }
 
     @Test
-    fun `a turn that is not JSON is refused before the door sees it`(@TempDir state: Path) {
-        listening(state, withDoor = true)
+    fun `a turn that is not JSON is refused before the door sees it`() {
+        listening(withDoor = true)
         val (status, body) = send("/door/v1/messages", post = true, type = "text/plain")
         assertEquals(400, status)
         assertTrue(body.contains("must be application/json"), body)
     }
 
     @Test
-    fun `a door whose heads are still starting says when it opens`(@TempDir state: Path) {
+    fun `a door whose heads are still starting says when it opens`() {
         door.ready = false
-        listening(state, withDoor = true)
+        listening(withDoor = true)
         val (status, body) = send("/door/launch")
         assertEquals(503, status)
         assertTrue(body.contains(DOOR_STARTING), body)
     }
 
     @Test
-    fun `a daemon with no door says devbox runs none`(@TempDir state: Path) {
-        listening(state, withDoor = false)
+    fun `a daemon with no door says devbox runs none`() {
+        listening(withDoor = false)
         val (status, body) = send("/door/launch")
         assertEquals(404, status)
         assertTrue(body.contains("devbox runs no door"), body)
     }
 
     @Test
-    fun `an unknown path under the door is a 404 in the machine's name`(@TempDir state: Path) {
-        listening(state, withDoor = true)
+    fun `an unknown path under the door is a 404 in the machine's name`() {
+        listening(withDoor = true)
         assertEquals(404, send("/door/v1/other", post = true).first)
     }
 }

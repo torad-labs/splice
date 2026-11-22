@@ -94,16 +94,15 @@ internal class DaemonServer(
 
     override fun hourly(): Map<String, Double> = HourlyPrices(topology.providers).prices()
 
-    /** Opens server mode when `[server]` names an address, serving [heads] through [controlPort]'s daemon, which say
-     *  how each turn went on [served].
+    /** Opens server mode when `[server]` names an address, serving [heads], which say how each turn went on [served].
      *  [gateway] serves a team's turns at `/door` on the providers, with no head. */
-    fun open(heads: Map<String, ManagedHead>, controlPort: Int, served: ServedTurnBoard, gateway: TeamGateway? = null) {
+    fun open(heads: Map<String, ManagedHead>, served: ServedTurnBoard, gateway: TeamGateway? = null) {
         val address = topology.server.address ?: return
         this.heads = heads
         Cancellables.runCatchingBestEffort {
             val offered = ManagedSharedHeads(heads, topology, config, ShareMachine(log).name())
             val folder = stateDir.resolve(SERVER_STATE)
-            val reach = ServerReach(turnKey, controlPort, served, EnvReader(System::getenv), gateway)
+            val reach = ServerReach(turnKey, served, EnvReader(System::getenv), gateway)
             ServerMode(topology.server, folder, ProcessDispatchers().io(), log, upstreams = this)
                 .also { it.open(address, offered, reach, configDir, secret()) }
         }.onSuccess { mode ->

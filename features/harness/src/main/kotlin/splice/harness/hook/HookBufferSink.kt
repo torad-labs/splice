@@ -64,7 +64,7 @@ private class BufferedDeltas(private val log: HookBufferLog) : BlockDeltas {
     }
 }
 
-private class BufferedWhole(private val log: HookBufferLog) : WholeBlocks, BlockEnding {
+internal class BufferedWhole(private val log: HookBufferLog) : WholeBlocks, BlockEnding {
     override suspend fun addTextBlock(text: String) {
         log.add { target, _ -> target.addTextBlock(text) }
     }

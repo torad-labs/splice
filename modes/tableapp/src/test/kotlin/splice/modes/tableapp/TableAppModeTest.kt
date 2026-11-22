@@ -30,7 +30,7 @@ class TableAppModeTest {
         val loaded = ModeCatalogReader(TableAppModeTest::class.java.classLoader).read()
         assertEquals(emptyList<String>(), loaded.findings, loaded.findings.joinToString("\n"))
         val found = loaded.modes.single { it.name == "tableapp" }
-        assertEquals(false, found.manifest.on)
+        assertEquals(false, found.manifest.offer.on)
         assertEquals(listOf("render_table"), found.tools.map { it.name })
         assertEquals(listOf("ui://tableapp/table"), found.resources.map { it.uri })
     }

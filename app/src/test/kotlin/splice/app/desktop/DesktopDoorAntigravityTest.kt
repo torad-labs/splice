@@ -24,17 +24,16 @@ import splice.app.desktop.catalog.CatalogFile
 import splice.app.desktop.catalog.DesktopProviders
 import splice.app.desktop.catalog.PublishedCatalog
 import splice.app.desktop.catalog.SelectorAliases
-import splice.app.desktop.lane.ClaudeLane
-import splice.app.desktop.lane.ClaudeLaneRecords
-import splice.app.desktop.lane.TerminalCaller
+import splice.app.desktop.lane.TerminalDoor
 import splice.app.desktop.record.DesktopKey
 import splice.app.desktop.record.DesktopRecords
 import splice.app.provider.AntigravityProvider
 import splice.app.provider.ServingProviders
 import splice.core.config.ConfigService
+import splice.core.config.StatePaths
+import splice.core.config.UserHome
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
-import splice.core.model.ReadableNames
 import splice.core.topology.Topology
 import splice.core.util.LogSink
 import splice.provider.antigravity.door.AntigravityDoorEngine
@@ -46,90 +45,93 @@ class DesktopDoorAntigravityTest {
     lateinit var tempDir: Path
 
     @Test
-    fun `Desktop Chat routes claude-antigravity through agy while CLI and terminal are refused`() = testApplication {
-        val harness = buildHarness()
-        harness.providers.publish()
-        routing {
-            post("/door/v1/messages") { harness.door.messages(call) }
-            post("/door/v1/messages/count_tokens") { harness.door.countTokens(call) }
+    fun `Desktop Chat routes claude-antigravity through agy while CLI and terminal are refused`() =
+        UserHome.within(tempDir.resolve("home")) {
+            testApplication {
+                val harness = buildHarness()
+                harness.providers.publish()
+                routing {
+                    post("/door/v1/messages") { harness.door.messages(call) }
+                    post("/door/v1/messages/count_tokens") { harness.door.countTokens(call) }
+                }
+                val chatBody =
+                    """{"model":"claude-antigravity--gem-4-neon","max_tokens":128,""" +
+                        """"stream":true,"messages":[{"role":"user","content":"hi"}]}"""
+                try {
+                    val chatRes = client.post("/door/v1/messages") {
+                        header(HttpHeaders.Authorization, "Bearer ${harness.desktopKey.get()}")
+                        header(HttpHeaders.UserAgent, "Anthropic/JS 0.39.0")
+                        contentType(ContentType.Application.Json)
+                        setBody(chatBody)
+                    }
+                    assertEquals(HttpStatusCode.OK, chatRes.status)
+                    val sse = chatRes.bodyAsText()
+                    assertTrue(sse.contains("Hello from Gemini 4 Neon"), sse)
+                    assertTrue(sse.contains("event: message_start") && sse.contains("event: message_stop"), sse)
+
+                    val countRes = client.post("/door/v1/messages/count_tokens") {
+                        header(HttpHeaders.Authorization, "Bearer ${harness.desktopKey.get()}")
+                        contentType(ContentType.Application.Json)
+                        setBody(chatBody)
+                    }
+                    assertEquals(HttpStatusCode.OK, countRes.status)
+                    assertTrue(countRes.bodyAsText().contains("input_tokens"))
+
+                    val cliRes = client.post("/door/v1/messages") {
+                        header(HttpHeaders.Authorization, "Bearer ${harness.desktopKey.get()}")
+                        header(HttpHeaders.UserAgent, "claude-cli/2.1.330 (external, cli)")
+                        contentType(ContentType.Application.Json)
+                        setBody(chatBody)
+                    }
+                    assertEquals(HttpStatusCode.BadRequest, cliRes.status)
+                    assertTrue(cliRes.bodyAsText().contains("runs only in Claude Desktop"), cliRes.bodyAsText())
+
+                    val termRes = client.post("/door/v1/messages") {
+                        header(HttpHeaders.Authorization, "Bearer ${harness.termToken}")
+                        contentType(ContentType.Application.Json)
+                        setBody(chatBody)
+                    }
+                    assertEquals(HttpStatusCode.BadRequest, termRes.status)
+                    assertTrue(termRes.bodyAsText().contains("runs only in Claude Desktop"), termRes.bodyAsText())
+                } finally {
+                    harness.close()
+                }
+            }
         }
-        val chatBody =
-            """{"model":"claude-antigravity--gem-4-neon","max_tokens":128,""" +
-                """"stream":true,"messages":[{"role":"user","content":"hi"}]}"""
-        try {
-            val chatRes = client.post("/door/v1/messages") {
-                header(HttpHeaders.Authorization, "Bearer ${harness.desktopKey.ensure()}")
-                header(HttpHeaders.UserAgent, "Anthropic/JS 0.39.0")
-                contentType(ContentType.Application.Json)
-                setBody(chatBody)
-            }
-            assertEquals(HttpStatusCode.OK, chatRes.status)
-            val sse = chatRes.bodyAsText()
-            assertTrue(sse.contains("Hello from Gemini 4 Neon"), "expected streamed text: $sse")
-            assertTrue(sse.contains("event: message_start"), "expected message_start: $sse")
-            assertTrue(sse.contains("event: message_stop"), "expected message_stop: $sse")
 
-            val countRes = client.post("/door/v1/messages/count_tokens") {
-                header(HttpHeaders.Authorization, "Bearer ${harness.desktopKey.ensure()}")
-                header(HttpHeaders.UserAgent, "Anthropic/JS 0.39.0")
-                contentType(ContentType.Application.Json)
-                setBody(chatBody)
-            }
-            assertEquals(HttpStatusCode.OK, countRes.status)
-            assertTrue(countRes.bodyAsText().contains("input_tokens"))
-
-            val cliRes = client.post("/door/v1/messages") {
-                header(HttpHeaders.Authorization, "Bearer ${harness.desktopKey.ensure()}")
-                header(HttpHeaders.UserAgent, "claude-cli/2.1.330 (external, cli)")
-                contentType(ContentType.Application.Json)
-                setBody(chatBody)
-            }
-            assertEquals(HttpStatusCode.BadRequest, cliRes.status)
-            assertTrue(cliRes.bodyAsText().contains("runs only in Claude Desktop"), cliRes.bodyAsText())
-
-            val termRes = client.post("/door/v1/messages") {
-                header(HttpHeaders.Authorization, "Bearer ${harness.termKey.ensure()}")
-                contentType(ContentType.Application.Json)
-                setBody(chatBody)
-            }
-            assertEquals(HttpStatusCode.BadRequest, termRes.status)
-            assertTrue(termRes.bodyAsText().contains("runs only in Claude Desktop"), termRes.bodyAsText())
-        } finally {
-            harness.close()
-        }
-    }
-
-    private fun buildHarness(): Harness {
+    private suspend fun buildHarness(): Harness {
         val script = writeFakeAgy()
         val log = LogSink {}
-        val desktopKey = DesktopKey(tempDir.resolve("desktop-key"), log)
-        val termKey = DesktopKey(tempDir.resolve("terminal-key"), log)
-        val records = DesktopRecords(tempDir.resolve("desktop.json"), log).also { r ->
+        val statePaths = StatePaths(baseOverride = tempDir.resolve("state"))
+        val desktopKey = DesktopKey(statePaths.desktopKeyFile, log)
+        val records = DesktopRecords(statePaths.desktopFile, log).also { r ->
             r.update { it.copy(on = true) }
         }
         val catalog = ModelCatalog(
             discoveryPrefix = "claude-antigravity--",
             pinnedModel = "gemini-4-neon",
-            models = listOf(ModelEntry("gemini-4-neon", "Gemini 4 Neon", contextWindow = 1_048_576)),
-            names = ReadableNames("claude-antigravity--"),
+            models = listOf(ModelEntry("gemini-4-neon", "Gemini 4 Neon", contextWindow = 1_048_576L)),
+            defaultContextWindow = 1_048_576L,
         )
         val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val engine = AntigravityDoorEngine(engineScope, Dispatchers.IO, log, agy = listOf(script.toString()))
-        val provider = AntigravityProvider(catalog, ConfigService(), engine)
-        val catalogFile = CatalogFile(tempDir.resolve("catalog.json"), log)
-        val published = PublishedCatalog(CatalogBuild(), catalogFile, Dispatchers.IO)
+        val provider = AntigravityProvider(catalog, ConfigService(statePaths), engine)
+        val published = PublishedCatalog(CatalogBuild(), CatalogFile(statePaths.modelCatalogFile, log), Dispatchers.IO)
         val providers = DesktopProviders(
             serving = ServingProviders { emptyList() },
             desktopOnly = ServingProviders { listOf(provider) },
             aliases = SelectorAliases(emptyList()),
             published = published,
         )
-        val lane = ClaudeLane(Topology(), ClaudeLaneRecords(tempDir.resolve("lane.json"), log), providers)
+        val terminal = TerminalDoor(Topology(), statePaths, log)
+        val (_, terminalCaller) = terminal.open(providers, "http://127.0.0.1:3096/door")
+        val launchSpec = requireNotNull(terminal.launch())
+        val termToken = requireNotNull(launchSpec.env["ANTHROPIC_AUTH_TOKEN"])
         val door = DesktopDoor(
-            callers = listOf(DesktopCaller(desktopKey, records, log), TerminalCaller(termKey, lane)),
+            callers = listOf(DesktopCaller(desktopKey, records, log), terminalCaller),
             providers = providers,
         )
-        return Harness(door, providers, desktopKey, termKey, engine, engineScope)
+        return Harness(door, providers, desktopKey, termToken, engine, engineScope)
     }
 
     private fun writeFakeAgy(): Path {
@@ -165,7 +167,7 @@ class DesktopDoorAntigravityTest {
         val door: DesktopDoor,
         val providers: DesktopProviders,
         val desktopKey: DesktopKey,
-        val termKey: DesktopKey,
+        val termToken: String,
         private val engine: AntigravityDoorEngine,
         private val scope: CoroutineScope,
     ) : AutoCloseable {

@@ -1,6 +1,6 @@
 // NEW: desktop-antigravity (door chat). Adapts [AntigravityDoorEngine] streaming events onto
 // [DirectAnthropicTurn]'s sole L3-compliant wire sink for Claude Desktop Chat turns.
-package splice.app.provider
+package splice.app.desktop
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall

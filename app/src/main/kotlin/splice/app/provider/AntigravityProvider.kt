@@ -9,6 +9,7 @@ package splice.app.provider
 
 import io.ktor.server.application.ApplicationCall
 import kotlinx.coroutines.CoroutineScope
+import splice.app.desktop.AntigravityDoorAdapter
 import splice.core.config.ConfigService
 import splice.core.model.ModelCatalog
 import splice.core.usage.QuotaFull

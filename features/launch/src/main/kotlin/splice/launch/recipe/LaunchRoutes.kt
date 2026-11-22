@@ -13,6 +13,7 @@ import io.ktor.server.response.respondText
 import kotlinx.serialization.json.JsonArray
 import splice.client.wrap.WrappedLaunch
 import splice.core.topology.CLAUDE_COMMAND
+import splice.core.topology.CLAUDE_SPLICE_COMMAND
 import splice.core.topology.TopologyMessages
 import splice.core.util.JsonScalars
 import splice.http.JsonBody
@@ -70,7 +71,11 @@ public class LaunchRoutes(
      *  (custom-provider, cp-command). Null when [key] is neither, or `claude` is not on the door. */
     private suspend fun doorLaunch(key: String): DoorLaunchSpec? {
         val door = launchService?.door ?: return null
-        return if (key == CLAUDE_COMMAND) door.launch() else door.launchCommand(key)
+        return when (key) {
+            CLAUDE_COMMAND -> door.launch()
+            CLAUDE_SPLICE_COMMAND -> door.launchSideBySide()
+            else -> door.launchCommand(key)
+        }
     }
 
     /** A head here, or the 404 or 503 that says why [key] launches none. */

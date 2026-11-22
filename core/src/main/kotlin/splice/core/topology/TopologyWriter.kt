@@ -618,9 +618,12 @@ private class TopologyChecks(
     }
 }
 
-/** Claude Code's own command: splice's wrapper takes its place on PATH. A remote command may take its name, and is
- *  reached through that wrapper; no remote command links or unlinks it (Topology.remoteLinks). */
+/** Claude Code's own command: kept untouched on the user's personal login; Splice runs side-by-side through
+ *  [CLAUDE_SPLICE_COMMAND] or `splice launch claude`. */
 public const val CLAUDE_COMMAND: String = "claude"
+
+/** Side-by-side CLI shortcut launching Claude Code on Splice's door without wrapping default `claude`. */
+public const val CLAUDE_SPLICE_COMMAND: String = "claude-splice"
 
 // why: docs/specs/peer-messaging.md 2.1 caps a peer name at 32 characters, lowercase, starting with a letter, so it is
 // a safe file name, a safe envelope attribute and a safe registry name. The peer store registers by it, and boot holds

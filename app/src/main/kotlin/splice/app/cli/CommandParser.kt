@@ -220,6 +220,10 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
         splice.app.cli.desktop.DESKTOP_USAGE,
         CommandFactory { a -> Command.Desktop(a.drop(1)) },
     ),
+    "launch" to CommandRegistration(
+        splice.app.cli.launch.LAUNCH_USAGE,
+        CommandFactory { a -> Command.Launch(a.drop(1)) },
+    ),
     // Nov 17, 2026: the lane the terminal's `claude` runs on (docs/specs/door-default.md).
     "claude" to CommandRegistration(
         splice.app.cli.claude.CLAUDE_USAGE,

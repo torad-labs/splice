@@ -5,6 +5,7 @@ package splice.launch.install
 
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.CLAUDE_COMMAND
+import splice.core.topology.CLAUDE_SPLICE_COMMAND
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
@@ -91,11 +92,11 @@ internal class UninstallCommand(
         if (topology != null) {
             val commands = topology.heads.map { (k, h) -> h.claude.command ?: k } + topology.remoteLinks +
                 topology.door.commands.keys
-            return (commands + SELF_COMMAND).distinct()
+            return (commands + SELF_COMMAND + CLAUDE_SPLICE_COMMAND).distinct()
         }
         if (attempt.exceptionOrNull() is java.nio.file.NoSuchFileException) {
             output.line("splice: no config at $configPath, so only the '$SELF_COMMAND' link is removed")
-            return listOf(SELF_COMMAND)
+            return listOf(SELF_COMMAND, CLAUDE_SPLICE_COMMAND)
         }
         val reason = attempt.exceptionOrNull()?.let { splice.core.util.SafeFailureText.render(it) } ?: "unknown"
         errors.line(

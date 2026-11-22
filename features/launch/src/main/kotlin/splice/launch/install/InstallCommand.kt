@@ -19,7 +19,10 @@ public class InstallCommand(output: TerminalOutput, errors: TerminalOutput) {
 
     public fun install(headArg: String?, env: EnvReader): InstallResult = linker.install(headArg, env)
 
-    public fun installSelf(env: EnvReader): InstallResult = linker.installSelf(env)
+    public fun installSelf(env: EnvReader): InstallResult = linker.installShortcut(SELF_COMMAND, env)
+
+    /** Links a standalone side-by-side command (such as `claude-splice`) directly to the launch shim. */
+    public fun installShortcut(command: String, env: EnvReader): InstallResult = linker.installShortcut(command, env)
 
     public fun uninstall(headArg: String?, env: EnvReader): Boolean = uninstaller.uninstall(headArg, env)
 

@@ -23,6 +23,10 @@ public interface ClaudeDoor {
     /** What a launch of `claude` carries while it is on the door, or null while it is on its head. */
     public suspend fun launch(): DoorLaunchSpec?
 
+    /** Side-by-side launch of Claude Code on the door (`splice launch claude` / `claude-splice`), always on the door
+     *  and leaving the user's `~/.claude` files untouched. */
+    public suspend fun launchSideBySide(): DoorLaunchSpec? = launch()
+
     /** custom-provider (cp-command): a launch of the door command [name] (`[door.commands.<name>]`), on the door
      *  whatever lane `claude` is on; null when [name] is no door command. */
     public suspend fun launchCommand(name: String): DoorLaunchSpec? = null

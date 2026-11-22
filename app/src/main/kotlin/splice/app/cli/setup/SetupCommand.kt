@@ -28,17 +28,17 @@ import java.nio.file.Path
  *  default that ignored the hermetic environment was one preselection change away from a test wrapping the
  *  developer's own ~/.claude (V4-177 review). */
 internal class SetupEffects(
-    env: EnvReader,
+    private val env: EnvReader,
     /** The `splice add` arguments each head's answers add (SetupHeadChoices): its models and their windows. */
     private val choices: MutableMap<String, List<String>> = mutableMapOf(),
     private val add: ProfileAdd = CommandAdd(choices),
     val restart: DaemonRestart = DaemonRestart { LifecycleWiring.restart() },
-    private val wrap: ClaudeWrap = DaemonClaudeWrap(env),
+    private val launchers: SetupLaunchers = SetupLaunchers(env),
 ) {
     fun heads(profiles: AddProfiles, prompts: SetupPrompts, env: EnvReader): SetupHeads =
         SetupHeads(profiles, prompts.pickHeads, add, restart, prompts.hasConsole, env, prompts.frame)
 
-    fun lanes(): SetupClaudeLane = SetupClaudeLane(wrap)
+    fun launchers(): SetupLaunchers = launchers
 
     /** `splice doctor`, once, after the last head is added. */
     fun checkup(env: EnvReader) = add.checkup(env)
@@ -104,28 +104,39 @@ internal class SetupCommand(
         menu.printDetected(facts)
         val path = TopologyLoader.configPath(env)
         val bin = InstallLayout().localBin(env)
-        val lanes = effects.lanes()
+        val launchers = effects.launchers()
         val picker = effects.heads(profiles, prompts, env)
         // The list of plans is the first question, so leaving it with Escape or Ctrl-C ends setup. While a "Starting
         // point" menu came first, leaving the list meant "none of these" and the wizard went on to its next question.
         val heads = picker.offer(facts, path) ?: return WizardAnswer.Cancelled("cancelled")
         val choices = headChoices.ask(heads)
-        val lane = lanes.ask(path)
+        val launcherChoice = launchers.offer(prompts) ?: return WizardAnswer.Cancelled("cancelled")
+        return confirmPlan(path, launcherChoice, picker, heads, choices)
+    }
+
+    private fun confirmPlan(
+        path: Path,
+        launcherChoice: LauncherChoice,
+        picker: SetupHeads,
+        heads: List<String>,
+        choices: Map<String, HeadChoice>,
+    ): WizardAnswer {
+        val bin = InstallLayout().localBin(env)
+        val launchers = effects.launchers()
         val local = localModel.offer(path)
         val share = mcpShare.ask(path)
-        val laneLine = lanes.summaryLine().takeIf { lane == ClaudeLane.WRAP }
-        val summary = menu.summaryLines(path, bin, heads, laneLine) +
+        val summary = menu.summaryLines(path, bin, heads, launchers.summaryLines(launcherChoice)) +
             choices.values.map { it.summary } + localModel.summary(local) + mcpShare.summary(share)
         frame.note("Summary", summary)
         if (!frame.confirm("Install now?", true)) return WizardAnswer.Cancelled("not installing")
         effects.choose(choices)
-        return WizardAnswer.Plan(path, lanes, lane, picker, heads, local, share)
+        return WizardAnswer.Plan(path, launchers, launcherChoice, picker, heads, local, share)
     }
 
     private suspend fun install(plan: WizardAnswer.Plan): Boolean {
         if (!linked()) return false
         val landed = plan.picker.addAll(plan.heads)
-        plan.lanes.apply(plan.lane)?.let { println(it) }
+        plan.launchers.apply(plan.launcherChoice, frame)
         localModel.install(plan.local)
         val topology = TopologyLoader.loadOrMaterialize(plan.path)
         mcpShare.save(plan.path, plan.share)
@@ -170,8 +181,8 @@ private sealed class WizardAnswer {
 
     class Plan(
         val path: Path,
-        val lanes: SetupClaudeLane,
-        val lane: ClaudeLane,
+        val launchers: SetupLaunchers,
+        val launcherChoice: LauncherChoice,
         val picker: SetupHeads,
         val heads: List<String>,
         val local: Boolean,

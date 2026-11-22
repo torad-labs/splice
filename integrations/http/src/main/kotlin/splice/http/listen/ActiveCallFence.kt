@@ -40,7 +40,8 @@ public class ActiveCallFence {
      *  unwinding while Netty's event loop is still alive. */
     public fun cancelAndAwait(unwindMs: Long) {
         stopping = true
-        val pending = active.toList()
+        val pending = mutableListOf<Job>()
+        active.forEach { pending.add(it) }
         if (pending.isEmpty()) return
         val done = CountDownLatch(pending.size)
         pending.forEach { job ->

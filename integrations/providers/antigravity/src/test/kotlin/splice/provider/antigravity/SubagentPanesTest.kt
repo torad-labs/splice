@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.client.ClaudeProjectFolder
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.core.util.WallClock
@@ -196,7 +197,7 @@ internal class SubagentPanesTest {
     private fun project(): Path = tmp.resolve("work.dir")
 
     private fun transcript(id: String): Path = home().resolve(".claude").resolve("projects")
-        .resolve(ProjectFolder().of(project().toString())).resolve("$id.jsonl")
+        .resolve(ClaudeProjectFolder.of(project().toString())).resolve("$id.jsonl")
 
     private fun delegated(id: String, prompt: String, role: String): String = upd(
         """{"sessionUpdate":"tool_call","toolCallId":"$id","title":"invoke_subagent","name":"invoke_subagent",""" +

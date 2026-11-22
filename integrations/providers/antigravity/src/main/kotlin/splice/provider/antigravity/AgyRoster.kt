@@ -42,5 +42,5 @@ internal class AgyRosterReader {
         }
 }
 
-private const val MODEL_OPTION = "model"
-private const val THOUGHT_OPTION = "thought_level"
+internal const val MODEL_OPTION: String = "model"
+internal const val THOUGHT_OPTION: String = "thought_level"

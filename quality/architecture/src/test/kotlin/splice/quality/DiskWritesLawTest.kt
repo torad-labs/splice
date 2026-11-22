@@ -385,6 +385,12 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "core/src/main/kotlin/splice/core/config/RetiredKeys.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/TurnKey.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/model/ClientWindows.kt" to mapOf("Files.move(" to 1, "Files.writeString(" to 1),
+    // Nov 21, 2026: a Claude Desktop session on agy keeps a `claude`'s transcript and running record, in the
+    // projects/<folder>/<session id>.jsonl and sessions/<pid>.json README rows.
+    "integrations/providers/antigravity/src/main/kotlin/splice/provider/antigravity/ClaudeTranscript.kt" to
+        mapOf("JsonlSink.appendLine(" to 1),
+    "integrations/providers/antigravity/src/main/kotlin/splice/provider/antigravity/ClaudeSessionRecord.kt" to
+        mapOf("writeAtomic0600(" to 1),
     // Nov 19, 2026: what a mode keeps per session (modes/README.md), owner-only, in the modes/<mode> README row.
     "app/src/main/kotlin/splice/app/modes/FileModeStore.kt" to mapOf("writeAtomic0600(" to 1),
     // The economics backfill's covered edge kept across restarts, documented in the perf backfill edge README row.

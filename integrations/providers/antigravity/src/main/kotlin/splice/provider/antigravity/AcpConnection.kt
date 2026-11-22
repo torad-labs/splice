@@ -11,12 +11,15 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import splice.core.process.ProcessTree
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
+import splice.core.util.SafeFailureText
 import java.io.BufferedReader
 import java.io.File
 import java.io.IOException
@@ -44,7 +47,7 @@ internal sealed class AcpAnswer {
 internal class AcpConnection(
     command: List<String>,
     workDir: Path,
-    errors: File,
+    private val errors: File,
     scope: CoroutineScope,
     io: CoroutineDispatcher,
 ) : AutoCloseable {
@@ -73,30 +76,79 @@ internal class AcpConnection(
         val answer = CompletableDeferred<AcpAnswer>()
         pending[id] = answer
         try {
-            return if (ended || !sent(id, method, params)) AcpAnswer.Ended else answer.await()
+            return if (ended || !sent(message(id, method, params))) AcpAnswer.Ended else answer.await()
         } finally {
             pending.remove(id)
         }
     }
+
+    /** [method] with [params], its answer left to arrive on [incoming] in the order the agent wrote it, after every
+     *  update it sent before; the request's id, or null once the agent's input has closed. */
+    fun post(method: String, params: JsonObject): Long? {
+        val id = ids.incrementAndGet()
+        return id.takeIf { !ended && sent(message(id, method, params)) }
+    }
+
+    /** The notification [method] with [params]; false once the agent's input has closed. */
+    fun notify(method: String, params: JsonObject): Boolean = sent(
+        buildJsonObject {
+            put(ACP_JSONRPC_KEY, "2.0")
+            put("method", method)
+            put("params", params)
+        },
+    )
+
+    /** [result] as the answer to the agent's own request [id]; false once the agent's input has closed. */
+    fun respond(id: JsonElement, result: JsonObject): Boolean = sent(
+        buildJsonObject {
+            put(ACP_JSONRPC_KEY, "2.0")
+            put("id", id)
+            put("result", result)
+        },
+    )
+
+    /** JSON-RPC error [code] with [message] as the answer to the agent's own request [id]. */
+    fun refuse(id: JsonElement, code: Int, message: String): Boolean = sent(
+        buildJsonObject {
+            put(ACP_JSONRPC_KEY, "2.0")
+            put("id", id)
+            putJsonObject("error") {
+                put("code", code)
+                put("message", message)
+            }
+        },
+    )
 
     /** The first line the agent wrote that was no JSON-RPC message, cut short; null while every line has been one. */
     @Volatile
     var unreadable: String? = null
         private set
 
+    /** The last line the agent wrote to its standard error, to say why it failed; empty when it wrote none. */
+    fun lastWords(): String {
+        val lines = try {
+            errors.readLines()
+        } catch (unread: IOException) {
+            listOf("its standard error could not be read (${SafeFailureText.render(unread)})")
+        }
+        val last = lines.lastOrNull { it.isNotBlank() } ?: return ""
+        return " (agy said: ${last.take(LAST_WORDS_CHARS)})"
+    }
+
     /** Ends the agent and every process it started (ProcessTree). */
     override fun close() {
         ProcessTree(process).kill()
     }
 
-    /** Whether the request reached the agent's input: false once it has closed. */
-    private fun sent(id: Long, method: String, params: JsonObject): Boolean {
-        val message = buildJsonObject {
-            put("jsonrpc", "2.0")
-            put("id", id)
-            put("method", method)
-            put("params", params)
-        }
+    private fun message(id: Long, method: String, params: JsonObject): JsonObject = buildJsonObject {
+        put(ACP_JSONRPC_KEY, "2.0")
+        put("id", id)
+        put("method", method)
+        put("params", params)
+    }
+
+    /** Whether [message] reached the agent's input: false once it has closed. */
+    private fun sent(message: JsonObject): Boolean {
         val line = (JsonWire.string(message) + "\n").toByteArray(StandardCharsets.UTF_8)
         return try {
             synchronized(input) {
@@ -145,5 +197,11 @@ internal class AcpConnection(
     }
 }
 
+/** How much of the agent's last line of standard error a failure quotes. */
+private const val LAST_WORDS_CHARS = 300
+
 /** How much of a line that was no JSON-RPC message is kept to say what it was. */
 private const val UNREADABLE_CHARS = 300
+
+/** The member every JSON-RPC 2.0 message carries, with its version. */
+private const val ACP_JSONRPC_KEY = "jsonrpc"

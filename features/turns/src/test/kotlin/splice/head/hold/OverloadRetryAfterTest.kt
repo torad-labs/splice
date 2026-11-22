@@ -13,6 +13,7 @@ import splice.core.failure.Moment
 import splice.core.failure.Position
 import splice.dialect.anthropic.failure.AnthropicReplies
 import splice.upstream.failure.FailedReply
+import splice.upstream.failure.SentKey
 import java.time.Instant
 
 internal class OverloadRetryAfterTest {
@@ -22,8 +23,9 @@ internal class OverloadRetryAfterTest {
         val reply = FailedReply(
             status = 529,
             body = """{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}""",
-            headers = mapOf("retry-after" to listOf("6.2")),
+            headers = mapOf("retry-after" to "6.2"),
             owner = LoginOwner.HEAD,
+            sent = SentKey { _, _ -> false },
             answeredAt = now,
         )
         val cause = AnthropicReplies.http(reply)

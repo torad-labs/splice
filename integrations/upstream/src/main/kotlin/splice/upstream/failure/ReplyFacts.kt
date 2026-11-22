@@ -16,16 +16,12 @@ public object ReplyFacts {
 
     private val retryAfter = RetryAfter()
 
-    /** The pushback a reply's Retry-After (or retry-after-ms) asks for, in milliseconds from when it came; null when
-     *  it names none. RFC 7231 strict seconds and HTTP-dates go through [RetryAfter] first; a decimal seconds value
-     *  (e.g. `6.2`) or `retry-after-ms` is accepted for overload/limit pushback so callers can round up cleanly. */
+    /** The pushback a reply's Retry-After asks for, in milliseconds from when it came; null when it names none.
+     *  RFC 7231 strict seconds and HTTP-dates go through [RetryAfter] first; a decimal seconds value (e.g. `6.2`)
+     *  is accepted as a fallback so overload/limit pushback rounds up to whole seconds cleanly. */
     public fun retryAfterMs(reply: FailedReply): Long? {
-        val raw = reply.header(RETRY_AFTER_HEADER)?.trim()?.takeIf { it.isNotEmpty() }
-        if (raw != null) {
-            retryAfter.retryAfterMs(raw, WallClock { reply.answeredAt.toEpochMilli() })?.let { return it }
-            decimalSecondsMs(raw)?.let { return it }
-        }
-        return reply.header(RETRY_AFTER_MS_HEADER)?.trim()?.toLongOrNull()?.takeIf { it >= 0L }
+        val raw = reply.header(RETRY_AFTER_HEADER)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return retryAfter.retryAfterMs(raw, WallClock { reply.answeredAt.toEpochMilli() }) ?: decimalSecondsMs(raw)
     }
 
     private fun decimalSecondsMs(raw: String): Long? {
@@ -71,7 +67,6 @@ public object ReplyFacts {
 
 /** A year: the furthest a stated lift is taken at its word. */
 private const val LONGEST_LIFT_MS = 31_536_000_000L
-private const val RETRY_AFTER_MS_HEADER = "retry-after-ms"
 
 // why: milliseconds per second when converting fractional Retry-After seconds to milliseconds.
 private const val RETRY_MS_PER_SECOND = 1_000.0

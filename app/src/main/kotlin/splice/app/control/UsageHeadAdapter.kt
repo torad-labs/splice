@@ -4,6 +4,8 @@ package splice.app.control
 
 import splice.accounts.claude.ClaudeLoginPlacesSource
 import splice.app.control.api.HeadResolver
+import splice.app.control.usage.GatewayHeadUsageSource
+import splice.app.control.usage.GatewayProviderUsage
 import splice.app.sources.PerfRowsFileSource
 import splice.core.auth.CLIENT_AUTH_KIND
 import splice.core.config.StatePaths
@@ -26,18 +28,28 @@ internal object UsageHeadAdapter {
     fun heads(
         heads: Map<String, ManagedHead>,
         native: ClaudeLoginPlacesSource = ClaudeLoginPlacesSource { null },
+        ports: ConsolePorts? = null,
     ): UsageHeads = object : UsageHeads {
         override fun all(): List<UsageHead> = heads.values.map { head ->
             val adapted = adapt(head)
-            if (head.authSurface.authKind == CLIENT_AUTH_KIND) {
-                adapted.copy(usage = NativeUsageSource(head, native))
-            } else {
-                adapted
+            when {
+                head.authSurface.authKind == CLIENT_AUTH_KIND -> adapted.copy(usage = NativeUsageSource(head, native))
+                ports != null -> adapted.copy(usage = withGatewayUsage(head, ports))
+                else -> adapted
             }
         }
 
         override fun providerResetForMs(key: String): Long = heads[key]?.head?.providerResetForMs() ?: 0L
     }
+
+    private fun withGatewayUsage(head: ManagedHead, ports: ConsolePorts): HeadUsageSource =
+        GatewayHeadUsageSource(
+            head.sources.usage,
+            GatewayProviderUsage {
+                val providerKey = ports.declaredHeads?.invoke()?.get(head.head.key)?.provider
+                if (providerKey != null && providerKey != head.head.key) ports.desktop?.usageOf(providerKey) else null
+            },
+        )
 
     /** The console's lookup: the declared heads read at call time from [ports], and the retired heads under [paths]. */
     fun consoleLookup(resolver: HeadResolver, ports: ConsolePorts, paths: StatePaths): UsageHeadLookup {

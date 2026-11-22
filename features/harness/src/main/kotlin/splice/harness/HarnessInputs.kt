@@ -6,6 +6,8 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.capability.Capability
 import splice.harness.agent.AgentToolPort
 import splice.harness.agent.NoAgentTools
+import splice.harness.hook.ModeHookPort
+import splice.harness.hook.NoModeHooks
 import java.nio.file.Path
 
 /** The key a worker's `auth_env` names, read the way a provider's API key is; null when none is set. */
@@ -30,4 +32,6 @@ public data class HarnessInputs(
     val mcpServers: WorkerMcpServers = WorkerMcpServers { _, _ -> emptyMap() },
     /** The tools beside the capabilities the model may call (a mode's, modes/README.md). */
     val tools: AgentToolPort = NoAgentTools,
+    /** The modes' hooks at the door's moments (modes/README.md, "Hooks"). */
+    val hooks: ModeHookPort = NoModeHooks,
 )

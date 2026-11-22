@@ -30,8 +30,8 @@ internal sealed class AgentEnd {
 }
 
 internal class AgentCalls(
-    private val head: String,
-    capabilities: List<Capability>,
+    val head: String,
+    val capabilities: List<Capability>,
     /** The tools beside the capabilities (a mode's), offered and answered through the same path. */
     private val port: AgentToolPort,
     private val records: AgentRecords,

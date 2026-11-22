@@ -41,6 +41,8 @@ import splice.core.util.LogSink
 import splice.core.util.MonoClock
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
+import splice.harness.hook.ModeHookPort
+import splice.harness.hook.NoModeHooks
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.compaction.SessionProjectLookup
@@ -84,6 +86,12 @@ public data class WorkerReply(val lines: List<String>, val status: Int = 200, va
 
 /** What a worker was posted: the capability it was asked for, the session, and the fields it was sent. */
 public data class Asked(val capability: String, val session: String, val fields: JsonObject = JsonObject(emptyMap()))
+
+/** What a rig head's turn reaches besides its capabilities: the MCP servers its sessions load, and the modes' hooks. */
+public data class RigWorkers(
+    public val mcpServers: WorkerMcpServers = WorkerMcpServers { _, _ -> emptyMap() },
+    public val hooks: ModeHookPort = NoModeHooks,
+)
 
 public class CapabilityRig(private val tmp: Path) : AutoCloseable {
     /** Each request the provider was sent, its body as it arrived. */
@@ -143,13 +151,13 @@ public class CapabilityRig(private val tmp: Path) : AutoCloseable {
     )
 
     /** A started head declaring [capabilities] in this order, its threads recorded under [records], whose sessions all
-     *  work in [folder] (none when null) and load the MCP servers [mcpServers] gives them, serving the provider
-     *  [dialect] builds from the head's tuning: Anthropic's Messages passed through, unless a test names another. */
+     *  work in [folder] (none when null) and reach [workers], serving the provider [dialect] builds from the head's
+     *  tuning: Anthropic's Messages passed through, unless a test names another. */
     public fun head(
         capabilities: List<Capability>,
         records: Path = tmp.resolve("records"),
         folder: Path? = null,
-        mcpServers: WorkerMcpServers = WorkerMcpServers { _, _ -> emptyMap() },
+        workers: RigWorkers = RigWorkers(),
         dialect: (ProviderTuning) -> Provider = { PassthroughProvider(it, PassthroughQuirks(providerTag = HEAD)) },
     ): HeadServer = runBlocking {
         val dir = Files.createDirectories(tmp.resolve("head-${heads.size}"))
@@ -157,8 +165,9 @@ public class CapabilityRig(private val tmp: Path) : AutoCloseable {
             capabilities,
             records,
             WorkerKeys { null },
-            mcpServers = mcpServers,
-        ).takeIf { capabilities.isNotEmpty() }
+            mcpServers = workers.mcpServers,
+            hooks = workers.hooks,
+        ).takeIf { capabilities.isNotEmpty() || workers.hooks !== NoModeHooks }
             ?.let { HeadHarness().of(HEAD, it, LogSink { }, ElapsedClock(MonoClock::nowMs)) }
         val server = HeadServer(
             provider = dialect(tuning()),

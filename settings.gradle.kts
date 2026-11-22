@@ -40,6 +40,7 @@ include(
     ":integrations-providers-anthropic",
     ":integrations-providers-codex",
     ":integrations-providers-grok",
+    ":integrations-providers-antigravity",
     ":integrations-providers-kimi",
     ":integrations-providers-muse",
     ":integrations-providers-openai",
@@ -85,6 +86,7 @@ project(":integrations-dialects-openai-chat").projectDir = file("integrations/di
 project(":integrations-providers-anthropic").projectDir = file("integrations/providers/anthropic")
 project(":integrations-providers-codex").projectDir = file("integrations/providers/codex")
 project(":integrations-providers-grok").projectDir = file("integrations/providers/grok")
+project(":integrations-providers-antigravity").projectDir = file("integrations/providers/antigravity")
 project(":integrations-providers-kimi").projectDir = file("integrations/providers/kimi")
 project(":integrations-providers-muse").projectDir = file("integrations/providers/muse")
 project(":integrations-providers-openai").projectDir = file("integrations/providers/openai")

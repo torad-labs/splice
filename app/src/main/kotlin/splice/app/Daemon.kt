@@ -12,6 +12,7 @@
 // constructor, fields, start(), and stop(); everything else delegates to those collaborators.
 package splice.app
 
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.app.control.FailedHeads
@@ -69,8 +70,10 @@ import splice.models.roster.DeclaredHead
 import splice.models.roster.DeclaredHeads
 import splice.modes.api.ModeKind
 import splice.oauth.codex.CodexRefresh
+import splice.provider.antigravity.AgyModels
 import splice.share.RemoteTrees
 import splice.topology.TopologyLoader
+import splice.upstream.codemode.ProcessDispatchers
 import splice.usage.quota.ClientUserAgent
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentSkipListMap
@@ -370,6 +373,7 @@ public class Daemon(
         // The desktop door, on the control port, choosing among these heads.
         desktop.open(providers, controlPort, controlPlane.modelRosters)
         controlPlane.desktop = desktop
+        joinAntigravity()
         controlPlane.start(
             controlPort = controlPort,
             heads = heads,
@@ -390,6 +394,15 @@ public class Daemon(
 
     /** Assembles every head and starts each one as it is built (HeadBoot). #525: the first heads serve before the
      *  last is assembled, and no re-read of splice.toml runs until every head has attached to it. */
+
+    /** desktop-antigravity: Antigravity's models are asked of agy in the background, since agy asks Google for them;
+     *  once they arrive they join the providers and Desktop's list is published again. */
+    private fun joinAntigravity() {
+        controlPlane.probeScope.launch {
+            val agy = AgyModels(listOf("agy", "acp"), controlPlane.probeScope, ProcessDispatchers().io())
+            if (providers.joinAntigravity(agy, config)) desktop.republish()
+        }
+    }
 
     /** Every endpoint asked what it serves: each head's provider by head key, and each provider the gateway serves with
      *  no head by the key its books live under. */

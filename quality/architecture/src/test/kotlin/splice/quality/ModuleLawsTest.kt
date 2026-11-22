@@ -89,6 +89,8 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":integrations-providers-anthropic" to ADAPTER_BASE,
     ":integrations-providers-codex" to ADAPTER_BASE + ":integrations-dialects-openai-responses",
     ":integrations-providers-grok" to ADAPTER_BASE + ":integrations-dialects-openai-responses",
+    // Antigravity is read from its own agent, `agy acp`, over stdio: the domain alone.
+    ":integrations-providers-antigravity" to setOf(":core"),
     ":integrations-providers-kimi" to ADAPTER_BASE + ":integrations-dialects-anthropic",
     ":integrations-providers-muse" to ADAPTER_BASE,
     ":integrations-providers-openai" to ADAPTER_BASE + setOf(

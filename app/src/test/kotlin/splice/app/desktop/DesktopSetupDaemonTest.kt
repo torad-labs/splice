@@ -171,7 +171,9 @@ class DesktopSetupDaemonTest {
     private fun features(state: JsonObject) {
         val features = state.getValue("features").jsonArray.map { it.jsonObject }
         fun of(name: String, mode: String) = features.single { it.str("name") == name && it.str("mode") == mode }
-        assertEquals(28, features.size, "fourteen features in each of the two modes")
+        assertEquals(30, features.size, "fifteen features in each of the two modes")
+        assertEquals("partly", of("your Claude Code sessions", "app").str("state"))
+        assertTrue(of("your Claude Code sessions", "app").str("reason").contains("import prompt"))
         assertEquals("unavailable", of("fast mode", "app").str("state"))
         assertTrue(of("fast mode", "app").str("reason").contains("Desktop"))
         assertTrue(of("SSH sessions", "standard").str("reason").contains("127.0.0.1"))

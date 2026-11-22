@@ -25,8 +25,10 @@ whether Desktop was reopened since splice changed it, and `splice desktop` lists
 working or why not (DesktopFeatures; what only the live test settles is "unknown"). `on` also lays
 `<state>/desktop-launch`, which runs `splice desktop launch`: a managed processWrapper can name it, and it gives a
 Code-tab launch on the door the desktop key Desktop stripped (Mantle's bearer, or the gateway's variable). splice still
-never writes the managed file. Each turn's perf row names its subagent and parent agent (df-turn-headers). Not built:
-the gateway answer fields of df-wire-answers.
+never writes the managed file. Each turn's perf row names its subagent and parent agent (df-turn-headers). The policy
+also raises Desktop's Claude Code import prompt (`bannerBehavior: "show"`, `bannerMaxDismissals: 10`), so gateway mode
+can bring the sessions Claude Code has on the computer into its Code-tab list. Not built: the gateway answer fields of
+df-wire-answers.
 
 Outcome 9 (desktop-policy) is built: the configuration is generated, the build's default policy
 (`claude-code-desktop-policy/ccd-policy.json`, DesktopPolicyDefaults) with what the person set up in Claude Code laid
@@ -252,11 +254,16 @@ building on it.
      own headers. A key it sets stays as the person set it, `false` included.
    - **Sessions.** The Code tab runs Claude Code over the same `~/.claude` as the terminal, so its sessions write
      their transcripts where the terminal's are and see every other session on the computer as a peer. Desktop's own
-     list holds the sessions it started. Desktop 6.28899.2 brings terminal sessions into that list only through its
-     import (a scan of the terminal's transcripts, each copied under a new id, for folders Desktop trusts), so the
-     default leaves the import on and has Desktop offer it when it finds sessions. No key makes that list follow the
-     terminal's as it changes, and `automatic3pImport` copies an earlier Desktop profile, never the terminal's
-     sessions.
+     list holds the sessions it started. Desktop 6.28899.2 brings Claude Code's sessions into that list only through
+     its import, which scans `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects` (read from the bundle on Nov 22, 2026),
+     copies each transcript under a new id and records it, for folders Desktop trusts. Every head whose policy shares
+     `projects` (the default) writes into that same tree, so the sessions started on a head are among the importable
+     ones. Gateway mode has no claude.ai account for the import's `detect` value to resolve, so the shipped policy
+     asks for the import outright: `claudeAiImport.bannerBehavior: "show"` with `bannerMaxDismissals: 10`, which
+     keeps the offer returning until it is accepted. Accepting it is still the person's act, and sessions started
+     after it are not in the list until the offer comes again: no key makes the list follow the tree as it changes.
+     The same import is on Desktop's menu as "Import Claude Code CLI Sessions…". `automatic3pImport` copies an
+     earlier Desktop profile, never the terminal's sessions.
 
 ## Constraints
 

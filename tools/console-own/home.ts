@@ -40,10 +40,8 @@ export function homeAt(root: string): Home {
   };
 }
 
-/** Where the person's own Splice, Claude Code and keyring live, from the account's own home (never $HOME, which a
- *  caller may have pointed anywhere). */
-function guarded(): string[] {
-  const own = userInfo().homedir;
+/** Where the person's own Splice, Claude Code and keyring live under the account home [own]. */
+function guarded(own: string): string[] {
   return [".splice", ".claude-codex", ".config/splice", ".claude", ".claude.json", ".local/share/keyrings", ".local/share/splice"].map((p) => join(own, p));
 }
 
@@ -60,9 +58,11 @@ function real(p: string): string {
 
 const inside = (p: string, dir: string) => p === dir || p.startsWith(dir + sep);
 
-/** Refuses, naming the path, when any path this home would write resolves into the person's own state. */
-export function refuseForeign(h: Home): void {
-  const protectedDirs = guarded().map(real);
+/** Refuses, naming the path, when any path this home would write resolves into the person's own state. [account] is
+ *  the account's own home, read from the system (never $HOME, which a caller may have pointed anywhere); only a test
+ *  names another, so that it guards a made-up home and writes nothing in the real one. */
+export function refuseForeign(h: Home, account: string = userInfo().homedir): void {
+  const protectedDirs = guarded(account).map(real);
   for (const p of Object.values(h)) {
     const r = real(p);
     const hit = protectedDirs.find((d) => inside(r, d) || inside(d, r));

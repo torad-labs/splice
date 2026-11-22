@@ -50,10 +50,10 @@ internal class ClaudeLaunchers(private val env: EnvReader, private val bin: Path
         return Launcher(file, why == null, why, reading.configDir?.let(::expanded)?.let(::pathOrNull))
     }
 
-    /** [file]'s text when it is a script of at most [MAX_BYTES] starting `#!`; null for anything else. */
+    /** [file]'s text when it is a script of at most [LIST_MAX_BYTES] starting `#!`; null for anything else. */
     private fun scriptText(file: Path): String? = try {
         val head = Files.newInputStream(file).use { it.readNBytes(2) }
-        val script = Files.size(file) <= MAX_BYTES && head.contentEquals(SHEBANG)
+        val script = Files.size(file) <= LIST_MAX_BYTES && head.contentEquals(SHEBANG)
         if (script) Files.readString(file) else null
     } catch (_: IOException) {
         null
@@ -89,5 +89,5 @@ internal class ClaudeLaunchers(private val env: EnvReader, private val bin: Path
 private const val CLAUDE = "claude"
 
 // why: a launcher is a short script; a file past this is a program, not one person's way of starting Claude Code
-private const val MAX_BYTES = 64L * 1024
+private const val LIST_MAX_BYTES = 64L * 1024
 private val SHEBANG: ByteArray = "#!".toByteArray()

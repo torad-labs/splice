@@ -1,4 +1,4 @@
-package splice.app.head
+package splice.app.retire
 
 // head-catalog (gw-retire): retiring a head leaves its folder without splice's entries and its backup holding them,
 // restoring puts the folder back byte for byte, and a file the person changed since is named and never written over.

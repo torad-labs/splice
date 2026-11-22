@@ -57,7 +57,7 @@ public class GatewayDiscovery {
 }
 
 /** The most rows one page holds, and what Claude Code's discovery asks for. */
-public const val GATEWAY_MAX_LIMIT: Int = 1_000
+internal const val GATEWAY_MAX_LIMIT: Int = 1_000
 
 // What Claude Code keeps of a discovery answer (since 2.1.223: anywhere in the id, any case).
 private val KEPT = Regex("claude|anthropic", RegexOption.IGNORE_CASE)

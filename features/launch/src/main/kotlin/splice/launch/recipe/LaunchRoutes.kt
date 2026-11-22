@@ -100,7 +100,7 @@ public class LaunchRoutes(
         val launched = target.catalog?.let(spec::withWindows) ?: spec
         // head-catalog: every head's command starts on the Splice gateway but one that forwards the person's own Claude
         // login, which the gateway never carries
-        val gateway = service.door?.takeIf { spec.startsOnGateway }?.gateway(spec.signIn.headKey)
+        val gateway = service.door?.takeIf { launched.startsOnGateway }?.gateway(launched.signIn.headKey)
         val caller =
             LaunchCaller(request.cwd, resolved.wrapped, request.inheritedConfigDir, request.launch, gateway, key)
         val outcome = when (val launch = launchFor(target, launched, request, caller, service)) {

@@ -90,7 +90,7 @@ internal class DesktopDoor(
         val query = call.request.queryParameters
         val page = discovery.page(
             gatewayModels.of(lineup),
-            query[LIMIT]?.toIntOrNull(),
+            query[LIMIT_PARAM]?.toIntOrNull(),
             query[AFTER_ID],
         )
         JsonReply(HttpStatusCode.OK, page.toString()).send(call)
@@ -186,5 +186,5 @@ private const val REQUEST_MAX_TOKENS = "max_tokens"
 private const val REQUEST_STREAM = "stream"
 
 // The query a `/v1/models` page is asked with (Claude Code's gateway discovery).
-private const val LIMIT = "limit"
+private const val LIMIT_PARAM = "limit"
 private const val AFTER_ID = "after_id"

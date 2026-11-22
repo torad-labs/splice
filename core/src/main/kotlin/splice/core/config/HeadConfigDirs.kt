@@ -9,7 +9,10 @@ import java.nio.file.Path
 import java.nio.file.Paths
 
 /** The wrapped Claude Code's per-head CLAUDE_CONFIG_DIR default is this prefix plus the head key. */
-public const val HEAD_CONFIG_DIR_PREFIX: String = "~/.claude-"
+internal const val HEAD_CONFIG_DIR_PREFIX: String = "~/.claude-"
+
+/** The settings file at the top of a Claude Code folder, which splice writes as a head's own and reads back. */
+public const val CLAUDE_FOLDER_SETTINGS: String = "settings.json"
 
 /** One head's CLAUDE_CONFIG_DIR: the declared path, else this tree's `~/.claude-<key>` default. */
 public object HeadConfigDirs {

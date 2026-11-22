@@ -1,7 +1,7 @@
 // NEW: head-catalog (gw-retire). What `splice claude retire` and `restore` are built from is the control server's parts,
 // as HeadRemovalAssembly does for a removal: the heads as their launches are, the session registry, the install's bin
 // dir, and the lane `claude` is on behind the daemon's Splice gateway, so the retirement itself names none of them.
-package splice.app.head
+package splice.app.retire
 
 import splice.app.control.ClaudeLink
 import splice.app.control.ConsolePorts
@@ -10,6 +10,10 @@ import splice.app.control.DaemonWrap
 import splice.app.control.ManagedHead
 import splice.app.desktop.lane.ClaudeLane
 import splice.app.desktop.setup.DesktopAct
+import splice.app.head.HeadRemovalFacts
+import splice.app.head.RegisteredSessions
+import splice.app.head.WrapperBinSource
+import splice.app.head.WrapperLinks
 import splice.core.config.ConfigService
 import splice.core.config.UserHome
 import splice.core.topology.CLAUDE_COMMAND

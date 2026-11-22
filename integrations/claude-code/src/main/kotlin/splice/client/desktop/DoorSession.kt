@@ -78,7 +78,7 @@ public data class DoorSession(
 }
 
 /** A session's picker as its `--settings` overlay carries it, one row per model of a signed-in account. */
-public class DoorPicker(private val rows: List<DoorPickerRow>) {
+internal class DoorPicker(private val rows: List<DoorPickerRow>) {
     /** The `modelPicker` value; null with no rows, so Claude Code lists the gateway's models alone. */
     public fun json(replace: Boolean): JsonObject? {
         if (rows.isEmpty()) return null

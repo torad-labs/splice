@@ -20,10 +20,10 @@ import splice.core.util.JsonScalars
 internal class ClaudeRetire(private val client: DoorClient, private val out: TerminalOutput) {
     /** [verb], `retire` or `restore`, on the heads [rest] names, or on every one with `--all`. */
     fun run(verb: String, rest: List<String>): Int {
-        val all = rest == listOf(ALL)
+        val all = rest == listOf(RETIRE_ALL)
         val named = rest.isNotEmpty() && rest.none { it.startsWith("-") }
         if (all || named) return asked(verb, rest, all)
-        return client.refused("usage: splice claude $verb <command|key>... | $ALL")
+        return client.refused("usage: splice claude $verb <command|key>... | $RETIRE_ALL")
     }
 
     private fun asked(verb: String, rest: List<String>, all: Boolean): Int {
@@ -37,4 +37,4 @@ internal class ClaudeRetire(private val client: DoorClient, private val out: Ter
     }
 }
 
-private const val ALL = "--all"
+private const val RETIRE_ALL = "--all"

@@ -544,10 +544,12 @@ class ControlServerTest {
         assertFalse(argv.contains("--dangerously-skip-permissions"))
         assertTrue(argv.contains("--verbose"))
         assertFalse(argv.contains("null"), "a JSON null is absence, not an argument: $argv")
-        // door-default (decision 7): a head's launch carries the heads notice, and nothing else on the safe path; this
-        // pinned no warning at all before, and decision 9 rewrote the notice to name what to type in `claude`.
+        // head-catalog (gw-deprecated): a custom head's launch says the head is deprecated and will be removed, and
+        // what to type in `claude` instead; nothing else on the safe path.
         val warning = obj["warning"]?.jsonPrimitive?.content.orEmpty()
-        assertTrue(warning.startsWith("this command is deprecated, and `claude` runs this head's models"), warning)
+        assertTrue(warning.startsWith("`codex` is a custom head, and custom heads are deprecated"), warning)
+        assertTrue("will be removed in a coming release" in warning, warning)
+        assertTrue("/model " in warning, warning)
     }
 
     @Test

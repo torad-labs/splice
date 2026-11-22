@@ -1,11 +1,9 @@
 // Key rotation (Oct 26, 2026), end to end through a real daemon. A key that was shown somewhere it should not have
 // been is replaced with `splice rotate-key` while a session launched on a gateway head runs, and the session must not
-// be stranded. It holds no key of its own: its settings carry an apiKeyHelper that prints the turn key from the 0600
-// header file. How Claude Code reacts is read from its 2.1.310 bundle, never from a session: on a 401 whose key
-// source is apiKeyHelper, with no ANTHROPIC_AUTH_TOKEN set, its retry decision clears the helper's cache and retries,
-// and the retry rebuilds the client, which runs the helper again and sends the same request again. This test plays
-// that client: the helper through `sh -c`, the same turn before the rotation, after it with the old key, and after
-// the helper's next run.
+// be stranded. head-catalog (Nov 19, 2026): the session holds no turn key of the head's. Its launch points Claude
+// Code at the Splice gateway with the terminal's own key, so it reaches the head through the gateway, which reads the
+// head's credential itself. This test plays that client: a turn before the rotation and the same session's next turn
+// after it, on the key its launch planted, which the rotation does not touch.
 package splice.app
 
 import com.sun.net.httpserver.HttpExchange
@@ -24,14 +22,15 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertAll
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.auth.RotateKeyCommand
 import splice.client.mcp.McpAccessKey
 import splice.core.auth.RefreshAttempt
+import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.config.TurnKey
 import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.testing.TestPorts
@@ -43,7 +42,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 // why: what a person typed, carried in the turn Claude Code sends again after the helper's next run
 private const val DRAFT = "the draft that must survive the rotation"
@@ -117,7 +115,7 @@ class KeyRotationDaemonTest {
                 try {
                     rig.start()
                     val oldMgmt = rig.managementKey()
-                    val oldTurn = shellOutput(launchWithHelper(rig, oldMgmt))
+                    val oldTurn = rig.turnKey()
                     val said = mutableListOf<String>()
                     val exit = rig.rotateKey(said)
                     val turnKey = rig.forwardedTurn(oldTurn)
@@ -147,10 +145,9 @@ class KeyRotationDaemonTest {
 
     private suspend fun rotateUnderARunningSession(rig: Rig) {
         val oldMgmt = rig.managementKey()
-        val helper = launchWithHelper(rig, oldMgmt)
-        val before = shellOutput(helper)
-        val first = rig.turn(before)
-        assertEquals(200, first.status, "the helper's key runs a turn: ${first.text}")
+        val key = launchOnGateway(rig, oldMgmt)
+        val first = rig.doorTurn(key)
+        assertEquals(200, first.status, "the gateway key runs a turn: ${first.text}")
         val mcpBefore = rig.adoptMcpAccess(oldMgmt)
         rig.writeOldConsolePages(oldMgmt)
 
@@ -161,25 +158,15 @@ class KeyRotationDaemonTest {
         val newMgmt = rig.managementKey()
         val oldControl = rig.control(oldMgmt)
         val newControl = rig.control(newMgmt)
-        val refused = rig.turn(before)
-        val reachedBeforeRetry = rig.upstream.turns.size
-        val after = shellOutput(helper)
-        val retried = rig.turn(after)
+        val after = rig.doorTurn(key)
 
         assertAll(
             { assertEquals(0, exit, "splice rotate-key: $said") },
             { assertTrue(oldMgmt != newMgmt, "the key on disk is a new one") },
             { assertEquals(401, oldControl, "the old management key is refused") },
             { assertEquals(200, newControl, "the new management key is accepted") },
-            { assertEquals(401, refused.status, "the session's next request is refused, which reruns its helper") },
-            {
-                assertEquals(1, reachedBeforeRetry) {
-                    "a refused turn never reaches the head's upstream: ${rig.upstream.calls}"
-                }
-            },
-            { assertTrue(before != after, "the helper's next run hands the session the new turn key") },
-            { assertEquals(200, retried.status, "the same turn goes through on the same head: ${retried.text}") },
-            { assertTrue("message_stop" in retried.text, "the retried turn streamed to its end: ${retried.text}") },
+            { assertEquals(200, after.status, "the session's next turn still runs: ${after.text}") },
+            { assertTrue("message_stop" in after.text, "the next turn streamed to its end: ${after.text}") },
             {
                 assertTrue(
                     rig.upstream.turns.size == 2 && rig.upstream.turns.all { DRAFT in it },
@@ -190,30 +177,25 @@ class KeyRotationDaemonTest {
             { assertTrue(mcpBefore != mcpAfter, "the MCP access key is revoked and replaced") },
             { assertEquals(emptyList<String>(), pagesLeft, "no page sends a browser to an address with a key") },
             { assertTrue(said.isNotEmpty(), "rotate-key says what it did") },
-            { assertPrintsNoKey(said, listOf(oldMgmt, newMgmt, before, after, mcpBefore, mcpAfter)) },
+            { assertPrintsNoKey(said, listOf(oldMgmt, newMgmt, key, mcpBefore, mcpAfter)) },
         )
     }
 
-    /** The launch of a session on the gateway head: it is planted no key, and its settings name the key helper. */
-    private suspend fun launchWithHelper(rig: Rig, mgmt: String): String {
+    /** The launch of a session on the gateway head: it holds the terminal's key at the gateway, and an outer
+     *  session's own key is scrubbed. The key it plants is what the session's turns carry. */
+    private suspend fun launchOnGateway(rig: Rig, mgmt: String): String {
         val launched = rig.launch(mgmt)
-        assertFalse("ANTHROPIC_AUTH_TOKEN" in launched.env, "the session is planted no key: ${launched.env.keys}")
-        assertTrue("ANTHROPIC_AUTH_TOKEN" in launched.unset, "an outer session's planted key is scrubbed")
-        return rig.keyHelper()
+        assertEquals(rig.door, launched.env["ANTHROPIC_BASE_URL"], "the session is pointed at the gateway")
+        val key = launched.env["ANTHROPIC_AUTH_TOKEN"]
+        assertEquals(rig.doorKey(), key, "the session holds the terminal's key")
+        assertTrue("ANTHROPIC_API_KEY" in launched.unset, "an outer session's other credential is scrubbed")
+        return checkNotNull(key)
     }
 
     /** No line `splice rotate-key` printed holds any of [secrets]; a failure shows the lines with each one masked. */
     private fun assertPrintsNoKey(said: List<String>, secrets: List<String>) {
         val masked = said.map { line -> secrets.fold(line) { text, key -> text.replace(key, "<a key>") } }
         assertTrue(said == masked) { "rotate-key prints no key: $masked" }
-    }
-
-    /** What Claude Code reads from its key helper: the command's output through a shell, trimmed. */
-    private fun shellOutput(command: String): String {
-        val process = ProcessBuilder("sh", "-c", command).start()
-        val out = process.inputStream.readBytes().toString(Charsets.UTF_8).trim()
-        check(process.waitFor(10, TimeUnit.SECONDS)) { "key helper did not exit within 10s: $command" }
-        return out
     }
 }
 
@@ -301,6 +283,18 @@ private class Rig(private val tmp: Path, private val forwarding: Boolean = false
 
     fun managementKey(): String = Files.readString(statePaths.mgmtKeyFile).trim()
 
+    /** The gateway every session of this machine's `claude` is pointed at. */
+    val door: String get() = "http://127.0.0.1:$controlPort/door"
+
+    /** The terminal's own door key, which a gateway launch plants. */
+    fun doorKey(): String = Files.readString(statePaths.terminalKeyFile).trim()
+
+    /** The turn key the management key derives, as the 0600 header file holds it. */
+    fun turnKey(): String = Files.readAllLines(TurnKey(MgmtKey(statePaths)).headerFile())
+        .first { it.startsWith("Authorization: Bearer ") }
+        .substringAfter("Authorization: Bearer ")
+        .trim()
+
     suspend fun launch(mgmt: String): Launched {
         val reply = client.post("http://127.0.0.1:$controlPort/launch/relay") {
             header("Authorization", "Bearer $mgmt")
@@ -316,14 +310,9 @@ private class Rig(private val tmp: Path, private val forwarding: Boolean = false
         )
     }
 
-    fun keyHelper(): String {
-        val settings = Json.parseToJsonElement(Files.readString(configDir.resolve("settings.json"))).jsonObject
-        return checkNotNull(settings["apiKeyHelper"]?.jsonPrimitive?.content) { "the launch wrote no apiKeyHelper" }
-    }
-
-    /** A turn as Claude Code sends it with its helper's key, which it puts in both of these headers. */
-    suspend fun turn(key: String): Answer {
-        val reply = client.post("http://127.0.0.1:$headPort/v1/messages") {
+    /** A turn as a gateway session sends it: to the door, with the key its launch planted in both headers. */
+    suspend fun doorTurn(key: String): Answer {
+        val reply = client.post("$door/v1/messages") {
             header("Authorization", "Bearer $key")
             header("x-api-key", key)
             header("Content-Type", "application/json")

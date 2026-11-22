@@ -27,7 +27,7 @@ internal class ClaudeSaid(private val out: TerminalOutput) : DoorSaid {
     /** The gateway's models and the heads left out of it, or [none] with no model. */
     private fun picker(state: JsonObject, none: String) {
         val models = (state["models"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
-        out.line(if (models.isEmpty()) none else MODELS)
+        out.line(if (models.isEmpty()) none else MODELS_LINE)
         models.forEach { m ->
             out.line("  ${text(m, "model")}  ${text(m, "label")}  (${text(m, "provider")})")
         }
@@ -50,7 +50,7 @@ private const val NO_ADDED =
     "Models: none in the Splice gateway, as no other account is signed in; `splice console` signs one in"
 
 // What heads the gateway's models.
-private const val MODELS = "Models, the Splice gateway's list in every session's /model:"
+private const val MODELS_LINE = "Models, the Splice gateway's list in every session's /model:"
 
 // What the /login line says when the person's own is in the way of splice's, before where it is.
 private const val THEIRS_IN_THE_WAY = "yours, not splice's accounts page: your own /login is in the way at"

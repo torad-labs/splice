@@ -45,11 +45,11 @@ internal class ClaudeCommand(
 
     fun run(args: List<String>): Int = when (args.firstOrNull()) {
         RETIRE, RESTORE -> retire.run(args.first(), args.drop(1))
-        CHECK -> check.run(args.drop(1))
+        CHECK_VERB -> check.run(args.drop(1))
         else -> verbs.run(args)
     }
 }
 
 private const val RETIRE = "retire"
 private const val RESTORE = "restore"
-private const val CHECK = "check"
+private const val CHECK_VERB = "check"

@@ -20,7 +20,8 @@ import splice.client.desktop.GatewayMode
 internal object ClaudeModelSettings {
     private val desktop = DesktopSettings()
     private val lists = ClaudeModelLists.settingsKeys.toSet() + Keys.MODEL
-    private val pastGateway = GatewayMode().unset.toSet() + GATEWAY_BASE_URL + GATEWAY_TOKEN + GATEWAY_DISCOVERY + MODEL
+    private val pastGateway = GatewayMode().unset.toSet() + GATEWAY_BASE_URL + GATEWAY_TOKEN + GATEWAY_DISCOVERY +
+        MODEL_ENV
 
     /** What a head takes from the person's [global] settings: desktop-door's inherited keys, less anything that would
      *  lay a model list of its own. */
@@ -31,7 +32,7 @@ internal object ClaudeModelSettings {
     fun base(fromGlobal: JsonObject, own: JsonObject): JsonObject = buildJsonObject {
         (fromGlobal + desktop.inherited(own)).forEach { (key, value) ->
             when {
-                key == ENV && value is JsonObject -> put(key, JsonObject(value - pastGateway))
+                key == SETTINGS_ENV_KEY && value is JsonObject -> put(key, JsonObject(value - pastGateway))
                 carried(key) -> put(key, value)
             }
         }
@@ -43,5 +44,5 @@ internal object ClaudeModelSettings {
     private fun carried(key: String): Boolean = key != Keys.STATUS_LINE && key != Keys.HOOKS && key !in lists
 }
 
-private const val ENV = "env"
-private const val MODEL = "ANTHROPIC_MODEL"
+private const val SETTINGS_ENV_KEY = "env"
+private const val MODEL_ENV = "ANTHROPIC_MODEL"

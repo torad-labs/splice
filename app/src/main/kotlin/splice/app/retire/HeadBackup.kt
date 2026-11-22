@@ -4,7 +4,7 @@
 // them, so a retirement that cannot finish its backup changes nothing. Restoring puts each back exactly as it was (a
 // file's bytes and mode, a link's target, a dir), and first refuses, naming it, any path that now holds something
 // other than what retiring left there: restore never writes over what the person changed since. The backup stays.
-package splice.app.head
+package splice.app.retire
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -80,14 +80,15 @@ internal class HeadBackup(private val root: Path) {
             throw failure
         }
         val manifest = BackupManifest(key, command, now.toString(), lane, entries.map { it.first })
-        SecureFile.writeAtomic0600(dir.resolve(MANIFEST), json.encodeToString(BackupManifest.serializer(), manifest))
+        val body = json.encodeToString(BackupManifest.serializer(), manifest)
+        SecureFile.writeAtomic0600(dir.resolve(BACKUP_MANIFEST), body)
         val stuck = entries.filterNot { (entry, edited) -> removed(entry, edited) }.map { it.first.path }
         return Retired(dir, stuck)
     }
 
     /** The manifest of the backup at [dir], or null when it cannot be read. */
     fun manifest(dir: Path): BackupManifest? = try {
-        json.decodeFromString(BackupManifest.serializer(), Files.readString(dir.resolve(MANIFEST)))
+        json.decodeFromString(BackupManifest.serializer(), Files.readString(dir.resolve(BACKUP_MANIFEST)))
     } catch (_: java.io.IOException) {
         null
     } catch (_: kotlinx.serialization.SerializationException) {
@@ -136,7 +137,7 @@ internal class HeadBackup(private val root: Path) {
             }
             LaidKind.FILE -> {
                 Files.copy(path, into, COPY_ATTRIBUTES, NOFOLLOW_LINKS)
-                BackupEntry(path.toString(), FILE, sha(path), stored = name)
+                BackupEntry(path.toString(), FILE_KIND, sha(path), stored = name)
             }
         }
     }
@@ -163,7 +164,7 @@ internal class HeadBackup(private val root: Path) {
 
     /** Where the backup holds [path]: by its path in the head's folder, or by its name for the command link. */
     private fun inFolder(plan: RetirePlan, path: Path): String =
-        "$FOLDER/" + (plan.folder?.relativize(path)?.toString() ?: path.fileName.toString())
+        "$FOLDER_KIND/" + (plan.folder?.relativize(path)?.toString() ?: path.fileName.toString())
 
     private fun restorable(entry: BackupEntry): Boolean {
         val path = Path.of(entry.path)
@@ -190,10 +191,10 @@ internal class HeadBackup(private val root: Path) {
         HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
 }
 
-private const val MANIFEST = "manifest.json"
-private const val FOLDER = "folder"
+private const val BACKUP_MANIFEST = "manifest.json"
+private const val FOLDER_KIND = "folder"
 private const val BIN = "bin"
-private const val FILE = "file"
+private const val FILE_KIND = "file"
 private const val LINK = "link"
 private const val DIR = "dir"
 private const val EDITED = "edited"

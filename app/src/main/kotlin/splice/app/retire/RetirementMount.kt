@@ -7,7 +7,7 @@
 //
 // Retire and restore always answer 200 with {"ok", "said": [...]}: a head refused is part of the answer, said beside
 // the ones that did retire, and `ok` false sets the command's exit status.
-package splice.app.control.mount
+package splice.app.retire
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
@@ -16,7 +16,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import splice.app.head.HeadRetirement
+import splice.app.control.mount.ControlGuard
 import splice.core.util.JsonScalars
 import splice.http.JsonBody
 import splice.http.JsonReply

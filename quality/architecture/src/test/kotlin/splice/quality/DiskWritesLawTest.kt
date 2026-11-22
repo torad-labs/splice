@@ -314,7 +314,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/cli/mcp/McpServiceRegistration.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/head/HeadTraceStores.kt" to mapOf("ActivityDays(" to 1),
     // The per-session fallback models, in the session-fallbacks.json README row.
-    "app/src/main/kotlin/splice/app/head/HeadBackup.kt" to mapOf(
+    "app/src/main/kotlin/splice/app/retire/HeadBackup.kt" to mapOf(
         "Files.copy(" to 3,
         "Files.createSymbolicLink(" to 2,
         "writeAtomic0600(" to 2,

@@ -6,6 +6,7 @@
 // Nothing here writes: it reads the topology, the bin folder and the head folders, as both commands do with no daemon.
 package splice.core.head
 
+import splice.core.config.CLAUDE_FOLDER_SETTINGS
 import splice.core.config.HeadConfigDirs
 import splice.core.config.InstallPaths
 import splice.core.config.UserHome
@@ -43,7 +44,7 @@ public class DeprecatedHeads(
     }
 
     private fun stillHas(key: String, head: HeadConfig, command: String): Boolean =
-        link(command) != null || Files.isRegularFile(folder(key, head).resolve(SETTINGS))
+        link(command) != null || Files.isRegularFile(folder(key, head).resolve(CLAUDE_FOLDER_SETTINGS))
 
     /** [command]'s link in the install's bin folder when it is splice's own there: a symlink of that exact name, which
      *  `claude` never is (Claude Code's own link). The rule `WrapperLinks.own` reads for retiring the same link. */
@@ -59,5 +60,3 @@ public class DeprecatedHeads(
     private fun folder(key: String, head: HeadConfig): Path =
         HeadConfigDirs.of(key, head.claude.configDir, UserHome.dir(env))
 }
-
-private const val SETTINGS = "settings.json"

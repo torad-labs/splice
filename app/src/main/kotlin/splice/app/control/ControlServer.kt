@@ -56,7 +56,6 @@ import splice.app.control.mount.ManagerMount
 import splice.app.control.mount.McpMount
 import splice.app.control.mount.ModelsMount
 import splice.app.control.mount.ProjectsMount
-import splice.app.control.mount.RetirementMount
 import splice.app.control.mount.SessionsMount
 import splice.app.control.mount.SessionsWiring
 import splice.app.control.mount.StandaloneMounts
@@ -67,8 +66,9 @@ import splice.app.control.peer.PeerServices
 import splice.app.control.peer.PeersMount
 import splice.app.control.usage.UsageMount
 import splice.app.head.HeadRemovalAssembly
-import splice.app.head.HeadRetirementAssembly
 import splice.app.peer.PeersWiring
+import splice.app.retire.HeadRetirementAssembly
+import splice.app.retire.RetirementMount
 import splice.core.config.ConfigService
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker

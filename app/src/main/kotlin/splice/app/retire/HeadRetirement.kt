@@ -8,7 +8,7 @@
 // gateway the way `splice claude door` does, and its backup records the lane it was on. Restoring puts back every
 // entry exactly as it was, and refuses a head where a path changed since, naming it. Not HeadRemoval, which drops a
 // head from splice.toml.
-package splice.app.head
+package splice.app.retire
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -19,6 +19,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.app.desktop.lane.HEAD_LANE
+import splice.app.head.HeadRemovalFacts
+import splice.app.head.WrapperLinks
 import splice.client.HeadFolderLayout
 import splice.core.config.StatePaths
 import splice.core.retired.CommandRetirement
@@ -29,22 +31,6 @@ import splice.sessions.registry.SessionRecord
 import java.io.IOException
 import java.nio.file.Path
 import java.time.LocalDateTime
-
-/** One head as retiring reads it: its [key], the [command] a person types, its own Claude [folder] (null for the head
- *  `claude` runs on, which has none), the [selector] its pinned model runs as in `claude`, and whether its command
- *  starts on the Splice [gateway] (LaunchSpec.startsOnGateway). */
-internal data class RetiringHead(
-    val key: String,
-    val command: String,
-    val folder: Path?,
-    val selector: String?,
-    val gateway: Boolean,
-)
-
-/** The launchable heads, read at each ask. */
-internal fun interface RetiringHeads {
-    operator fun invoke(): List<RetiringHead>
-}
 
 internal class HeadRetirement(
     private val heads: RetiringHeads,
@@ -198,19 +184,4 @@ internal class HeadRetirement(
         put("ok", ok)
         putJsonArray("said") { said.forEach { add(JsonPrimitive(it)) } }
     }
-}
-
-/** The lane `claude` is on, as retiring the head `claude` runs on moves it. */
-internal interface RetiringLane {
-    /** The lane now (door or head), or null before the daemon has opened the Splice gateway. */
-    fun lane(): String?
-
-    /** `claude` put on the Splice gateway as `splice claude door` puts it, said. */
-    suspend fun toGateway(): String
-
-    /** `claude` put back on its head as `splice claude head` puts it, said. */
-    suspend fun toHead(): String
-
-    /** The selectors [key]'s models run as in `claude`'s list, as `splice claude --json` lists them. */
-    suspend fun selectors(key: String): List<String>
 }

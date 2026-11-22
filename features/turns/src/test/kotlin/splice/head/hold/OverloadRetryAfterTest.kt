@@ -24,7 +24,7 @@ internal class OverloadRetryAfterTest {
             status = 529,
             body = """{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}""",
             headers = mapOf("retry-after" to "6.2"),
-            owner = LoginOwner.HEAD,
+            owner = LoginOwner.SPLICE,
             sent = SentKey { _, _ -> false },
             answeredAt = now,
         )

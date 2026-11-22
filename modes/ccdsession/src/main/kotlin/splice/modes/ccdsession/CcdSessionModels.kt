@@ -1,39 +1,23 @@
-// NEW: ccd-session mode data structures and JSON codecs (modes/ccdsession).
+// NEW: ccd-session mode data structures and bounds (modes/ccdsession).
 package splice.modes.ccdsession
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import splice.core.util.JsonScalars
-
 // why: matches the Desktop suggested-task queue cap so pending chips never grow unbounded per session.
-internal const val MAX_PENDING_TASKS = 20
+internal const val MAX_PENDING_SUGGESTIONS = 20
 
 // why: keeps the last 100 resolved task records per session (contract with the Eli bridge & dismiss_task).
 internal const val MAX_RESOLVED_TASKS = 100
 
-// why: bounds stored suggestion fields to the exact Desktop schema limits.
+// why: matches the Desktop schema maximum length for a suggested task title.
 internal const val MAX_TITLE_CHARS = 200
-internal const val MAX_TLDR_CHARS = 2000
-internal const val MAX_PROMPT_CHARS = 32_000
-internal const val MAX_LIST_TITLE_CHARS = 120
 
-private const val F_TASK_ID = "task_id"
-private const val F_SESSION_ID = "session_id"
-private const val F_TITLE = "title"
-private const val F_TLDR = "tldr"
-private const val F_PROMPT = "prompt"
-private const val F_CWD = "cwd"
-private const val F_STATE = "state"
-private const val F_CREATED_AT = "created_at"
-private const val F_STARTED_SESSION_ID = "started_session_id"
-private const val F_CLAIMED_BY = "claimed_by"
-private const val F_SUMMARY = "summary"
+// why: matches the Desktop schema maximum length for a suggested task tldr summary.
+internal const val MAX_TLDR_CHARS = 2000
+
+// why: matches the Desktop schema maximum length for a suggested task prompt body.
+internal const val MAX_PROMPT_CHARS = 32_000
+
+// why: caps each pending item's title in spawn_task's summary line so tool output stays readable.
+internal const val MAX_LIST_TITLE_CHARS = 120
 
 internal enum class TaskState(val wire: String) {
     PENDING("pending"),
@@ -78,110 +62,3 @@ internal data class GlobalIndex(
     val sessions: LinkedHashSet<String> = LinkedHashSet(),
     val taskToSession: LinkedHashMap<String, String> = LinkedHashMap(),
 )
-
-internal class CcdSessionCodec {
-    private val json = Json { ignoreUnknownKeys = true }
-
-    fun taskJson(task: SuggestedTask): JsonObject = buildJsonObject {
-        put(F_TASK_ID, task.taskId)
-        put(F_SESSION_ID, task.sessionId)
-        put(F_TITLE, task.content.title)
-        put(F_TLDR, task.content.tldr)
-        put(F_PROMPT, task.content.prompt)
-        put(F_CWD, task.content.cwd?.let(::JsonPrimitive) ?: JsonNull)
-        put(F_STATE, task.state.wire)
-        put(F_CREATED_AT, task.createdAt)
-        put(F_STARTED_SESSION_ID, task.startedSessionId?.let(::JsonPrimitive) ?: JsonNull)
-    }
-
-    fun chapterJson(chapter: ChapterMark): JsonObject = buildJsonObject {
-        put(F_SESSION_ID, chapter.sessionId)
-        put(F_TITLE, chapter.title)
-        put(F_SUMMARY, chapter.summary?.let(::JsonPrimitive) ?: JsonNull)
-        put(F_CREATED_AT, chapter.createdAt)
-    }
-
-    fun encodeBucket(bucket: SessionBucket): String = buildJsonObject {
-        put("active", buildJsonArray { bucket.active.forEach { add(encodeStoredTask(it)) } })
-        put("resolved", buildJsonArray { bucket.resolved.forEach { add(encodeStoredTask(it)) } })
-        put("chapters", buildJsonArray { bucket.chapters.forEach { add(chapterJson(it)) } })
-    }.toString()
-
-    fun decodeBucket(raw: String?): SessionBucket {
-        val obj = raw?.let { JsonScalars.objectOrNull(json, it) } ?: return SessionBucket()
-        val active = decodeTasks(obj["active"] as? JsonArray)
-        val resolved = decodeTasks(obj["resolved"] as? JsonArray)
-        val chapters = decodeChapters(obj["chapters"] as? JsonArray)
-        return SessionBucket(active.toMutableList(), resolved.toMutableList(), chapters.toMutableList())
-    }
-
-    fun encodeIndex(index: GlobalIndex): String = buildJsonObject {
-        put("sessions", buildJsonArray { index.sessions.forEach { add(JsonPrimitive(it)) } })
-        put(
-            "tasks",
-            buildJsonObject {
-                index.taskToSession.forEach { (id, session) -> put(id, session) }
-            },
-        )
-    }.toString()
-
-    fun decodeIndex(raw: String?): GlobalIndex {
-        val obj = raw?.let { JsonScalars.objectOrNull(json, it) } ?: return GlobalIndex()
-        val sessions = LinkedHashSet<String>()
-        (obj["sessions"] as? JsonArray)?.forEach { elem ->
-            JsonScalars.str(elem)?.takeIf(String::isNotBlank)?.let(sessions::add)
-        }
-        val map = LinkedHashMap<String, String>()
-        (obj["tasks"] as? JsonObject)?.forEach { (k, v) ->
-            JsonScalars.str(v)?.takeIf(String::isNotBlank)?.let { map[k] = it }
-        }
-        return GlobalIndex(sessions, map)
-    }
-
-    private fun encodeStoredTask(task: SuggestedTask): JsonObject = buildJsonObject {
-        put(F_TASK_ID, task.taskId)
-        put(F_SESSION_ID, task.sessionId)
-        put(F_TITLE, task.content.title)
-        put(F_TLDR, task.content.tldr)
-        put(F_PROMPT, task.content.prompt)
-        task.content.cwd?.let { put(F_CWD, it) }
-        put(F_STATE, task.state.wire)
-        put(F_CREATED_AT, task.createdAt)
-        task.startedSessionId?.let { put(F_STARTED_SESSION_ID, it) }
-        task.claimedBy?.let { put(F_CLAIMED_BY, it) }
-    }
-
-    private fun decodeTasks(array: JsonArray?): List<SuggestedTask> = array.orEmpty().mapNotNull { elem ->
-        val obj = elem as? JsonObject ?: return@mapNotNull null
-        val id = JsonScalars.str(obj, F_TASK_ID) ?: return@mapNotNull null
-        val sessionId = JsonScalars.str(obj, F_SESSION_ID) ?: return@mapNotNull null
-        val state = TaskState.entries.firstOrNull { it.wire == JsonScalars.str(obj, F_STATE) } ?: TaskState.PENDING
-        val content = TaskContent(
-            title = JsonScalars.str(obj, F_TITLE).orEmpty(),
-            tldr = JsonScalars.str(obj, F_TLDR).orEmpty(),
-            prompt = JsonScalars.str(obj, F_PROMPT).orEmpty(),
-            cwd = JsonScalars.str(obj, F_CWD),
-        )
-        SuggestedTask(
-            taskId = id,
-            sessionId = sessionId,
-            content = content,
-            state = state,
-            createdAt = JsonScalars.str(obj, F_CREATED_AT).orEmpty(),
-            startedSessionId = JsonScalars.str(obj, F_STARTED_SESSION_ID),
-            claimedBy = JsonScalars.str(obj, F_CLAIMED_BY),
-        )
-    }
-
-    private fun decodeChapters(array: JsonArray?): List<ChapterMark> = array.orEmpty().mapNotNull { elem ->
-        val obj = elem as? JsonObject ?: return@mapNotNull null
-        val sessionId = JsonScalars.str(obj, F_SESSION_ID) ?: return@mapNotNull null
-        val title = JsonScalars.str(obj, F_TITLE) ?: return@mapNotNull null
-        ChapterMark(
-            sessionId = sessionId,
-            title = title,
-            summary = JsonScalars.str(obj, F_SUMMARY),
-            createdAt = JsonScalars.str(obj, F_CREATED_AT).orEmpty(),
-        )
-    }
-}

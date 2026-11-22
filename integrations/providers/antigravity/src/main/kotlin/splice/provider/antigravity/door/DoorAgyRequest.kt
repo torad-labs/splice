@@ -13,24 +13,23 @@ import splice.core.util.JsonWire
 import java.security.MessageDigest
 import java.util.UUID
 
+/** Message count and opening prompt prefix (system/Project instructions + prior history) for [DoorAgyAsk]. */
+internal data class DoorAgyTranscript(
+    val messageCount: Int,
+    val openingPrefix: String?,
+)
+
 /** Parsed view of an Anthropic `/v1/messages` request handled by [AntigravityDoorEngine]. */
 internal data class DoorAgyAsk(
     val model: String,
     val effort: String?,
     val tools: List<AnthropicToolDef>,
-    val messages: List<JsonObject>,
+    val transcript: DoorAgyTranscript,
     val conversationKey: String,
     val trailingToolResults: List<BridgedToolResult>,
     val latestUserContent: JsonElement?,
 ) {
     val toolNames: List<String> get() = tools.map { it.name }
-
-    /** Builds a lossy transcript prefix from messages before the latest user turn when opening a fresh session. */
-    fun historyPrefix(): String? {
-        if (messages.size <= 1) return null
-        val earlier = messages.dropLast(1).mapNotNull(DoorAgyRequestParser::formatMessage)
-        return earlier.takeIf { it.isNotEmpty() }?.let { HISTORY_PREFIX + it.joinToString("\n\n") }
-    }
 }
 
 /** Guardrail distinguishing Claude Desktop Chat from Claude Code CLI agent loops (desktop-antigravity.md). */
@@ -53,6 +52,7 @@ public object DoorAgyGuard {
 internal object DoorAgyRequestParser {
     fun parse(request: JsonObject, upstreamModel: String, sessionHint: String? = null): DoorAgyAsk {
         val messages = (request["messages"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+        val systemPrompt = parseSystemPrompt(request["system"])
         val tools = parseTools(request["tools"] as? JsonArray)
         val effort = parseEffort(request)
         val last = messages.lastOrNull()
@@ -64,11 +64,30 @@ internal object DoorAgyRequestParser {
             model = upstreamModel,
             effort = effort,
             tools = tools,
-            messages = messages,
+            transcript = DoorAgyTranscript(messages.size, buildOpeningPrefix(systemPrompt, messages)),
             conversationKey = conversationKey,
             trailingToolResults = trailingToolResults,
             latestUserContent = latestUserContent,
         )
+    }
+
+    private fun buildOpeningPrefix(systemPrompt: String?, messages: List<JsonObject>): String? {
+        val parts = mutableListOf<String>()
+        systemPrompt?.takeIf { it.isNotBlank() }?.let { parts += SYSTEM_PREFIX + it }
+        if (messages.size > 1) {
+            val earlier = messages.dropLast(1).mapNotNull(::formatMessage)
+            if (earlier.isNotEmpty()) parts += HISTORY_PREFIX + earlier.joinToString("\n\n")
+        }
+        return parts.takeIf { it.isNotEmpty() }?.joinToString("\n\n")
+    }
+
+    private fun parseSystemPrompt(raw: JsonElement?): String? = when (raw) {
+        is JsonPrimitive -> JsonScalars.str(raw)?.trim()?.takeIf { it.isNotEmpty() }
+        is JsonArray -> raw.mapNotNull { item ->
+            val obj = item as? JsonObject ?: return@mapNotNull null
+            if (JsonScalars.str(obj, ASK_TYPE) == ASK_TEXT) JsonScalars.str(obj, ASK_TEXT)?.trim() else null
+        }.filter { it.isNotEmpty() }.joinToString("\n\n").takeIf { it.isNotEmpty() }
+        else -> null
     }
 
     internal fun formatMessage(message: JsonObject): String? {
@@ -189,6 +208,7 @@ private const val ASK_ASSISTANT = "assistant"
 private const val ASK_TEXT = "text"
 private const val BLOCK_TOOL_USE = "tool_use"
 private const val BLOCK_TOOL_RESULT = "tool_result"
+private const val SYSTEM_PREFIX = "System instructions:\n"
 private const val HISTORY_PREFIX = "Conversation so far:\n\n"
 
 // why: 128-bit prefix of SHA-256 matches prompt_cache_key's 32-hex-char conversation key width.

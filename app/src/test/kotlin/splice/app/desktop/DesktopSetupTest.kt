@@ -106,9 +106,15 @@ class DesktopSetupTest {
         val claude = Files.createDirectories(tmp.resolve("home/.claude/plugins")).parent
         Files.writeString(
             claude.resolve("settings.json"),
-            """{"effortLevel":"xhigh","permissions":{"defaultMode":"acceptEdits","deny":["Bash"]},""" +
-                """"promptSuggestionEnabled":false,""" +
+            """{"effortLevel":"medium","permissions":{"defaultMode":"acceptEdits","deny":["Bash"]},""" +
+                """"promptSuggestionEnabled":true,""" +
                 """"extraKnownMarketplaces":{"extra":{"source":{"source":"github","repo":"acme/extra"}}}}""",
+        )
+        Files.writeString(
+            claude.resolve("settings.local.json"),
+            """{"effortLevel":"xhigh","promptSuggestionEnabled":false,""" +
+                """"extraKnownMarketplaces":{"local-extra":{"source":""" +
+                """{"source":"git","url":"https://git.acme/p.git"}}}}""",
         )
         Files.writeString(
             claude.resolve("plugins/known_marketplaces.json"),
@@ -120,7 +126,7 @@ class DesktopSetupTest {
 
         app.putIn(door)
         val config = read(library.resolve("${records.get().appId}.json"))
-        assertEquals("xhigh", config.getValue("defaultModelEffort").jsonPrimitive.content, "their effort")
+        assertEquals("xhigh", config.getValue("defaultModelEffort").jsonPrimitive.content, "settings.local wins")
         assertEquals("acceptEdits", config.getValue("codeDefaultPermissionMode").jsonPrimitive.content)
         assertEquals("false", config.getValue("promptSuggestionEnabled").jsonPrimitive.content)
         assertEquals("true", config.getValue("projectsEnabled").jsonPrimitive.content)
@@ -129,9 +135,10 @@ class DesktopSetupTest {
         assertEquals(
             """[{"source":"github","repo":"anthropics/claude-plugins-official"},""" +
                 """{"source":"github","repo":"acme/tools","ref":"v2"},""" +
-                """{"source":"github","repo":"acme/extra"}]""",
+                """{"source":"github","repo":"acme/extra"},""" +
+                """{"source":"git","url":"https://git.acme/p.git"}]""",
             config.getValue("allowedPluginMarketplaces").toString(),
-            "the default's marketplace once, then theirs from known_marketplaces and extraKnownMarketplaces",
+            "the default's marketplace once, then theirs from known_marketplaces and settings(.local)",
         )
         assertEquals("""["*"]""", config.getValue("coworkEgressAllowedHosts").toString(), "the default policy is in it")
         assertEquals(door, config.getValue("inferenceGatewayBaseUrl").jsonPrimitive.content)

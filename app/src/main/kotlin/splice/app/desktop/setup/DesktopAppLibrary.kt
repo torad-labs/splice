@@ -101,7 +101,7 @@ internal class DesktopAppLibrary(
      *  anything was written. A library that applies none, or one that points elsewhere, is left as it is: this never
      *  applies a configuration, never changes a key one sets, and never opens the managed file. Desktop reads it at
      *  its next launch. */
-    fun publish(door: String, models: JsonArray): Boolean {
+    fun publish(door: String, models: JsonArray? = null): Boolean {
         val id = files.read(config.meta)?.let(config::applied) ?: return false
         val file = config.file(id).normalize()
         val current = file.takeIf { it.parent == config.library.normalize() }
@@ -109,7 +109,8 @@ internal class DesktopAppLibrary(
             ?.let(files::read)
             ?.takeIf { config.door(it)?.trimEnd('/') == door.trimEnd('/') } ?: return false
         syncProfileBestEffort()
-        val updated = config.withPolicy(config.withModels(current, models), policy())
+        val withModels = if (models != null) config.withModels(current, models) else current
+        val updated = config.withPolicy(withModels, policy())
         return if (updated == current) {
             false
         } else {

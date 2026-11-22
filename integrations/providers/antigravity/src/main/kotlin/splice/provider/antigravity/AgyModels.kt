@@ -1,7 +1,8 @@
 // NEW: desktop-antigravity (docs/specs/desktop-antigravity.md, decision 1). Asks `agy acp` what it offers the account
-// signed in to it: `initialize`, then `session/new` in a scratch folder, which answers with the models and their
-// levels, then `session/close`. No prompt is sent, so nothing is spent from the account. The context window comes from
-// the `usage_update` agy sends after a session opens. What agy offers comes back as the catalog splice lists.
+// signed in to it: the open [AgyOpener] shares with Desktop's sessions — `initialize`, then `session/new` in a scratch
+// folder ([AgyScratch]) — answers with the models and their levels, then `session/close`. No prompt is sent, so
+// nothing is spent from the account. The context window comes from the `usage_update` agy sends after a session
+// opens. What agy offers comes back as the catalog splice lists.
 package splice.provider.antigravity
 
 import kotlinx.coroutines.CoroutineDispatcher
@@ -14,7 +15,6 @@ import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import java.io.IOException
-import java.nio.file.Files
 import java.nio.file.Path
 
 /** What asking agy came to. */
@@ -47,15 +47,12 @@ public class AgyModels(
     public suspend fun read(): AgyRead = withContext(io) { readOn() }
 
     private suspend fun readOn(): AgyRead {
-        val scratch = try {
-            Files.createTempDirectory("splice-agy-")
-        } catch (noFolder: IOException) {
-            return AgyRead.Failed("agy's scratch folder could not be made (${SafeFailureText.render(noFolder)})")
-        }
+        val scratch = AgyFolders().make()
+        val folder = scratch.path ?: return AgyRead.Failed(scratch.reason)
         try {
-            return readIn(scratch)
+            return readIn(folder)
         } finally {
-            if (!scratch.toFile().deleteRecursively()) log("[antigravity] $scratch was not removed\n")
+            scratch.remove(log)
         }
     }
 
@@ -74,20 +71,17 @@ public class AgyModels(
     }
 
     private suspend fun ask(agy: AcpConnection, folder: String): AgyRead {
-        val hello = answer(agy, "initialize", requests.initialize(), AGY_ANSWER_MS)
-        val opened = if (hello is AcpAnswer.Result) {
-            answer(agy, "session/new", requests.newSession(folder), AGY_ANSWER_MS)
-        } else {
-            hello
-        }
-        if (opened !is AcpAnswer.Result) return refusal(opened)
-        val session = JsonScalars.str(opened.result, "sessionId")
+        val opens = AgyOpener(agy, folder, AGY_ANSWER_MS)
+        val hello = opens.hello()
+        if (hello !is AcpAnswer.Result) return refusal(hello)
+        val (session, answered) = opens.opened(null)
+        if (answered !is AcpAnswer.Result) return refusal(answered)
         val window = withTimeoutOrNull(AGY_SHORT_MS) { windowOf(agy, session) }
             ?: AGY_WINDOW.also { log("[antigravity] agy reported no context window; every model gets $it tokens\n") }
         if (session != null) {
             answer(agy, "session/close", requests.sessionOf(session), AGY_SHORT_MS)
         }
-        val roster = reader.of(opened.result, window)
+        val roster = reader.of(answered.result, window)
         return catalogs.of(roster)?.let { AgyRead.Offered(it) }
             ?: AgyRead.Failed("agy offers no listable model (${roster.models.size} listed; Claude ids are left out)")
     }
@@ -109,12 +103,9 @@ public class AgyModels(
         return null
     }
 
-    private fun refusal(answer: AcpAnswer): AgyRead = when (answer) {
-        is AcpAnswer.Refused ->
-            if (answer.code == AUTH_REQUIRED) AgyRead.SignedOut else AgyRead.Failed("agy: ${answer.message}")
-        AcpAnswer.Ended -> AgyRead.Failed("agy ended before it answered")
-        is AcpAnswer.Result -> AgyRead.Failed("agy answered out of turn")
-    }
+    /** What agy's answer, which gave no session, reads as here; a signed-out account is its own outcome. */
+    private fun refusal(answer: AcpAnswer): AgyRead =
+        answer.spoken("agy:")?.let { AgyRead.Failed(it) } ?: AgyRead.SignedOut
 }
 
 /** agy as its installer puts it on PATH, run as an ACP server over stdio. */

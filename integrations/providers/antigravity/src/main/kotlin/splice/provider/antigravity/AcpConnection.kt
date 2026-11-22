@@ -40,6 +40,16 @@ internal sealed class AcpAnswer {
 
     /** The agent ended, or its input closed, before it answered. */
     data object Ended : AcpAnswer()
+
+    /** What this answer, which gave no session, says to whoever asked: its error message led in with
+     *  [refusedLeadIn], or why there came no answer at all. Null while the refusal was only that agy is signed out,
+     *  which each who asks words its own way ([AgyModels] reads it as SignedOut, [AgyOpener] tells the person). Kept
+     *  here once because both worded it themselves and drifted apart as they went. */
+    fun spoken(refusedLeadIn: String): String? = when (this) {
+        is Refused -> if (code == AUTH_REQUIRED) null else "$refusedLeadIn $message"
+        Ended -> "agy ended before it answered"
+        is Result -> "agy answered out of turn"
+    }
 }
 
 /** The agent started from [command] in [workDir], its standard error written to [errors], its output read on [io] in

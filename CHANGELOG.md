@@ -3,6 +3,11 @@
 ## Unreleased: a provider is served with no head, Claude Desktop sets itself up, and one model catalog
 
 ### Highlights
+- **Sharing is a machine's door alone.** `splice share on` puts this machine's door on its LAN and prints the one
+  `splice remote add http://<box>` line, with how many models it serves and the variables a Claude Code without splice
+  runs on it with. An address naming one command, or picking a login or models, is refused: the door serves every model
+  the machine has. A `[remote.<command>]` left from the per-command days still loads, and its launch prints the door's
+  add.
 - **A provider is served with no head.** Every provider in `splice.toml` is assembled for the gateway from its own
   table, so the door, the door on your network, a team's door, `splice status` and `splice doctor` all read
   providers, and a `splice.toml` with no `[heads.*]` block serves all three provider formats. A provider carries

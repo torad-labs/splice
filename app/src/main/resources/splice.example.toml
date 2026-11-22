@@ -58,18 +58,18 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # that a peer must not be able to pose as. Each must be a peer name, or boot refuses. Read at the daemon's start.
 # reserved_peer_names = ["inbox"]
 
-# ── LAN share: this machine's heads, run from your other machines (docs/specs/lan-share.md) ──
-# `splice share on` writes this table and restarts; `splice share status` prints each command's address. Sharing opens
-# one port to this machine's LAN with no login, token or encryption: any device on the LAN can then run these heads.
+# ── LAN share: this machine's door, run from your other machines (docs/specs/door-network.md) ──
+# `splice share on` writes this table and restarts; `splice share status` prints the door and the one add that puts
+# another machine's `claude` on it. Sharing opens one port to this machine's LAN with no login, token or encryption:
+# any device on the LAN can then run this machine's door.
 # [share]
 # enabled = true
 # port = 3097
 # hostnames = ["box.example.home"]   # names beyond the host name and it under .lan, .local, .home and .internal
 #
-# On a machine that runs another's heads, `splice remote add <address>` writes one line per command and links it.
-# auth= picks the server's login its sessions run on, models= the only models it is shown.
-# [remote.claudex]
-# url = "http://devbox.lan:3097/claudex?auth=work&models=gpt-5.6-sol"
+# On a machine that runs another's door, `splice remote add http://devbox.lan:3097` writes one line naming it.
+# [remote.claude]
+# url = "http://devbox.lan:3097/door"
 
 # ── compaction instructions: your text after Claude Code's own summarizer prompt ──
 # Most specific scope wins and REPLACES the others (project+model > project > model > global);

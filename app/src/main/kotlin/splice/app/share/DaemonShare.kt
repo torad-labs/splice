@@ -5,13 +5,11 @@
 // and leaves the rest of the daemon serving.
 package splice.app.share
 
-import splice.accounts.pool.HeadAccountPinSource
 import splice.app.auth.claude.OWN_SIGN_IN_LABEL
 import splice.app.control.ManagedHead
 import splice.client.ClaudePolicy
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
-import splice.core.config.TurnKey
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
@@ -34,8 +32,6 @@ import java.nio.file.Path
 
 internal class DaemonShare(
     private val topology: Topology,
-    private val config: ConfigService,
-    private val turnKey: TurnKey,
     private val log: LogSink,
     /** splice's state folder, where the first LAN-share build kept the machines that joined this one. */
     private val stateDir: Path,
@@ -52,13 +48,11 @@ internal class DaemonShare(
         return RemoteLaunches(topology.remote, trees, policy, ProcessDispatchers().io(), logins, mark)
     }
 
-    /** Opens the listener when `[share]` turns it on, offering [heads], [controlPort]'s statusline and the [door]
-     *  (door-network). */
-    fun open(heads: Map<String, ManagedHead>, controlPort: Int, door: ShareDoor? = null) {
+    /** Opens the listener when `[share]` turns it on, offering this machine's [door] (door-network) and nothing else. */
+    fun open(door: ShareDoor? = null) {
         forgetJoins()
         if (!topology.share.enabled) return
-        val offered = ManagedSharedHeads(heads, topology, config, ShareMachine(log).name())
-        val opened = ShareListener(topology.share, offered, turnKey, controlPort, ProcessDispatchers().io(), log, door)
+        val opened = ShareListener(topology.share, ShareMachine(log).name(), ProcessDispatchers().io(), log, door)
         Cancellables.runCatchingBestEffort { opened.start() }
             .onSuccess { listener = opened }
             .onFailure { failure ->
@@ -143,9 +137,6 @@ internal class ManagedSharedHeads(
 
         override fun logins(): List<String> =
             head.authSurface.accountPool?.view(null)?.accounts?.map { it.label }.orEmpty()
-
-        override fun pin(login: String, session: String): Boolean =
-            (head.authSurface.accountPool as? HeadAccountPinSource)?.pin(login, session) ?: false
 
         override fun maxRequestBytes(): Int = config.getConfig(key).maxRequestBytes
 

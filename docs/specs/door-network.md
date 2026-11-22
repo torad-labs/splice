@@ -25,7 +25,7 @@ per head; and the tailnet is part of "the network", which reverses the Oct 24 "T
 - On the box itself the same door answers at `http://127.0.0.1:<control_port>/door`, for its own `claude` and its
   own Claude Desktop, each with its key. A call at the share listener that presents one of those keys is answered
   as that caller.
-- A machine that answers no door (an older splice) is added as before, one command per head.
+- A machine that answers no door (an older splice) is refused with the door's add, never linked command by command.
 
 ## Decisions
 
@@ -63,11 +63,12 @@ builds the launch `claude` on the door has here (`DoorSession`), with the box's 
 is asked before this machine's own door and head. A box that can't be reached, or refuses, is said before Claude Code
 starts, naming it and the reason.
 
-### 5. Retired
+### 5. The per-command share is removed
 
-`splice share status` lists each command's own address as deprecated, and `splice remote add <box>` no longer links every
-command of a box that serves a door. Nothing is removed: an address naming one command (`http://<box>:3097/claudex`)
-still works.
+`splice share status` prints the door and the one add that puts another machine's `claude` on it. Any other first path
+segment on the share listener is a 404 saying the machine shares its door alone, with the add to run. `splice remote
+add` of one command's address is refused, and a `[remote.<command>]` left from the per-command days still loads: its
+launch reaches the box and prints that 404.
 
 ## Not in this change
 

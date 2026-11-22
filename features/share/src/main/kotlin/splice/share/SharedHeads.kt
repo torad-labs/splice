@@ -28,12 +28,8 @@ public interface SharedHead {
      *  for a head that launches nothing. What a server's profile tells a laptop (server mode, F7). */
     public fun windows(): Map<String, Long>
 
-    /** Its logins, by label: what an address's `auth=` may name. */
+    /** Its logins, by label: what a server's profile tells a laptop it serves. */
     public fun logins(): List<String>
-
-    /** Pins [session] to [login] through the head's own pool, as the Accounts page's Pin does; false when the head
-     *  has no login of that label. */
-    public fun pin(login: String, session: String): Boolean
 
     /** The most a turn's body may hold, as this head reads it itself. */
     public fun maxRequestBytes(): Int

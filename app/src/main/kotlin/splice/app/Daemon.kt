@@ -287,7 +287,7 @@ public class Daemon(
     private val antigravity = AntigravityJoin(config, log)
 
     /** LAN share: the commands this machine runs on another's heads, and the listener that offers its own. */
-    private val share = DaemonShare(topology, config, TurnKey(mgmtKey), log, statePaths.stateDir)
+    private val share = DaemonShare(topology, log, statePaths.stateDir)
 
     /** Server mode: a team's keys and the listener that answers them, when splice.toml has a `[server]`. */
     private val server = DaemonServer(
@@ -368,9 +368,9 @@ public class Daemon(
         // The share listener opens before the control plane too: `splice share on` restarts, waits for /health, and
         // reads the share port at once.
         // door-network: it answers the door too, which opens below, so a turn that comes first is told to wait.
-        share.open(heads, controlPort, desktop.network)
+        share.open(desktop.network)
         // And the server listener, with its keys: `splice server key create` asks the control plane for them.
-        server.open(heads, controlPort, headServerFactory.served, desktop.team)
+        server.open(heads, headServerFactory.served, desktop.team)
         controlPlane.serverMode = server
         // The desktop door, on the control port, choosing among these heads.
         desktop.open(providers, antigravity, controlPort, controlPlane.modelRosters)

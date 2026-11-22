@@ -37,7 +37,7 @@ import splice.core.model.ModelEntry
 import splice.core.model.ReadableNames
 import splice.core.topology.Topology
 import splice.core.util.LogSink
-import splice.provider.antigravity.AntigravityDoorEngine
+import splice.provider.antigravity.door.AntigravityDoorEngine
 import java.nio.file.Files
 import java.nio.file.Path
 

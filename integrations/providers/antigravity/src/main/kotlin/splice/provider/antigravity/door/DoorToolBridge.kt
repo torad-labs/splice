@@ -3,23 +3,22 @@
 // `tools/call`, the HTTP handler suspends on a CompletableFuture and emits the call to the active
 // HTTP turn so Splice ends the turn with `tool_use`. When Desktop Chat follows up with
 // `tool_result`, `supplyResults` completes the future and agy seamlessly continues.
-package splice.provider.antigravity
+package splice.provider.antigravity.door
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import kotlinx.serialization.json.putJsonObject
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.wire.HttpStatus
+import splice.provider.antigravity.MCP_WIRE_PREFIX
+import splice.provider.antigravity.McpBridgeWire
 import java.net.InetSocketAddress
 import java.nio.charset.StandardCharsets
 import java.security.SecureRandom
@@ -198,62 +197,14 @@ internal class DoorToolBridge : AutoCloseable {
     }
 }
 
-private object DoorToolRpc {
-    fun initialize(params: JsonObject): JsonObject {
-        val version = JsonScalars.str(params, "protocolVersion") ?: DEFAULT_MCP_PROTOCOL
-        return buildJsonObject {
-            put("protocolVersion", version)
-            putJsonObject("capabilities") { putJsonObject("tools") {} }
-            putJsonObject("serverInfo") {
-                put("name", "splice-chat-tools")
-                put("version", "1.0.0")
-            }
-        }
-    }
-
-    fun toolsList(tools: List<AnthropicToolDef>): JsonObject = buildJsonObject {
-        put(
-            "tools",
-            buildJsonArray {
-                tools.forEach { tool ->
-                    add(
-                        buildJsonObject {
-                            put("name", tool.name)
-                            if (tool.description.isNotEmpty()) put("description", tool.description)
-                            put("inputSchema", tool.inputSchema)
-                        },
-                    )
-                }
-            },
-        )
-    }
-
-    fun toolContent(text: String, isError: Boolean): JsonObject = buildJsonObject {
-        put(
-            "content",
-            JsonArray(
-                listOf(
-                    buildJsonObject {
-                        put("type", "text")
-                        put("text", text)
-                    },
-                ),
-            ),
-        )
-        if (isError) put("isError", true)
-    }
-
-    fun result(rpcId: JsonElement, result: JsonObject): JsonObject = buildJsonObject {
-        put("jsonrpc", "2.0")
-        put("id", rpcId)
-        put("result", result)
-    }
-}
-
 internal const val CHAT_MCP_SERVER: String = "chat"
 internal const val CHAT_MCP_TOOL_PREFIX: String = "mcp_chat_"
 
+// why: 256-bit random bearer token per loopback MCP bridge instance prevents local cross-process probing.
 private const val DOOR_BRIDGE_TOKEN_BYTES = 32
+
+// why: matches Anthropic's 24-hex-character `toolu_` identifier length expected by Desktop Chat.
 private const val TOOL_ID_CHARS = 24
+
+// why: bounds how long a paused loopback MCP tool call waits for Desktop Chat to return a tool_result.
 private const val TOOL_WAIT_SECONDS = 300L
-private const val DEFAULT_MCP_PROTOCOL = "2024-11-05"

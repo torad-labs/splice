@@ -31,7 +31,7 @@ import splice.core.util.JsonWire
 import splice.core.util.WallClock
 import splice.core.wire.HttpStatus
 import splice.http.JsonReply
-import splice.provider.antigravity.DoorAgyGuard
+import splice.provider.antigravity.door.DoorAgyGuard
 import splice.share.CappedBodies
 import splice.share.RefusalVoice
 

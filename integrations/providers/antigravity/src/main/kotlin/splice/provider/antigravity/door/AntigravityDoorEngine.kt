@@ -2,7 +2,7 @@
 // Chat requests arriving at Splice's HTTP `/door/v1/messages`. Keeps conversations warm across
 // turns (including tool_use -> tool_result pause-and-resume), evicts idle sessions, and closes
 // every child process cleanly on daemon shutdown.
-package splice.provider.antigravity
+package splice.provider.antigravity.door
 
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -11,6 +11,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.LogSink
 import splice.core.util.WallClock
+import splice.provider.antigravity.agyCommand
 import java.util.concurrent.ConcurrentHashMap
 
 /** Streaming output sink for one HTTP turn driven by [AntigravityDoorEngine]. */
@@ -112,5 +113,8 @@ public class AntigravityDoorEngine(
     }
 }
 
+// why: bounds concurrent child `agy acp` processes kept warm across active Desktop Chat tabs.
 private const val DEFAULT_MAX_SESSIONS = 8
+
+// why: evicts idle chat sessions after 10 minutes so dormant conversations do not leak agy processes.
 private const val DEFAULT_IDLE_TTL_MS = 10 * 60_000L

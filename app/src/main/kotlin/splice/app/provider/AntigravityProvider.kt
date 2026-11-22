@@ -7,42 +7,22 @@
 // tools, never Claude Code CLI).
 package splice.app.provider
 
-import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import splice.core.client.SESSION_HEADER
 import splice.core.config.ConfigService
-import splice.core.failure.FailureCause
-import splice.core.failure.HeadVoice
-import splice.core.failure.ProviderWordsFilter
-import splice.core.failure.ServerFault
-import splice.core.index.WireBlockIndex
 import splice.core.model.ModelCatalog
-import splice.core.turn.Usage
-import splice.core.turn.UsageField
 import splice.core.usage.QuotaFull
-import splice.core.util.JsonScalars
-import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.core.wire.HttpStatus
 import splice.head.GatewayTurn
-import splice.head.wire.DirectAnthropicTurn
-import splice.head.wire.DirectTurnOutcome
-import splice.http.JsonReply
 import splice.provider.antigravity.ANTIGRAVITY_KEY
 import splice.provider.antigravity.AgyModels
 import splice.provider.antigravity.AgyRead
-import splice.provider.antigravity.AntigravityDoorEngine
-import splice.provider.antigravity.DoorAgySink
-import splice.provider.antigravity.DoorAgyTurnResult
+import splice.provider.antigravity.door.AntigravityDoorEngine
 import splice.share.RefusalVoice
 import splice.upstream.Waiter
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.codemode.ProcessWaiter
-import splice.upstream.sse.WireSink
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
 
@@ -117,83 +97,20 @@ internal class AntigravityProvider(
     override val maxRequestBytes: Int get() = config.getConfig().maxRequestBytes
     override val requestReadTimeoutMs: Long get() = config.getConfig().requestReadTimeoutMs
     private val voice = RefusalVoice("splice: ")
-    private val headVoice = HeadVoice(ANTIGRAVITY_KEY, loginCommand = "agy acp --login")
-    private val directTurn = DirectAnthropicTurn(catalog, headVoice)
-    private val json = Json { ignoreUnknownKeys = true }
+    private val adapter = doorEngine?.let { AntigravityDoorAdapter(catalog, it) }
 
     override fun quotaFull(): QuotaFull? = null
 
     override suspend fun login(): ProviderLogin = ProviderLogin.Ready
 
     override suspend fun serve(call: ApplicationCall, turn: GatewayTurn) {
-        val engine = doorEngine ?: return voice.refuse(call, HttpStatus.BAD_REQUEST, DESKTOP_ONLY)
-        val body = JsonScalars.objectOrNull(json, turn.body.decodeToString())
-            ?: return voice.refuse(call, HttpStatus.BAD_REQUEST, "the request body is not a JSON object")
-        val upstreamModel = JsonScalars.str(body, "model").orEmpty()
-        val askedModel = turn.asked ?: upstreamModel
-        val stream = JsonScalars.str(body, "stream") == "true"
-        val sessionHint = call.request.headers[SESSION_HEADER]
-        directTurn.serve(call, askedModel, stream, turn.clientWindow) { wire ->
-            val adapter = WireSinkAdapter(wire)
-            when (val res = engine.serve(body, upstreamModel, adapter, sessionHint)) {
-                is DoorAgyTurnResult.Completed -> DirectTurnOutcome(
-                    hasToolUse = res.hasToolUse,
-                    incomplete = res.incomplete,
-                    usage = Usage(
-                        inputTokens = res.inputTokens,
-                        outputTokens = res.outputTokens,
-                        reported = UsageField.entries.toSet(),
-                    ),
-                )
-                is DoorAgyTurnResult.Failed -> DirectTurnOutcome(
-                    error = FailureCause.Provider.ServerError(
-                        ServerFault.BAD_GATEWAY,
-                        ProviderWordsFilter.of(res.message),
-                    ),
-                )
-            }
-        }
+        val active = adapter ?: return voice.refuse(call, HttpStatus.BAD_REQUEST, DESKTOP_ONLY)
+        active.serve(call, turn)
     }
 
     override suspend fun countTokens(call: ApplicationCall, turn: GatewayTurn) {
-        val estimate = (turn.body.size / CHARS_PER_TOKEN).coerceAtLeast(1)
-        val payload = buildJsonObject { put("input_tokens", estimate) }
-        JsonReply(HttpStatusCode.OK, JsonWire.string(payload)).send(call)
-    }
-
-    private class WireSinkAdapter(private val wire: WireSink) : DoorAgySink {
-        private var thinkingBlock: WireBlockIndex? = null
-        private var textBlock: WireBlockIndex? = null
-
-        override suspend fun onThinking(text: String) {
-            closeText()
-            val idx = thinkingBlock ?: wire.openThinking().also { thinkingBlock = it }
-            wire.thinkingDelta(idx, text)
-        }
-
-        override suspend fun onText(text: String) {
-            closeThinking()
-            val idx = textBlock ?: wire.openText().also { textBlock = it }
-            wire.textDelta(idx, text)
-        }
-
-        override suspend fun onToolUse(id: String, name: String, inputJson: String) {
-            closeThinking()
-            closeText()
-            val idx = wire.openTool(id, name)
-            if (inputJson.isNotEmpty()) wire.inputJsonDelta(idx, inputJson)
-            wire.closeBlock(idx)
-        }
-
-        private suspend fun closeThinking() {
-            thinkingBlock?.let { wire.closeBlock(it) }
-            thinkingBlock = null
-        }
-
-        private suspend fun closeText() {
-            textBlock?.let { wire.closeBlock(it) }
-            textBlock = null
-        }
+        val active = adapter ?: return voice.refuse(call, HttpStatus.BAD_REQUEST, DESKTOP_ONLY)
+        active.countTokens(call, turn)
     }
 }
 
@@ -205,7 +122,5 @@ private const val HALF_A_MINUTE_MS = 30_000L
 
 /** The last try, for an outage longer than that. */
 private const val TWO_MINUTES_MS = 120_000L
-
-private const val CHARS_PER_TOKEN = 4
 
 private const val DESKTOP_ONLY = "Antigravity models run only in Claude Desktop (Chat or Code tab)."

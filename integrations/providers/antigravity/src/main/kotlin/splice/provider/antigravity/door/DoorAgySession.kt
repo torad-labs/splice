@@ -2,7 +2,7 @@
 // Desktop Chat HTTP turns through Splice's door. Runs in an empty scratch directory, denies all
 // built-in agy filesystem/shell permissions, and allows only our virtual loopback MCP server so
 // Desktop Chat's own tools work via pause-and-resume across HTTP requests.
-package splice.provider.antigravity
+package splice.provider.antigravity.door
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -22,7 +22,16 @@ import kotlinx.serialization.json.buildJsonArray
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
+import splice.provider.antigravity.AGY_SIGN_IN
+import splice.provider.antigravity.AcpConnection
+import splice.provider.antigravity.AgyFolders
+import splice.provider.antigravity.AgyHello
+import splice.provider.antigravity.AgyOpen
+import splice.provider.antigravity.AgyOpener
+import splice.provider.antigravity.AgyScratch
+import splice.provider.antigravity.AgySession
 import java.io.IOException
 import java.nio.file.Path
 
@@ -73,10 +82,8 @@ internal class DoorAgySession(
             ?: return@withLock DoorAgyTurnResult.Failed("agy session could not be opened")
         bridge.setTools(ask.tools)
         val existingPrompt = activePromptId
-        val resuming = existingPrompt != null &&
-            ask.trailingToolResults.isNotEmpty() &&
-            bridge.matchesAny(ask.trailingToolResults)
-        val promptId = if (resuming && existingPrompt != null) {
+        val hasPendingResults = ask.trailingToolResults.isNotEmpty() && bridge.matchesAny(ask.trailingToolResults)
+        val promptId = if (existingPrompt != null && hasPendingResults) {
             bridge.supplyResults(ask.trailingToolResults)
             existingPrompt
         } else {
@@ -151,7 +158,7 @@ internal class DoorAgySession(
         AcpConnection(agyCommand, folder, folder.resolve("agy.err").toFile(), scope, io).also { connection = it }
     } catch (e: IOException) {
         dead = true
-        log("[antigravity] door chat could not start agy: ${e.message}\n")
+        log("[antigravity] door chat could not start agy: ${SafeFailureText.render(e)}\n")
         null
     }
 
@@ -340,7 +347,10 @@ private class PromptDriver(
     }
 }
 
+// why: gives `agy acp` up to 30 seconds to initialize and connect our virtual loopback MCP server.
 private const val OPEN_TIMEOUT_MS = 30_000L
+
+// why: short coalescing window to collect parallel MCP tool calls emitted together by agy into one tool_use turn.
 private const val PARALLEL_TOOL_BATCH_MS = 40L
 private const val PERMISSION_ALLOW = "allow"
 private const val PERMISSION_REJECT = "reject"

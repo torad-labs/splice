@@ -6,7 +6,8 @@ import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.daemonclient.DaemonSettings
 
-/** The real systemctl, a restarter with the long deadline, and the real [SystemdUnitDaemon]. */
+/** The real systemctl, a restarter with the long deadline, the real [SystemdUnitDaemon], and the unit's state as
+ *  systemd names it. */
 internal object HostSupervisedStart {
     fun of(env: EnvReader, errors: TerminalOutput): SupervisedStart = SupervisedStart(
         JdkSystemctl(),
@@ -14,5 +15,6 @@ internal object HostSupervisedStart {
         DaemonSettings(errors),
         restarter = JdkSystemctl(UNIT_RESTART_TIMEOUT_MS),
         unitDaemon = SystemdUnitDaemon(DaemonSettings(errors)),
+        unitState = SystemctlActiveState(),
     )
 }

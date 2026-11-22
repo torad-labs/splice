@@ -21,6 +21,7 @@ import splice.daemonclient.DaemonSettings
 import splice.lifecycle.start.DaemonColdStart
 import splice.lifecycle.start.SupervisedStart
 import splice.lifecycle.start.Systemctl
+import splice.lifecycle.start.UnitActiveState
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
@@ -106,8 +107,10 @@ class RestartThroughUnitTest {
     private val lines = CopyOnWriteArrayList<String>()
 
     /** The verb, reading its port from a temp config and its mgmt key from a temp state dir, with a
-     *  cold start whose systemctl is [ctl] and whose unit is [UNIT]: no host config, no real unit. */
-    private fun command(tmp: Path, port: Int, ctl: FakeSystemctl): RestartCommand {
+     *  cold start whose systemctl is [ctl] and whose unit is [UNIT]: no host config, no real unit. [state] is what
+     *  systemd says the unit is doing; with none, the unit is asked by exit code alone, as [ctl] answers
+     *  `is-active`. */
+    private fun command(tmp: Path, port: Int, ctl: FakeSystemctl, state: UnitActiveState? = null): RestartCommand {
         val stateDir = Files.createDirectories(tmp.resolve("state"))
         Files.writeString(stateDir.resolve("mgmt-key"), "test-mgmt-key")
         val config = tmp.resolve("splice.toml")
@@ -120,7 +123,8 @@ class RestartThroughUnitTest {
             }
         }
         val out = TerminalOutput { lines += it }
-        val supervised = SupervisedStart(ctl, EnvReader { null }, DaemonSettings(out), unitName = { UNIT })
+        val supervised =
+            SupervisedStart(ctl, EnvReader { null }, DaemonSettings(out), unitName = { UNIT }, unitState = state)
         val coldStart =
             DaemonColdStart(out, out, EnvReader { null }, RunningJar { null }, supervised, SHORT_STARTUP_POLLS)
         return RestartCommand(out, out, env, RunningJar { null }, coldStart)
@@ -153,6 +157,59 @@ class RestartThroughUnitTest {
             assertEquals(1, daemon.shutdowns.get(), "a daemon outside the unit is stopped by the verb")
             assertTrue(listOf("start", UNIT) in ctl.calls, "the unit was never started: ${ctl.calls}")
             assertFalse(ctl.calls.any { it[0] == "restart" }, "restarting a unit that runs no daemon: ${ctl.calls}")
+        } finally {
+            daemon.close()
+        }
+    }
+
+    // Nov 21, 2026: a unit that is starting or stopping its daemon answers `is-active` with "no", as a unit at rest
+    // does. RED on the verb before: it took the daemon on the port for nobody's and stopped it from here, by the
+    // shutdown route and then by signal, while systemd was still bringing it up or down.
+    @Test
+    fun `a unit that is starting or stopping its daemon is restarted through the unit, never stopped from here`(
+        @TempDir tmp: Path,
+    ) {
+        for (state in listOf("deactivating", "activating", "reloading")) {
+            val daemon = FakeDaemon(OLD)
+            val ctl = FakeSystemctl(active = false, onRestart = { daemon.version = NEW })
+            try {
+                val verb = command(Files.createDirectories(tmp.resolve(state)), daemon.port, ctl) { state }
+                val restarted = verb.restart(NEW, waitForCompactions = false)
+                val said = lines.joinToString("\n")
+                assertTrue(restarted, "a $state unit's restart must report the new daemon up:\n$said")
+                assertTrue(listOf("restart", UNIT) in ctl.calls, "systemd was never asked to restart: ${ctl.calls}")
+                assertEquals(0, daemon.shutdowns.get(), "the verb stopped the daemon of a $state unit")
+            } finally {
+                daemon.close()
+            }
+        }
+    }
+
+    @Test
+    fun `a unit at rest holds no daemon, so one on the port is stopped here and the unit started`(@TempDir tmp: Path) {
+        for (state in listOf("inactive", "failed")) {
+            val daemon = FakeDaemon(OLD)
+            val ctl = FakeSystemctl(active = false, onStart = { daemon.serveAgain(NEW) })
+            try {
+                val verb = command(Files.createDirectories(tmp.resolve(state)), daemon.port, ctl) { state }
+                assertTrue(verb.restart(NEW, waitForCompactions = false), lines.joinToString("\n"))
+                assertEquals(1, daemon.shutdowns.get(), "a daemon outside a(n) $state unit is stopped by the verb")
+                assertTrue(listOf("start", UNIT) in ctl.calls, "the unit was never started: ${ctl.calls}")
+                assertFalse(ctl.calls.any { it[0] == "restart" }, "restarting a unit at rest: ${ctl.calls}")
+            } finally {
+                daemon.close()
+            }
+        }
+    }
+
+    @Test
+    fun `a unit whose state cannot be read is asked whether it is active`(@TempDir tmp: Path) {
+        val daemon = FakeDaemon(OLD)
+        val ctl = FakeSystemctl(active = true, onRestart = { daemon.version = NEW })
+        try {
+            assertTrue(command(tmp, daemon.port, ctl) { null }.restart(NEW, waitForCompactions = false))
+            assertTrue(listOf("restart", UNIT) in ctl.calls, "systemd was never asked to restart: ${ctl.calls}")
+            assertEquals(0, daemon.shutdowns.get(), "systemd stops the unit's daemon; the verb must not")
         } finally {
             daemon.close()
         }

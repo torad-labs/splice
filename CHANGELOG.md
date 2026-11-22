@@ -109,6 +109,12 @@
   model takes.
 
 ### Fixed
+- **`splice restart` no longer stops the service's own daemon by signal while systemd is starting or stopping it.**
+  A restart that ran in either window (right after an install, say) took the daemon for one outside the service,
+  stopped it itself and failed, and the service then waited out a growing restart delay. It now asks systemd what
+  the service is doing and restarts through it unless the service is at rest. The launcher does the same for the
+  earlier build's daemon it finds after an upgrade: it restarts the service, where it asked the daemon to stop and
+  then started a service that was still stopping.
 - **A provider keyed by a lab's other name no longer repeats the lab in its model ids.** A provider called `xai`
   listed Grok's models as `claude-xai--xai-4.7`; it lists `claude-xai--4.7`, and the earlier spelling still runs.
 - **A header the gateway found carrying one of its keys is never forwarded upstream.**

@@ -107,7 +107,8 @@ internal fun interface SupervisorUnitName {
 /** [restarter] runs `systemctl restart`, which blocks until the unit's daemon has drained and
  *  stopped, so it carries a longer deadline than [systemctl]'s millisecond verbs. [unitDaemon] names the
  *  daemon a unit runs so [ownership] can tell whose it is (V4-395, UnitOwnership.kt); null skips that
- *  check, and [HostSupervisedStart] always supplies the real reader. The type is public so
+ *  check, and [HostSupervisedStart] always supplies the real reader. [unitState] says what the unit is doing, so
+ *  [active] can tell a unit that is starting or stopping its daemon from one at rest. The type is public so
  *  [DaemonColdStart]'s one constructor can take it; only this module can build one or call it. */
 public class SupervisedStart internal constructor(
     private val systemctl: Systemctl,
@@ -116,6 +117,7 @@ public class SupervisedStart internal constructor(
     private val restarter: Systemctl = systemctl,
     private val unitName: SupervisorUnitName = SupervisorUnitName { settings.supervisorUnit(envReader) },
     private val unitDaemon: UnitDaemonReader? = null,
+    private val unitState: UnitActiveState? = null,
 ) {
     /** [unit] is the operator's SPLICE_SUPERVISOR_UNIT (default splice.service), resolved at the
      *  call so a diagnostic that never cold-starts never loads the topology for it. */
@@ -145,8 +147,15 @@ public class SupervisedStart internal constructor(
      *  and never stops the daemon and then starts the unit (V4-243). */
     internal fun start(unit: String): Boolean = systemctl(listOf("start", unit)) == 0
 
-    /** V4-243: whether [unit] is active, so the daemon on the port is the one it runs. */
-    internal fun active(unit: String): Boolean = systemctl(listOf("is-active", "--quiet", unit)) == 0
+    /** V4-243: whether [unit] holds the daemon on the port: it runs one, or is bringing one up or down. Only a unit at
+     *  rest (inactive, failed) holds none, and a daemon on the port is then another's, for the verb to stop itself.
+     *  Nov 21, 2026: this asked `is-active`, which says no for a unit that is starting or stopping its daemon, and a
+     *  restart in either window stopped the unit's own daemon by signal (UnitActiveState.kt). Where the state cannot
+     *  be read, and for a caller that plays systemctl by exit codes alone, it still asks `is-active`. */
+    internal fun active(unit: String): Boolean {
+        val state = unitState?.invoke(unit) ?: return systemctl(listOf("is-active", "--quiet", unit)) == 0
+        return state != UNIT_STATE_INACTIVE && state != UNIT_STATE_FAILED
+    }
 
     /** V4-243: `systemctl --user restart [unit]`. systemd stops the daemon with SIGTERM, which drains
      *  its in-flight turns through the same daemon.stop() the shutdown route runs, then starts it at

@@ -550,6 +550,7 @@ names = [
     "SessionServedOf",
     "SliceMemoryCap",
     "TypedCommand",
+    "UnitActiveState",
     "WorkerKeys",
 ]
 reason = """CredentialAccountNames resolves a PRIVATE EFFECTIVE-CREDENTIAL DIGEST to a proved account name. \
@@ -625,7 +626,15 @@ WorkerKeys (Nov 18, 2026, the harness, HarnessInputs.kt) is an ELEVENTH source: 
 gives to the key splice sends that capability's worker as a bearer, read the way a provider's API key is. Its null \
 means "no key is set", and the worker is then posted with none. It is the one member whose answer is a secret on its \
 way to a third party: served by EnvReader alone it would read the environment only and miss a key `splice key set` \
-put in splice's key store, and served by QuotaHeaderRead or any lookup of a remote's text, a string an upstream sent would go out as a worker's credential."""
+put in splice's key store, and served by QuotaHeaderRead or any lookup of a remote's text, a string an upstream sent would go out as a worker's credential. \
+UnitActiveState (Nov 21, 2026, the CLI's restart, UnitActiveState.kt) is a TWELFTH source: a supervisor unit's name to \
+the one word systemd gives for what that unit is doing (active, reloading, activating, deactivating, inactive, \
+failed), read from the user's service manager. Its answer decides whether a restart goes through the unit or stops a \
+daemon itself: only inactive and failed mean the unit holds no daemon. Its null means systemd could not be asked, and \
+the caller then asks is-active, as it did before. It sits beside McpScopeLookup, which asks the same manager, without \
+sharing its role: that port answers a cgroup path, whose blank means nothing can still run there, and served by it a \
+path, or a blank, would be read as a state that is not at rest, so a daemon outside the unit would be restarted \
+through a unit that does not run it. Served by EnvReader, a variable's value would decide whose daemon is stopped."""
 
 # ── 5 names, () -> T ──────────────────────────────────────────────────────────────────────────────
 [[groups]]

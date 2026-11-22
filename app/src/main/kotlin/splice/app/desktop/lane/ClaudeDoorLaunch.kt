@@ -32,7 +32,14 @@ internal class ClaudeDoorLaunch(
     suspend fun launch(): DoorLaunchSpec? {
         if (!lane.onDoor()) return null
         val lineup = lane.lineup()
-        return spec(lineup, lane.starting(lineup).first)
+        return spec(lineup, lane.starting(lineup).first, layLogin = true)
+    }
+
+    /** Side-by-side launch (`splice launch claude` / `claude-splice`): always runs on the door and never writes
+     *  files into `~/.claude`, keeping default `claude` and its personal login untouched. */
+    suspend fun launchSideBySide(): DoorLaunchSpec {
+        val lineup = lane.lineup()
+        return spec(lineup, lane.starting(lineup).first, layLogin = false)
     }
 
     /** custom-provider (cp-command): a launch of a door command on the door whatever lane `claude` is on, running on
@@ -42,7 +49,7 @@ internal class ClaudeDoorLaunch(
     suspend fun launchCommand(target: String?): DoorLaunchSpec {
         val lineup = lane.lineup()
         val provider = lineup.providers.firstOrNull { it.key == target }
-        return spec(lineup, provider?.let(lineup::pinnedOf)?.ifEmpty { null })
+        return spec(lineup, provider?.let(lineup::pinnedOf)?.ifEmpty { null }, layLogin = true)
     }
 
     /** The Splice gateway a session of [provider]'s head is pointed at, as `claude`'s is: its address, the terminal's
@@ -56,13 +63,14 @@ internal class ClaudeDoorLaunch(
         return GatewayAt(lane.door, lane.key.get(), lane.window(lineup), model)
     }
 
-    private fun spec(lineup: DesktopLineup, selector: String?): DoorLaunchSpec {
+    private fun spec(lineup: DesktopLineup, selector: String?, layLogin: Boolean): DoorLaunchSpec {
         val model = selector?.let { ids.idFor(lineup, it) }
         val session = DoorSession(lane.door, lane.key.get(), lane.window(lineup), model)
+        val loginHooks = if (layLogin) hooks() else emptyMap()
         return DoorLaunchSpec(
             session.env(),
             session.unset(),
-            session.overlay(LaunchMarker.here, LaunchMarker.SPLICE_LAUNCH_KEY, hooks()),
+            session.overlay(LaunchMarker.here, LaunchMarker.SPLICE_LAUNCH_KEY, loginHooks),
         )
     }
 

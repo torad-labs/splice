@@ -126,6 +126,8 @@ internal class SetupSignIn(
         // left with the console on Oct 7, 2026.
         // The console came back after that, and nothing on a new install named it (Nov 11, 2026): the installer, this
         // screen and `splice status` all left a person to find `splice console` in the usage line.
+        verb("splice launch claude", "Claude Code on Splice (leaves default claude untouched)")
+        verb("splice launch claude-desktop", "Claude Desktop side-by-side on Splice")
         verb("splice console", "accounts, models and usage, in a browser")
         verb("splice status", "see what's running")
         verb("splice doctor", "anything wrong prints its fix")

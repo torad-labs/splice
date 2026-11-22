@@ -76,7 +76,7 @@ public class Cli {
  *  answer to a command splice cannot read, and the end of the start screen. Broken into lines a
  *  terminal of 80 columns shows whole; as one line of 470 characters it wrapped in the middle of a word. */
 private const val VERBS_USAGE =
-    "usage: splice [setup|add <profile>|add-model|models [provider]|upgrade|status|\n" +
+    "usage: splice [setup|launch <claude|claude-desktop>|add <profile>|add-model|models [provider]|upgrade|status|\n" +
         "  sessions [relaunch]|perf|usage --json|wire <head> [--last N] [--json]|\n" +
         "  peer <verb>|server <key|person> <verb>|\n" +
         "  share [on|off|status]|remote [add|remove]|desktop [on|off|rotate-key]|\n" +

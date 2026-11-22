@@ -14,7 +14,7 @@
 
 # Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 # — bump both together whenever this shim's behavior changes. No code generation.
-SPLICE_SHIM_VERSION="shim-28"
+SPLICE_SHIM_VERSION="shim-29"
 # Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 SPLICE_GATEWAY_VERSION="0.6.4"
 
@@ -522,17 +522,23 @@ exec_cli() {
 
 # ---- the admin command, and sign-in ------------------------------------------------------------------------
 
-# Invoked as `splice` (the admin command): pass every subcommand straight to the CLI
-# (setup, status, dashboard, login <head>, install, …). The CLI self-manages the daemon.
+# Invoked as `splice` (the admin command): `splice launch claude [args...]` runs Claude Code on the door
+# side-by-side with default `claude` (no extra JVM hop); every other subcommand goes straight to the CLI
+# (setup, status, console, login <head>, launch claude-desktop, install, …).
 if [ "$HEAD" = splice ]; then
-  need_jar
-  if [ "${1-}" = login ]; then
-    shift
-    head=$(login_head "$@")
-    set -- login "$@"
-    [ -n "$head" ] && record_launch "$head" "" login
+  if [ "${1-}" = launch ] && [ "${2-}" = claude ]; then
+    shift 2
+    HEAD=claude-splice
+  else
+    need_jar
+    if [ "${1-}" = login ]; then
+      shift
+      head=$(login_head "$@")
+      set -- login "$@"
+      [ -n "$head" ] && record_launch "$head" "" login
+    fi
+    exec_cli "$@"
   fi
-  exec_cli "$@"
 fi
 
 # `<command> login [--label NAME]` runs the OAuth browser flow for this head directly (no daemon needed); the
@@ -544,7 +550,7 @@ head_login() {
   set -- -Djdk.console=java.base "-Duser.home=$SHIM_HOME" -jar "$JAR" login "$HEAD" "$@"
   exec_argv "$JAVA" "$@"
 }
-if [ "${1-}" = login ] && [ "$HEAD" != claude ]; then head_login "$@"; fi
+if [ "${1-}" = login ] && [ "$HEAD" != claude ] && [ "$HEAD" != claude-splice ]; then head_login "$@"; fi
 
 # ---- talking to the daemon ---------------------------------------------------------------------------------
 

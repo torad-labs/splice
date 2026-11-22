@@ -48,6 +48,9 @@ internal class TerminalDoor(
     /** `claude`'s launch on the door; null before [open] and on the head lane. */
     override suspend fun launch(): DoorLaunchSpec? = launched?.launch()
 
+    /** Side-by-side launch (`splice launch claude` / `claude-splice`); always on the door once [open] has run. */
+    override suspend fun launchSideBySide(): DoorLaunchSpec? = launched?.launchSideBySide()
+
     /** A launch of `[door.commands.<name>]` on the door; null for a name splice.toml gives no door command, and before
      *  [open]. */
     override suspend fun launchCommand(name: String): DoorLaunchSpec? =

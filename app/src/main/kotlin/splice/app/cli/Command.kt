@@ -78,6 +78,11 @@ public sealed class Command {
         override suspend fun run(): Int = splice.app.cli.desktop.DesktopCommand().run(args)
     }
 
+    /** Launches Claude Code or Claude Desktop side-by-side on Splice without wrapping default `claude`. */
+    public data class Launch(val args: List<String>) : Command() {
+        override suspend fun run(): Int = splice.app.cli.launch.LaunchCommand().run(args)
+    }
+
     /** `splice claude [<verb>]`: put the terminal's `claude` on the door, or back on its head
      *  (docs/specs/door-default.md). */
     public data class Claude(val args: List<String>) : Command() {

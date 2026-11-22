@@ -24,7 +24,7 @@ internal class SetupMenu(private val frame: WizardFrame, private val profiles: A
         if (bits.isNotEmpty()) frame.step("Found here: ${bits.joinToString(", ")}")
     }
 
-    fun summaryLines(path: Path, bin: Path, heads: List<String>, claudeLane: String?): List<String> {
+    fun summaryLines(path: Path, bin: Path, heads: List<String>, launchLines: List<String>): List<String> {
         // The summary lists what the install will do. The installer writes the file before setup runs, so until
         // Nov 11, 2026 every new install's summary opened on "No starter will be written because one is already
         // present": a line about nothing happening, in words ("starter") nobody had been given.
@@ -43,7 +43,6 @@ internal class SetupMenu(private val frame: WizardFrame, private val profiles: A
         } else {
             emptyList()
         }
-        // The line on `claude` only when this run links it: a summary line about nothing happening is noise.
-        return listOfNotNull(starter, wrappers) + adding + listOfNotNull(claudeLane) + keys
+        return listOfNotNull(starter, wrappers) + adding + launchLines + keys
     }
 }

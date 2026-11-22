@@ -5,6 +5,7 @@ package splice.app
 
 import splice.app.cli.AdminSupport
 import splice.app.desktop.setup.DesktopRetire
+import splice.app.desktop.setup.SideBySideLaunchers
 import splice.app.manager.ManagerHome
 import splice.client.login.DoorLogin
 import splice.core.config.InstallPaths
@@ -75,7 +76,12 @@ internal object InstallWiring {
      *  and only what splice changed there. The daemon is stopped by then, so this needs none. */
     fun retireDesktop(target: String?, env: EnvReader) {
         if (target != null && target != ALL_OF_SPLICE) return
-        DesktopRetire(env, TerminalOutput(::println)).retire()
+        val out = TerminalOutput(::println)
+        DesktopRetire(env, out).retire()
+        val launchers = SideBySideLaunchers(env)
+        Cancellables.runCatchingCancellable { launchers.removeIfManaged() }.onSuccess { removed ->
+            if (removed) out.line("splice: removed Claude (Splice) app launcher (${launchers.desktopLauncherPath()})")
+        }
     }
 
     /** The daemon's listening sockets as systemd units, which `splice restart` lays and starts so systemd holds

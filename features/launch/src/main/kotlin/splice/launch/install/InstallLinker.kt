@@ -64,13 +64,13 @@ internal class InstallLinker(
         return if (refusal == null) InstallResult.Linked else InstallResult.Refused(refusal)
     }
 
-    /** Link the `splice` admin command itself (so `splice dashboard/status/...` work as commands). */
-    internal fun installSelf(env: EnvReader): InstallResult {
+    /** Link a standalone command (such as `splice` or `claude-splice`) directly to the launch shim. */
+    internal fun installShortcut(command: String, env: EnvReader): InstallResult {
         val launchShim = layout.launchShimPath(env)
         shimRefusal(launchShim)?.let { return InstallResult.Refused(it) }
         val bin = layout.localBin(env)
         Files.createDirectories(bin)
-        val refusal = linkOne(bin, SELF_COMMAND, SELF_COMMAND, launchShim)
+        val refusal = linkOne(bin, command, command, launchShim)
         return if (refusal == null) InstallResult.Linked else InstallResult.Refused(refusal)
     }
 

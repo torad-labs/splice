@@ -22,11 +22,19 @@ export function jar(): string {
   return JAR;
 }
 
+// A port handed out once is never handed out again in this process: the OS gives the same ephemeral port back as soon
+// as the listener that held it closes, and a box's head port and its daemon's control port are both drawn here.
+const HANDED_OUT = new Set<number>();
+
 export async function freePort(): Promise<number> {
-  const s = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
-  const p = s.port;
-  s.stop(true);
-  return p;
+  for (;;) {
+    const s = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+    const p = s.port;
+    s.stop(true);
+    if (HANDED_OUT.has(p)) continue;
+    HANDED_OUT.add(p);
+    return p;
+  }
 }
 
 export interface Ran {

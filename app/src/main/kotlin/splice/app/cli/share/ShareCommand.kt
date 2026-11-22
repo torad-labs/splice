@@ -70,12 +70,12 @@ internal class ShareCommand(
     private suspend fun status(): Int {
         val share = (file.loaded() ?: return PeerExit.REFUSED).share
         if (!share.enabled) {
-            out.line("sharing is off. ${CYAN}splice share on$RESET lets your other machines run this one's commands.")
+            out.line("sharing is off. ${CYAN}splice share on$RESET puts this one's door on your other machines.")
             return PeerExit.DONE
         }
         val here = "http://127.0.0.1:${share.port}"
         return when (val read = directory.read(here)) {
-            is Asked.Had -> offered(share, read.value, (directory.door(here) as? Asked.Had)?.value)
+            is Asked.Had -> sharing(share, read.value, (directory.door(here) as? Asked.Had)?.value)
             is Asked.Refused -> {
                 err.line("$SHARE_VERB: sharing is on in ${file.path}, but nothing here answers on it: ${read.why}")
                 err.line("  is splice running? ${CYAN}splice restart$RESET")
@@ -84,40 +84,24 @@ internal class ShareCommand(
         }
     }
 
-    /** The [door] another machine on this LAN or tailnet runs `claude` on (door-network), and what [info] offers, each
-     *  command at the address another machine adds it by. */
-    private fun offered(share: ShareConfig, info: ShareInfo, door: SharedDoorLaunch?): Int {
+    /** The door at [server] (door-network), the one add that puts another machine's `claude` on it, and the variables a
+     *  Claude Code without splice, or Claude Desktop's Code tab, runs on it with. A door still starting is said, not
+     *  left blank. */
+    private fun sharing(share: ShareConfig, info: ShareInfo, door: SharedDoorLaunch?): Int {
         val reach = ShareAddresses(share, info.machine, LogSink { err.line(it.trimEnd()) }).reach()
         val server = reach.server ?: run {
             err.line("$SHARE_VERB: ${info.machine} has no address on a LAN, so no other machine can reach it")
             return PeerExit.REFUSED
         }
         out.line("sharing is on: $BOLD$server$RESET, on ${info.machine}'s LAN and tailnet")
-        if (door != null) doorLines(server, door)
-        commandLines(server, info, deprecated = door != null)
-        out.line("${DIM}one on another machine: splice remote add <address>$RESET")
-        out.line("${DIM}an address may end in ?auth=<login> to run on that login,$RESET")
-        out.line("${DIM}and in ?models=<id>,<id> to show only those models$RESET")
+        if (door == null) {
+            out.line("  its door is still starting; ${CYAN}splice share status$RESET again in a moment")
+            return PeerExit.DONE
+        }
+        doorLines(server, door)
         val others = reach.addresses - server
         if (others.isNotEmpty()) out.line("${DIM}by address: ${others.joinToString(", ")}$RESET")
         return PeerExit.DONE
-    }
-
-    /** Each command [info] offers at its address on [server], said as [deprecated] once a door serves them all; with
-     *  no door, the add that links the machine's commands. */
-    private fun commandLines(server: String, info: ShareInfo, deprecated: Boolean) {
-        if (info.commands.isEmpty()) out.line("  no command here holds a login of its own to offer")
-        if (!deprecated) out.line("on another machine: ${CYAN}splice remote add $server$RESET")
-        if (deprecated && info.commands.isNotEmpty()) {
-            out.line("${DIM}each command on its own (deprecated; the door has all):$RESET")
-        }
-        info.commands.forEach { offer ->
-            val state = if (offer.running) "" else "  ${DIM}not running$RESET"
-            out.line("  ${offer.command.padEnd(COMMAND_PAD)} $server/${offer.command}$state")
-            val logins = offer.logins.joinToString(", ").ifEmpty { "its one login" }
-            val models = offer.models.joinToString(", ")
-            out.line("  ${"".padEnd(COMMAND_PAD)} ${DIM}logins: $logins · models: $models$RESET")
-        }
     }
 
     /** The door at [server]: how many models it serves, the one add that puts another machine's `claude` on it, and the

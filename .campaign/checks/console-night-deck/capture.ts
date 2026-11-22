@@ -1,15 +1,17 @@
 // Pictures of the console as a person sees it, for the feature reviewer to look at before it passes an item (the
 // goal's "When an item, and the whole feature, is done"). Chromium on a Mac opens each page named, or every page in
 // the console folder when none is, on the stub daemon with the made-up acme world (lib/deck.ts), in night and day, at
-// 1440 and 3840 px, and writes one PNG of each into a folder of its own under build/night-deck-captures/ in this
-// checkout, with what each page threw and whether it spilled past the right edge in report.txt beside them. Run
-// anywhere but a Mac, it sends itself to one through rig and brings the folder back. It never runs Chromium here.
+// 1440 and 3840 px (and at 375 px too when --phone is given), and writes one PNG of each into a folder of its own under
+// build/night-deck-captures/ in this checkout, with what each page threw and whether it spilled past the right edge in
+// report.txt beside them. Run anywhere but a Mac, it sends itself to one through rig and brings the folder back. It never
+// runs Chromium here.
 //
-//   bun .campaign/checks/console-night-deck/capture.ts [page ...] [--full] [--locked] [--then STEP ...]
+//   bun .campaign/checks/console-night-deck/capture.ts [page ...] [--full] [--locked] [--phone] [--then STEP ...]
 //
 // A page is a console file without .html, with a query if it takes one: sessions, accounts, activity?win=30d.
 // --full takes the whole page as it scrolls, not only the first screen.
 // --locked answers every /api read with 401, as a daemon does to a console that holds no key or a wrong one.
+// --phone adds a 375 px capture beside the two widths, where a page's phone layout is judged.
 // --then runs a step on every page, theme and width after it loads, in the order given:
 //   click:SELECTOR  dblclick:SELECTOR  hover:SELECTOR  fill:SELECTOR|TEXT  type:TEXT (keys typed where the focus is)
 //   select:SELECTOR|VALUE  check:SELECTOR  uncheck:SELECTOR  scroll:SELECTOR (into view)  press:KEY  wait:MS
@@ -23,7 +25,7 @@ import { type Page } from "@playwright/test";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { browser, CONSOLE, daemon, frame, NARROW, open, ROOT, WIDE, world } from "./lib/deck.ts";
+import { browser, CONSOLE, daemon, frame, NARROW, open, PHONE, ROOT, WIDE, world } from "./lib/deck.ts";
 
 const HERE_SCRIPT = ".campaign/checks/console-night-deck/capture.ts";
 const NOT_STARTED = 75;
@@ -32,6 +34,7 @@ const args = process.argv.slice(2);
 let out = "";
 let full = false;
 let locked = false;
+let phone = false;
 const steps: string[] = [];
 const pages: string[] = [];
 const passed: string[] = [];
@@ -44,12 +47,15 @@ for (let i = 0; i < args.length; i++) {
   } else if (a === "--locked") {
     locked = true;
     passed.push(a);
+  } else if (a === "--phone") {
+    phone = true;
+    passed.push(a);
   } else if (a === "--then") {
     const step = args[++i] ?? "";
     steps.push(step);
     passed.push(a, step);
   } else if (a === "--help" || a === "-h") {
-    console.log("bun .campaign/checks/console-night-deck/capture.ts [page ...] [--full] [--locked] [--then STEP ...]");
+    console.log("bun .campaign/checks/console-night-deck/capture.ts [page ...] [--full] [--locked] [--phone] [--then STEP ...]");
     process.exit(0);
   } else {
     pages.push(a);
@@ -82,11 +88,15 @@ if (process.platform !== "darwin" && process.env.CAPTURE_HERE !== "1") {
   // A Mac busy with other runs answers 75 and nothing starts: ask again every 30 s, for 20 minutes unless
   // CAPTURE_WAIT_S says otherwise.
   const until = Date.now() + Number(process.env.CAPTURE_WAIT_S ?? 1200) * 1000;
+  // A Mac whose Chromium is a full build rather than Playwright's headless shell names it in
+  // SCREEN_REVIEW_BROWSER; rig passes no environment on its own, so the name rides along explicitly.
+  const named = process.env.SCREEN_REVIEW_BROWSER ? ["--env", "SCREEN_REVIEW_BROWSER"] : [];
   const send = () =>
-    spawnSync("rig", ["remote", "run", "--needs", "system=Darwin/arm64", "--fetch", run, "--", "bun", HERE_SCRIPT, "--out", run, ...passed], {
-      cwd: ROOT,
-      stdio: "inherit",
-    });
+    spawnSync(
+      "rig",
+      ["remote", "run", "--needs", "system=Darwin/arm64", "--fetch", run, ...named, "--", "bun", HERE_SCRIPT, "--out", run, ...passed],
+      { cwd: ROOT, stdio: "inherit" },
+    );
   let r = send();
   while (r.status === NOT_STARTED && Date.now() < until) {
     console.error("capture: no Mac has room yet; asking again in 30 s");
@@ -150,7 +160,7 @@ try {
     const [file, query] = name.split("?") as [string, string | undefined];
     const target = `${file}.html${query ? `?${query}` : ""}`;
     for (const theme of ["night", "day"] as const) {
-      for (const size of [NARROW, WIDE]) {
+      for (const size of phone ? [PHONE, NARROW, WIDE] : [NARROW, WIDE]) {
         const base = `${file}${query ? `-${slug(query)}` : ""}${locked ? "-locked" : ""}-${theme}-${size.width}`;
         const from = d.seen.length;
         const o = await open(b, d, target, size, theme);

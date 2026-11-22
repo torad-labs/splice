@@ -117,6 +117,9 @@ body.is-dragging { cursor: grabbing; user-select: none; }
    name takes less of its row, and the band's two labels keep to one line */
 @media (max-width: 48rem) {
   :root { --band-label-w: 9rem; }
+  /* the search takes the header's width on its own row, and the status wraps under it */
+  .qwrap { flex: 1 1 100%; min-width: 0; }
+  .qwrap input { width: 100%; }
   .bd { position: static; }
   .bd-head { padding-left: 0; }
   .bd-head > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

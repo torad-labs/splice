@@ -3,6 +3,11 @@
 ## Unreleased: a provider is served with no head, Claude Desktop sets itself up, and one model catalog
 
 ### Highlights
+- **Sharing is a machine's door alone.** `splice share on` puts this machine's door on its LAN and prints the one
+  `splice remote add http://<box>` line, with how many models it serves and the variables a Claude Code without splice
+  runs on it with. An address naming one command, or picking a login or models, is refused: the door serves every model
+  the machine has. A `[remote.<command>]` left from the per-command days still loads, and its launch prints the door's
+  add.
 - **Custom heads are deprecated and will be removed in a coming release.** One Claude Code replaces them: `claude`
   through the Splice gateway, in Claude Code's gateway mode, whose `/model` is the gateway's one list (its
   `/v1/models`, which Claude Code discovers), the same in every session. Type `claude` and `/model <selector>` for a

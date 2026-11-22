@@ -558,28 +558,28 @@ never exits, so do not run it in your pane.
 Source: `app/.../cli/peer/PeerCommand.kt`, `PeerArgs.kt` (`PEER_USAGE`), `app/.../control/mount/PeersMount.kt`,
 `docs/specs/peer-messaging.md`, `docs/peers.md`.
 
-### share and remote (LAN share)
+### share and remote (one machine's door on another)
 
 ```
 splice share on [--port N]       # on the machine that holds the logins
 splice share status
 splice share off
-splice remote add http://devbox.lan:3097/claudex [--as <command>]   # on the machine that runs them
+splice remote add http://devbox.lan:3097 [--as <command>]   # on the machine that runs them
 splice remote
-splice remote remove claudex
+splice remote remove claude
 ```
 
 `splice share on` writes `[share] enabled = true` (and `port`, default 3097) into `splice.toml`, restarts a running daemon so
-its LAN listener opens, and prints, for each command this machine offers, the address another machine adds it by.
-Anyone on that LAN can then run those heads with no login, token or encryption, so it is the person's decision, and it
-refuses a port another program holds before it changes the file. `splice share off` turns it off the same way;
-`splice share status` asks the running daemon what it offers. On the other machine, `splice remote add <address>` checks
-the address against the server, writes one `[remote.<command>] url = "..."` line (the address may end in
-`?auth=<login>` to run on that login and `?models=<id>,<id>` to show only those models), links the command like any
-head's and restarts a running daemon. A remote command holds the address and nothing else: no credential, no token,
-no copy of the server's models. `splice remote` lists them, each with whether its server answers now;
-`remove <command>` takes the line and the link out. All of these edit `splice.toml` and restart the daemon, which cuts
-turns in flight, so ask first and say so.
+its LAN listener opens, and prints the door: its address, how many models it serves, the one `splice remote add` line,
+and the variables a Claude Code without splice runs on it with. Anyone on that LAN can then run that door with no
+login, token or encryption, so it is the person's decision, and it refuses a port another program holds before it
+changes the file. `splice share off` turns it off the same way; `splice share status` asks the running daemon. On the
+other machine, `splice remote add <address>` checks the box's door, writes one `[remote.<command>] url = "..."` line
+naming the door, links the command like any head's and restarts a running daemon. A remote command holds the address
+and nothing else: no credential, no token, no copy of the server's models. A machine shares its door alone: an address
+naming one of its commands, or one that picks a login or a list of models, is refused with the door's add. `splice
+remote` lists them, each with whether the door answers now; `remove <command>` takes the line and the link out. All of
+these edit `splice.toml` and restart the daemon, which cuts turns in flight, so ask first and say so.
 
 Source: `app/.../cli/share/ShareCommand.kt`, `RemoteCommand.kt`, `ShareRestart.kt`, `core/.../topology/LanShareConfig.kt`,
 `docs/specs/lan-share.md`, `app/src/main/resources/splice.example.toml` ("LAN share").

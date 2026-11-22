@@ -1,6 +1,10 @@
 # LAN share: Claude Code on one machine, running on another machine's heads
 
-- Status: rebuilt on the 2026-10-24 decision (below). The first build (phases 1 and 2, 2026-10-22 to
+- Status: **superseded by `docs/specs/door-network.md` (2026-11-19).** A machine that shares now offers its door
+  alone: the per-command share below is gone from the listener, and an address naming one command is refused with the
+  door's add. The address grammar still loads, so files written before this change boot. What remains here is the
+  history of the listener the door rides on.
+- Rebuilt on the 2026-10-24 decision (below). The first build (phases 1 and 2, 2026-10-22 to
   10-24) relayed through a head on the using machine and copied tokens, models and sessions to it; commit
   c830a4250 removed it, and this spec starts again from the goal.
 - Overturns: the `docs/specs/v0.4.0.md` boundary "Preserve the single-user, loopback product boundary.

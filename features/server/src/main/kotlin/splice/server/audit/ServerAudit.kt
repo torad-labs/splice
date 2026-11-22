@@ -14,6 +14,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.JsonlSink
 import splice.server.ServerAnswer
+import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Clock
 import java.time.Instant
@@ -37,13 +38,22 @@ public class ServerAudit(
             put("target", target)
             if (details.isNotEmpty()) put("details", details)
         }
-        withContext(io) { JsonlSink.appendLine(file, row.toString()) }
+        withContext(io) {
+            file.parent?.let(Files::createDirectories)
+            JsonlSink.appendLine(file, row.toString())
+        }
     }
 
     /** The newest [tail] audit entries (clamped to 1..MAX_AUDIT_TAIL), oldest-first within the slice. */
     public suspend fun list(tail: Int = DEFAULT_AUDIT_TAIL): ServerAnswer {
         val count = tail.coerceIn(1, MAX_AUDIT_TAIL)
-        val lines = withContext(io) { JsonlSink.readTail(file, count) }
+        val lines = withContext(io) {
+            if (!Files.exists(file)) {
+                emptyList()
+            } else {
+                JsonlSink.readTailAt(file, maxBytes = AUDIT_TAIL_WINDOW_BYTES, limit = count).lines
+            }
+        }
         val entries = buildJsonArray {
             lines.forEach { raw ->
                 runCatchingParse(raw)?.let(::add)
@@ -66,3 +76,6 @@ public const val DEFAULT_AUDIT_TAIL: Int = 100
 
 // why: upper bound on one audit tail read so a single HTTP response stays bounded.
 private const val MAX_AUDIT_TAIL = 2_000
+
+// why: trailing byte window read from audit.jsonl when listing up to MAX_AUDIT_TAIL entries (~2 KiB per entry max).
+private const val AUDIT_TAIL_WINDOW_BYTES = 4 * 1024 * 1024

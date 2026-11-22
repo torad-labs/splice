@@ -161,11 +161,28 @@ describe("a gradle run with rig on PATH", () => {
     expect(m.builtHere()).toBe(false);
     const asked = m.rigAsked()!;
     expect(asked[asked.indexOf("--fetch") + 1]).toBe("app/build/libs/app-all.jar");
-    // the jar is the same whichever system builds it, so any machine may take it
+    // any machine may take it, and it is told to pack every platform's engine, so the jar is the same whichever
+    // system builds it. Nov 21, 2026: told nothing, a Mac built a jar with no engine for the Linux machine it came
+    // back to.
     expect(asked).not.toContain("--needs");
     expect(asked.slice(asked.indexOf("--") + 1)).toEqual([
-      "bun", "tools/gate", "slot", "elsewhere-test", "--", ":app:shadowJar", "--quiet",
+      "bun", "tools/gate", "slot", "elsewhere-test", "--", ":app:shadowJar", "--quiet", "-Psplice.allPlatforms=true",
     ]);
+  });
+
+  test("a jar build that says which platforms it packs is sent as it was asked", async () => {
+    const m = machine();
+    await m.run([":app:shadowJar", "-Psplice.allPlatforms=false"], { RIG_STATUS: '{"exit":0}', RIG_EXIT: "0" });
+    const asked = m.rigAsked()!;
+    expect(asked.slice(asked.indexOf("--") + 1)).toEqual([
+      "bun", "tools/gate", "slot", "elsewhere-test", "--", ":app:shadowJar", "-Psplice.allPlatforms=false",
+    ]);
+  });
+
+  test("a run that tests is not told which platforms to pack", async () => {
+    const m = machine();
+    await m.run([":app:test"], { RIG_STATUS: '{"exit":0}', RIG_EXIT: "0" });
+    expect(m.rigAsked()!.some((arg) => arg.startsWith("-Psplice.allPlatforms"))).toBe(false);
   });
 
   test("a task that makes a file this machine reads, with no path to bring back, builds here", async () => {

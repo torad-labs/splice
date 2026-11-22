@@ -15,7 +15,10 @@
 // A run goes to a machine of this one's system (`Linux/x86_64`, `Darwin/arm64`), so moving it never changes its
 // verdict: the suite is written for, and judged on, the system it runs on. A whole-suite run that rig placed on a Mac
 // failed ten Linux tests (ones that read /proc, or open a socket under a path longer than macOS allows). A run that
-// only builds the fat jar goes to any machine, since the jar is the same whichever system builds it.
+// only builds the fat jar goes to any machine, and is told to pack every platform's code-mode engine
+// (-Psplice.allPlatforms=true), so the jar is the same whichever system builds it. Told nothing, a build packs its
+// own machine's engine alone (integrations/codemode/build.gradle.kts): on Nov 21, 2026 a jar built on a Mac came back
+// to the Linux machine that asked for it with no engine it could load.
 //
 // Once rig is there, a run does not fall back to this machine. When rig started nothing because no machine had room,
 // the copy there was busy or a machine did not answer, the slot asks again every RETRY_MS for as long as the slot
@@ -49,6 +52,9 @@ export const NOT_STARTED_EXIT = 75;
 const FETCHED: readonly { readonly task: RegExp; readonly paths: readonly string[] }[] = [
   { task: /^(:app:|:)?shadowJar$/, paths: ["app/build/libs/app-all.jar"] },
 ];
+
+/** The property that tells a build which platforms' code-mode engine to pack. */
+const ALL_PLATFORMS = "-Psplice.allPlatforms";
 
 /** A task whose output the caller reads on this machine and that FETCHED has no path for. */
 const MADE_HERE = /(^|:)(jar|installDist|assemble|build|dist\w*|link\w*|publish\w*)$/;
@@ -162,11 +168,15 @@ async function rigRun(
   // uname's names, which are rig's: Linux/x86_64, Darwin/arm64
   const system = `${type()}/${machine()}`;
   const jarOnly = command === undefined && run.args.every((arg) => arg.startsWith("-") || FETCHED.some((it) => it.task.test(arg)));
+  // the jar comes back to this machine, whatever system built it: it packs every platform's engine unless the caller
+  // said which it wants
+  const packsAll = jarOnly && !run.args.some((arg) => arg.startsWith(ALL_PLATFORMS));
+  const args = packsAll ? [...run.args, `${ALL_PLATFORMS}=true`] : run.args;
   const argv = [
     rig, "remote", "run", "--dir", run.buildRoot, "--env", BUILD_HERE, "--status-fd", String(STATUS_FD),
     ...(jarOnly ? [] : ["--needs", `system=${system}`]),
     ...fetched.flatMap((path) => ["--fetch", path]),
-    "--", ...(command ?? ["bun", "tools/gate", "slot", run.label, "--", ...run.args]),
+    "--", ...(command ?? ["bun", "tools/gate", "slot", run.label, "--", ...args]),
   ];
   if (command === undefined) console.error(`gradle-slot: ${run.label} goes to another ${jarOnly ? "" : `${system} `}machine through rig`);
   const child = Bun.spawn(argv, { cwd: run.buildRoot, env, stdio: ["inherit", "inherit", "inherit", statusFd] });

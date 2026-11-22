@@ -36,7 +36,7 @@ internal class DoorAgySession(
     private val clock: WallClock,
 ) : AutoCloseable {
     private val mutex = Mutex()
-    private val scratch = AgyScratch()
+    private var scratch: AgyScratch? = null
     private val bridge = DoorToolBridge()
     private var connection: AcpConnection? = null
     private var session: AgySession? = null
@@ -97,7 +97,8 @@ internal class DoorAgySession(
         Cancellables.runCatchingBestEffort { connection?.close() }
         connection = null
         session = null
-        scratch.close(log)
+        scratch?.remove(log)
+        scratch = null
     }
 
     private fun settleOutcome(outcome: DoorAgyTurnResult, ask: DoorAgyAsk) {
@@ -115,25 +116,39 @@ internal class DoorAgySession(
     }
 
     private suspend fun ensureOpen(ask: DoorAgyAsk): AgySession? {
-        session?.let { return it }
+        val current = session
+        if (current != null) return current
         bridge.setTools(initialTools)
-        val folder = scratch.folder()
-        val conn = startConnection(folder)
-        val opener = conn?.let { AgyOpener(it, folder.toString(), OPEN_TIMEOUT_MS) }
-        val (hello, refusal) = opener?.sayHello() ?: (null to null)
-        return when {
-            opener == null -> null
-            hello == null -> {
-                dead = true
-                log("[antigravity] door chat initialize failed: ${refusal ?: AGY_SIGN_IN}\n")
-                null
-            }
-            else -> finishOpenSession(opener, hello, ask)
+        val folder = makeScratchFolder()
+        val conn = folder?.let { startConnection(it) }
+        return if (folder != null && conn != null) {
+            initializeAndOpen(AgyOpener(conn, folder.toString(), OPEN_TIMEOUT_MS), ask)
+        } else {
+            null
         }
     }
 
+    private fun makeScratchFolder(): Path? {
+        val made = AgyFolders().make().also { scratch = it }
+        if (made.path == null) {
+            dead = true
+            log("[antigravity] door chat scratch failed: ${made.reason}\n")
+        }
+        return made.path
+    }
+
+    private suspend fun initializeAndOpen(opener: AgyOpener, ask: DoorAgyAsk): AgySession? {
+        val (hello, refusal) = opener.sayHello()
+        if (hello == null) {
+            dead = true
+            log("[antigravity] door chat initialize failed: ${refusal ?: AGY_SIGN_IN}\n")
+            return null
+        }
+        return finishOpenSession(opener, hello, ask)
+    }
+
     private fun startConnection(folder: Path): AcpConnection? = try {
-        AcpConnection(agyCommand, folder, scratch.errors(), scope, io).also { connection = it }
+        AcpConnection(agyCommand, folder, folder.resolve("agy.err").toFile(), scope, io).also { connection = it }
     } catch (e: IOException) {
         dead = true
         log("[antigravity] door chat could not start agy: ${e.message}\n")

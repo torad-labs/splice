@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Optional heading displayed above the table."
+    },
+    "markdown": {
+      "type": "string",
+      "description": "A GitHub-flavored Markdown pipe table (header row, separator row, and data rows)."
+    }
+  },
+  "required": ["markdown"],
+  "additionalProperties": false
+}

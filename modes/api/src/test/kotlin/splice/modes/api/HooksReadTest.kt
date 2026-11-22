@@ -24,15 +24,30 @@ class HooksReadTest {
             [hooks.session_start]
             timeout_s = 5
             on_failure = "closed"
+            [hooks.before_tool_call]
+            timeout_s = 10
+            [hooks.after_tool_call]
+            timeout_s = 10
+            [hooks.on_stop]
+            timeout_s = 15
             [hooks.request]
             worker = { kind = "mcp", server = "docs", tool = "annotate" }
+            [hooks.response]
+            timeout_s = 20
             """.trimIndent(),
         )
 
         assertEquals(emptyList<String>(), faults)
         assertEquals(10, hooks.order)
         assertEquals(
-            listOf(ModeHookMoment.SESSION_START, ModeHookMoment.REQUEST),
+            listOf(
+                ModeHookMoment.SESSION_START,
+                ModeHookMoment.BEFORE_TOOL_CALL,
+                ModeHookMoment.AFTER_TOOL_CALL,
+                ModeHookMoment.ON_STOP,
+                ModeHookMoment.REQUEST,
+                ModeHookMoment.RESPONSE,
+            ),
             hooks.hooks.map { it.moment },
         )
         val start = hooks.hooks.first { it.moment == ModeHookMoment.SESSION_START }

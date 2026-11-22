@@ -14,7 +14,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.topology.ServerBackup
@@ -51,10 +50,7 @@ public class ServerBackupStore public constructor(
     private val folder: Path,
     private val run: BackupRun,
 ) {
-    private val json = Json {
-        ignoreUnknownKeys = true
-        encodeDefaults = true
-    }
+    private val codec = ServerSnapshotCodec()
     private val scope = LifecycleScope(run.io)
     private val snapshotting = Mutex()
 
@@ -114,16 +110,7 @@ public class ServerBackupStore public constructor(
     }
 
     private fun applyRestore(bytes: ByteArray) {
-        val parsed = try {
-            json.decodeFromString(ServerSnapshot.serializer(), String(bytes, Charsets.UTF_8))
-        } catch (e: IllegalArgumentException) {
-            error("refusing to start empty over a corrupt backup snapshot: ${SafeFailureText.render(e)}")
-        }
-        val allowed = snapshotStateFiles.toSet()
-        val unknown = parsed.files.keys.filterNot { it in allowed }
-        if (unknown.isNotEmpty()) {
-            error("refusing to restore backup snapshot containing unexpected file(s): ${unknown.joinToString(", ")}")
-        }
+        val parsed = codec.decode(bytes)
         Files.createDirectories(folder)
         parsed.files.forEach { (name, content) ->
             SecureFile.writeAtomic0600(folder.resolve(name), content)
@@ -145,22 +132,12 @@ public class ServerBackupStore public constructor(
         val now = run.clock.instant()
         val takenAt = now.toString()
         val hourKey = BACKUP_HOUR_FILE.format(now)
-        val files = withContext(run.io) { readLocalFiles() }
-        val payload = json.encodeToString(
-            ServerSnapshot.serializer(),
-            ServerSnapshot(BACKUP_SNAPSHOT_VERSION, takenAt, files),
-        ).toByteArray(Charsets.UTF_8)
+        val files = withContext(run.io) { codec.readLocalFiles(folder) }
+        val payload = codec.encode(takenAt, files)
         val hourErr = store.put(hourKey, payload)
         if (hourErr != null) return@withLock SnapshotDone(hourKey, files.size, takenAt, hourErr)
         val latestErr = store.put(LATEST_SNAPSHOT_KEY, payload)
         SnapshotDone(hourKey, files.size, takenAt, latestErr)
-    }
-
-    private fun readLocalFiles(): Map<String, String> = buildMap {
-        for (name in snapshotStateFiles) {
-            val file = folder.resolve(name)
-            if (Files.isRegularFile(file)) put(name, Files.readString(file, Charsets.UTF_8))
-        }
     }
 }
 

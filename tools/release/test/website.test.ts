@@ -287,10 +287,11 @@ describe("splice.torad.ai's website", () => {
 
   // Nov 1, 2026: one feature gets its own section, the ability to connect another computer to a running splice on
   // another computer, the way the Mac uses the subscriptions and heads of this computer after one setup command. Its band shows the machine with the logins
-  // sharing them, the one command the other machine runs (its Copy button copies that line alone), and what the address
-  // can add (docs/specs/lan-share.md), and the header links to it. Every `splice share` and `splice remote` the page draws
-  // is a verb those commands take today, and every address it draws is on the port splice shares on.
-  test("a band shows another computer running on this one's plans after one command", () => {
+  // sharing its door, the one command the other machine runs (its Copy button copies that line alone), and the door
+  // every model rides on (docs/specs/door-network.md), and the header links to it. Every `splice share` and
+  // `splice remote` the page draws is a verb those commands take today, and every address it draws is on the port
+  // splice shares on.
+  test("a band shows another computer running on this one's door after one command", () => {
     const band = bands(page).get("share") ?? "";
     expect(band).toContain("data-reveal");
     const source = (path: string) => readFileSync(join(REPO, path), "utf8");
@@ -298,7 +299,9 @@ describe("splice.torad.ai's website", () => {
     expect(port).toBeDefined();
     const one = `splice remote add http://tower.lan:${port}`;
     const text = words(band);
-    expect(["splice share on", one, "?auth=", "?models=", "splice remote", "splice share off"].filter((s) => !text.includes(s))).toEqual([]);
+    expect(["splice share on", one, "splice remote", "splice share off"].filter((s) => !text.includes(s))).toEqual([]);
+    // A machine shares its door alone: an address per command, a login or a list of models is gone from the band.
+    expect(["?auth=", "?models="].filter((s) => text.includes(s))).toEqual([]);
     const copies = [...band.matchAll(/\bdata-copy="([^"]*)"/g)].map((m) => m[1]!.replace(/&amp;/g, "&"));
     expect(copies).toContain(one);
     expect(page).toContain('href="#share"');
@@ -319,18 +322,15 @@ describe("splice.torad.ai's website", () => {
     expect(unknown).toEqual([]);
   });
 
-  // The Options tab shows addresses a reader can paste: every login an address names with ?auth= is one splice accepts
-  // as a login label, and a login the tower lacks is refused in splice's own words.
-  test("every ?auth= login the share band draws is one splice accepts, and a missing one is refused as splice says", () => {
-    const band = words(bands(page).get("share") ?? "");
+  // The share band draws the door and nothing per command: every address a reader can paste is on the share port and
+  // names the door, never one command's own name.
+  test("the share band draws the door's address and no per-command address", () => {
+    const band = bands(page).get("share") ?? "";
     const source = (path: string) => readFileSync(join(REPO, path), "utf8");
-    const label = new RegExp(/loginLabel = Regex\("([^"]+)"\)/.exec(source("core/src/main/kotlin/splice/core/topology/LanShareConfig.kt"))![1]!.replace(/\\\\/g, "\\"));
-    const named = [...band.matchAll(/\?auth=([^\s&<"]+)/g)].map((m) => m[1]!).filter((l) => l !== "<login>");
-    expect(named.length).toBeGreaterThan(0);
-    expect(named.filter((l) => !label.test(l))).toEqual([]);
-    const refusal = /login != null -> "\$\{offer\.command\} on \$machine (has no login named) '\$login'; (it has) \$logins"/.exec(source("app/src/main/kotlin/splice/app/cli/share/RemoteAdd.kt"));
-    expect(refusal).not.toBeNull();
-    expect(band).toMatch(new RegExp(`claudex on tower ${refusal![1]} '([a-z0-9._-]+)'; ${refusal![2]} [a-z0-9._-]+(, [a-z0-9._-]+)*`));
+    const port = /SHARE_DEFAULT_PORT: Int = (\d+)/.exec(source("core/src/main/kotlin/splice/core/topology/LanShareConfig.kt"))?.[1];
+    const paths = [...band.matchAll(new RegExp(`tower\\.lan:${port}/([\\w<>.\\-/]*)`, "g"))].map((m) => m[1]!);
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths.filter((p) => p !== "" && !p.startsWith("door"))).toEqual([]);
   });
 
   // Nov 1, 2026: a line like "runs on your computer" is filler, since of course it runs on the person's computer.

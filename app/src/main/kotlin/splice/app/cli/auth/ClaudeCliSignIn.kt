@@ -4,7 +4,6 @@
 // and submits it to /code; otherwise it runs NativeClaudeAuth directly in-process.
 package splice.app.cli.auth
 
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -15,43 +14,27 @@ import splice.app.auth.claude.NativeClaudeAuth
 import splice.app.auth.claude.NativeClaudeAuthRun
 import splice.app.auth.claude.NativeSignIn
 import splice.app.cli.AdminSupport
-import splice.client.wrap.WrapState
+import splice.client.wrap.WrappedHead
 import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
-import splice.core.util.SafeFailureText
-import splice.daemonclient.MgmtKeyFile
-import splice.daemonclient.MgmtKeyRead
 import splice.oauth.BrowserOpener
 import splice.oauth.SystemBrowserOpener
-import splice.topology.TopologyStatePaths
 import splice.upstream.Ticker
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.codemode.ProcessTicker
 import java.io.BufferedReader
 import java.io.InputStreamReader
-import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
 import java.nio.file.Files
-import java.time.Duration
 import java.util.concurrent.atomic.AtomicBoolean
 
-// why: bounds each control-plane poll during a CLI Claude sign-in so a stuck daemon cannot hang forever.
-private const val HTTP_TIMEOUT_S = 15L
-
 // why: polls the daemon's sign-in status four times a second so the browser URL and completion land promptly.
-private const val POLL_INTERVAL_MS = 250L
+private const val SIGNIN_POLL_INTERVAL_MS = 250L
 
 // why: caps how long `splice login <claude-head>` waits for a sign-in before giving up cleanly.
 private const val MAX_SIGNIN_MS = 10L * 60L * 1000L
-
-// why: HTTP status codes 200..499 carry a structured JSON body from the control plane; 5xx/0 are transport failures.
-private const val MIN_HTTP_STATUS = 200
-private const val MAX_HTTP_STATUS = 499
 
 internal class ClaudeCliSignIn(
     private val output: TerminalOutput,
@@ -59,31 +42,17 @@ internal class ClaudeCliSignIn(
     private val stdin: BufferedReader = BufferedReader(InputStreamReader(System.`in`)),
     private val ticker: Ticker = ProcessTicker(),
 ) {
-    private val json = Json { ignoreUnknownKeys = true }
-    private val http = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(HTTP_TIMEOUT_S))
-        .build()
+    private val client = ClaudeCliSignInHttp()
 
     internal suspend fun login(headKey: String, topology: Topology): Boolean {
         val port = AdminSupport.controlPort(topology)
-        val key = mgmtKey()
+        val key = client.mgmtKey()
         if (key != null) {
-            val started = startOnDaemon(port, key, headKey)
+            val started = client.postJson("http://127.0.0.1:$port/api/auth/$headKey/login", key, "{}")
             if (started != null) return followDaemon(port, key, headKey, started)
         }
         return runLocally()
     }
-
-    private fun mgmtKey(): String? {
-        val stateDir = TopologyStatePaths.stateDir(System::getenv)
-        return when (val read = MgmtKeyFile.read(stateDir)) {
-            is MgmtKeyRead.Present -> read.key
-            else -> null
-        }
-    }
-
-    private fun startOnDaemon(port: Int, key: String, headKey: String): JsonObject? =
-        postJson("http://127.0.0.1:$port/api/auth/$headKey/login", key, "{}")
 
     private suspend fun followDaemon(port: Int, key: String, headKey: String, initial: JsonObject): Boolean {
         val id = JsonScalars.str(initial, "id") ?: return reportFailure(initial)
@@ -94,8 +63,8 @@ internal class ClaudeCliSignIn(
             val terminal = checkTerminal(status)
             if (terminal != null) return terminal
             tracker.advance(status, port, key, headKey, id)
-            ticker.awaitTick(POLL_INTERVAL_MS)
-            status = getJson("http://127.0.0.1:$port/api/auth/$headKey/login/$id", key)
+            ticker.awaitTick(SIGNIN_POLL_INTERVAL_MS)
+            status = client.getJson("http://127.0.0.1:$port/api/auth/$headKey/login/$id", key)
         }
         output.line("splice: sign-in timed out")
         return false
@@ -138,12 +107,12 @@ internal class ClaudeCliSignIn(
         val line = Cancellables.runCatchingBestEffort { stdin.readLine() }.getOrNull()?.trim().orEmpty()
         if (line.isEmpty()) return
         val body = buildJsonObject { put("code", line) }.toString()
-        postJson("http://127.0.0.1:$port/api/auth/$headKey/login/$id/code", key, body)
+        client.postJson("http://127.0.0.1:$port/api/auth/$headKey/login/$id/code", key, body)
     }
 
     private suspend fun runLocally(): Boolean {
-        val envMap = mapOf("HOME" to UserHome.home().toString())
-        val auth = NativeClaudeAuth(WrapState(), envMap, ProcessDispatchers().io())
+        val home = UserHome.dir()
+        val auth = NativeClaudeAuth(WrappedHead(home), mapOf("HOME" to home.toString()), ProcessDispatchers().io())
         val configDir = Files.createTempDirectory("splice-cli-claude-")
         return try {
             when (val started = auth.begin(configDir)) {
@@ -181,29 +150,4 @@ internal class ClaudeCliSignIn(
         output.line(if (reason != null) "splice: $reason" else "splice: Claude sign-in did not complete")
         return false
     }
-
-    private fun getJson(url: String, key: String): JsonObject? = sendJson(
-        HttpRequest.newBuilder(URI.create(url))
-            .timeout(Duration.ofSeconds(HTTP_TIMEOUT_S))
-            .header("Authorization", "Bearer $key")
-            .GET()
-            .build(),
-    )
-
-    private fun postJson(url: String, key: String, body: String): JsonObject? = sendJson(
-        HttpRequest.newBuilder(URI.create(url))
-            .timeout(Duration.ofSeconds(HTTP_TIMEOUT_S))
-            .header("Authorization", "Bearer $key")
-            .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(body))
-            .build(),
-    )
-
-    private fun sendJson(req: HttpRequest): JsonObject? = Cancellables.runCatchingBestEffort {
-        val res = http.send(req, HttpResponse.BodyHandlers.ofString())
-        if (res.statusCode() !in MIN_HTTP_STATUS..MAX_HTTP_STATUS) return@runCatchingBestEffort null
-        json.parseToJsonElement(res.body()) as? JsonObject
-    }.onFailure {
-        SafeFailureText.render(it)
-    }.getOrNull()
 }

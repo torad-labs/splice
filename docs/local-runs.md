@@ -17,7 +17,14 @@ one through the slot. A run goes to a machine of this one's system (a Linux mach
 its verdict is the one it would have here. The fat jar is built there too, on any of your machines, and rig brings
 `app/build/libs/app-all.jar` back once the build passes. When no machine has room, the slot asks again every 30 s for as long as it would wait for its lock
 (`GRADLE_SLOT_WAIT_S`), then fails with 75; it never builds here in its place. A run stays here on CI, when a task makes
-another file this machine reads, and when `SPLICE_GRADLE_HERE=1` is set for a run that needs this machine.
+another file this machine reads, and when `SPLICE_GRADLE_HERE=1` is set for a run that needs this machine. Nothing
+has to be set for a run to go: `rig` on PATH is what sends it.
+
+The pre-push Gradle tier does not wait for a machine that is not there. The hook asks rig before the tier starts,
+and when rig says no machine of this system exists or answers, the tier is not started and the hook sends the push
+on its direct legs, saying that Gradle did not run (`PRE-PUSH: SENT, GRADLE NOT RUN`, and `sent:gradle-unrun` in the
+timing record). The pull request's checks run the same suites on GitHub, and main takes nothing they have not
+passed. A machine that is only busy is waited for.
 
 ## The pre-push gate
 

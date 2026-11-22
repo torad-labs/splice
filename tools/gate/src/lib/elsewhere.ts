@@ -1,6 +1,10 @@
-// Gradle runs locally by default. Set SPLICE_GRADLE_REMOTE=1 for a run you want rig to place elsewhere.
+// A gradle run on another of the developer's machines, when `rig` is on this machine's PATH.
 //
-// `rig remote run`, given no machine, picks the first of the developer's machines with
+// Nov 19, 2026: builds, checks and tests leave a developer's main machine for others of theirs, so it stays
+// responsive while they run. (Nov 21, 2026: for part of a day a run went away only when SPLICE_GRADLE_REMOTE=1 asked,
+// and built here otherwise; pushes then ran their whole Gradle tier on the machine the developer's sessions share,
+// and the sessions froze under it. The switch is gone: with rig on PATH a run never builds here unless
+// SPLICE_GRADLE_HERE names this machine for it.) `rig remote run`, given no machine, picks the first of the developer's machines with
 // room, copies this work tree to it as it is on disk, runs the command there with its output here as it comes, and
 // exits with the command's own status. The command is this same slot, under the same label and tasks, so the build
 // there takes its own lock, resolves its own JDK 21 and sizes its own workers. Every `./gradlew` in the tree reaches
@@ -18,8 +22,11 @@
 // waits for its lock (GRADLE_SLOT_WAIT_S); a connection lost mid-run is asked again the same way. Then, or at once
 // when rig refused or could not copy the tree, the run fails with rig's 75 and says why: nothing ran here in its place.
 //
+// The pre-push hook asks first whether a machine is there at all ([noMachineFor]), and does not start its Gradle tier
+// when none is: a push held for an hour by a build box that was down is what made the run local (hook.ts). A machine
+// that is only busy is there, and the tier waits for it as every run does.
+//
 // The run stays here when:
-//   - SPLICE_GRADLE_REMOTE=1 was not requested;
 //   - rig is not on PATH, or this is CI: nothing to send it with;
 //   - SPLICE_GRADLE_HERE is set: the run that rig started on the other machine has it, so it builds where it stands,
 //     and a person sets it for a run that needs this machine;
@@ -34,7 +41,6 @@ import { exitForSignal, exitStatusOf } from "./status.ts";
 
 /** Set on a run that must build on the machine it is on: the run rig starts elsewhere, or one a person keeps here. */
 export const BUILD_HERE = "SPLICE_GRADLE_HERE";
-const BUILD_REMOTE = "SPLICE_GRADLE_REMOTE";
 
 /** rig's status, and the slot's, for a run that was not started: EX_TEMPFAIL. */
 export const NOT_STARTED_EXIT = 75;
@@ -49,6 +55,9 @@ const MADE_HERE = /(^|:)(jar|installDist|assemble|build|dist\w*|link\w*|publish\
 
 /** Why rig started nothing that another try may change: room, a busy copy, a machine that did not answer. */
 const ASK_AGAIN = new Set(["no room", "no machine", "tree busy", "unreachable"]);
+
+/** Of those, the ones that say no machine is there to take the run, rather than that one is busy. */
+const NO_MACHINE = new Set(["no machine", "unreachable"]);
 
 /** rig's status when the connection was lost once the command ran: the verdict there is unknown. */
 const CONNECTION_LOST = 255;
@@ -80,8 +89,7 @@ type Try =
 
 /** The status of the run when rig took it, or undefined when it is this machine's to run. */
 export async function gradleElsewhere(run: GradleRun): Promise<number | undefined> {
-  if (run.env[BUILD_REMOTE] !== "1" || run.env.CI || run.env[BUILD_HERE]) return undefined;
-  const rig = Bun.which("rig", { PATH: run.env.PATH ?? "" });
+  const rig = run.env.CI || run.env[BUILD_HERE] ? null : Bun.which("rig", { PATH: run.env.PATH ?? "" });
   if (rig === null || !existsSync(join(run.buildRoot, "tools", "gate", "index.ts"))) return undefined;
   const fetched = run.args.flatMap((arg) => FETCHED.find((it) => it.task.test(arg))?.paths ?? []);
   const made = run.args.find((arg) => MADE_HERE.test(arg));
@@ -106,17 +114,31 @@ export async function gradleElsewhere(run: GradleRun): Promise<number | undefine
   }
 }
 
-/** One `rig remote run` of this slot, and what its status line says of it. */
-async function oneTry(rig: string, run: GradleRun, fetched: readonly string[]): Promise<Try> {
+/** Why no machine is there to take [run], in rig's word, or undefined when one is there or the run is this machine's
+ *  to build (no rig on PATH, CI, SPLICE_GRADLE_HERE, a tree without the gate). rig is asked to run nothing on a machine
+ *  of this system, with the tree sent as the run itself would send it. A machine with no room, a busy copy of the
+ *  tree, a refusal and a rig that says nothing all count as a machine being there: the run waits for them or fails on
+ *  them, in its own words. */
+export async function noMachineFor(run: GradleRun): Promise<string | undefined> {
+  const rig = run.env.CI || run.env[BUILD_HERE] ? null : Bun.which("rig", { PATH: run.env.PATH ?? "" });
+  if (rig === null || !existsSync(join(run.buildRoot, "tools", "gate", "index.ts"))) return undefined;
+  const ended = await oneTry(rig, run, [], ["true"]);
+  return "notRun" in ended && ended.noMachine ? ended.notRun : undefined;
+}
+
+/** One `rig remote run` of this slot, or of [command] in its place, and what its status line says of it. */
+async function oneTry(rig: string, run: GradleRun, fetched: readonly string[], command?: readonly string[]): Promise<Try & { readonly noMachine?: boolean }> {
   const folder = mkdtempSync(join(tmpdir(), "gate-elsewhere-"));
   const statusPath = join(folder, "status");
   const statusFd = openSync(statusPath, "w");
   try {
-    const ended = await rigRun(rig, run, fetched, statusFd);
+    const ended = await rigRun(rig, run, fetched, statusFd, command);
     if ("signal" in ended) return ended;
     const status = lastStatus(readFileSync(statusPath, "utf8"));
     if (status !== undefined && status.why === undefined) return { ran: ended.status };
-    if (status?.why !== undefined) return { notRun: `rig: ${status.why}`, again: ASK_AGAIN.has(status.why) };
+    if (status?.why !== undefined) {
+      return { notRun: `rig: ${status.why}`, again: ASK_AGAIN.has(status.why), noMachine: NO_MACHINE.has(status.why) };
+    }
     if (ended.status === CONNECTION_LOST) return { notRun: "the connection to the machine was lost", again: true };
     return { notRun: `rig exited ${ended.status} and said nothing of a run (too old to pick a machine?)`, again: false };
   } finally {
@@ -131,6 +153,7 @@ async function rigRun(
   run: GradleRun,
   fetched: readonly string[],
   statusFd: number,
+  command?: readonly string[],
 ): Promise<{ readonly status: number } | { readonly signal: NodeJS.Signals }> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(run.env)) if (typeof value === "string") env[key] = value;
@@ -138,14 +161,14 @@ async function rigRun(
   env[BUILD_HERE] = "1";
   // uname's names, which are rig's: Linux/x86_64, Darwin/arm64
   const system = `${type()}/${machine()}`;
-  const jarOnly = run.args.every((arg) => arg.startsWith("-") || FETCHED.some((it) => it.task.test(arg)));
+  const jarOnly = command === undefined && run.args.every((arg) => arg.startsWith("-") || FETCHED.some((it) => it.task.test(arg)));
   const argv = [
     rig, "remote", "run", "--dir", run.buildRoot, "--env", BUILD_HERE, "--status-fd", String(STATUS_FD),
     ...(jarOnly ? [] : ["--needs", `system=${system}`]),
     ...fetched.flatMap((path) => ["--fetch", path]),
-    "--", "bun", "tools/gate", "slot", run.label, "--", ...run.args,
+    "--", ...(command ?? ["bun", "tools/gate", "slot", run.label, "--", ...run.args]),
   ];
-  console.error(`gradle-slot: ${run.label} goes to another ${jarOnly ? "" : `${system} `}machine through rig`);
+  if (command === undefined) console.error(`gradle-slot: ${run.label} goes to another ${jarOnly ? "" : `${system} `}machine through rig`);
   const child = Bun.spawn(argv, { cwd: run.buildRoot, env, stdio: ["inherit", "inherit", "inherit", statusFd] });
   let received: NodeJS.Signals | undefined;
   const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];

@@ -3,6 +3,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { machine as arch, tmpdir, type } from "node:os";
 import { join } from "node:path";
+import { noMachineFor } from "../src/lib/elsewhere.ts";
 import { runUnderSlot } from "../src/lib/slot.ts";
 
 const folders: string[] = [];
@@ -38,33 +39,73 @@ function machine() {
   );
   chmodSync(join(bin, "rig"), 0o755);
   const layout = { repoRoot: dir, buildRoot: dir };
+  const envOf = (env: Record<string, string | undefined>) => ({
+    PATH: `${bin}:/usr/bin:/bin`,
+    CI: undefined,
+    SPLICE_GRADLE_HERE: undefined,
+    GRADLE_SLOT_LOCK: join(dir, ".gradle-slot.lock"),
+    ...env,
+  });
   const run = (args: string[], env: Record<string, string | undefined>) =>
-    runUnderSlot({
-      layout,
-      label: "elsewhere-test",
-      args,
-      env: {
-        PATH: `${bin}:/usr/bin:/bin`,
-        CI: undefined,
-        SPLICE_GRADLE_HERE: undefined,
-        SPLICE_GRADLE_REMOTE: "1",
-        GRADLE_SLOT_LOCK: join(dir, ".gradle-slot.lock"),
-        ...env,
-      },
-    });
+    runUnderSlot({ layout, label: "elsewhere-test", args, env: envOf(env) });
+  /** What the pre-push hook asks before its tier starts: why no machine is there to take it. */
+  const absent = (env: Record<string, string | undefined>) =>
+    noMachineFor({ buildRoot: dir, label: "pre-push", args: [], env: envOf(env) });
   return {
     run,
+    absent,
     builtHere: () => existsSync(receipt),
     rigAsked: () => (existsSync(asked) ? readFileSync(asked, "utf8").trim().split("\n") : null),
   };
 }
 
 describe("a gradle run with rig on PATH", () => {
-  test("ordinary runs build here without asking the remote runner", async () => {
+  // Nov 21, 2026: this place held "ordinary runs build here without asking the remote runner", which pinned a run that
+  // went away only when SPLICE_GRADLE_REMOTE=1 asked. That switch is gone, and so is its test.
+  test("a run goes to another machine with nothing set to ask for it", async () => {
     const m = machine();
-    expect(await m.run([":app:shadowJar"], { SPLICE_GRADLE_REMOTE: undefined })).toBe(0);
+    expect(await m.run([":app:test"], { RIG_STATUS: '{"exit":0}', RIG_EXIT: "0" })).toBe(0);
+    expect(m.builtHere()).toBe(false);
+    expect(m.rigAsked()).not.toBeNull();
+  });
+
+  test("with no rig on PATH the run builds here", async () => {
+    const m = machine();
+    expect(await m.run([":app:test"], { PATH: "/usr/bin:/bin" })).toBe(0);
     expect(m.builtHere()).toBe(true);
     expect(m.rigAsked()).toBeNull();
+  });
+
+  test("asked before the pre-push tier starts, rig's word for a machine that is not there comes back, and nothing builds", async () => {
+    for (const why of ["unreachable", "no machine"]) {
+      const m = machine();
+      expect(await m.absent({ RIG_STATUS: `{"exit":null,"why":"${why}"}`, RIG_EXIT: "75" })).toBe(`rig: ${why}`);
+      expect(m.builtHere()).toBe(false);
+      const asked = m.rigAsked()!;
+      // nothing is run there: the question is whether a machine of this system takes the tree
+      expect(asked[asked.indexOf("--needs") + 1]).toBe(`system=${type()}/${arch()}`);
+      expect(asked.slice(asked.indexOf("--") + 1)).toEqual(["true"]);
+    }
+  });
+
+  test("a machine that answers, one with no room, a refusal and a silent rig all count as a machine being there", async () => {
+    for (const env of [
+      { RIG_STATUS: '{"exit":0}', RIG_EXIT: "0" },
+      { RIG_STATUS: '{"exit":null,"why":"no room"}', RIG_EXIT: "75" },
+      { RIG_STATUS: '{"exit":null,"why":"tree busy"}', RIG_EXIT: "75" },
+      { RIG_STATUS: '{"exit":null,"why":"scan refused"}', RIG_EXIT: "75" },
+      { RIG_EXIT: "64" },
+    ]) {
+      expect(await machine().absent(env)).toBeUndefined();
+    }
+  });
+
+  test("where the tier builds in place (no rig on PATH, CI, SPLICE_GRADLE_HERE), rig is not asked", async () => {
+    for (const env of [{ PATH: "/usr/bin:/bin" }, { CI: "true" }, { SPLICE_GRADLE_HERE: "1" }]) {
+      const m = machine();
+      expect(await m.absent({ RIG_STATUS: '{"exit":null,"why":"no machine"}', RIG_EXIT: "75", ...env })).toBeUndefined();
+      expect(m.rigAsked()).toBeNull();
+    }
   });
 
   test("another machine's run is the verdict, and nothing builds here", async () => {

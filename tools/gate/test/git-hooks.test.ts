@@ -587,6 +587,38 @@ describe("pre-push stops a gradle run whose push cannot pass, and records how lo
     expect(typeof lines[0]?.gradleS).toBe("number");
   });
 
+  test("a push whose gradle tier no machine could take is sent, and says gradle did not run", async () => {
+    const root = oneModule();
+    const lines: PushTiming[] = [];
+    // rig's word, asked before the tier starts (elsewhere.ts); the tier itself must then never be started
+    const started: string[][] = [];
+    const { result, text } = await captured(() =>
+      prePush(lay(root), pushOf(root, head(root)), {
+        gate: compiler(root, started),
+        noMachine: async () => "rig: unreachable",
+        openRun: () => null,
+        legs: NO_LEGS,
+        timings: (line) => void lines.push(line),
+      }),
+    );
+    expect(result).toBe(0);
+    expect(started).toEqual([]);
+    expect(text).toContain("PRE-PUSH: SENT, GRADLE NOT RUN — judged the pushed sha");
+    expect(text).toContain("Gradle did not run: no machine was there to take it, and it never runs on this one.");
+    expect(text).not.toContain("PRE-PUSH: PASS");
+    expect(lines.map((line) => [line.verdict, line.gradleS])).toEqual([["sent:gradle-unrun", null]]);
+  });
+
+  test("a red direct leg still blocks a push whose gradle tier no machine could take", async () => {
+    const root = oneModule();
+    const red: Leg[] = [{ task: "redLeg", command: ["bun", "-e", "process.exit(3)"], inputs: ["**/*.kt"] }];
+    const { result, text } = await captured(() =>
+      prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root), noMachine: async () => "rig: unreachable", openRun: () => null, legs: red }),
+    );
+    expect(result).toBe(1);
+    expect(text).toContain("PRE-PUSH: FAIL — judged the pushed sha");
+  });
+
   const clean = async (): Promise<LintVerdict> => ({ findings: [] });
   const curlySpacing: LintVerdict = { findings: [{ tool: "ktlint", line: `${TARGET}:3:10: Missing spacing before "{" (standard:curly-spacing)` }] };
 

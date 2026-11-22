@@ -50,7 +50,7 @@ internal class UsageMount(
     /** The daemon log, where the startup scan says when each command's history is ready. */
     log: LogSink? = null,
 ) {
-    private val usageHeads = UsageHeadAdapter.heads(heads, ClaudeLoginPlacesSource { ports.claudeLogins })
+    private val usageHeads = UsageHeadAdapter.heads(heads, ClaudeLoginPlacesSource { ports.claudeLogins }, ports)
     private val usageLookup = UsageHeadAdapter.consoleLookup(resolver, ports, config.statePaths)
     private val usagePayloads = UsagePayloads(usageHeads)
     private val perfPayloads = PerfPayloads(usageHeads)

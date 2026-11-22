@@ -11,6 +11,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.modes.api.FoundMode
+import splice.modes.api.ModeHookWorker
 import splice.modes.api.ModeState
 
 internal class ModeRows(private val modes: DaemonModes) {
@@ -28,6 +29,7 @@ internal class ModeRows(private val modes: DaemonModes) {
         put("prompt", mode.prompt != null)
         put("tools", tools(mode))
         put("resources", resources(mode))
+        put("hooks", hooks(mode))
         put("callers_off", buildJsonArray { manifest.offer.callersOff.forEach { add(it.wire) } })
         put("on", state(modes.everyHead(mode), "value"))
         putJsonObject("heads") { modes.heads.forEach { put(it, state(modes.state(mode, it), "on")) } }
@@ -40,6 +42,29 @@ internal class ModeRows(private val modes: DaemonModes) {
                 put("offered_as", tool.offeredAs)
                 put("description", tool.description)
                 tool.meta?.let { put("_meta", it) }
+            }
+        }
+    }
+
+    private fun hooks(mode: FoundMode) = buildJsonArray {
+        mode.hooks.forEach { hook ->
+            addJsonObject {
+                put("moment", hook.moment.wire)
+                put("timeout_s", hook.timeoutS)
+                put("on_failure", if (hook.failClosed) "closed" else "open")
+                put("order", mode.hookOrder)
+                when (val worker = hook.worker) {
+                    null -> put("worker", "in-process")
+                    is ModeHookWorker.Http -> putJsonObject("worker") {
+                        put("kind", "http")
+                        put("url", worker.url)
+                    }
+                    is ModeHookWorker.Mcp -> putJsonObject("worker") {
+                        put("kind", "mcp")
+                        put("server", worker.server)
+                        put("tool", worker.tool)
+                    }
+                }
             }
         }
     }

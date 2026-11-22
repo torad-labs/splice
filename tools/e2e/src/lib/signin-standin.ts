@@ -55,7 +55,7 @@ export const PROFILES: Record<string, ProviderProfile> = {
     flow: "device",
     head: "muse",
     providerKey: "muse",
-    dialect: "anthropic-passthrough",
+    dialect: "openai-responses",
     modelId: "muse-code",
     providerPage: "https://auth.meta.com/device",
     providerOrigin: "https://auth.meta.com",

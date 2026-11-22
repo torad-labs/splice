@@ -306,29 +306,37 @@ async function cancelOpenLogins(daemon: PrivateDaemon, head: string): Promise<vo
   }
 }
 
-async function removeHeadLogin(daemon: PrivateDaemon, profile: ProviderProfile): Promise<void> {
+async function removeHeadLogin(daemon: PrivateDaemon, profile: ProviderProfile, hintLabel?: string): Promise<void> {
+  const labels = new Set<string>();
   const accountsRes = await fetch(`http://127.0.0.1:${daemon.controlPort}/api/accounts`, {
     headers: { Authorization: `Bearer ${daemon.mgmtKey}` },
   }).catch(() => null);
   if (accountsRes?.ok) {
     const accountsJson = (await accountsRes.json()) as {
-      accounts?: { label?: string; heads?: string[]; account_labels?: Record<string, string> }[];
+      accounts?: {
+        label?: string;
+        selector_key?: string;
+        heads?: string[];
+        account_labels?: Record<string, string>;
+      }[];
     };
     const matches = (accountsJson.accounts ?? []).filter(
       (a) => (a.heads ?? []).includes(profile.head) || Boolean(a.account_labels?.[profile.head]),
     );
     for (const acc of matches) {
-      const lbl = acc.account_labels?.[profile.head] ?? acc.label;
-      if (!lbl) continue;
-      await fetch(
-        `http://127.0.0.1:${daemon.controlPort}/api/auth/${encodeURIComponent(profile.head)}/accounts/${encodeURIComponent(lbl)}`,
-        { method: "DELETE", headers: { Authorization: `Bearer ${daemon.mgmtKey}` } },
-      ).catch(() => {});
+      const lbl = acc.selector_key ?? acc.account_labels?.[profile.head] ?? acc.label;
+      if (lbl && lbl !== "claude-code" && !lbl.startsWith("native:")) labels.add(lbl);
     }
   }
-  if (profile.kind !== "client") {
+  if (hintLabel && hintLabel !== "primary") labels.add(hintLabel);
+  if (profile.kind !== "client") labels.add("primary");
+  for (const lbl of labels) {
+    const query =
+      profile.kind === "client"
+        ? `?target_kind=pool&target_id=${encodeURIComponent(lbl)}`
+        : "";
     await fetch(
-      `http://127.0.0.1:${daemon.controlPort}/api/auth/${encodeURIComponent(profile.head)}/accounts/primary`,
+      `http://127.0.0.1:${daemon.controlPort}/api/auth/${encodeURIComponent(profile.head)}/accounts/${encodeURIComponent(lbl)}${query}`,
       { method: "DELETE", headers: { Authorization: `Bearer ${daemon.mgmtKey}` } },
     ).catch(() => {});
   }
@@ -539,7 +547,7 @@ async function runKind(jar: string, profile: ProviderProfile): Promise<KindRepor
     await tab.close().catch(() => {});
 
     // Remove the first login via management API, mint a second credential, and sign in again
-    await removeHeadLogin(daemon, profile);
+    await removeHeadLogin(daemon, profile, firstLabel);
 
     const secondCred = standIn.mintNext("second");
     if (profile.kind === "client") {

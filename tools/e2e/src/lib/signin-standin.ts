@@ -109,8 +109,11 @@ export function startStandIn(profile: ProviderProfile): StandInServer {
   let refusalText = "synthetic provider refused authorization";
   let expectedReply = `standin-reply-${profile.kind}`;
   let seq = 0;
+  let deviceSeq = 0;
   let current = mintCredentials("first");
-  const approvedDevices = new Set<string>();
+  const deviceByUserCode = new Map<string, string>();
+  const approvedDeviceCodes = new Set<string>();
+  let deviceActed = false;
   let latestDevice: { userCode: string; deviceCode: string } | null = null;
   const seenCreds: string[] = [];
 
@@ -182,9 +185,11 @@ export function startStandIn(profile: ProviderProfile): StandInServer {
         if (mode === "unnamed") {
           return Response.json({ error: "server_error", error_description: "stand-in device endpoint refused start" }, { status: 503 });
         }
-        const userCode = `CODE-${String(seq + 1).padStart(4, "0")}`;
+        deviceSeq += 1;
+        const userCode = `CODE-${String(deviceSeq).padStart(4, "0")}`;
         const deviceCode = `dev-${randomBytes(6).toString("hex")}`;
         latestDevice = { userCode, deviceCode };
+        deviceByUserCode.set(userCode, deviceCode);
         return Response.json({
           device_code: deviceCode,
           user_code: userCode,
@@ -199,17 +204,21 @@ export function startStandIn(profile: ProviderProfile): StandInServer {
       if (path.includes("/oauth/token") || path.includes("/oauth2/token") || path.includes("/device/token")) {
         const body = await req.text();
         const params = new URLSearchParams(body);
+        if (profile.flow === "device") {
+          const code = params.get("device_code") ?? "";
+          if (mode === "refuse" || mode === "expire") {
+            if (!deviceActed) {
+              return Response.json({ error: "authorization_pending" }, { status: 400 });
+            }
+          } else if (!latestDevice || code !== latestDevice.deviceCode || !approvedDeviceCodes.has(code)) {
+            return Response.json({ error: "authorization_pending" }, { status: 400 });
+          }
+        }
         if (mode === "refuse") {
           return Response.json({ error: "access_denied", error_description: refusalText }, { status: 400 });
         }
         if (mode === "expire") {
           return Response.json({ error: "expired_token", error_description: "The authorization code expired." }, { status: 400 });
-        }
-        if (profile.flow === "device") {
-          const code = params.get("device_code") ?? "";
-          if (!latestDevice || code !== latestDevice.deviceCode || !approvedDevices.has(latestDevice.userCode)) {
-            return Response.json({ error: "authorization_pending" }, { status: 400 });
-          }
         }
         const idToken =
           profile.kind === "chatgpt-oauth"
@@ -270,6 +279,7 @@ export function startStandIn(profile: ProviderProfile): StandInServer {
     baseUrl,
     setMode(nextMode: StandInMode, refusal?: string) {
       mode = nextMode;
+      deviceActed = false;
       if (refusal) refusalText = refusal;
     },
     setExpectedReply(text: string) {
@@ -280,7 +290,9 @@ export function startStandIn(profile: ProviderProfile): StandInServer {
       return current;
     },
     approveDevice(userCode: string) {
-      approvedDevices.add(userCode);
+      deviceActed = true;
+      const deviceCode = deviceByUserCode.get(userCode);
+      if (deviceCode) approvedDeviceCodes.add(deviceCode);
     },
     lastDeviceCode() {
       return latestDevice;

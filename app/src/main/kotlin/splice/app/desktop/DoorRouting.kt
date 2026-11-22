@@ -73,6 +73,9 @@ internal class DoorRouting {
         held: ServedProvider?,
     ): DoorRoute? = when {
         exact != null -> exact
+        // Claude Code's own tier alias always runs: on the session's provider, else the caller's default model.
+        ask.model.startsWith(ANTHROPIC_ALIAS) -> held?.let { onHeld(lineup, it, decided.native, decided.name) }
+            ?: defaulted(lineup, decided.name, decided.default)
         refused(decided, ask) -> null
         held != null -> onHeld(lineup, held, decided.native, decided.name)
         else -> sideCall(lineup, decided)

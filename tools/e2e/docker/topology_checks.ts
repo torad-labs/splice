@@ -199,6 +199,12 @@ async function exampleHeads(example: string, headsFile: string, port: string, ho
         const overlay = settingsOverlay(argv);
         check(overlay, `${head}: the launch carries no --settings, where it hands Claude Code the head's settings`);
         pickerOk = pickerFree(overlay);
+        // head-catalog: `claude` is the gateway's, and holds the door's one window there.
+        windowOk =
+          /^[0-9]+$/.test(String(env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"])) &&
+          env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] === "1" &&
+          String(env["ANTHROPIC_BASE_URL"]).endsWith("/door") &&
+          env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] === undefined;
       } else {
         const config = env["CLAUDE_CONFIG_DIR"];
         check(config, `${head}: the launch recipe names no CLAUDE_CONFIG_DIR`);

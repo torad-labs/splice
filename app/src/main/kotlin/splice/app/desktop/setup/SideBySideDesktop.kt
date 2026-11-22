@@ -49,8 +49,7 @@ internal class SideBySideDesktop(
         val records = DesktopRecords(paths.desktopFile, log)
         if (!records.get().on) records.update { it.copy(on = true) }
         val helper = DesktopPrograms(paths.stateDir).lay()
-        val isolatedEnv = EnvReader { key -> if (key == SIDE_BY_SIDE_XDG_CONFIG_HOME) profile.toString() else env(key) }
-        val config = DesktopAppConfig(isolatedEnv)
+        val config = DesktopAppConfig(env = env, osName = osName, baseDir = profile)
         val library = DesktopAppLibrary(config, profileSync = DesktopProfileSync(env, osName))
         val applied = DesktopLibraryFiles().read(config.meta)?.let(config::applied)
         val alreadyOnDoor = applied?.let(library::doorOf)?.trimEnd('/') == door.trimEnd('/')

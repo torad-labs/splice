@@ -115,8 +115,12 @@
       .sort((a, b) => b.endedMs - a.endedMs);
     T.repos = [...new Set([...rows.map(r => r.repo), ...[...sessions.values()].map(s => s.repo && s.repo.root)].filter(Boolean))];
     readAt = Date.now();
-    draw();
-    reopen();
+    // The open glass is drawn again only when the field under it was: its anchor is then a new element, and what it
+    // shows may have moved. A read that changed nothing leaves it as the person has it. It was drawn again after
+    // every read, every five seconds, so a menu opened in it closed by itself (Nov 21, 2026: a check that opened
+    // the login menu and then pressed a login failed when a read landed between the two).
+    redrawn = draw() || redrawn;
+    if (redrawn && !busy()) { redrawn = false; reopen(); }
   }
 
   /* ---------- the teams ---------- */
@@ -140,9 +144,10 @@
     // again each time, every lamp in them was always just coming alive. The wires are drawn again when the bands
     // changed, or what they draw did: who is working, and how many messages passed between whom.
     const placed = Deck.put($('#bands'), order.length ? order.map(band) : [h('p', 'faint', readOk === false ? 'splice is not answering' : 'No teams')]);
-    more();
+    const under = more();
     const wired = JSON.stringify(order.map(t => [t.id, t.members.map(m => m.id + ':' + m.state), t.messages.map(x => x.from_slot + '>' + x.to_slot)]));
     if (placed || wired !== drawnWires) { drawnWires = wired; requestAnimationFrame(wiresAll); }
+    return placed || under;
   }
   let drawnWires = '';
   const rank = t => t.members.some(m => m.state === 'needs') * 100 + t.members.filter(m => m.state === 'working').length;
@@ -238,7 +243,7 @@
     const week = T.ended.filter(e => Date.now() - e.endedMs < WEEK_MS).length;
     const f3 = h('span', 'pt-fig', String(week)); f3.append(' ', h('small', '', 'this week'));
     en.append(goMark(), h('span', 'pt-name', 'Ended teams'), f3, h('span', 'pt-cap', T.ended[0] ? `Last: ${T.ended[0].name}` : 'None'));
-    Deck.put($('#more'), [loose, nw, en]);
+    return Deck.put($('#more'), [loose, nw, en]);
   }
 
   /* ---------- the lens: grown out of what was pressed ---------- */
@@ -280,6 +285,8 @@
     show(a, Object.assign({}, w, { t, m, a: w.a && t && t.members.find(x => x.id === w.a.id), b: w.b && t && t.members.find(x => x.id === w.b.id) }));
   }
   let saving = 0;
+  // the field was drawn again under an open glass that has not been drawn again since
+  let redrawn = false;
   // a save running or a field being typed in: the open glass is not drawn again under them
   const busy = () => saving > 0 || (!ins.el.hidden && ins.el.contains(document.activeElement) && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName));
 

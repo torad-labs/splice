@@ -118,6 +118,30 @@ test("a member's glass changes its role, model, login and instructions through t
   }
 }, 40_000);
 
+// Nov 21, 2026: the glass was drawn again after every read, changed or not, so a menu opened in it closed by itself
+// within five seconds. The test above failed on a slow machine when a read landed between opening the login menu and
+// pressing a login. Here two reads that change nothing land while the menu is open.
+test("a read that changes nothing leaves an open glass as the person has it, with the menu they opened in it", async () => {
+  const page = await at();
+  try {
+    await member(page, "builder").click();
+    await lr(page, "Login").locator(".pickbtn").click();
+    const menu = page.locator(".menu:not([hidden])");
+    await expect(menu.locator("button[role=menuitem]", { hasText: "Home login" })).toBeVisible();
+    // a mark on the glass's own heading: a glass drawn again has a new heading, without it
+    await glass(page).locator(".hd").evaluate((el) => el.setAttribute("data-kept", "1"));
+    const reads = () => s.calls.filter((c) => c.method === "GET" && c.path === "/api/teams").length;
+    const before = reads();
+    await expect.poll(reads, { timeout: 20_000 }).toBeGreaterThanOrEqual(before + 2);
+    await expect(glass(page).locator(".hd[data-kept]")).toHaveCount(1);
+    await expect(menu.locator("button[role=menuitem]", { hasText: "Home login" })).toBeVisible();
+    await menu.locator("button", { hasText: "Home login" }).click();
+    await expect.poll(() => sent("PUT", "/api/teams/t1").map((b) => (b as { slots: { id: string; account?: string }[] }).slots.find((x) => x.id === "builder")?.account).pop()).toBe("home");
+  } finally {
+    await page.close();
+  }
+}, 40_000);
+
 // Rewritten Nov 19, 2026: stopping and ending are one action (the owner's law of that day); the row says beforehand
 // what a press stops, and no ask stands between the press and the act.
 test("Stop says whose session it ends and stops it on its one press", async () => {

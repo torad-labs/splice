@@ -82,7 +82,12 @@ for (const file of ["sessions.html", "accounts.html", "teams.html", "providers.h
 async function board(width: number) {
   const page = await open("sessions.html", width);
   try {
-    await expect(page.locator("#board section.team").first()).toBeVisible({ timeout: 10_000 });
+    // Every team's column, and the one of the sessions on no team, before anything is measured. The board is drawn
+    // once from the sessions and again when the teams arrive: measured at its first column (as this once did), a slow
+    // machine saw every session in one column at every width.
+    await expect.poll(() => page.locator("#board section.team").count(), { timeout: 10_000 }).toBeGreaterThanOrEqual(crews + 1);
+    // and the board has counted its columns for them: every width here has room for more than one
+    await expect.poll(() => page.locator("#board").evaluate((el) => Number((el as HTMLElement).style.getPropertyValue("--cols"))), { timeout: 10_000 }).toBeGreaterThan(1);
     return await page.evaluate(() => {
       const boxes = [...document.querySelectorAll("#board section.team")].map((el) => el.getBoundingClientRect());
       return { columns: new Set(boxes.map((b) => Math.round(b.left))).size, widest: Math.round(Math.max(...boxes.map((b) => b.width))) };

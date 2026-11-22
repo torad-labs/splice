@@ -57,19 +57,19 @@ public class VirtualTime(
     }
 
     /** The monotonic reading every elapsed-time seam takes, in milliseconds. */
-    public val elapsed: ElapsedClock = ElapsedClock { ELAPSED_ORIGIN_MS + read() }
+    public val elapsed: ElapsedClock = ElapsedClock { ELAPSED_ORIGIN_MS + nowMs }
 
     /** The epoch reading every wall-clock seam takes, in milliseconds. */
-    public val wall: WallClock = WallClock { startEpochMs + read() }
+    public val wall: WallClock = WallClock { startEpochMs + nowMs }
 
     /** A one-shot wait on this clock. */
-    public val waiter: Waiter = Waiter { ms -> spendUntil(read() + ms.coerceAtLeast(0L)) }
+    public val waiter: Waiter = Waiter { ms -> spendUntil(nowMs + ms.coerceAtLeast(0L)) }
 
     /** A loop's pace on this clock; false once the clock is closed, so the loop ends. */
-    public val ticker: Ticker = Ticker { ms -> park(read() + ms.coerceAtLeast(0L)) }
+    public val ticker: Ticker = Ticker { ms -> park(nowMs + ms.coerceAtLeast(0L)) }
 
     /** How far the clock has moved since it was made. */
-    public fun passed(): Duration = read().milliseconds
+    public fun passed(): Duration = nowMs.milliseconds
 
     /** Runs [action] once the clock reads [passed] since it was made, before any wait due then wakes, so a test changes
      *  the world at a moment of virtual time: a server that comes back 43 s into a turn. Runs at once when the clock
@@ -85,8 +85,13 @@ public class VirtualTime(
 
     /** Moves the clock forward and wakes every wait that is due. */
     public fun advanceBy(by: Duration) {
+        advanceCountingWoken(by)
+    }
+
+    /** Moves the clock forward and atomically returns how many parked waits that step woke (#619). */
+    public fun advanceCountingWoken(by: Duration): Int {
         require(!by.isNegative()) { "the clock never runs back: $by" }
-        advanceTo(read() + by.inWholeMilliseconds)
+        return advanceTo(nowMs + by.inWholeMilliseconds)
     }
 
     /** Waits until the clock reads [passed] since it was made: true when it got there, false when the clock closed
@@ -124,7 +129,7 @@ public class VirtualTime(
         woken.forEach { it.wake(reached = false) }
     }
 
-    private fun read(): Long = synchronized(lock) { passedMs }
+    private val nowMs: Long get() = synchronized(lock) { passedMs }
 
     /** A one-shot wait until the clock reads [dueMs]: with [autoAdvance] the clock moves there first. */
     private suspend fun spendUntil(dueMs: Long): Boolean {
@@ -160,7 +165,7 @@ public class VirtualTime(
         }
     }
 
-    private fun advanceTo(targetMs: Long) {
+    private fun advanceTo(targetMs: Long): Int {
         val (rung, due) = synchronized(lock) {
             if (targetMs > passedMs) passedMs = targetMs
             val rung = alarms.filter { it.dueMs <= passedMs }.also { alarms.removeAll(it) }
@@ -168,6 +173,7 @@ public class VirtualTime(
         }
         rung.forEach { it.action() }
         due.forEach { it.wake(reached = true) }
+        return due.size
     }
 }
 

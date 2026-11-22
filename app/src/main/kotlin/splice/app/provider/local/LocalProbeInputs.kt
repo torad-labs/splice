@@ -6,6 +6,7 @@
 // widest row per upstream id), never the raw provider table.
 package splice.app.provider.local
 
+import splice.app.server.HealthHttp
 import splice.core.model.DiscoveredModel
 import splice.core.model.ModelCatalog
 import splice.core.model.UpstreamWindows
@@ -13,14 +14,22 @@ import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.topology.TopologyLoader
-import splice.upstream.local.LocalRowVerdict
+import splice.upstream.local.LocalModel
+import splice.upstream.local.LocalPropsWindow
 import splice.upstream.local.LocalRuntime
 import splice.upstream.local.LocalRuntimeKind
 import splice.upstream.local.LocalRuntimeProbe
 import splice.upstream.transport.LocalHttp
 import java.nio.file.Paths
+import java.util.concurrent.ConcurrentHashMap
 
-internal class LocalProbeInputs(private val http: LocalHttp? = null) {
+internal class LocalProbeInputs(
+    private val http: LocalHttp? = null,
+    private val healthHttp: HealthHttp = JdkHealthHttp(),
+) {
+    /** #703: detected runtime kind per base URL, so periodic window refreshes do not re-probe `/api/version` and
+     *  `/api/v0/models` on every tick. Evicted if a cached refresh stops answering. */
+    private val detected = ConcurrentHashMap<String, CachedRuntime>()
 
     fun headers(provider: ProviderConfig, bearer: String?): Map<String, String> =
         provider.staticHeaders + (bearer?.let { mapOf("Authorization" to "Bearer $it") } ?: emptyMap())
@@ -35,9 +44,6 @@ internal class LocalProbeInputs(private val http: LocalHttp? = null) {
         ).keyNow()
     }
 
-    /** [listsEvery]: the head asks for every model its runtime lists (custom-provider, `picker = true`), so the ones
-     *  no row declares are found too. */
-
     /** Ask the runtime behind [provider] about [catalog]'s rows. ONE sequence for the boot refusal
      *  (ChatArm) and for a window edited while the daemon runs (V4-162, TopologyWindows), so the two
      *  cannot come to disagree about what the runtime allows. Blocking network: never on a request
@@ -48,45 +54,106 @@ internal class LocalProbeInputs(private val http: LocalHttp? = null) {
         catalog: ModelCatalog,
         listsEvery: Boolean = false,
     ): LocalRowsCheck {
-        val probe = LocalRuntimeProbe(provider.baseUrl, http ?: JdkLocalHttp(headers(provider, bearer)))
-        val runtime = probe.detect() ?: return LocalRowsCheck.Down
-        // The HEAD's effective rows, not the provider's: a head context_window override and a picker
-        // suffix ("[64k]") both change what the head advertises, and the wire sees the stripped id.
+        val transport = OnceGetHttp(http ?: healthHttp.with(headers(provider, bearer)))
+        val baseKey = provider.baseUrl.trimEnd('/')
         val rows = UpstreamWindows(catalog).byId()
         val declared = rows.mapValues { (id, window) ->
             window.takeIf { provider.declaredWindowFor(id, catalog.windows.headWindow) != null }
         }
-        val inferred = declared.filterValues { it == null }.keys
-        val listed = probe.models(runtime, rows.keys, inferred) ?: return LocalRowsCheck.Unlisted(runtime)
-        val models = rows.keys.map { id ->
-            val model = listed.firstOrNull { it.id == id } ?: listed.firstOrNull { it.id == "$id:latest" }
-                ?: listed.singleOrNull()?.takeIf { runtime.kind == LocalRuntimeKind.OPENAI_COMPATIBLE }
-            DiscoveredModel(id, contextWindow = model?.contextLength?.takeIf { it > 0 })
-        } + listed.filter { listsEvery && it.id !in rows.keys }
-            .map { DiscoveredModel(it.id, contextWindow = it.contextLength?.takeIf { n -> n > 0 }) }
-        val windows = models.associate { it.id to it.contextWindow }
+        val query = ProbeRows(provider.baseUrl, baseKey, rows, declared, listsEvery)
+        val cached = detected[baseKey]
+        if (cached?.canReuseProps(listsEvery) == true) {
+            val fast = checkCachedProps(query, transport, cached.runtime)
+            if (fast != null) return fast
+            detected.remove(baseKey)
+        }
+        return checkFull(query, transport)
+    }
+
+    private fun checkCachedProps(
+        query: ProbeRows,
+        transport: LocalHttp,
+        runtime: LocalRuntime,
+    ): LocalRowsCheck.Checked? {
+        val allocated = LocalPropsWindow(query.baseUrl, transport).read() ?: return null
+        val probe = LocalRuntimeProbe(query.baseUrl, transport)
+        val listed = query.rows.keys.map { id -> LocalModel(id, allocated) }
+        val models = query.rows.keys.map { id -> DiscoveredModel(id, contextWindow = allocated) }
         return LocalRowsCheck.Checked(
             runtime,
-            rows.mapValues { (id, window) -> declared[id] ?: windows[id] ?: window },
-            probe.validate(declared, listed, runtime.kind).filterNot { it.ok },
+            query.rows.mapValues { (id, window) -> query.declared[id] ?: allocated.takeIf { it > 0 } ?: window },
+            probe.validate(query.declared, listed, runtime.kind).filterNot { it.ok },
             models,
         )
     }
-}
 
-/** What asking a local runtime about a head's rows found ([LocalProbeInputs.check]). */
-internal sealed class LocalRowsCheck {
-    /** Nothing answers at the base URL. Boot proceeds as it always has (per-turn errors say why). */
-    data object Down : LocalRowsCheck()
+    private fun checkFull(query: ProbeRows, transport: OnceGetHttp): LocalRowsCheck {
+        val probe = LocalRuntimeProbe(query.baseUrl, transport)
+        val existing = detected[query.baseKey]?.runtime
+        val runtime = existing ?: probe.detect() ?: return LocalRowsCheck.Down
+        val inferred = query.declared.filterValues { it == null }.keys
+        val listed = probe.models(runtime, query.rows.keys, inferred)
+            ?: return handleUnlisted(query, transport, probe, runtime, fromCache = existing != null)
+        if (existing == null) recordRuntime(query.baseKey, runtime, transport)
+        return checkedResult(query, probe, runtime, listed)
+    }
 
-    /** The runtime answered and its model list did not, so the rows stay unchecked. */
-    data class Unlisted(val runtime: LocalRuntime) : LocalRowsCheck()
+    /** If a cached runtime stopped listing models, evict and re-detect once so a downed runtime still reads Down
+     *  rather than Unlisted for one tick. */
+    private fun handleUnlisted(
+        query: ProbeRows,
+        transport: OnceGetHttp,
+        probe: LocalRuntimeProbe,
+        runtime: LocalRuntime,
+        fromCache: Boolean,
+    ): LocalRowsCheck {
+        detected.remove(query.baseKey)
+        if (!fromCache) return LocalRowsCheck.Unlisted(runtime)
+        val fresh = probe.detect() ?: return LocalRowsCheck.Down
+        val inferred = query.declared.filterValues { it == null }.keys
+        val listed = probe.models(fresh, query.rows.keys, inferred)
+        return if (listed == null) {
+            LocalRowsCheck.Unlisted(fresh)
+        } else {
+            recordRuntime(query.baseKey, fresh, transport)
+            checkedResult(query, probe, fresh, listed)
+        }
+    }
 
-    /** The runtime's verdict on every row; [refused] is empty when it accepts them all. */
-    data class Checked(
-        val runtime: LocalRuntime,
-        val rows: Map<String, Long>,
-        val refused: List<LocalRowVerdict>,
-        val models: List<DiscoveredModel> = emptyList(),
-    ) : LocalRowsCheck()
+    private fun checkedResult(
+        query: ProbeRows,
+        probe: LocalRuntimeProbe,
+        runtime: LocalRuntime,
+        listed: List<LocalModel>,
+    ): LocalRowsCheck.Checked {
+        val models = resolvedModels(query, listed, runtime.kind)
+        val windows = models.associate { it.id to it.contextWindow }
+        return LocalRowsCheck.Checked(
+            runtime,
+            query.rows.mapValues { (id, window) -> query.declared[id] ?: windows[id] ?: window },
+            probe.validate(query.declared, listed, runtime.kind).filterNot { it.ok },
+            models,
+        )
+    }
+
+    private fun recordRuntime(baseKey: String, runtime: LocalRuntime, transport: OnceGetHttp) {
+        val usesProps = runtime.kind == LocalRuntimeKind.OPENAI_COMPATIBLE &&
+            transport.answeredProps(baseKey.removeSuffix("/v1"))
+        detected[baseKey] = CachedRuntime(runtime, usesProps)
+    }
+
+    private fun resolvedModels(
+        query: ProbeRows,
+        listed: List<LocalModel>,
+        kind: LocalRuntimeKind,
+    ): List<DiscoveredModel> {
+        val matched = query.rows.keys.map { id ->
+            val model = listed.firstOrNull { it.id == id } ?: listed.firstOrNull { it.id == "$id:latest" }
+                ?: listed.singleOrNull()?.takeIf { kind == LocalRuntimeKind.OPENAI_COMPATIBLE }
+            DiscoveredModel(id, contextWindow = model?.contextLength?.takeIf { it > 0 })
+        }
+        val extra = listed.filter { query.listsEvery && it.id !in query.rows.keys }
+            .map { DiscoveredModel(it.id, contextWindow = it.contextLength?.takeIf { n -> n > 0 }) }
+        return matched + extra
+    }
 }

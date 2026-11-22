@@ -141,6 +141,7 @@ internal class HoldsThroughHeadsTest : HoldRouteFixtures() {
                         // The first 2 s tick notices the hold frame before counting its 30 s silence interval.
                         eventually { stream.finished || stream.soFar().arrivals.lastOrNull() != arrived }
                     }
+                    awaitRetryAt(10.minutes + 2.seconds) { stream.finished }
                 },
             ) { stream.finished }
             val answer = stream.finish()
@@ -766,18 +767,19 @@ internal abstract class HoldRouteFixtures : HoldReplyFixtures() {
                 settle()
                 val now = time.passed()
                 val next = minOf(time.nextDue() ?: (now + step), now + step, atMost)
-                val woken = time.parkedDues().count { it <= next }
                 val seen = answers()
-                time.advanceBy((next - now).coerceAtLeast(Duration.ZERO))
-                val answered = withTimeoutOrNull(ANSWER_MS) {
-                    while (!done() && answers() < seen + woken) delay(POLL_MS)
-                    true
-                }
-                // An unanswered wake must fail here; moving time again would hide the unsettled fixture.
-                assertTrue(answered == true) {
-                    "stage=virtual_clock_wake_unanswered from=$now until=$next woken=$woken " +
-                        "answers_before=$seen answers_now=${answers()} done=${done()} " +
-                        "parked=${time.parkedNow()} next_due=${time.nextDue()} wait_guard_ms=$ANSWER_MS"
+                val woken = time.advanceCountingWoken((next - now).coerceAtLeast(Duration.ZERO))
+                if (woken > 0) {
+                    val answered = withTimeoutOrNull(ANSWER_MS) {
+                        while (!done() && answers() < seen + woken) delay(POLL_MS)
+                        true
+                    }
+                    // An unanswered wake must fail here; moving time again would hide the unsettled fixture.
+                    assertTrue(answered == true) {
+                        "stage=virtual_clock_wake_unanswered from=$now until=$next woken=$woken " +
+                            "answers_before=$seen answers_now=${answers()} done=${done()} " +
+                            "parked=${time.parkedNow()} next_due=${time.nextDue()} wait_guard_ms=$ANSWER_MS"
+                    }
                 }
                 afterStep()
             }
@@ -789,14 +791,20 @@ internal abstract class HoldRouteFixtures : HoldReplyFixtures() {
 
     /** Waits in real time until the head has gone quiet: no wait parked or woken and no request sent for a few polls. */
     private suspend fun ScriptedHeads.settle() {
-        var seen = time.parkedNow() to provider.requests.size
+        var seen = Triple(time.parkedNow(), time.parksSoFar(), provider.requests.size)
         var quiet = 0
         while (quiet < SETTLE_POLLS) {
             delay(POLL_MS)
-            val now = time.parkedNow() to provider.requests.size
+            val now = Triple(time.parkedNow(), time.parksSoFar(), provider.requests.size)
             if (now == seen) quiet++ else quiet = 0
             seen = now
         }
+    }
+
+    /** At [due] the woken hold sends its retry over loopback; let it land before advancing the clock (#619). */
+    protected suspend fun ScriptedHeads.awaitRetryAt(due: Duration, finished: () -> Boolean) {
+        if (finished() || time.passed() < due) return
+        if (provider.requests.size < 2) eventually { finished() || provider.requests.size >= 2 }
     }
 
     /** Waits in real time, a few seconds at most, for [check]. */

@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.util.ClaudeProjectFolder
+import splice.core.client.ClaudeProjectFolder
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.core.util.WallClock

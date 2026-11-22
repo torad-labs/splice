@@ -18,6 +18,7 @@ import splice.harness.agent.AgentTool
 import splice.harness.agent.Answered
 import splice.harness.agent.ModelCall
 import splice.harness.agent.Settled
+import splice.harness.hook.HookRuns
 import splice.head.port.Held
 import splice.upstream.codemode.ProcessDispatchers
 
@@ -27,6 +28,7 @@ internal class AgentAnswers(
     private val stops: AgentStops,
     private val log: LogSink,
     private val clock: ElapsedClock,
+    private val hooks: HookRuns? = null,
 ) {
     private val results = AgentResults(head, log)
 
@@ -72,11 +74,57 @@ internal class AgentAnswers(
         }
     } ?: asked.map { Settled.Stopped }
 
-    private suspend fun settled(asked: ModelCall, on: CallFor, voice: HeldVoice, posted: WorkerPosted): Settled =
-        when (val tool = asked.tool) {
-            is AgentTool.OfPort -> ported(tool, asked.input, posted)
-            is AgentTool.OfCapability -> worked(tool.capability, asked, on, voice, posted)
+    private suspend fun settled(asked: ModelCall, on: CallFor, voice: HeldVoice, posted: WorkerPosted): Settled {
+        val session = on.agentSession()
+        val effective = when (val before = applyBefore(session, asked)) {
+            is HookRuns.ToolBefore.Refused -> return Settled.Refused(before.reason)
+            is HookRuns.ToolBefore.Go -> asked.copy(input = before.input)
         }
+        val raw = runTool(effective, on, voice, posted)
+        return applyAfter(session, effective, raw)
+    }
+
+    private suspend fun applyBefore(
+        session: splice.harness.agent.AgentSession?,
+        asked: ModelCall,
+    ): HookRuns.ToolBefore = hooks?.let { h ->
+        session?.let { h.beforeToolCall(it, asked.tool.name, asked.input) }
+    } ?: HookRuns.ToolBefore.Go(asked.input)
+
+    private suspend fun runTool(
+        asked: ModelCall,
+        on: CallFor,
+        voice: HeldVoice,
+        posted: WorkerPosted,
+    ): Settled = when (val tool = asked.tool) {
+        is AgentTool.OfPort -> ported(tool, asked.input, posted)
+        is AgentTool.OfCapability -> worked(tool.capability, asked, on, voice, posted)
+    }
+
+    private suspend fun applyAfter(
+        session: splice.harness.agent.AgentSession?,
+        asked: ModelCall,
+        raw: Settled,
+    ): Settled {
+        val h = hooks ?: return raw
+        val s = session ?: return raw
+        val pair = settledText(raw)
+        return if (pair == null) {
+            raw
+        } else {
+            val after = h.afterToolCall(s, asked.tool.name, asked.input, pair.first, pair.second)
+            when (after) {
+                is HookRuns.ToolAfter.Refused -> Settled.Refused(after.reason)
+                is HookRuns.ToolAfter.Go -> if (after.replaced) Settled.Text(after.text) else raw
+            }
+        }
+    }
+
+    private fun settledText(raw: Settled): Pair<String, Boolean>? = when (raw) {
+        is Settled.Text -> raw.text to false
+        is Settled.Error -> raw.text to true
+        is Settled.Refused, is Settled.Failed, Settled.Stopped -> null
+    }
 
     /** A port's tool answers in the daemon's own thread pool; its answer is the call's result. */
     private suspend fun ported(tool: AgentTool.OfPort, input: JsonElement, posted: WorkerPosted): Settled {

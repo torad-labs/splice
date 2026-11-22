@@ -1,0 +1,23 @@
+# Markdown-table-to-MCP-App sample mode (modes/README.md). Turns a Markdown pipe table into an interactive sortable
+# table page beside the conversation when the client draws MCP Apps, and returns a clean plain-text table otherwise.
+name = "tableapp"
+summary = "Renders a Markdown table as an interactive sortable MCP App beside the conversation."
+server = "tableapp"
+handler = "splice.modes.tableapp.TableAppMode"
+tools = ["render_table"]
+kind = "mcp"
+on = false
+
+[heads]
+only = []
+off = []
+
+[callers]
+off = []
+
+[[resources]]
+uri = "ui://tableapp/table"
+name = "table"
+mimeType = "text/html;profile=mcp-app"
+file = "table.html"
+_meta = { ui = { csp = { connectDomains = [], resourceDomains = [] } } }

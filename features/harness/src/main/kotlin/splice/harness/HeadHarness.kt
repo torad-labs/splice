@@ -27,13 +27,13 @@ public class HeadHarness {
         val calls = CapabilityCall(http, mcp, getter)
         val records = ThreadRecords(inputs.recordsDir, log)
         val stops = AgentStops()
-        val answers = AgentAnswers(head, calls, stops, log, clock)
+        val hooks = HookRuns(head, inputs.hooks, http, mcp, log)
+        val answers = AgentAnswers(head, calls, stops, log, clock, hooks)
         val kept = AgentRecords(inputs.recordsDir?.resolve(KEPT_DIR), log)
         // The worker of a call made beside the client's outlives the turn that called it: the harness owns where it
         // runs.
         val besides = AgentBeside(inputs.capabilities, inputs.tools, kept, answers, LifecycleScope(io))
         val agent = AgentCalls(head, inputs.capabilities, inputs.tools, kept, answers, besides, stops)
-        val hooks = HookRuns(head, inputs.hooks, http, mcp, log)
         return Harness(agent, calls, records, log, clock, hooks)
     }
 }

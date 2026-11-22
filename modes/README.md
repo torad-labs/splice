@@ -126,10 +126,17 @@ on_failure = "closed"      # "open" (default): the turn goes on; "closed": it is
 worker = { kind = "http", url = "http://127.0.0.1:9100/hook", auth_env = "HOOK_KEY" }
 ```
 
-- **Moments.** `session_start` is a session's first turn: add context at the end of its first user message, choose the
-  model its turns run on, or refuse the session with a reason the person reads. `request` sees the whole request on
-  its way to the provider and may replace it. A manifest naming any other moment is a finding: a moment appears here
-  when splice serves it, never as a name that does nothing.
+- **Moments.**
+  - `session_start`: a session's first turn — add context at the end of its first user message, choose the model its
+    turns run on, or refuse the session with a reason the person reads.
+  - `before_tool_call`: before a harness/mode tool call runs — rewrite its input (`rewrite`) or refuse the turn.
+  - `after_tool_call`: after a harness/mode tool call finishes — replace its text result (`replace`) or refuse the turn.
+  - `on_stop`: when the model stops without calling a tool — continue the turn with a follow-up message (`continue`),
+    replace the final text (`replace`), or refuse.
+  - `request`: sees the whole request on its way to the provider and may replace it (`rewrite`) or refuse.
+  - `response`: sees the whole response on its way back to the client and may rewrite its content (`rewrite`) or refuse.
+  A manifest naming any other moment is a finding: a moment appears here when splice serves it, never as a name that
+  does nothing.
 - **Who answers.** Without a `worker`, the mode's handler answers in-process and must implement `ModeHooks`
   (`hook(call)`, answer `Pass` by default). `worker.kind = "http"` posts the call as JSON and reads one JSON line
   back; `worker.kind = "mcp"` calls a tool the MCP hub serves. Both receive `moment`, `session` and `body`, and answer

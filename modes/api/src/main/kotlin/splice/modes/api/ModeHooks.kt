@@ -10,8 +10,20 @@ public enum class ModeHookMoment(public val wire: String) {
     /** A session's first request: add context, choose the model, or refuse the session. */
     SESSION_START("session_start"),
 
+    /** Before a tool call runs inside the harness: inspect/rewrite its input or refuse the turn. */
+    BEFORE_TOOL_CALL("before_tool_call"),
+
+    /** After a tool call finishes inside the harness: inspect/replace its text result or refuse the turn. */
+    AFTER_TOOL_CALL("after_tool_call"),
+
+    /** When the model is about to stop with no tool calls: continue with a follow-up, replace the reply, or refuse. */
+    ON_STOP("on_stop"),
+
     /** A whole request on its way to the provider: see it and change it. */
     REQUEST("request"),
+
+    /** A whole response on its way back to the client: see it, rewrite its content, or refuse. */
+    RESPONSE("response"),
 }
 
 /** One call of a mode's hook: the [moment], the [session] it is for, the moment's [body] (JSON), and the mode's store. */

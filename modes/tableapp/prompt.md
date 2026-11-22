@@ -1,0 +1,1 @@
+When the user asks for a structured comparison or data table, you may call `render_table` with the Markdown pipe table so clients that support MCP Apps display an interactive sortable view alongside your answer.

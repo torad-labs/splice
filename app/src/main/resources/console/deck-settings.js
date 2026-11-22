@@ -207,7 +207,18 @@
       const tools = h('div', 'kvs fill');
       (m.tools || []).forEach(t => { const d = h('div'); d.append(h('span', '', t.description || t.name), h('b', '', t.offered_as || t.name)); tools.append(d); });
       if (!(m.tools || []).length) tools.append(h('div', 'faint', 'No tools'));
-      about.ctl.append(tools); body.append(about.r);
+      about.ctl.append(tools);
+      if ((m.hooks || []).length) {
+        const hooks = h('div', 'kvs fill lr-sub');
+        m.hooks.forEach(hk => {
+          const w = typeof hk.worker === 'string' ? hk.worker : hk.worker && hk.worker.kind ? hk.worker.kind : 'in-process';
+          const d = h('div');
+          d.append(h('span', '', `Hook · ${hk.moment}`), h('b', '', `${w} · ${hk.timeout_s}s · ${hk.on_failure}`));
+          hooks.append(d);
+        });
+        about.r.append(hooks);
+      }
+      body.append(about.r);
       // one line a command, as a setting's per-command values are drawn: its dot and name, the switch, what splice said
       const box = h('div', 'lr'); box.dataset.item = 'mode:' + m.name + ':cmds';
       const sub = h('div', 'lr-sub');

@@ -16,6 +16,7 @@ import splice.core.capability.CapabilityTurn
 import splice.core.failure.Decline
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
+import splice.harness.agent.AgentAsk
 import splice.harness.agent.AgentSession
 import splice.harness.hook.HookRuns
 import splice.harness.hook.HookStarts
@@ -94,7 +95,8 @@ internal class Harness(
         if (hooked.refusal != null) {
             return HarnessEnd.Refused(Decline.ModeRefused(hooked.refusedBy ?: "a mode", hooked.refusal))
         }
-        return ruled.copy(sending = hooked.body?.takeUnless { it === turn.sending }, rounds = end.rounds)
+        val rounds = hooks?.wrapRounds(session, end.rounds, AgentAsk(hooked.body ?: turn.sending, turn)) ?: end.rounds
+        return ruled.copy(sending = hooked.body?.takeUnless { it === turn.sending }, rounds = rounds)
     }
 
     /** What the capabilities called by rule make of [request]. */

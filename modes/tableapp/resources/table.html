@@ -1,0 +1,142 @@
+<!doctype html>
+<!-- Markdown-table-to-MCP-App page: self-contained, zero external network requests.
+     Parses a GitHub-flavored Markdown pipe table from ui/notifications/tool-input arguments
+     and renders a sortable, filterable table using safe DOM APIs. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Table</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 1rem 1.25rem; font: 0.9375rem/1.45 system-ui, sans-serif; color: CanvasText; background: Canvas; }
+  .head { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+  input { font: inherit; padding: 0.35rem 0.6rem; border: 1px solid GrayText; border-radius: 6px; background: Field; color: FieldText; }
+  .wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 0.45rem 0.65rem; border-bottom: 1px solid color-mix(in srgb, GrayText 30%, transparent); }
+  th { font-weight: 600; cursor: pointer; user-select: none; white-space: nowrap; }
+  th[data-dir="asc"]::after { content: " ▲"; opacity: 0.7; }
+  th[data-dir="desc"]::after { content: " ▼"; opacity: 0.7; }
+  .quiet { opacity: 0.65; }
+</style>
+</head>
+<body>
+<div class="head">
+  <h1 id="title" hidden></h1>
+  <input id="filter" type="search" placeholder="Filter rows…" aria-label="Filter rows" hidden>
+</div>
+<p id="empty" class="quiet">Waiting for table data.</p>
+<div class="wrap"><table id="tbl" hidden><thead id="th"></thead><tbody id="tb"></tbody></table></div>
+<script>
+(() => {
+  const titleEl = document.getElementById("title");
+  const filterEl = document.getElementById("filter");
+  const emptyEl = document.getElementById("empty");
+  const tblEl = document.getElementById("tbl");
+  const theadEl = document.getElementById("th");
+  const tbodyEl = document.getElementById("tb");
+  const waiting = new Map();
+  let next = 1, headers = [], rows = [], sortCol = -1, sortAsc = true;
+
+  const send = (m) => window.parent.postMessage(m, "*");
+  const ask = (method, params) => new Promise((resolve, reject) => {
+    const id = next++;
+    waiting.set(id, { resolve, reject });
+    send({ jsonrpc: "2.0", id, method, params });
+  });
+
+  const splitRow = (line) => {
+    let s = line.trim();
+    if (s.startsWith("|")) s = s.slice(1);
+    if (s.endsWith("|")) s = s.slice(0, -1);
+    return s.split("|").map((c) => c.trim());
+  };
+
+  const isSep = (line) => /^\|?[\s:|-]+\|?$/.test(line.trim()) && line.includes("-");
+
+  const parseMarkdown = (md) => {
+    const lines = String(md || "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l.includes("|"));
+    if (lines.length < 2 || !isSep(lines[1])) return null;
+    const h = splitRow(lines[0]);
+    const r = lines.slice(2).map((l) => {
+      const cells = splitRow(l);
+      while (cells.length < h.length) cells.push("");
+      return cells.slice(0, h.length);
+    });
+    return { headers: h, rows: r };
+  };
+
+  const render = () => {
+    const q = filterEl.value.trim().toLowerCase();
+    let shown = q ? rows.filter((r) => r.some((c) => c.toLowerCase().includes(q))) : [...rows];
+    if (sortCol >= 0) {
+      shown.sort((a, b) => {
+        const av = a[sortCol] || "", bv = b[sortCol] || "";
+        const an = Number(av.replace(/[,$%]/g, "")), bn = Number(bv.replace(/[,$%]/g, ""));
+        const cmp = !Number.isNaN(an) && !Number.isNaN(bn) && av !== "" && bv !== "" ? an - bn : av.localeCompare(bv);
+        return sortAsc ? cmp : -cmp;
+      });
+    }
+    theadEl.replaceChildren();
+    const trH = document.createElement("tr");
+    headers.forEach((col, i) => {
+      const th = document.createElement("th");
+      th.textContent = col;
+      if (i === sortCol) th.dataset.dir = sortAsc ? "asc" : "desc";
+      th.addEventListener("click", () => {
+        if (sortCol === i) sortAsc = !sortAsc; else { sortCol = i; sortAsc = true; }
+        render();
+      });
+      trH.appendChild(th);
+    });
+    theadEl.appendChild(trH);
+
+    tbodyEl.replaceChildren();
+    shown.forEach((r) => {
+      const tr = document.createElement("tr");
+      r.forEach((cell) => { const td = document.createElement("td"); td.textContent = cell; tr.appendChild(td); });
+      tbodyEl.appendChild(tr);
+    });
+  };
+
+  filterEl.addEventListener("input", render);
+
+  const show = (args) => {
+    if (!args || typeof args.markdown !== "string") return;
+    const parsed = parseMarkdown(args.markdown);
+    if (!parsed) { emptyEl.textContent = "Input is not a Markdown pipe table."; emptyEl.hidden = false; tblEl.hidden = true; return; }
+    headers = parsed.headers;
+    rows = parsed.rows;
+    sortCol = -1;
+    sortAsc = true;
+    titleEl.hidden = typeof args.title !== "string" || args.title.trim() === "";
+    if (!titleEl.hidden) titleEl.textContent = args.title.trim();
+    filterEl.hidden = false;
+    emptyEl.hidden = true;
+    tblEl.hidden = false;
+    render();
+  };
+
+  window.addEventListener("message", (event) => {
+    const m = event.data;
+    if (!m || m.jsonrpc !== "2.0") return;
+    if (m.id !== undefined && waiting.has(m.id)) {
+      const asked = waiting.get(m.id);
+      waiting.delete(m.id);
+      if (m.error) asked.reject(m.error); else asked.resolve(m.result);
+    } else if (m.method === "ui/notifications/tool-input") {
+      show(m.params && m.params.arguments);
+    } else if (m.method === "ping" && m.id !== undefined) {
+      send({ jsonrpc: "2.0", id: m.id, result: {} });
+    }
+  });
+
+  ask("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "tableapp", version: "1" }, appCapabilities: {} })
+    .then(() => send({ jsonrpc: "2.0", method: "ui/notifications/initialized" }))
+    .catch(() => { emptyEl.textContent = "This client did not open the table."; });
+})();
+</script>
+</body>
+</html>

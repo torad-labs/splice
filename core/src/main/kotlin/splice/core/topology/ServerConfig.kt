@@ -46,6 +46,9 @@ public data class ServerConfig(
     /** `[server.telemetry]`: the operator's collector, which each person's Claude Code telemetry is relayed to (F8);
      *  null relays none. */
     val telemetry: ServerTelemetry? = null,
+    /** `[server.forward_auth]` (F13): dashboard SSO check (`GET /server/forward-auth`) admitting admins and emails
+     *  matching [ServerForwardAuth.allow]; null disables the endpoint. */
+    @SerialName("forward_auth") val forwardAuth: ServerForwardAuth? = null,
 ) {
     /** Whether the file carries a `[server]` table at all, whatever it holds. */
     val declared: Boolean get() = this != ServerConfig()
@@ -76,13 +79,35 @@ public data class ServerLimits(
     @SerialName("tpm_per_person") val tpmPerPerson: Int = 0,
 )
 
-/** `[server.client]` (F9): the oldest splice a laptop may run against this server. [minimum] is a dotted splice
- *  version, as in "0.10.0"; null lets every laptop in. A Messages turn from an older one is answered by its head, in
- *  the conversation, with what to upgrade to, and reaches no upstream. */
+/** `[server.client]` (F9, F15): the oldest splice a laptop may run against this server, and optionally where laptops
+ *  fetch the client build its policy wants. [minimum] is a dotted splice version, as in "0.10.0"; null lets every
+ *  laptop in. [downloadUrl] is an http(s) base URL advertised in `GET /server/profile` and `GET /server/install`. */
 @Serializable
-public data class ServerClient(val minimum: String? = null) {
+public data class ServerClient(
+    val minimum: String? = null,
+    @SerialName("download_url") val downloadUrl: String? = null,
+) {
     /** [minimum] as a version compared number by number, or null when none is set or it is no version. */
     public val floor: ClientVersion? get() = ClientVersionParser().parse(minimum)
+}
+
+/** `[server.forward_auth]` (F13): who may open internal dashboards behind reverse-proxy `forward_auth`. Admins in
+ *  `[server] admins` are always admitted; [allow] lists additional emails (`ada@team.example`) or `@domain` rules. */
+@Serializable
+public data class ServerForwardAuth(val allow: List<String> = emptyList()) {
+    /** Whether [person] (lowercased email) is admitted by [allow] or by being an [isAdmin]. */
+    public fun admits(person: String, isAdmin: Boolean): Boolean {
+        if (isAdmin) return true
+        val domain = person.substringAfterLast('@', "")
+        return allow.any { raw ->
+            val entry = raw.trim().lowercase()
+            if (entry.startsWith("@")) {
+                domain.isNotEmpty() && domain == entry.removePrefix("@")
+            } else {
+                PersonEmails.read(entry) == person
+            }
+        }
+    }
 }
 
 /** `[server.telemetry]` (F8): [forwardTo] is the operator's OTLP/HTTP collector, as in "http://otel.lan:4318", which

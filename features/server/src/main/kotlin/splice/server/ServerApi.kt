@@ -14,6 +14,8 @@ import splice.core.topology.ServerDurations
 import splice.core.util.JsonScalars
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
+import splice.server.audit.CONTROL_ACTOR
+import splice.server.audit.ServerAudit
 import java.time.Duration
 import java.time.Instant
 
@@ -27,7 +29,11 @@ public sealed class ServerAnswer {
     public data class Text(val status: HttpStatusCode, val contentType: String, val text: String) : ServerAnswer()
 }
 
-public class KeyApi(private val keys: ServerKeys, private val log: LogSink) {
+public class KeyApi(
+    private val keys: ServerKeys,
+    private val log: LogSink,
+    private val audit: ServerAudit? = null,
+) {
     private val nameShape = Regex("""^[^\p{Cntrl}]{1,$NAME_MAX}$""")
 
     /** Every key, or only [person]'s when one is named: `{"keys": [...]}`, no secret in it. */
@@ -38,7 +44,7 @@ public class KeyApi(private val keys: ServerKeys, private val log: LogSink) {
     }
 
     /** Mints a key from `{"person": email, "name"?: text, "expires"?: "30d"}` and answers it with the key, once. */
-    public suspend fun create(body: JsonObject?): ServerAnswer {
+    public suspend fun create(body: JsonObject?, actor: String = CONTROL_ACTOR): ServerAnswer {
         val person = JsonScalars.str(body, PERSON)?.let(PersonEmails::read)
         val name = JsonScalars.str(body, "name")?.trim()?.takeIf(String::isNotEmpty)
         val expires = JsonScalars.str(body, "expires")
@@ -47,7 +53,7 @@ public class KeyApi(private val keys: ServerKeys, private val log: LogSink) {
             person == null -> notAnEmail()
             expires != null && lifetime == null -> refused("expires must be a duration such as 12h, 30d or 8w")
             name != null && !nameShape.matches(name) -> refused("name must be one line of at most $NAME_MAX characters")
-            else -> minted(KeyRequest(person, name, lifetime), HttpStatusCode.Created)
+            else -> minted(KeyRequest(person, name, lifetime), HttpStatusCode.Created, actor)
         }
     }
 
@@ -56,13 +62,23 @@ public class KeyApi(private val keys: ServerKeys, private val log: LogSink) {
     internal suspend fun signedIn(person: String, device: String, days: Int): ServerAnswer {
         val lifetime = Duration.ofDays(days.toLong()).toMillis()
         val request = KeyRequest(person, lifetimeMs = lifetime, source = SIGNIN_SOURCE, device = device)
-        return minted(request, HttpStatusCode.OK)
+        return minted(request, HttpStatusCode.OK, person)
     }
 
-    private suspend fun minted(request: KeyRequest, status: HttpStatusCode): ServerAnswer {
+    private suspend fun minted(request: KeyRequest, status: HttpStatusCode, actor: String): ServerAnswer {
         val minted = keys.mint(request)
         val how = request.device?.let { " by a sign-in on the device ${LogSafe.str(it)}" }.orEmpty()
         log("[server] key ${minted.row.prefix} issued to ${LogSafe.str(request.person)}$how\n")
+        audit?.record(
+            actor,
+            "key.create",
+            request.person,
+            buildJsonObject {
+                put("prefix", minted.row.prefix)
+                request.name?.let { put("name", it) }
+                put("source", minted.row.source)
+            },
+        )
         val answer = buildJsonObject {
             put("key", minted.reveal())
             row(minted.row).forEach { (field, value) -> put(field, value) }
@@ -71,18 +87,20 @@ public class KeyApi(private val keys: ServerKeys, private val log: LogSink) {
     }
 
     /** Revokes the key [prefix] names; 404 when no key has that prefix. */
-    public suspend fun revoke(prefix: String): ServerAnswer {
+    public suspend fun revoke(prefix: String, actor: String = CONTROL_ACTOR): ServerAnswer {
         val key = keys.revoke(prefix)
             ?: return ServerAnswer.Refused(HttpStatusCode.NotFound, "no key has the prefix ${LogSafe.str(prefix)}")
         log("[server] key ${key.prefix} of ${LogSafe.str(key.person)} revoked\n")
+        audit?.record(actor, "key.revoke", key.person, buildJsonObject { put("prefix", key.prefix) })
         return done(row(key))
     }
 
     /** Offboarding: revokes every live key of [person] and answers how many, `{"person", "revoked": N}`. */
-    public suspend fun revokePerson(person: String): ServerAnswer {
+    public suspend fun revokePerson(person: String, actor: String = CONTROL_ACTOR): ServerAnswer {
         val who = PersonEmails.read(person) ?: return notAnEmail()
         val count = keys.revokePerson(who)
         log("[server] $count keys of ${LogSafe.str(who)} revoked\n")
+        audit?.record(actor, "key.revoke_person", who, buildJsonObject { put("revoked", count) })
         return done(
             buildJsonObject {
                 put(PERSON, who)

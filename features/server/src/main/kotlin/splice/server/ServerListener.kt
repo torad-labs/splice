@@ -107,9 +107,11 @@ internal class ServerListener(
 ) {
     private val voice = RefusalVoice(SERVER_ERROR_PREFIX)
     private val catalog = ShareCatalog(parts.heads, io, voice)
-    private val admin = ServerAdmin(server, KeyApi(parts.keys, log), reads, voice)
+    private val admin = ServerAdmin(server, KeyApi(parts.keys, log, reads.audit), reads, voice)
     private val addresses = ClientAddresses(server.trustedProxies)
-    private val signins = SigninRoute(signin, KeyApi(parts.keys, log), addresses, voice, log)
+    private val signins = SigninRoute(signin, KeyApi(parts.keys, log, reads.audit), addresses, voice, log)
+    private val forwardAuth = ForwardAuthRoute(server, parts.keys, parts.people, voice)
+    private val installRoute = ClientInstallRoute(server, addresses, secure = tls != null, voice)
     private val keyAdmission = KeyAdmission(parts.keys, addresses, log)
     private val watched = WatchedRelay()
     private val paths = RequestPaths()
@@ -168,14 +170,40 @@ internal class ServerListener(
 
     private suspend fun answer(call: ApplicationCall) {
         val path = paths.read(call)
-        val read = call.request.httpMethod == HttpMethod.Get
-        if (read && path == listOf(HEALTH_ROUTE)) return call.respondText(HEALTH_BODY, ContentType.Application.Json)
-        if (path != null && signins.asks(path)) return signins.answer(call, path)
+        if (answeredOpen(call, path)) return
         // A request refused before its route is known is still refused in the shape its client reads.
         val voiced = if (path != null && openAi.asks(call, path)) openAi.voice else voice
         val key = keyAdmission.admitted(call, voiced) ?: return
         if (path == null) noSuchPath(call) else routed(call, key, path)
         parts.keys.keepUse()
+    }
+
+    /** Routes that handle their own auth or need none: health, forward_auth (cookie/key), install script, and sign-in. */
+    private suspend fun answeredOpen(call: ApplicationCall, path: List<String>?): Boolean =
+        path != null && (answeredHealthOrSignin(call, path) || answeredPublicRoute(call, path))
+
+    private suspend fun answeredHealthOrSignin(call: ApplicationCall, path: List<String>): Boolean = when {
+        call.request.httpMethod == HttpMethod.Get && path == listOf(HEALTH_ROUTE) -> {
+            call.respondText(HEALTH_BODY, ContentType.Application.Json)
+            true
+        }
+        signins.asks(path) -> {
+            signins.answer(call, path)
+            true
+        }
+        else -> false
+    }
+
+    private suspend fun answeredPublicRoute(call: ApplicationCall, path: List<String>): Boolean = when {
+        forwardAuth.asks(call, path) -> {
+            forwardAuth.answer(call)
+            true
+        }
+        installRoute.asks(call, path) -> {
+            installRoute.answer(call)
+            true
+        }
+        else -> false
     }
 
     /** [path] asked with a live [key]: what the server offers, its own API, or one of its commands. */

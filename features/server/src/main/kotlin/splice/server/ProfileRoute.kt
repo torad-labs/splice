@@ -66,7 +66,7 @@ internal class ProfileRoute(
             commands = commands,
             signin = server.signin?.let { ProfileSignin(it.issuer, it.clientId, it.domains) },
             telemetry = server.telemetry?.let { ProfileTelemetry("${reachedAt(call)}/$SERVER_ROOT/$OTLP_ROUTE") },
-            client = ProfileClient(minimum = server.client.minimum),
+            client = ProfileClient(minimum = server.client.minimum, downloadUrl = server.client.downloadUrl),
         )
         call.respondText(json.encodeToString(ServerProfile.serializer(), profile), ContentType.Application.Json)
     }

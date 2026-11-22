@@ -16,6 +16,8 @@ import kotlinx.serialization.json.put
 import splice.core.topology.PersonEmails
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
+import splice.server.audit.CONTROL_ACTOR
+import splice.server.audit.ServerAudit
 
 public class PersonApi(
     private val people: ServerPeople,
@@ -23,6 +25,7 @@ public class PersonApi(
     private val upstreams: UpstreamApi,
     /** `[server] commands`, the commands a person may be let use (F12). */
     served: List<String>,
+    private val audit: ServerAudit? = null,
 ) {
     private val commandNames = CommandNames(served)
 
@@ -31,7 +34,7 @@ public class PersonApi(
      *  more, and a token cap a whole number above 0; an upstream is one this server's providers list, or "" for no
      *  preference; a team is any name, or "" for none of their own; commands are "all" or some of the commands this
      *  server serves. */
-    public suspend fun set(person: String, body: JsonObject?): ServerAnswer {
+    public suspend fun set(person: String, body: JsonObject?, actor: String = CONTROL_ACTOR): ServerAnswer {
         val who = PersonEmails.read(person)
             ?: return refused("the person must be an email, as in ada@team.example")
         val grant = body?.get(COMMANDS_FIELD)?.let { commandNames.read(it, everyAllowed = true) }
@@ -47,18 +50,17 @@ public class PersonApi(
         why?.let { return refused(it) }
         val now = people.set(who, change)
         log("[server] settings of ${LogSafe.str(who)} changed\n")
-        return ServerAnswer.Done(
-            HttpStatusCode.OK,
-            buildJsonObject {
-                put(PERSON, who)
-                put(INFLIGHT_FIELD, now.inflight)
-                put(RPM_FIELD, now.rpm)
-                put(TPM_FIELD, now.tpm)
-                put(UPSTREAM_FIELD, now.preferred)
-                put(TEAM_FIELD, now.ownTeam)
-                put(COMMANDS_FIELD, now.commands?.let(::said) ?: JsonNull)
-            },
-        )
+        val reply = buildJsonObject {
+            put(PERSON, who)
+            put(INFLIGHT_FIELD, now.inflight)
+            put(RPM_FIELD, now.rpm)
+            put(TPM_FIELD, now.tpm)
+            put(UPSTREAM_FIELD, now.preferred)
+            put(TEAM_FIELD, now.ownTeam)
+            put(COMMANDS_FIELD, now.commands?.let(::said) ?: JsonNull)
+        }
+        audit?.record(actor, "person.set", who, reply)
+        return ServerAnswer.Done(HttpStatusCode.OK, reply)
     }
 
     /** Why [body] cannot set [change], as it read: nothing named, a cap or a team that is none, or no such upstream;

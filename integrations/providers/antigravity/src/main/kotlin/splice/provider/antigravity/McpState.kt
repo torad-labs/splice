@@ -12,7 +12,7 @@ import kotlinx.serialization.json.put
 import java.util.concurrent.ConcurrentHashMap
 
 /** Maps an ACP MCP tool name (`mcp_<server>_<tool>`) to Claude Code's `mcp__<server>__<tool>` when known. */
-internal fun interface McpToolLookup {
+internal interface McpToolLookup {
     fun claudeName(rawName: String): String?
 }
 

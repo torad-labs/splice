@@ -37,7 +37,7 @@ internal class LiveHandoff {
         }
 
     private fun isSkipped(line: JsonObject): Boolean =
-        JsonScalars.bool(line, "isSidechain") == true || JsonScalars.bool(line, "isMeta") == true
+        JsonScalars.str(line, "isSidechain") == "true" || JsonScalars.str(line, "isMeta") == "true"
 
     private fun afterLastGeminiTurn(lines: List<JsonObject>): List<JsonObject> {
         val lastGemini = lines.indexOfLast { line ->

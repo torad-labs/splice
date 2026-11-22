@@ -31,8 +31,9 @@ internal class DesktopSession(
     private val mcpState: McpState,
     private val bridge: McpBridge,
     private val clock: WallClock,
-) {
+) : SessionControlHost {
     private val lists = DesktopLists()
+    private val controls = DesktopControl(this, coordinator, mcpState, lists)
     private val prompts = HashSet<Long>()
     private var parts: DesktopParts? = null
     private var turn: AgyTurn? = null
@@ -40,7 +41,6 @@ internal class DesktopSession(
     private var session: AgySession? = null
     private var unusable: String? = null
     private var opened = false
-    private var commands: List<AgyCommand> = emptyList()
     private var look: SessionLook? = null
     private var startedAt = 0L
     private var usage: JsonObject = lists.usage(null)
@@ -48,6 +48,10 @@ internal class DesktopSession(
     private var window = AGY_WINDOW
     private var used = 0L
     private var pendingHandoff: String? = null
+
+    override val agy: AgySession? get() = session
+    override var commands: List<AgyCommand> = emptyList()
+        private set
 
     /** True once Desktop asked to switch to a non-Antigravity model so seatd-pipe can hand off to Claude Code. */
     var switchingOut: Boolean = false
@@ -69,7 +73,7 @@ internal class DesktopSession(
         val message = JsonScalars.objectOrNull(Json, line) ?: return
         when (JsonScalars.str(message, "type")) {
             "control_request" -> {
-                val reply = control(
+                val reply = controls.handle(
                     JsonScalars.str(message, "request_id").orEmpty(),
                     message["request"] as? JsonObject ?: JsonObject(emptyMap()),
                 )
@@ -84,17 +88,17 @@ internal class DesktopSession(
     }
 
     /** One message agy wrote. */
-    fun agy(message: JsonObject) {
+    override fun agy(message: JsonObject) {
         val method = JsonScalars.str(message, "method")
         val params = message["params"] as? JsonObject ?: JsonObject(emptyMap())
         val id = message["id"]
-        val agy = session
+        val active = session
         when {
             method == "session/update" -> (params["update"] as? JsonObject)?.let(::update)
-            agy == null || id == null -> Unit
+            active == null || id == null -> Unit
             method == "session/request_permission" ->
-                questions?.ask(agy, id, params, (look ?: parts?.look)?.permissionMode == BYPASS_MODE)
-            method != null -> agy.refuse(id, method)
+                questions?.ask(active, id, params, (look ?: parts?.look)?.permissionMode == BYPASS_MODE)
+            method != null -> active.refuse(id, method)
             JsonScalars.long(message, "id")?.let(prompts::remove) == true -> answeredPrompt(message)
         }
     }
@@ -113,11 +117,14 @@ internal class DesktopSession(
         finish(reason)
     }
 
-    private suspend fun ensureOpen(desktopSpecs: List<AgyMcpSpec>): DesktopParts {
+    override suspend fun ensureOpen(desktopSpecs: List<AgyMcpSpec>): DesktopParts {
         val existing = parts
         if (opened && existing != null) return existing
         opened = true
-        val res = coordinator.open(desktopSpecs, AgyMessageSink(::agy))
+        val sink = object : AgyMessageSink {
+            override fun accept(message: JsonObject) = agy(message)
+        }
+        val res = coordinator.open(desktopSpecs, sink)
         session = res.session
         unusable = res.unusable
         val resolvedId = claude.sessionId ?: claude.resume ?: res.session?.id ?: UUID.randomUUID().toString()
@@ -134,72 +141,22 @@ internal class DesktopSession(
         return built
     }
 
-    private suspend fun control(id: String, request: JsonObject): JsonObject? {
-        val subtype = JsonScalars.str(request, "subtype")
-        return when (subtype) {
-            "initialize" -> {
-                val p = ensureOpen(coordinator.readInitializeSpecs(request))
-                p.frames.initialized(id, commands, lists.models(session?.catalog), mcpState.applied)
-            }
-            "set_model" -> setModelControl(id, request)
-            "mcp_status" -> ensureOpen(emptyList()).frames.controlOk(id, mcpState.statusResponse())
-            "mcp_set_servers" -> {
-                val p = ensureOpen(emptyList())
-                val body = coordinator.setServers(session, request, AgyMessageSink(::agy))
-                look = (look ?: p.look).copy(mcpServers = mcpState.initServers())
-                p.frames.controlOk(id, body)
-            }
-            else -> otherControl(id, subtype, request)
-        }
+    override fun syncLook(model: String?, mode: String?) {
+        val base = look ?: checkNotNull(parts).look
+        look = base.copy(
+            model = model ?: base.model,
+            permissionMode = mode ?: base.permissionMode,
+            mcpServers = mcpState.initServers(),
+        )
+        if (model != null) turn?.draw?.model = model
     }
 
-    private suspend fun setModelControl(id: String, request: JsonObject): JsonObject? {
-        val requested = JsonScalars.str(request, "model").orEmpty()
-        if (requested.isNotEmpty() && !requested.startsWith(ANTIGRAVITY_MODEL_PREFIX)) {
-            switchingOut = true
-            if (prompts.isNotEmpty()) {
-                session?.cancel()
-                questions?.dropped(session)
-            }
-            return null
+    override fun cancelOrSwitch(switchOut: Boolean) {
+        if (switchOut) switchingOut = true
+        if (prompts.isNotEmpty()) {
+            session?.cancel()
+            questions?.dropped(session)
         }
-        val p = ensureOpen(emptyList())
-        val refusal = session?.model(requested)
-        if (refusal == null) {
-            look = (look ?: p.look).copy(model = requested)
-            turn?.draw?.model = requested
-        }
-        return refusal?.let { p.frames.controlError(id, it) } ?: p.frames.controlOk(id)
-    }
-
-    private suspend fun otherControl(id: String, subtype: String?, request: JsonObject): JsonObject {
-        val p = ensureOpen(emptyList())
-        return when (subtype) {
-            "interrupt" -> {
-                if (prompts.isNotEmpty()) {
-                    session?.cancel()
-                    questions?.dropped(session)
-                }
-                p.frames.controlOk(id)
-            }
-            "set_permission_mode", "apply_flag_settings" -> {
-                val mode = JsonScalars.str(request, "mode")
-                val refusal = if (mode != null) {
-                    applyMode(p, mode)
-                } else {
-                    JsonScalars.str(request["settings"] as? JsonObject, "effortLevel")?.let { session?.effort(it) }
-                }
-                refusal?.let { p.frames.controlError(id, it) } ?: p.frames.controlOk(id)
-            }
-            else -> p.frames.controlError(id, "$subtype is not offered by a session on agy")
-        }
-    }
-
-    private suspend fun applyMode(p: DesktopParts, mode: String): String? {
-        val blocked = p.look.permissionMode == BYPASS_MODE && mode != BYPASS_MODE
-        val refusal = if (blocked) STARTED_BYPASSING else session?.mode(mode)
-        if (refusal == null) look = (look ?: p.look).copy(permissionMode = mode)
-        return refusal
     }
 
     private suspend fun user(line: JsonObject) {
@@ -276,5 +233,3 @@ internal class DesktopSession(
 private const val STOP_CANCELLED = "cancelled"
 private const val STOP_MAX_TURN_REQUESTS = "max_turn_requests"
 private const val AGY_ENDED = "agy has ended"
-private const val STARTED_BYPASSING =
-    "this session's agy was started without permission prompts; start a new session to have them"

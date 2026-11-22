@@ -18,7 +18,9 @@ internal class AgyTurn(
     private val frames: DesktopFrames,
     private val out: DesktopOut,
     private val transcript: ClaudeTranscript,
-    mcpLookup: McpToolLookup = McpToolLookup { null },
+    mcpLookup: McpToolLookup = object : McpToolLookup {
+        override fun claudeName(rawName: String): String? = null
+    },
 ) {
     private val cards = ToolCards(mcpLookup)
     private val taskFrames = TaskFrames(frames.sessionId)

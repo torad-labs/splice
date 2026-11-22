@@ -16,7 +16,7 @@ import splice.core.util.LogSink
 import java.nio.file.Path
 
 /** Callback for agy messages drained while an ACP open or resume request is awaiting its reply. */
-internal fun interface AgyMessageSink {
+internal interface AgyMessageSink {
     fun accept(message: JsonObject)
 }
 

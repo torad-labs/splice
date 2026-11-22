@@ -35,13 +35,15 @@ internal sealed class AgyMcpSpec {
 }
 
 /** Transforms string values in a parsed MCP config (e.g. `${VAR:-default}` expansion). */
-internal fun interface McpValueTransform {
+internal interface McpValueTransform {
     fun apply(value: String): String
 }
 
 /** Reads Desktop's `mcpServers` / `sdkMcpServers` / `servers` entries into [AgyMcpSpec] values. */
 internal class AgyMcpReader(private val log: LogSink) {
-    private val identity = McpValueTransform { it }
+    private val identity = object : McpValueTransform {
+        override fun apply(value: String): String = value
+    }
 
     fun fromInitialize(request: JsonObject): List<AgyMcpSpec> {
         val out = LinkedHashMap<String, AgyMcpSpec>()

@@ -27,7 +27,11 @@ internal data class ToolCard(
 )
 
 /** Builds the card and the result of an ACP tool call. */
-internal class ToolCards(private val mcpLookup: McpToolLookup = McpToolLookup { null }) {
+internal class ToolCards(
+    private val mcpLookup: McpToolLookup = object : McpToolLookup {
+        override fun claudeName(rawName: String): String? = null
+    },
+) {
     /** The card of [call], an ACP `tool_call` (or the `toolCall` of a permission request). */
     fun of(call: JsonObject): ToolCard {
         val facts = CallFacts(call)

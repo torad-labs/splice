@@ -25,7 +25,7 @@ internal class ClaudeMcpFiles(
     fun load(strictMcpConfig: Boolean): List<AgyMcpSpec> {
         if (strictMcpConfig) return emptyList()
         val customConfig = env(CLAUDE_CONFIG_ENV)?.takeIf(String::isNotBlank)?.let(Path::of)
-        val claudeJsonDir = customConfig ?: UserHome.home(env)
+        val claudeJsonDir = customConfig ?: UserHome.dir(env)
         val settingsDir = customConfig ?: UserHome.claudeDir(env)
         val claudeJson = readJson(claudeJsonDir.resolve(".claude.json"))
         val projectEntry = projectObject(claudeJson)
@@ -49,7 +49,12 @@ internal class ClaudeMcpFiles(
         val enabled = settingsFiles.flatMap { stringSet(it, "enabledMcpjsonServers") }.toSet()
         val disabled = settingsFiles.flatMap { stringSet(it, "disabledMcpjsonServers") }.toSet()
         val filtered = JsonObject(rawServers.filterKeys { it in enabled && it !in disabled })
-        return reader.fromConfigMap(filtered, McpValueTransform(::expandVars))
+        return reader.fromConfigMap(
+            filtered,
+            object : McpValueTransform {
+                override fun apply(value: String): String = expandVars(value)
+            },
+        )
     }
 
     private fun projectObject(claudeJson: JsonObject?): JsonObject? {
@@ -80,6 +85,8 @@ internal class ClaudeMcpFiles(
 }
 
 private const val CLAUDE_CONFIG_ENV = "CLAUDE_CONFIG_DIR"
+
+// why: capture group 3 in ENV_VAR_PATTERN holds the fallback value in ${VAR:-default}.
 private const val GROUP_DEFAULT_VALUE = 3
 
 private val ENV_VAR_PATTERN = Regex("""\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}""")

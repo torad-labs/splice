@@ -89,7 +89,10 @@ public class DesktopAcp(
         val out = synchronizedOut(output)
         val mcpState = McpState()
         val deferredLines = ArrayDeque<String>()
-        McpBridge(out, mcpState::markConnected).use { bridge ->
+        val connected = object : BridgeConnected {
+            override fun connected(serverName: String) = mcpState.markConnected(serverName)
+        }
+        McpBridge(out, connected).use { bridge ->
             val target = CoordinatorEnv(claude, STRICT_MCP_CONFIG in args, cwd, env, log)
             val chan = CoordinatorIo(started, hello, helloFailure, lines, deferredLines, scope)
             val coordinator = AgyMcpCoordinator(target, chan, mcpState, bridge)

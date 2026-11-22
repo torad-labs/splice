@@ -25,6 +25,8 @@ public data class WireAnswer(
     val afterContent: Boolean = false,
     /** The held wait handed to the client, with the reset and window its next request resumes. */
     val handoff: Handoff? = null,
+    /** desktop-full (df-wire-answers): a provider's Retry-After pushback on an overload, handed back as whole seconds. */
+    val retryAfterAt: Instant? = null,
 ) {
     public data class Handoff(
         val resetsAt: Instant? = null,
@@ -139,11 +141,15 @@ public object ClientWire {
     }
 
     /** R before commit is today's eager preamble: the stream opens and an overloaded_error follows, which the client
-     *  sends again (inband-overloaded-before-content). At admission and without streaming it is a status. */
-    private fun resend(cause: FailureCause, at: Position): WireAnswer = when {
-        at.moment == Moment.BEFORE_COMMIT -> inBand(ErrorType.OVERLOADED)
-        ownType(cause) == ErrorType.RATE_LIMIT -> RESEND_LIMITED
-        else -> RESEND
+     *  sends again (inband-overloaded-before-content). At admission and without streaming it is a status, carrying the
+     *  provider's Retry-After pushback when an overload named one (df-wire-answers). */
+    private fun resend(cause: FailureCause, at: Position): WireAnswer {
+        val pushback = (cause as? FailureCause.Provider.Overloaded)?.pushback
+        return when {
+            at.moment == Moment.BEFORE_COMMIT -> inBand(ErrorType.OVERLOADED)
+            ownType(cause) == ErrorType.RATE_LIMIT -> RESEND_LIMITED
+            else -> if (pushback != null) RESEND.copy(retryAfterAt = pushback) else RESEND
+        }
     }
 
     /** Committed with only splice's notice shown: overloaded_error is sent again after a notice, and

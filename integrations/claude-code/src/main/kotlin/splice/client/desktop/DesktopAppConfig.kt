@@ -23,7 +23,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /** Where Desktop keeps its 3P configuration, and what splice's own configuration and its `_meta.json` entry hold. */
-public class DesktopAppConfig(private val env: EnvReader = EnvReader(System::getenv)) {
+public class DesktopAppConfig(public val env: EnvReader = EnvReader(System::getenv)) {
     /** The config folder Desktop keeps its data under: `$XDG_CONFIG_HOME`, `~/.config` when that is unset. */
     private val home: Path
         get() = env(XDG_CONFIG_HOME)?.takeIf(String::isNotBlank)?.let(Path::of)

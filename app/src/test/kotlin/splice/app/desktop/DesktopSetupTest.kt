@@ -106,7 +106,9 @@ class DesktopSetupTest {
         val claude = Files.createDirectories(tmp.resolve("home/.claude/plugins")).parent
         Files.writeString(
             claude.resolve("settings.json"),
-            """{"effortLevel":"xhigh","permissions":{"deny":["Bash"]}}""",
+            """{"effortLevel":"xhigh","permissions":{"defaultMode":"acceptEdits","deny":["Bash"]},""" +
+                """"promptSuggestionEnabled":false,""" +
+                """"extraKnownMarketplaces":{"extra":{"source":{"source":"github","repo":"acme/extra"}}}}""",
         )
         Files.writeString(
             claude.resolve("plugins/known_marketplaces.json"),
@@ -119,11 +121,17 @@ class DesktopSetupTest {
         app.putIn(door)
         val config = read(library.resolve("${records.get().appId}.json"))
         assertEquals("xhigh", config.getValue("defaultModelEffort").jsonPrimitive.content, "their effort")
+        assertEquals("acceptEdits", config.getValue("codeDefaultPermissionMode").jsonPrimitive.content)
+        assertEquals("false", config.getValue("promptSuggestionEnabled").jsonPrimitive.content)
+        assertEquals("true", config.getValue("projectsEnabled").jsonPrimitive.content)
+        assertEquals("true", config.getValue("claudeCodeProcessWrapperEnabled").jsonPrimitive.content)
+        assertEquals("true", config.getValue("mcpPersistentAlwaysAllowEnabled").jsonPrimitive.content)
         assertEquals(
             """[{"source":"github","repo":"anthropics/claude-plugins-official"},""" +
-                """{"source":"github","repo":"acme/tools","ref":"v2"}]""",
+                """{"source":"github","repo":"acme/tools","ref":"v2"},""" +
+                """{"source":"github","repo":"acme/extra"}]""",
             config.getValue("allowedPluginMarketplaces").toString(),
-            "the default's marketplace once, then theirs that Desktop can reach",
+            "the default's marketplace once, then theirs from known_marketplaces and extraKnownMarketplaces",
         )
         assertEquals("""["*"]""", config.getValue("coworkEgressAllowedHosts").toString(), "the default policy is in it")
         assertEquals(door, config.getValue("inferenceGatewayBaseUrl").jsonPrimitive.content)
@@ -142,6 +150,7 @@ class DesktopSetupTest {
                 library.resolve("$theirs.json"),
                 """{"inferenceProvider":"gateway","inferenceGatewayBaseUrl":"$door","defaultModelEffort":"low",""" +
                     """"keepAwakeEnabled":false,"inferenceCustomHeaders":{"X-Team":"a"},""" +
+                    """"claudeAiImport":{"enabled":true},""" +
                     """"allowedPluginMarketplaces":[{"source":"github","repo":"their/own"}]}""",
             )
             Files.writeString(
@@ -155,6 +164,10 @@ class DesktopSetupTest {
             val config = read(library.resolve("$theirs.json"))
             assertEquals("low", config.getValue("defaultModelEffort").jsonPrimitive.content, "what they set stays")
             assertEquals("false", config.getValue("keepAwakeEnabled").jsonPrimitive.content, "off stays off")
+            assertEquals("true", config.getValue("projectsEnabled").jsonPrimitive.content, "projects filled on")
+            val imp = config.getValue("claudeAiImport").jsonObject
+            assertEquals("true", imp.getValue("automatic3pImport").jsonPrimitive.content)
+            assertEquals("show", imp.getValue("bannerBehavior").jsonPrimitive.content)
             assertEquals(
                 """{"X-Team":"a","x-splice-desktop":"app"}""",
                 config.getValue("inferenceCustomHeaders").toString(),
@@ -189,8 +202,11 @@ class DesktopSetupTest {
 
     @Test
     fun `the default policy asks Desktop to offer the Claude Code sessions on this computer`() {
-        val shipped = DesktopPolicyDefaults().read().getValue("claudeAiImport").jsonObject
+        val defaults = DesktopPolicyDefaults().read()
+        assertEquals("true", defaults.getValue("projectsEnabled").jsonPrimitive.content, "projects enabled by default")
+        val shipped = defaults.getValue("claudeAiImport").jsonObject
         assertEquals("true", shipped.getValue("enabled").jsonPrimitive.content, "the import is on")
+        assertEquals("true", shipped.getValue("automatic3pImport").jsonPrimitive.content, "auto 3p import on")
         assertEquals(
             "show",
             shipped.getValue("bannerBehavior").jsonPrimitive.content,

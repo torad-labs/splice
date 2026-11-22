@@ -27,6 +27,7 @@ internal class DesktopAppLibrary(
     private val config: DesktopAppConfig = DesktopAppConfig(),
     /** The policy the build ships, which what the person set up in Claude Code is laid over. */
     private val defaults: DesktopPolicyDefaults = DesktopPolicyDefaults(),
+    private val profileSync: DesktopProfileSync = DesktopProfileSync(config.env),
 ) {
     private val files = DesktopLibraryFiles()
 
@@ -54,6 +55,7 @@ internal class DesktopAppLibrary(
         }
         rewrite(id, door, helper)
         files.write(config.meta, config.withSplice(meta, id))
+        syncProfileBestEffort()
         val replaced = record.replacedApplied?.let { other -> meta?.let { config.nameOf(it, other) } ?: other }
         return record to replaced
     }
@@ -92,7 +94,7 @@ internal class DesktopAppLibrary(
 
     /** The library of each Claude Desktop started on a config folder of its own beside this one
      *  (DesktopAppConfig.beside). */
-    fun beside(): List<DesktopAppLibrary> = config.beside().map { DesktopAppLibrary(it, defaults) }
+    fun beside(): List<DesktopAppLibrary> = config.beside().map { DesktopAppLibrary(it, defaults, profileSync) }
 
     /** [models] written as the model list of the configuration this library applies, and splice's policy given to it
      *  where it says nothing (DesktopAppConfig.withPolicy), when that configuration points Desktop at [door]; whether
@@ -106,6 +108,7 @@ internal class DesktopAppLibrary(
             ?.takeIf { Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) }
             ?.let(files::read)
             ?.takeIf { config.door(it)?.trimEnd('/') == door.trimEnd('/') } ?: return false
+        syncProfileBestEffort()
         val updated = config.withPolicy(config.withModels(current, models), policy())
         return if (updated == current) {
             false
@@ -113,6 +116,11 @@ internal class DesktopAppLibrary(
             files.write(file, updated)
             true
         }
+    }
+
+    private fun syncProfileBestEffort() {
+        val appData = config.library.parent ?: return
+        Cancellables.runCatchingCancellable { profileSync.syncInto(appData) }
     }
 
     /** splice's configuration [id] written for [door] and [helper], with its policy for Desktop. */

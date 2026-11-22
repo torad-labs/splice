@@ -18,22 +18,25 @@ import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
 
 internal class DesktopPolicy(private val setup: ClaudeCodeSetup) {
-    /** The policy: [defaults], with the effort the person's Claude Code sessions run at in place of the default's, and
-     *  the marketplaces they added after the default's own. */
+    /** The policy: [defaults], with the person's Claude Code effort, permission mode, prompt suggestion setting,
+     *  and marketplaces laid over it. */
     fun generated(defaults: JsonObject): JsonObject {
         val effort = setup.effort()?.let { mapOf(POLICY_EFFORT to JsonPrimitive(it)) }.orEmpty()
+        val permMode = setup.permissionMode()?.let { mapOf(POLICY_PERMISSION_MODE to JsonPrimitive(it)) }.orEmpty()
+        val suggestions = setup.promptSuggestionEnabled()
+            ?.let { mapOf(POLICY_PROMPT_SUGGESTION to JsonPrimitive(it)) }
+            .orEmpty()
         val added = setup.marketplaces()
         val markets = both(defaults[POLICY_MARKETPLACES], added).takeIf { added.isNotEmpty() }
             ?.let { mapOf(POLICY_MARKETPLACES to it) }
             .orEmpty()
-        return JsonObject(defaults + effort + markets)
+        return JsonObject(defaults + effort + permMode + suggestions + markets)
     }
 
     /** What every configuration on the door holds, whoever made it. Gateway mode has no claude.ai sign-in: a person
      *  who wants their Claude account and splice runs a second Desktop beside their own (DesktopAppConfig.beside), so
-     *  Desktop opens straight on splice and offers no sign-in. Auto mode is on with Claude Code's own check, which the
-     *  door runs as a model call on every provider, since it can't answer the provider's. Discovery is on, so each
-     *  listed model gets its description from the door. */
+     *  Desktop opens straight on splice and offers no sign-in. Projects, auto mode (with Claude Code's own check),
+     *  and model discovery are enabled by default unless the person explicitly sets them otherwise. */
     fun standing(): JsonObject = buildJsonObject {
         // The live test (Nov 19, 2026, Desktop 5.11492.5): unset, Desktop first shows its chooser (Continue, or sign in
         // with claude.ai) and asks the door only once a person picks; "3p" opens it straight on splice. The second key
@@ -41,21 +44,32 @@ internal class DesktopPolicy(private val setup: ClaudeCodeSetup) {
         put("deploymentMode", "3p")
         put("disableDeploymentModeChooser", true)
         put(MODEL_DISCOVERY, true)
+        put("projectsEnabled", true)
         put("autoModeEnabled", true)
         put("inferenceGatewayAutoModeServerChecks", false)
     }
 
     /** [config], a configuration that points Desktop at the door, given what it leaves unset of [policy] and of
-     *  [standing], the marketplaces of [policy] its own list lacks, and [APP_MODE_HEADER] among its own headers. A key
-     *  it sets stays as the person set it; a list or headers it holds in a form that is no JSON (a managed profile's
-     *  string) are left as they are. */
+     *  [standing], the marketplaces of [policy] its own list lacks, missing sub-keys of `claudeAiImport`, and
+     *  [APP_MODE_HEADER] among its own headers. A key it sets stays as the person set it; a list or headers it holds
+     *  in a form that is no JSON (a managed profile's string) are left as they are. */
     fun filled(config: JsonObject, policy: JsonObject): JsonObject {
         val unset = (policy + standing()).filterKeys { it !in config }
         val wanted = (policy[POLICY_MARKETPLACES] as? JsonArray).orEmpty()
         val markets = (config[POLICY_MARKETPLACES] as? JsonArray)
             ?.let { mapOf(POLICY_MARKETPLACES to both(it, wanted)) }
             .orEmpty()
-        return JsonObject(config + unset + markets + marked(config))
+        val importFill = mergedImport(config[POLICY_IMPORT], policy[POLICY_IMPORT])
+        return JsonObject(config + unset + markets + importFill + marked(config))
+    }
+
+    /** Fills missing keys inside `claudeAiImport` when [current] is already a JSON object without overwriting
+     *  any key the person explicitly configured. */
+    private fun mergedImport(current: JsonElement?, wanted: JsonElement?): Map<String, JsonElement> {
+        val held = current as? JsonObject
+        val defaults = wanted as? JsonObject
+        val missing = if (held != null && defaults != null) defaults.filterKeys { it !in held } else emptyMap()
+        return if (held == null || missing.isEmpty()) emptyMap() else mapOf(POLICY_IMPORT to JsonObject(held + missing))
     }
 
     /** [config]'s custom headers with [APP_MODE_HEADER] among them, which is how the door counts a turn against the
@@ -83,6 +97,9 @@ internal class DesktopPolicy(private val setup: ClaudeCodeSetup) {
     }
 }
 
-// Desktop's keys for the effort a new conversation starts at and for the marketplaces its Directory lists.
+// Desktop's keys for effort, marketplaces, permission mode, prompt suggestions, and session import.
 private const val POLICY_EFFORT = "defaultModelEffort"
 private const val POLICY_MARKETPLACES = "allowedPluginMarketplaces"
+private const val POLICY_PERMISSION_MODE = "codeDefaultPermissionMode"
+private const val POLICY_PROMPT_SUGGESTION = "promptSuggestionEnabled"
+private const val POLICY_IMPORT = "claudeAiImport"

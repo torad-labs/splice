@@ -368,8 +368,10 @@ class HeadServerLoadTest {
     // released server-side after the clients leave, with no signal to await.
     private suspend fun waitFor(capMs: Long, cond: () -> Boolean): Boolean {
         val pollMs = 100L
-        val deadline = System.currentTimeMillis() + capMs
-        while (System.currentTimeMillis() < deadline) {
+        // Monotonic, like the diagnostics' accepted-at stamps: a wall-clock step (an NTP correction, a runner
+        // resuming) must not end a proof of absence early or stretch it past what it names.
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(capMs)
+        while (System.nanoTime() < deadline) {
             if (cond()) return true
             kotlinx.coroutines.delay(pollMs)
         }

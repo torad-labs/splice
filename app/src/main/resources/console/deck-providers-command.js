@@ -128,11 +128,12 @@ window.PROVIDER_COMMAND = (() => {
       const sub = h('div', 'lr-ctl'); sub.append(i, go); r.append(sub, h('div', 'faint small', 'Stored in the keyring, never shown again'));
     }
     el.append(r);
-    if (s && s.state !== 'left' && s.state !== 'done') {
+    if (s && s.state !== 'left') {
       const box = Deck.signRows(s);
       box.addEventListener('click', e => {
         const a = e.target.closest('[data-act]'); if (!a) return;
         if (a.dataset.act === 'signin') signIn(p, kit);
+        if (a.dataset.act === 'reopen-signin') SIGNIN.reopen(s, s.on);
         if (a.dataset.act === 'cancel-signin') SIGNIN.cancel(s, s.on).then(over => { if (over) signs.delete(p.key); kit.refill(); });
       });
       el.append(box);
@@ -144,7 +145,7 @@ window.PROVIDER_COMMAND = (() => {
     s.on = {
       held: () => signs.get(p.key) === s,
       draw: () => kit.refill(),
-      done: async () => { signs.delete(p.key); await read(true); await kit.reread(); kit.refill(); },
+      done: async () => { await read(true); await kit.reread(); kit.refill(); },
       failed: () => kit.refill(),
     };
     signs.set(p.key, s);

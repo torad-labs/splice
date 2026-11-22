@@ -516,6 +516,7 @@
     if (!openId) return;
     unmark();
     const id = openId; openId = null;
+    if (signs.get(id)?.state === 'done') signs.delete(id);
     lensOff && lensOff(); lensOff = null;
     Deck.hide(lens).then(() => { const el = marked(id); el && el.isConnected && el.focus({ preventScroll: true }); });
   }
@@ -531,8 +532,16 @@
     s.on = {
       held: () => signs.get(key) === s,
       draw: () => { if (openId === key) refill(); },
-      // a login that was added has a lane or a row of its own once it is read, and the Add glass closes on it
-      done: () => { signs.delete(key); read().then(() => (!account && openId === key ? closeLens() : refill())); },
+      // an added login that came back through a restart closes the Add glass onto its row;
+      // a sign-in that landed directly keeps "Signed in as <label>" visible without a reload
+      done: () => {
+        if (!account && s.back) {
+          signs.delete(key);
+          read().then(() => (openId === key ? closeLens() : refill()));
+          return;
+        }
+        read().then(() => refill());
+      },
       failed: () => refill(),
     };
     signs.set(key, s);
@@ -546,7 +555,7 @@
     title.append(h('h3', '', p ? 'Add login' : 'Add account'), h('div', 'mono small quiet', p ? 'A ' + p.name + ' login for ' + p.command : 'A Claude login splice can move to'));
     hd.append(lamp('out'), title, x); lens.append(hd);
     const s = signs.get(p ? 'add:' + p.key : 'add');
-    if (s && s.state !== 'left' && s.state !== 'done') lens.append(Deck.signRows(s));
+    if (s && s.state !== 'left') lens.append(Deck.signRows(s));
     else { const acts = h('div', 'acts'), b = h('button', 'btn press primary', 'Sign in'); b.dataset.act = 'signin'; acts.append(b); lens.append(acts); }
   }
   function openAdd(p) {
@@ -693,6 +702,7 @@
       if (r && r.state === 'read' && !r.spending) { r.arm = k === 'reset-arm' ? act.dataset.k : null; r.said = null; refill(); const yes = lens.querySelector('[data-act="reset-use"]'); yes && yes.focus(); }
     }
     if (k === 'reset-use') useReset(id, act.dataset.k);
+    if (k === 'reopen-signin') { const s = signs.get(id); if (s) SIGNIN.reopen(s, s.on); }
     if (k === 'cancel-signin') { const s = signs.get(id); if (s) SIGNIN.cancel(s, s.on).then(over => { if (over) signs.delete(id); refill(); }); }
   });
   $('#backList').addEventListener('click', e => { const li = e.target.closest('li'); if (li && refs[li.dataset.id]) { refs[li.dataset.id].lane.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => openLens(li.dataset.id), 350); } });

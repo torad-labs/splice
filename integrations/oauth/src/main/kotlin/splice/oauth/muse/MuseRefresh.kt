@@ -14,6 +14,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import io.ktor.http.isSuccess
 import splice.core.GATEWAY_VERSION
+import splice.core.util.EnvReader
 import splice.core.util.WallClock
 import splice.oauth.AuthHttpClientFactory
 import splice.provider.muse.MuseKeyMintCall
@@ -37,7 +38,7 @@ public class MuseRefresh(private val clock: WallClock = WallClock(System::curren
     private val retryAfter = RetryAfter()
 
     override suspend fun invoke(accessToken: String, mode: MuseMintMode): MuseMintAttempt =
-        refresh(MuseOAuthEndpoints.KEY_URL, accessToken, mode)
+        refresh(MuseOAuthEndpoints.keyUrl(EnvReader(System::getenv)), accessToken, mode)
 
     public suspend fun refresh(
         keyUrl: String,

@@ -335,6 +335,7 @@ const SIGNIN = (() => {
   // An add's answer carries its sign-in inside it (AddViews.kt:63); a command's sign-in answers as itself.
   const read = (s, body) => (s.how.watch ? body?.sign_in || {} : body);
   const quiet = (s) => clearTimeout(s?.timer);
+  const stopTabWatch = (s) => { clearInterval(s?.tabTimer); if (s) s.tabTimer = null; };
   // A sign-in the page stopped showing without ending it (its card, pane or form went) ends on splice too, so none
   // stays open there with nobody to finish or cancel it. Nobody waits on that answer.
   function gone(s, on, gen) {
@@ -344,6 +345,7 @@ const SIGNIN = (() => {
   }
   function leave(s, id = s.id) {
     quiet(s);
+    stopTabWatch(s);
     unopened(s);
     const path = s.state === "wait" ? endPath(s, id) : null;
     Object.assign(s, { state: "left", gen: (s.gen || 0) + 1 });
@@ -352,12 +354,38 @@ const SIGNIN = (() => {
   // The provider's page opens by itself. A browser lets a page open a tab only while the press that asked for it is
   // being handled, and splice names the page's address a moment later, so the tab opens on the press, empty, and goes
   // to the page once splice says it (seen). A browser that refuses the tab leaves Open sign-in to do it, as before.
-  // A sign-in that ends before it has a page closes its empty tab (unopened).
-  function opened(s) {
+  // A sign-in that ends before it has a page closes its empty tab (unopened). Closing the provider's tab while the
+  // sign-in is still waiting sets tabClosed so the console names what happened and offers to open the page again.
+  function checkTabClosed(s, on) {
+    if (s.state !== "wait" || !s.tab || !s.tabAt) return;
+    if (s.tab.closed) {
+      stopTabWatch(s);
+      s.tab = null;
+      if (!s.tabClosed) { s.tabClosed = true; if (on.held()) on.draw(); }
+    }
+  }
+  function watchTab(s, on) {
+    stopTabWatch(s);
+    if (!s.tab || !s.tabAt || s.state !== "wait") return;
+    const gen = s.gen;
+    s.tabTimer = setInterval(() => {
+      if (s.state !== "wait" || s.gen !== gen || !s.tab) { stopTabWatch(s); return; }
+      checkTabClosed(s, on);
+    }, 250);
+  }
+  function opened(s, on) {
     if (!s.tab || s.tab.closed || !s.url || s.tabAt === s.url) return;
-    try { s.tab.location.href = s.url; s.tabAt = s.url; } catch { s.tab = null; }
+    try { s.tab.location.href = s.url; s.tabAt = s.url; s.tabClosed = false; watchTab(s, on); } catch { s.tab = null; }
+  }
+  function reopen(s, on) {
+    if (!s.url || s.state !== "wait") return;
+    let tab = null;
+    try { tab = window.open(s.url, "_blank"); if (tab) tab.opener = null; } catch { tab = null; }
+    if (tab) { s.tab = tab; s.tabAt = s.url; s.tabClosed = false; watchTab(s, on); }
+    if (on.held()) on.draw();
   }
   function unopened(s) {
+    stopTabWatch(s);
     if (s.tab && !s.tabAt && !s.tab.closed) s.tab.close();
     s.tab = null; s.tabAt = null;
   }
@@ -367,7 +395,7 @@ const SIGNIN = (() => {
     unopened(s);
     let tab = null;
     try { tab = window.open("about:blank", "_blank"); if (tab) tab.opener = null; } catch { tab = null; }
-    Object.assign(s, { state: "wait", by: "browser", code: null, url: null, id: null, fail: null, why: "", back: null, down: 0, gen: (s.gen || 0) + 1, tab, tabAt: null });
+    Object.assign(s, { state: "wait", by: "browser", code: null, url: null, id: null, label: null, fail: null, why: "", back: null, down: 0, gen: (s.gen || 0) + 1, tab, tabAt: null, tabClosed: false, tabTimer: null });
     on.draw();
     const gen = s.gen, res = await API.post(s.how.start, s.how.body || {});
     if (!on.held() || s.gen !== gen) {
@@ -384,7 +412,7 @@ const SIGNIN = (() => {
   }
   /** Takes up a sign-in splice already holds (GET /api/auth/logins), as a page opened after it began. */
   function adopt(s, on, status) {
-    Object.assign(s, { state: "wait", by: "browser", code: null, url: null, id: status.id, back: null, down: 0, gen: (s.gen || 0) + 1 });
+    Object.assign(s, { state: "wait", by: "browser", code: null, url: null, id: status.id, label: null, back: null, down: 0, tabClosed: false, gen: (s.gen || 0) + 1 });
     seen(s, on, status);
   }
   // one status answer: show its step, land, fail, or ask again in a second
@@ -395,7 +423,7 @@ const SIGNIN = (() => {
     if (st?.state === "restarting") { // signed in, and splice is restarting for it: nothing is left to open, type or cancel
       const first = !s.back;
       unopened(s);
-      Object.assign(s, { back: st, down: 0, by: "restart", url: null, code: null });
+      Object.assign(s, { back: st, down: 0, by: "restart", url: null, code: null, tabClosed: false });
       if (first) on.draw();
       ask(s, on);
       return;
@@ -411,11 +439,18 @@ const SIGNIN = (() => {
     const changed = url !== s.url || by !== s.by || code !== s.code;
     s.swapped = !!(s.code && code && code !== s.code); // a device code that expired is replaced (Kimi, Muse: DeviceLoginFlow)
     Object.assign(s, { url, by, code });
-    opened(s);
+    opened(s, on);
     if (changed) { on.draw(); s.swapped = false; }
     ask(s, on);
   }
-  function land(s, on, st) { quiet(s); unopened(s); s.state = "done"; on.done(st); }
+  function land(s, on, st) {
+    quiet(s);
+    unopened(s);
+    s.label = typeof st?.label === "string" && st.label ? st.label : null;
+    s.tabClosed = false;
+    s.state = "done";
+    on.done(st);
+  }
   // Asks splice how the sign-in stands, a second from now. Only splice's answer ends it here: a read splice does not
   // answer keeps the page waiting, and a splice that restarted, and so knows no such sign-in, says that. Until Nov 11,
   // 2026 one read that failed ended it on the card as "Not completed" with no reason, while splice went on holding it.
@@ -469,5 +504,5 @@ const SIGNIN = (() => {
     if (!res.ok) { API.del(at(s, s.id)); fail(s, on, res.body); return; }
     seen(s, on, res.body);
   }
-  return { FAILS, start, adopt, cancel, code, fail, quiet };
+  return { FAILS, start, adopt, reopen, cancel, code, fail, quiet };
 })();

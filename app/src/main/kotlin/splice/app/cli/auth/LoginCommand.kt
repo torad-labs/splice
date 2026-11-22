@@ -43,6 +43,7 @@ internal class LoginCommand(
     private val muse = LoginMuse(output)
     private val cliSignIn = CliSignIn()
     private val claudeLabel = ClaudeLoginLabel(output)
+    private val claudeCli = ClaudeCliSignIn(output)
 
     internal suspend fun login(headArg: String?, label: String? = null, discard: Boolean = false): Boolean {
         val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
@@ -53,9 +54,14 @@ internal class LoginCommand(
             println("splice: unknown head '$headKey' (heads: ${topology.heads.keys})")
             return false
         }
-        // V4-276: a Claude head signs in with Claude Code's own /login; --label saves or switches it.
+        // V4-276 + signin-e2e: bare `splice login <claude-head>` signs an account in through Claude Code's own flow;
+        // `--label` saves or switches a custom head's login.
         return if (provider.auth.kind == CLIENT_AUTH_KIND) {
-            claudeLabel.login(headKey, topology, label, discard)
+            if (label == null && !discard) {
+                claudeCli.login(headKey, topology)
+            } else {
+                claudeLabel.login(headKey, topology, label, discard)
+            }
         } else {
             signIn(headKey, provider, topology, label)
         }

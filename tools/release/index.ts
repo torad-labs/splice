@@ -11,6 +11,7 @@ import { layout } from "../gate/src/lib/repo.ts";
 import { accept, usage as acceptUsage } from "./src/commands/accept.ts";
 import { beta, usage as betaUsage } from "./src/commands/beta.ts";
 import { hub, usage as hubUsage } from "./src/commands/hub.ts";
+import { localInstall, usage as localUsage } from "./src/commands/local.ts";
 import { notes, usage as notesUsage } from "./src/commands/notes.ts";
 import { promote, usage as promoteUsage } from "./src/commands/promote.ts";
 import { publishCommand, usage as publishUsage } from "./src/commands/publish.ts";
@@ -22,6 +23,7 @@ const VERBS = {
   accept: { usage: acceptUsage, exec: (argv: string[]) => accept(argv, repoRoot) },
   beta: { usage: betaUsage, exec: (argv: string[]) => beta(argv, repoRoot) },
   hub: { usage: hubUsage, exec: (argv: string[]) => hub(argv, repoRoot) },
+  local: { usage: localUsage, exec: (argv: string[]) => localInstall(argv, repoRoot) },
   notes: { usage: notesUsage, exec: (argv: string[]) => notes(argv, repoRoot) },
   promote: { usage: promoteUsage, exec: (argv: string[]) => promote(argv, repoRoot) },
   publish: { usage: publishUsage, exec: (argv: string[]) => publishCommand(argv, repoRoot) },

@@ -87,7 +87,10 @@ internal class DesktopSession(
         session = null
         unusable = reason
         questions.dropped(null)
-        if (prompts.isEmpty()) return
+        if (prompts.isEmpty()) {
+            turn.closeOpenSubagents()
+            return
+        }
         prompts.clear()
         turn.say(reason)
         finish(reason)
@@ -182,7 +185,8 @@ internal class DesktopSession(
 
     /** The turn's `result`, an error when [error] says what went wrong. A cancelled turn's last message has no stop. */
     private fun finish(error: String?) {
-        turn.end(stop.takeUnless { it == STOP_CANCELLED || it == STOP_MAX_TURN_REQUESTS })
+        val cancelled = stop == STOP_CANCELLED || error != null
+        turn.end(stop.takeUnless { it == STOP_CANCELLED || it == STOP_MAX_TURN_REQUESTS }, cancelled = cancelled)
         parts.out(parts.frames.result(TurnEnd(stop, error, clock() - startedAt, usage, look.model, window)))
         parts.record.write(busy = false)
     }
@@ -196,7 +200,7 @@ internal class DesktopSession(
             }
             else -> {
                 session?.heard(update)
-                if (prompts.isNotEmpty()) turn.update(update)
+                if (prompts.isNotEmpty()) turn.update(update) else turn.afterTurn(update)
             }
         }
     }

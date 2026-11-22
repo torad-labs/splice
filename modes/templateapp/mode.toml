@@ -1,0 +1,26 @@
+# The template app: an mcp mode whose one tool shows a page. Copy this folder to modes/<name> and rename it
+# (modes/README.md, "Adding a mode"). splice serves the mode as an MCP server under `server`, so a client lists its
+# tool as mcp__templateapp__show_note, and a client that draws MCP Apps shows resources/note.html when it is called.
+name = "templateapp"
+summary = "Shows a note as a page beside the conversation: an mcp mode with an MCP App, to copy."
+server = "templateapp"
+handler = "splice.modes.templateapp.TemplateAppMode"
+tools = ["show_note"]
+kind = "mcp"
+on = false
+
+[heads]
+only = []
+off = []
+
+[callers]
+off = []
+
+# The page the tool names in tools/show_note.meta.json. The page asks for nothing outside itself, so its content
+# security policy allows no other origin.
+[[resources]]
+uri = "ui://templateapp/note"
+name = "note"
+mimeType = "text/html;profile=mcp-app"
+file = "note.html"
+_meta = { ui = { csp = { connectDomains = [], resourceDomains = [] } } }

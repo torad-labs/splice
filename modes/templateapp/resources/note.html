@@ -1,0 +1,63 @@
+<!doctype html>
+<!-- The template app's page: an MCP App (https://modelcontextprotocol.io/extensions/apps/overview). The client that
+     draws it puts it in a sandboxed frame and talks to it in JSON-RPC over postMessage: the page says it is there
+     (ui/initialize, then ui/notifications/initialized), and the client hands it the call's arguments
+     (ui/notifications/tool-input). It loads nothing from anywhere, so it needs no SDK and no network. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Note</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 1rem 1.25rem; font: 1rem/1.5 system-ui, sans-serif; color: CanvasText; background: Canvas; }
+  h1 { margin: 0 0 0.5rem; font-size: 1.125rem; font-weight: 600; }
+  p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .quiet { opacity: 0.6; }
+</style>
+</head>
+<body>
+<article>
+  <h1 id="title" hidden></h1>
+  <p id="text" class="quiet">Waiting for the note.</p>
+</article>
+<script>
+(() => {
+  const title = document.getElementById("title");
+  const text = document.getElementById("text");
+  const waiting = new Map();
+  let next = 1;
+  const send = (message) => window.parent.postMessage(message, "*");
+  const ask = (method, params) => new Promise((resolve, reject) => {
+    const id = next++;
+    waiting.set(id, { resolve, reject });
+    send({ jsonrpc: "2.0", id, method, params });
+  });
+  // the note, from the arguments the model called the tool with
+  const show = (note) => {
+    if (!note || typeof note.text !== "string") return;
+    text.textContent = note.text;
+    text.classList.remove("quiet");
+    title.hidden = typeof note.title !== "string" || note.title === "";
+    if (!title.hidden) title.textContent = note.title;
+  };
+  window.addEventListener("message", (event) => {
+    const message = event.data;
+    if (!message || message.jsonrpc !== "2.0") return;
+    if (message.id !== undefined && waiting.has(message.id)) {
+      const asked = waiting.get(message.id);
+      waiting.delete(message.id);
+      if (message.error) asked.reject(message.error); else asked.resolve(message.result);
+    } else if (message.method === "ui/notifications/tool-input") {
+      show(message.params && message.params.arguments);
+    } else if (message.method === "ping" && message.id !== undefined) {
+      send({ jsonrpc: "2.0", id: message.id, result: {} });
+    }
+  });
+  ask("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "templateapp", version: "1" }, appCapabilities: {} })
+    .then(() => send({ jsonrpc: "2.0", method: "ui/notifications/initialized" }))
+    .catch(() => { text.textContent = "This client did not open the note."; });
+})();
+</script>
+</body>
+</html>

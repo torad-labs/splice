@@ -24,8 +24,8 @@ public object LaunchRecipeArgs {
     private val marked = "\"${LaunchMarker.SPLICE_LAUNCH_KEY}\":true"
 
     /** The person's words among [arguments], the client's arguments after its binary: what follows the launch's own
-     *  --settings ([wrapped]: it went through the wrapped `claude`, whose overlay that is) and its --mcp-config file
-     *  in splice's [state] with the plugin folders after it. A --dangerously-skip-permissions the launch put first
+     *  --settings ([wrapped]: it went through the wrapped `claude`, whose overlay that is) and each --mcp-config file
+     *  in splice's [state], with the plugin folders after it. A --dangerously-skip-permissions the launch put first
      *  stays. */
     public fun callerArgs(arguments: List<String>, state: Path, wrapped: Boolean): List<String> {
         val skip = arguments.take(1).filter { it == DANGEROUSLY_SKIP }
@@ -34,7 +34,8 @@ public object LaunchRecipeArgs {
         // the launch's own overlay: a wrapped launch's, whatever it holds, or the mark splice adds on macOS
         val ours = settings != null && (wrapped || marked in settings)
         if (arguments.getOrNull(at) == LaunchMarker.SETTINGS_FLAG && ours) at += 2
-        if (arguments.getOrNull(at) == MCP_CONFIG_FLAG && inState(arguments.getOrNull(at + 1), state)) {
+        // each of the launch's own: the hub's file with its plugin folders, then the file of splice's own servers
+        while (arguments.getOrNull(at) == MCP_CONFIG_FLAG && inState(arguments.getOrNull(at + 1), state)) {
             at += 2
             while (arguments.getOrNull(at) == HUB_PLUGIN_FLAG && at + 1 < arguments.size) at += 2
         }

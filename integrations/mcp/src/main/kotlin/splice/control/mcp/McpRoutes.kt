@@ -43,6 +43,11 @@ public class McpRoutes(private val host: McpHost) {
     public suspend fun stream(call: ApplicationCall) {
         val name = call.parameters["name"].orEmpty()
         val sessionId = call.request.headers[SESSION_HEADER]
+        // a server the daemon answers itself sends nothing between requests: MCP's answer for no stream is 405
+        if (host.answeredHere(name, call.request.headers[MCP_HEAD_HEADER])) {
+            call.respond(HttpStatusCode.MethodNotAllowed)
+            return
+        }
         if (!host.protocolAccepted(name, sessionId, call.request.headers[PROTOCOL_HEADER])) {
             call.respondText(
                 """{"error":"unsupported MCP-Protocol-Version"}""",
@@ -75,6 +80,11 @@ public class McpRoutes(private val host: McpHost) {
     public suspend fun delete(call: ApplicationCall) {
         val name = call.parameters["name"].orEmpty()
         val sessionId = call.request.headers[SESSION_HEADER]
+        // nothing is kept for a client of a server the daemon answers itself, so there is nothing to end
+        if (host.answeredHere(name, call.request.headers[MCP_HEAD_HEADER])) {
+            call.respond(HttpStatusCode.OK)
+            return
+        }
         if (!host.protocolAccepted(name, sessionId, call.request.headers[PROTOCOL_HEADER])) {
             call.respond(HttpStatusCode.BadRequest)
             return

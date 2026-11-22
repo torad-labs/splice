@@ -25,6 +25,8 @@ import splice.control.mcp.catalog.McpSearchCatalogs
 import splice.control.mcp.hosted.McpPostHandler
 import splice.control.mcp.hosted.McpSweeper
 import splice.control.mcp.hub.McpHubCalls
+import splice.control.mcp.inprocess.InProcessMcp
+import splice.control.mcp.inprocess.InProcessMcpHost
 import splice.core.util.LogSink
 
 internal const val RPC_SERVER_ERROR = -32000
@@ -56,6 +58,12 @@ public class McpHost(
     public val hub: McpHubCalls? = null,
 ) {
     private val codec = JsonRpcCodec()
+
+    /** The servers the daemon answers itself (a mode whose kind is mcp), assigned by the daemon before routes serve
+     *  requests; null answers none. A name one of them holds for the asking client is answered here, and is never
+     *  started, listed or reaped as a process is. */
+    @Volatile
+    public var inProcess: InProcessMcp? = null
 
     // V4-147: the default launcher is built HERE because containment reports in words, and the log
     // sink is a constructor argument — a default argument could not have named it.
@@ -104,7 +112,15 @@ public class McpHost(
         body: String,
         protocolVersion: String? = null,
         head: String? = null,
-    ): McpReply = posts.post(name, sessionId, body, protocolVersion, head)
+    ): McpReply =
+        own()?.post(name, sessionId, body, head) ?: posts.post(name, sessionId, body, protocolVersion, head)
+
+    /** Whether [name] is a server the daemon answers itself for a client on [head]: one with no notification stream
+     *  to open and no session to end, since each of its answers is whole in the reply to its request. */
+    public fun answeredHere(name: String, head: String?): Boolean = own()?.answers(name, head) == true
+
+    /** The protocol side of [inProcess] as it stands now: it keeps nothing between requests. */
+    private fun own(): InProcessMcpHost? = inProcess?.let { InProcessMcpHost(it, codec) }
 
     /** GET and DELETE validate the same server-negotiated protocol as POST, including adopted sessions. */
     public fun protocolAccepted(name: String, sessionId: String?, protocolVersion: String?): Boolean =

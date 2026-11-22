@@ -90,6 +90,12 @@
   own. A broken mode, or a `[modes.<name>]` table naming no mode, stops the daemon from starting with every finding
   listed, as `splice check-config` lists it. `modes/template` is a working mode to copy, shipped off;
   `modes/README.md` has the folder, every manifest key and the steps.
+- **A mode can be an MCP server, with pages.** A mode whose manifest says `kind = "mcp"` is an MCP server the daemon
+  answers itself: there is no process to start. Every session splice launches on a head where the mode is on is
+  told of it, so its tools are the client's own (`mcp__<server>__<tool>`), its guidance is the server's
+  instructions, and a client that draws MCP Apps shows the page a tool names (a `ui://` resource, served from the
+  mode's folder or by its code). A client that does not draw them shows the tool's answer as any tool's result.
+  `modes/templateapp` is a working one to copy, shipped off.
 - **The keyed team listener serves the door.** `/door/v1` answers on a team's server from the gateway's providers,
   with each person's allowlist applied to the provider a model resolves to, and a streamed turn's client is pinged
   at `[server] keepalive_seconds` when that is shorter than splice's own probe.

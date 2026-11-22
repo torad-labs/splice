@@ -30,6 +30,7 @@ import splice.app.daemon.BootedTopology
 import splice.app.head.HeadProbeReadings
 import splice.app.head.LaunchSpeedWiring
 import splice.app.modes.DaemonModes
+import splice.app.modes.ModesNow
 import splice.app.provider.ClaudeAccountWiring
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ModelRosters
@@ -105,7 +106,7 @@ internal class ControlPlane(
 
     /** The MCP host wiring: its planner and host, and the census, sharing, attached sessions and hub verdict it
      *  keeps. */
-    private val mcp = ControlMcpWiring(daemon, mcpHosting)
+    private val mcp = ControlMcpWiring(daemon, mcpHosting).also { it.modes = ModesNow { modes } }
     private val health = ControlHealth(topology, clientVersions, mcp)
 
     /** 2026-09-22: every head's DISCOVERED models — Daemon.start() resolves them before any head is
@@ -193,7 +194,7 @@ internal class ControlPlane(
             providerAssembly.claudePoolChanges,
             claudeLogin,
         ),
-    )
+    ).also { it.modes = ModesNow { modes } }
 
     internal fun cancelProbes() {
         probeScope.cancel()

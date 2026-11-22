@@ -6,6 +6,8 @@ package splice.app
 import splice.app.control.McpServiceRefresh
 import splice.app.control.api.McpHubVerdict
 import splice.app.mcp.TempleMcpStartup
+import splice.app.modes.ModeMcp
+import splice.app.modes.ModesNow
 import splice.app.sources.mcp.McpAttached
 import splice.client.mcp.McpHubLive
 import splice.client.mcp.McpInventory
@@ -32,6 +34,9 @@ internal class ControlMcpWiring(
     /** v0.4.0 shared MCP hosting knobs ([daemon] mcp_hosting / mcp_hosting_exclude). */
     private val mcpHosting: McpHostingSettings,
 ) {
+    /** The modes the daemon holds, assigned by the control plane: the mcp ones are servers this host answers. */
+    internal var modes: ModesNow = ModesNow { null }
+
     // Views over [daemon], never copies: a stored copy would fix the value at construction.
     private val statePaths get() = daemon.statePaths
     private val config get() = daemon.config
@@ -94,7 +99,10 @@ internal class ControlMcpWiring(
             log = log,
             inventory = inventory,
             hub = hub,
-        )
+        ).also {
+            // the mcp modes, read at each request: boot assigns the modes after this host is built
+            it.inProcess = ModeMcp { modes.held() }
+        }
     }
 
     fun services(host: McpHost, home: Path): McpServiceRefresh = McpServiceRefresh {

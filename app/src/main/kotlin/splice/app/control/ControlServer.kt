@@ -29,6 +29,7 @@ import splice.app.control.api.ControlAudit
 import splice.app.control.api.ControlHealthReport
 import splice.app.control.api.HeadResolver
 import splice.app.control.api.HeadSignals
+import splice.app.control.engine.ControlEngine
 import splice.app.control.mount.AccountsMount
 import splice.app.control.mount.AddMount
 import splice.app.control.mount.BoundResource

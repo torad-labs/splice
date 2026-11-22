@@ -1,6 +1,6 @@
 // NEW: #525 — Ktor/Netty engine shell for ControlServer, pairing the listener with ActiveCallFence so stopping the
 // control server unwinds active call coroutines while Netty's event loops are still alive.
-package splice.app.control
+package splice.app.control.engine
 
 import io.ktor.http.ContentType
 import io.ktor.server.application.ApplicationCallPipeline
@@ -16,6 +16,8 @@ import io.ktor.server.routing.routing
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
+import splice.app.control.ControlListen
+import splice.app.control.ControlReadings
 import splice.app.control.mount.ControlGuard
 import splice.app.control.mount.ControlMount
 import splice.http.listen.ActiveCallFence

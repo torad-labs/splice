@@ -151,7 +151,7 @@ internal class UpgradeCommandTest : UpgradeRig() {
         pristine(home)
         val base = release(home)
         inflightAnswers = ArrayDeque(listOf(InflightRead.Count(2), InflightRead.Count(1), InflightRead.Count(0)))
-        val (ok, out) = captured { command(home, base).upgrade(listOf("--to", "v9.9.9")) }
+        val (ok, out) = captured { command(home, base).upgrade(listOf("--to", "v9.9.9", "--wait")) }
         assertTrue(ok, out)
         assertTrue(out.contains("edited since") && out.contains("+echo patched"), out)
         assertEquals(NEWER, read(home, "splice-launch"), "the new release's shim is live")

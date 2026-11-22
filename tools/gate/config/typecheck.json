@@ -7,6 +7,7 @@
     "tools/codemode-parity/pre-dispatch/tsconfig.json",
     "tools/release/tsconfig.json",
     "tools/e2e/tsconfig.json",
+    "tools/desktop-sandbox/tsconfig.json",
     ".github/scripts/tsconfig.json",
     "tools/probes/tsconfig.json",
     "tools/screen-review/tsconfig.json",

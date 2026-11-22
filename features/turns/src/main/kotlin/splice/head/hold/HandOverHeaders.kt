@@ -15,9 +15,11 @@ import java.util.concurrent.TimeUnit
 
 /** The headers a handed-over limit is answered with. */
 internal object HandOverHeaders {
-    /** [answer]'s headers at [nowMs] on the wall clock: none unless it is a handed-over status. */
+    /** [answer]'s headers at [nowMs] on the wall clock: handed-over limit headers, or Retry-After in whole seconds
+     *  rounded up for an overload that carried a provider pushback. */
     fun of(answer: WireAnswer, nowMs: Long): Map<String, String> {
-        if (!answer.handedOver || answer.status == null) return emptyMap()
+        if (answer.status == null) return emptyMap()
+        if (!answer.handedOver) return pushbackHeaders(answer, nowMs)
         val reset = answer.resetsAt?.toEpochMilli()
         val recheckAt = nowMs + TimeUnit.SECONDS.toMillis(RECHECK_SECONDS)
         val toldAt = if (reset == null || answer.recheck) minOf(recheckAt, reset ?: recheckAt) else reset
@@ -29,6 +31,11 @@ internal object HandOverHeaders {
         val member = windowMember(answer.window)
         if (member != null && reset != null) headers[member] = WholeSeconds.of(reset).toString()
         return headers
+    }
+
+    private fun pushbackHeaders(answer: WireAnswer, nowMs: Long): Map<String, String> {
+        val pushbackAt = answer.retryAfterAt?.toEpochMilli() ?: return emptyMap()
+        return mapOf(RETRY_AFTER_HEADER to secondsUntil(pushbackAt, nowMs).toString())
     }
 
     /** The per-window reset member of [window], the one Claude Code reads that window's reset from. */

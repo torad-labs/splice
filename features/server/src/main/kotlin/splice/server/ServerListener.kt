@@ -83,6 +83,7 @@ import splice.server.signin.SigninRoute
 import splice.server.telemetry.OTLP_ROUTE
 import splice.server.telemetry.ResourceStamp
 import splice.server.telemetry.TelemetryRelay
+import splice.server.web.ServerPublicRoutes
 import splice.share.HEAD_API_ROOT
 import splice.share.HEAD_LAUNCH_ROUTE
 import splice.share.HeadTurn
@@ -110,8 +111,7 @@ internal class ServerListener(
     private val admin = ServerAdmin(server, KeyApi(parts.keys, log, reads.audit), reads, voice)
     private val addresses = ClientAddresses(server.trustedProxies)
     private val signins = SigninRoute(signin, KeyApi(parts.keys, log, reads.audit), addresses, voice, log)
-    private val forwardAuth = ForwardAuthRoute(server, parts.keys, parts.people, voice)
-    private val installRoute = ClientInstallRoute(server, addresses, secure = tls != null, voice)
+    private val publicRoutes = ServerPublicRoutes(server, parts.keys, parts.people, addresses, tls != null, voice)
     private val keyAdmission = KeyAdmission(parts.keys, addresses, log)
     private val watched = WatchedRelay()
     private val paths = RequestPaths()
@@ -178,11 +178,9 @@ internal class ServerListener(
         parts.keys.keepUse()
     }
 
-    /** Routes that handle their own auth or need none: health, forward_auth (cookie/key), install script, and sign-in. */
-    private suspend fun answeredOpen(call: ApplicationCall, path: List<String>?): Boolean =
-        path != null && (answeredHealthOrSignin(call, path) || answeredPublicRoute(call, path))
-
-    private suspend fun answeredHealthOrSignin(call: ApplicationCall, path: List<String>): Boolean = when {
+    /** Routes that handle their own auth or need none: health, sign-in, forward_auth, and install script. */
+    private suspend fun answeredOpen(call: ApplicationCall, path: List<String>?): Boolean = when {
+        path == null -> false
         call.request.httpMethod == HttpMethod.Get && path == listOf(HEALTH_ROUTE) -> {
             call.respondText(HEALTH_BODY, ContentType.Application.Json)
             true
@@ -191,19 +189,7 @@ internal class ServerListener(
             signins.answer(call, path)
             true
         }
-        else -> false
-    }
-
-    private suspend fun answeredPublicRoute(call: ApplicationCall, path: List<String>): Boolean = when {
-        forwardAuth.asks(call, path) -> {
-            forwardAuth.answer(call)
-            true
-        }
-        installRoute.asks(call, path) -> {
-            installRoute.answer(call)
-            true
-        }
-        else -> false
+        else -> publicRoutes.answered(call, path)
     }
 
     /** [path] asked with a live [key]: what the server offers, its own API, or one of its commands. */

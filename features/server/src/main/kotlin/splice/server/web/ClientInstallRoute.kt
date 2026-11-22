@@ -1,7 +1,7 @@
 // NEW: server mode (docs/specs/server-mode.md, F15). `GET /server/install`: serves a POSIX shell bootstrap script
 // pointing at `[server.client] download_url` and this server's origin so a new laptop installs the team's client
 // build and joins the server in one command.
-package splice.server
+package splice.server.web
 
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -14,6 +14,7 @@ import splice.core.topology.ServerConfig
 import splice.core.wire.HTTPS_SCHEME
 import splice.core.wire.HTTP_SCHEME
 import splice.core.wire.HttpStatus
+import splice.server.SERVER_ROOT
 import splice.server.caller.ClientAddresses
 import splice.share.RefusalVoice
 

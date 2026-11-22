@@ -3,7 +3,7 @@
 // person's Splice key as `x-api-key`, `Authorization: Bearer`, or `Cookie: splice_forward_auth=<key>`, and returns
 // 200 with identity headers (`X-Splice-Person`, `X-Splice-Team`, `X-Splice-Admin`, `X-Auth-Request-Email`) for admins
 // and emails/domains matched by `[server.forward_auth] allow`.
-package splice.server
+package splice.server.web
 
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
@@ -15,6 +15,11 @@ import io.ktor.server.response.respond
 import splice.core.auth.BearerScheme
 import splice.core.topology.ServerConfig
 import splice.core.wire.HttpStatus
+import splice.server.KeyVerdict
+import splice.server.SERVER_ROOT
+import splice.server.ServerKey
+import splice.server.ServerKeys
+import splice.server.ServerPeople
 import splice.share.RefusalVoice
 
 internal class ForwardAuthRoute(

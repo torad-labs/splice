@@ -59,7 +59,7 @@ public class ServerAudit(
     }
 }
 
-public const val CONTROL_ACTOR: String = "control"
+internal const val CONTROL_ACTOR: String = "control"
 
 // why: default tail returned by /api/server/audit and /server/api/audit when the caller names no ?tail.
 public const val DEFAULT_AUDIT_TAIL: Int = 100

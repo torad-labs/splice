@@ -55,6 +55,36 @@ class AntigravityDoorEngineTest {
     }
 
     @Test
+    fun `parser includes Anthropic top-level system prompt and project instructions in initialPrefix`() {
+        val stringReq = buildJsonObject {
+            put("model", "gem-4-neon")
+            put("system", "You are inside Project Alpha.")
+            putJsonArray("messages") {
+                add(buildJsonObject { put("role", "user"); put("content", "hi") })
+            }
+        }
+        val parsedStr = DoorAgyRequestParser.parse(stringReq, "gem-4-neon")
+        assertTrue(parsedStr.transcript.openingPrefix.orEmpty().contains("You are inside Project Alpha."))
+
+        val arrayReq = buildJsonObject {
+            put("model", "gem-4-neon")
+            putJsonArray("system") {
+                add(buildJsonObject { put("type", "text"); put("text", "Base persona.") })
+                add(buildJsonObject { put("type", "text"); put("text", "Project rule.") })
+            }
+            putJsonArray("messages") {
+                add(buildJsonObject { put("role", "user"); put("content", "first") })
+                add(buildJsonObject { put("role", "assistant"); put("content", "ok") })
+                add(buildJsonObject { put("role", "user"); put("content", "second") })
+            }
+        }
+        val parsedArr = DoorAgyRequestParser.parse(arrayReq, "gem-4-neon")
+        val prefix = parsedArr.transcript.openingPrefix.orEmpty()
+        assertTrue(prefix.contains("Base persona.") && prefix.contains("Project rule."), prefix)
+        assertTrue(prefix.contains("User: first") && prefix.contains("Assistant: ok"), prefix)
+    }
+
+    @Test
     fun `streams thinking and text and reuses session across multi-turn chat`() = runBlocking {
         val script = writeFakeAgy(multiTurnAgyScript())
         AntigravityDoorEngine(this, Dispatchers.IO, LogSink {}, agy = listOf(script.toString())).use { engine ->

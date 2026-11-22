@@ -70,7 +70,7 @@ internal class DoorAgySession(
             dead -> true
             resumingTools -> false
             activePromptId != null -> true
-            processedMessages > 0 && ask.messages.size <= processedMessages -> true
+            processedMessages > 0 && ask.transcript.messageCount <= processedMessages -> true
             else -> ask.toolNames.toSet() != toolNamesAtStart
         }
     }
@@ -113,7 +113,7 @@ internal class DoorAgySession(
         when (outcome) {
             is DoorAgyTurnResult.Completed -> if (!outcome.hasToolUse) {
                 activePromptId = null
-                processedMessages = ask.messages.size + 1
+                processedMessages = ask.transcript.messageCount + 1
             }
             is DoorAgyTurnResult.Failed -> {
                 activePromptId = null
@@ -196,7 +196,7 @@ internal class DoorAgySession(
 
     private suspend fun startFreshPrompt(agy: AgySession, ask: DoorAgyAsk): Long? {
         applySelection(agy, ask)
-        val prefix = if (processedMessages == 0) ask.historyPrefix() else null
+        val prefix = if (processedMessages == 0) ask.transcript.openingPrefix else null
         val content = ask.latestUserContent ?: JsonPrimitive("")
         return agy.prompt(content, prefix)
     }

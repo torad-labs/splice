@@ -20,14 +20,12 @@ import java.nio.file.Path
 
 internal class ClaudeCodeSetup(private val claudeDir: Path) {
     /** The effort the person's sessions run at, when it is a level Desktop's own selector has. */
-    fun effort(): String? =
-        JsonScalars.str(held(DESKTOP_SETTINGS_FILE), CLAUDE_EFFORT_LEVEL)?.takeIf { it in DESKTOP_EFFORT_LEVELS }
+    fun effort(): String? = settingString(CLAUDE_EFFORT_LEVEL)?.takeIf { it in DESKTOP_EFFORT_LEVELS }
 
     /** The default permission mode in Claude Code (`permissions.defaultMode`), mapped to Desktop's
      *  `codeDefaultPermissionMode` vocabulary when recognized. */
     fun permissionMode(): String? {
-        val perms = held(DESKTOP_SETTINGS_FILE)?.get(CLAUDE_PERMISSIONS) as? JsonObject ?: return null
-        val raw = JsonScalars.str(perms, CLAUDE_DEFAULT_MODE)?.trim() ?: return null
+        val raw = settingPermissionDefaultMode()?.trim() ?: return null
         return when (raw) {
             "default" -> "manual"
             in DESKTOP_PERMISSION_MODES -> raw
@@ -35,21 +33,35 @@ internal class ClaudeCodeSetup(private val claudeDir: Path) {
         }
     }
 
-    /** Whether prompt suggestions are explicitly configured in Claude Code `settings.json`. */
+    /** Whether prompt suggestions are explicitly configured in Claude Code `settings.local.json` or `settings.json`. */
     fun promptSuggestionEnabled(): Boolean? =
-        JsonScalars.str(held(DESKTOP_SETTINGS_FILE), CLAUDE_PROMPT_SUGGESTION)?.toBooleanStrictOrNull()
+        settingString(CLAUDE_PROMPT_SUGGESTION)?.toBooleanStrictOrNull()
 
     /** The marketplaces the person added that Desktop's configuration can name, combining
-     *  `plugins/known_marketplaces.json` and `settings.json`'s `extraKnownMarketplaces`. A GitHub repository,
-     *  git remote or hosted marketplace file is carried with its branch and folder; local directories and
-     *  sparse-path repositories are omitted because Desktop cannot express them faithfully. */
+     *  `plugins/known_marketplaces.json`, `settings.json`, and `settings.local.json`'s `extraKnownMarketplaces`.
+     *  A GitHub repository, git remote or hosted marketplace file is carried with its branch and folder;
+     *  local directories and sparse-path repositories are omitted because Desktop cannot express them faithfully. */
     fun marketplaces(): List<JsonObject> {
         val fromKnown = held(KNOWN_MARKETPLACES_FILE)?.values.orEmpty()
             .mapNotNull { known -> named((known as? JsonObject)?.get(MARKETPLACE_SOURCE)) }
-        val extraObj = held(DESKTOP_SETTINGS_FILE)?.get(EXTRA_KNOWN_MARKETPLACES) as? JsonObject
-        val fromExtra = extraObj?.values.orEmpty()
+        val fromSettings = extraMarketplaces(DESKTOP_SETTINGS_FILE)
+        val fromLocal = extraMarketplaces(CLAUDE_LOCAL_SETTINGS_FILE)
+        return fromKnown + fromSettings + fromLocal
+    }
+
+    private fun extraMarketplaces(file: String): List<JsonObject> {
+        val extraObj = held(file)?.get(EXTRA_KNOWN_MARKETPLACES) as? JsonObject
+        return extraObj?.values.orEmpty()
             .mapNotNull { entry -> named((entry as? JsonObject)?.get(MARKETPLACE_SOURCE)) }
-        return fromKnown + fromExtra
+    }
+
+    private fun settingString(key: String): String? =
+        JsonScalars.str(held(CLAUDE_LOCAL_SETTINGS_FILE), key) ?: JsonScalars.str(held(DESKTOP_SETTINGS_FILE), key)
+
+    private fun settingPermissionDefaultMode(): String? {
+        val localPerms = held(CLAUDE_LOCAL_SETTINGS_FILE)?.get(CLAUDE_PERMISSIONS) as? JsonObject
+        val basePerms = held(DESKTOP_SETTINGS_FILE)?.get(CLAUDE_PERMISSIONS) as? JsonObject
+        return JsonScalars.str(localPerms, CLAUDE_DEFAULT_MODE) ?: JsonScalars.str(basePerms, CLAUDE_DEFAULT_MODE)
     }
 
     /** [source], a marketplace's source as Claude Code holds it, as Desktop's configuration names it; null for one
@@ -72,7 +84,8 @@ internal class ClaudeCodeSetup(private val claudeDir: Path) {
         (DesktopSettingsRead(claudeDir.resolve(file)).read() as? SettingsRead.Held)?.file
 }
 
-// Claude Code's own key for the effort its sessions run at, in `settings.json`.
+// Claude Code's own key for the effort its sessions run at, in `settings.json` / `settings.local.json`.
+private const val CLAUDE_LOCAL_SETTINGS_FILE = "settings.local.json"
 private const val CLAUDE_EFFORT_LEVEL = "effortLevel"
 private const val CLAUDE_PERMISSIONS = "permissions"
 private const val CLAUDE_DEFAULT_MODE = "defaultMode"

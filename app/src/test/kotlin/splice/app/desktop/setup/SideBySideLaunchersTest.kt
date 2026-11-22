@@ -60,23 +60,54 @@ class SideBySideLaunchersTest {
     }
 
     @Test
-    fun `prepareProfile configures isolated claude-splice folder without touching default Claude`(@TempDir home: Path) {
+    fun `prepareProfile configures isolated claude-splice folder, syncs 1P setup, and refreshes existing profiles`(
+        @TempDir home: Path,
+    ) {
         val env = EnvReader { null }
         UserHome.within(home) {
             val defaultClaudeDir = home.resolve(".config/Claude-3p/configLibrary")
+            val onePDir = Files.createDirectories(home.resolve(".config/Claude"))
+            Files.writeString(
+                onePDir.resolve("claude_desktop_config.json"),
+                """{"mcpServers":{"desktop-mcp":{"command":"npx","args":["-y","demo"]}}}""",
+            )
+            Files.writeString(
+                home.resolve(".claude.json"),
+                """{"mcpServers":{"cli-stdio":{"type":"stdio","command":"uvx","args":["tool"]}}}""",
+            )
+            val extDir = Files.createDirectories(onePDir.resolve("Claude Extensions/demo.ext"))
+            Files.writeString(extDir.resolve("manifest.json"), """{"name":"demo"}""")
+
             val desktop = SideBySideDesktop(
                 env = env,
                 out = TerminalOutput {},
                 err = TerminalOutput {},
                 osName = "Linux",
             )
-            val profile = desktop.prepareProfile("http://127.0.0.1:3096/door")
+            val door = "http://127.0.0.1:3096/door"
+            val profile = desktop.prepareProfile(door)
             assertEquals(home.resolve(".config/claude-splice"), profile)
             assertFalse(Files.exists(defaultClaudeDir), "default Claude Desktop config must stay untouched")
             val isolatedLib = profile.resolve("Claude-3p/configLibrary")
             assertTrue(Files.isRegularFile(isolatedLib.resolve("_meta.json")))
-            val configText = Files.readString(isolatedLib.resolve("splice-side-by-side.json"))
-            assertTrue(configText.contains("http://127.0.0.1:3096/door"), configText)
+            val configFile = isolatedLib.resolve("splice-side-by-side.json")
+            val configText = Files.readString(configFile)
+            assertTrue(configText.contains(door), configText)
+            assertTrue(configText.contains("\"projectsEnabled\": true"), configText)
+            val syncedCfg = Files.readString(profile.resolve("Claude-3p/claude_desktop_config.json"))
+            assertTrue(syncedCfg.contains("desktop-mcp"), syncedCfg)
+            assertTrue(syncedCfg.contains("cli-stdio"), syncedCfg)
+            assertTrue(Files.isRegularFile(profile.resolve("Claude-3p/Claude Extensions/demo.ext/manifest.json")))
+
+            // Simulate an older side-by-side config missing projectsEnabled while keeping user's custom effort.
+            Files.writeString(
+                configFile,
+                """{"inferenceProvider":"gateway","inferenceGatewayBaseUrl":"$door","defaultModelEffort":"low"}""",
+            )
+            desktop.prepareProfile(door)
+            val refreshed = Files.readString(configFile)
+            assertTrue(refreshed.contains("\"projectsEnabled\": true"), refreshed)
+            assertTrue(refreshed.contains("\"defaultModelEffort\": \"low\""), refreshed)
         }
     }
 }

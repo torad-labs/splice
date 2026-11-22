@@ -87,7 +87,7 @@ internal object DoorAgyRequestParser {
             val obj = item as? JsonObject ?: return@mapNotNull null
             if (JsonScalars.str(obj, ASK_TYPE) == ASK_TEXT) JsonScalars.str(obj, ASK_TEXT)?.trim() else null
         }.filter { it.isNotEmpty() }.joinToString("\n\n").takeIf { it.isNotEmpty() }
-        else -> null
+        null, is JsonObject -> null
     }
 
     internal fun formatMessage(message: JsonObject): String? {

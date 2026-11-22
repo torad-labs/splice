@@ -1,6 +1,6 @@
 // What the console-night-deck checks share: a stub daemon that serves this checkout's console folder by the names
 // ConsoleMount serves (a plain name, or one under fonts/ or brand/) and answers /api/* from made-up rows, the way
-// tools/console's tests read the pages; Chromium at the two widths the feature is judged at; and the frame every
+// tools/console's tests read the pages; Chromium at the widths the feature is judged at; and the frame every
 // Night Deck page shares (the six tabs, which rails and composer it has, and its type the same size at 1440 and 3840 px).
 //
 // Every value here is made up (the "acme" world). Nothing comes from anyone's machine.
@@ -16,9 +16,10 @@ export const FIXTURES = join(import.meta.dir, "..", "fixtures");
 
 /** The approved nav, in order. Each tab links to its page by this name, lower-cased, plus .html. */
 export const SIX = ["Sessions", "Accounts", "Teams", "Providers", "Activity", "Settings"] as const;
-/** The two widths every page is judged at. */
+/** The two widths every page is judged at, and the phone width a page's own layout is checked at. */
 export const NARROW = { width: 1440, height: 900 };
 export const WIDE = { width: 3840, height: 2160 };
+export const PHONE = { width: 375, height: 812 };
 
 /** What the stub answers an /api/* path with: a value (sent as JSON), a Response, or a function of the request. */
 export type Answer = unknown | ((req: Request, url: URL, body: unknown) => unknown | Response | Promise<unknown | Response>);

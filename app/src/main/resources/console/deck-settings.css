@@ -42,6 +42,11 @@
 .mc { position: relative; max-width: var(--mc-max); margin: 0 auto; display: grid; gap: var(--sp-7); }
 .mc-head { padding-top: var(--sp-5); display: flex; justify-content: space-between; align-items: flex-end; gap: var(--sp-4); }
 .mc-head h1 { margin: var(--sp-2) 0 0; font-size: var(--fs-title); font-weight: var(--w-med); line-height: var(--lh-tight); }
+/* a phone: the header stacks as the kit's .head does, so the title and the status each take the page's own width */
+@media (max-width: 48rem) {
+  .mc { grid-template-columns: minmax(0, 1fr); }
+  .mc-head { flex-direction: column; align-items: stretch; }
+}
 
 /* a part: content on the field, a button you press to open its glass */
 .pt { position: relative; display: grid; align-content: start; gap: var(--sp-2); min-width: 0; padding: var(--pt-pad); border: 0; border-radius: var(--r-inner); background: transparent; color: var(--ink); text-align: left; font: inherit; cursor: pointer; overflow: hidden; transition: background var(--dur-fast); }

@@ -670,7 +670,9 @@ a.btn { text-decoration: none; }
   .rail-l, .brand, .bar-rule { display: none; }
   .centre { margin: 0 var(--edge); }
   .nav { left: var(--edge); right: var(--edge); overflow-x: auto; scrollbar-width: none; }
-  .head { flex-direction: column; align-items: flex-start; }
+  /* the header stacks, and each row takes the page's width: a row left at its own max-content width ran its status
+     past the screen whenever the title and the status together were wider than the phone */
+  .head { flex-direction: column; align-items: stretch; }
   .switch { top: auto; bottom: calc(var(--edge) + var(--comp-stack-h) + var(--gap)); }
   .need-float { top: auto; right: auto; left: var(--edge); bottom: calc(var(--edge) + var(--comp-stack-h) + var(--gap)); }
   .figs, .scale span.zone-label { display: none; }

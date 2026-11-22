@@ -54,7 +54,7 @@ internal class ForwardAuthRoute(
         }
         val team = people.team(key.person, server.teams)
         call.response.header("X-Splice-Person", key.person)
-        call.response.header("X-Splice-Team", team)
+        team?.let { call.response.header("X-Splice-Team", it) }
         call.response.header("X-Splice-Admin", admin.toString())
         call.response.header("X-Auth-Request-Email", key.person)
         call.respond(HttpStatusCode.OK)

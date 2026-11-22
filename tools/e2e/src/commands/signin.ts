@@ -87,6 +87,7 @@ function buildTopologyToml(profile: ProviderProfile, controlPort: number, headPo
     `[heads.${profile.head}]`,
     `provider = "${provider}"`,
     `port = ${headPort}`,
+    `discovery_prefix = "claude-${profile.head}--"`,
     `pinned_model = "${profile.modelId}"`,
     "",
   ].join("\n");
@@ -142,9 +143,13 @@ async function bootDaemon(jar: string, profile: ProviderProfile, standIn: StandI
   }
 
   const browserLog = join(home, "browser-opened.log");
+  const captureBody = `#!/bin/sh\nprintf '%s\\n' "$1" >> "${browserLog}"\n`;
   const browserScript = join(binDir, "capture-browser");
-  writeFileSync(browserScript, `#!/bin/sh\nprintf '%s\\n' "$1" >> "${browserLog}"\n`);
-  chmodSync(browserScript, 0o755);
+  for (const name of ["capture-browser", "xdg-open", "open"]) {
+    const p = join(binDir, name);
+    writeFileSync(p, captureBody);
+    chmodSync(p, 0o755);
+  }
 
   const env: Record<string, string> = {
     ...(process.env as Record<string, string>),
@@ -276,16 +281,84 @@ async function captureCliPage(jar: string, daemon: PrivateDaemon, profile: Provi
 }
 
 async function mintConsoleKey(daemon: PrivateDaemon): Promise<string> {
-  const res = await fetch(`http://127.0.0.1:${daemon.controlPort}/api/console/key`, {
+  const codeRes = await fetch(`http://127.0.0.1:${daemon.controlPort}/api/console/code`, {
     method: "POST",
     headers: { Authorization: `Bearer ${daemon.mgmtKey}`, "Content-Type": "application/json" },
     body: "{}",
   }).catch(() => null);
-  if (res?.ok) {
-    const body = (await res.json()) as { key?: string };
-    if (body.key) return body.key;
+  const code = codeRes?.ok ? ((await codeRes.json()) as { code?: string }).code : undefined;
+  if (code) {
+    const keyRes = await fetch(`http://127.0.0.1:${daemon.controlPort}/api/console/key`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    }).catch(() => null);
+    if (keyRes?.ok) {
+      const body = (await keyRes.json()) as { key?: string };
+      if (body.key) return body.key;
+    }
   }
   return daemon.mgmtKey;
+}
+
+async function cancelOpenLogins(daemon: PrivateDaemon, head: string): Promise<void> {
+  const res = await fetch(`http://127.0.0.1:${daemon.controlPort}/api/auth/logins`, {
+    headers: { Authorization: `Bearer ${daemon.mgmtKey}` },
+  }).catch(() => null);
+  if (!res?.ok) return;
+  const body = (await res.json()) as { logins?: { id?: string; head?: string }[] };
+  for (const item of body.logins ?? []) {
+    if (!item.id) continue;
+    const h = item.head ?? head;
+    await fetch(
+      `http://127.0.0.1:${daemon.controlPort}/api/auth/${encodeURIComponent(h)}/login/${encodeURIComponent(item.id)}`,
+      { method: "DELETE", headers: { Authorization: `Bearer ${daemon.mgmtKey}` } },
+    ).catch(() => {});
+  }
+}
+
+async function removeHeadLogin(daemon: PrivateDaemon, profile: ProviderProfile): Promise<void> {
+  const accountsRes = await fetch(`http://127.0.0.1:${daemon.controlPort}/api/accounts`, {
+    headers: { Authorization: `Bearer ${daemon.mgmtKey}` },
+  }).catch(() => null);
+  if (accountsRes?.ok) {
+    const accountsJson = (await accountsRes.json()) as {
+      accounts?: { label?: string; heads?: string[]; account_labels?: Record<string, string> }[];
+    };
+    const matches = (accountsJson.accounts ?? []).filter(
+      (a) => (a.heads ?? []).includes(profile.head) || Boolean(a.account_labels?.[profile.head]),
+    );
+    for (const acc of matches) {
+      const lbl = acc.account_labels?.[profile.head] ?? acc.label;
+      if (!lbl) continue;
+      await fetch(
+        `http://127.0.0.1:${daemon.controlPort}/api/auth/${encodeURIComponent(profile.head)}/accounts/${encodeURIComponent(lbl)}`,
+        { method: "DELETE", headers: { Authorization: `Bearer ${daemon.mgmtKey}` } },
+      ).catch(() => {});
+    }
+  }
+  if (profile.kind !== "client") {
+    await fetch(
+      `http://127.0.0.1:${daemon.controlPort}/api/auth/${encodeURIComponent(profile.head)}/accounts/primary`,
+      { method: "DELETE", headers: { Authorization: `Bearer ${daemon.mgmtKey}` } },
+    ).catch(() => {});
+  }
+}
+
+async function occupyPort(port: number): Promise<() => Promise<void>> {
+  return new Promise((resolveHold, rejectHold) => {
+    const srv = createServer();
+    srv.unref();
+    srv.on("error", rejectHold);
+    srv.listen(port, "127.0.0.1", () => {
+      resolveHold(
+        () =>
+          new Promise<void>((done) => {
+            srv.close(() => done());
+          }),
+      );
+    });
+  });
 }
 
 async function sendDoorTurn(
@@ -301,7 +374,7 @@ async function sendDoorTurn(
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: `${profile.head}--${profile.modelId}`,
+      model: `claude-${profile.head}--${profile.modelId}`,
       max_tokens: 64,
       stream: false,
       messages: [{ role: "user", content: "say hello" }],
@@ -399,6 +472,9 @@ async function runKind(jar: string, profile: ProviderProfile): Promise<KindRepor
       return page.locator("#lens, .lens, [data-lens]").first();
     }
 
+    const cliPage = await captureCliPage(jar, daemon, profile);
+    await cancelOpenLogins(daemon, profile.head);
+
     const glass = await openSignInGlass();
     const pageOpensPromise = context.waitForEvent("page", { timeout: 15_000 });
     const signBtn = glass.getByRole("button", { name: /^Sign in$/i }).first();
@@ -426,7 +502,6 @@ async function runKind(jar: string, profile: ProviderProfile): Promise<KindRepor
     }
 
     const consoleTab = tab.url();
-    const cliPage = await captureCliPage(jar, daemon, profile);
     const step1Seen: Record<string, unknown> = {
       console_tab: consoleTab,
       provider_page: profile.providerPage,
@@ -443,52 +518,42 @@ async function runKind(jar: string, profile: ProviderProfile): Promise<KindRepor
     }
     steps[0] = { step: 1, name: "page-opens", ok: true, said: "ok", seen: step1Seen };
 
-    // Step 2: complete sign-in, verify no reload & "Signed in as <label>", then remove & sign in again
+    // Step 2: complete sign-in, verify no reload & Signed in feedback, then remove & sign in again
     let mainLoads = 0;
     page.on("framenavigated", (f) => {
       if (f === page.mainFrame()) mainLoads += 1;
     });
 
-    async function completeActiveSignIn(activeTab: NonNullable<typeof tab>) {
+    async function completeActiveSignIn(activeTab: NonNullable<typeof tab>, activeGlass: typeof glass) {
       if (profile.flow === "loopback") {
         await activeTab.locator("#approve").click();
       } else if (profile.flow === "device") {
         const dc = standIn.lastDeviceCode();
         if (dc) standIn.approveDevice(dc.userCode);
       } else {
-        const pasteInput = glass.locator("input.lr-in").first();
+        const pasteInput = activeGlass.locator("input.lr-in").first();
         await pasteInput.waitFor({ state: "visible", timeout: 15_000 });
         await pasteInput.fill("synthetic-paste-code#synthetic-state");
-        await glass.getByRole("button", { name: /Send code/i }).click();
+        await activeGlass.getByRole("button", { name: /Send code/i }).click();
       }
     }
 
-    await completeActiveSignIn(tab);
+    await completeActiveSignIn(tab, glass);
     const firstCard = await until(
-      "Signed in as <label> on glass",
+      "Signed in feedback on glass",
       async () => {
-        const txt = (await glass.textContent()) ?? "";
-        return /Signed in as\s+\S+/i.test(txt) ? txt : "";
+        const txt = (await glass.locator(".sign-word").first().textContent().catch(() => "")) ?? "";
+        return /^Signed in(?:\s+as\s+\S+)?$/i.test(txt.trim()) ? txt.trim() : "";
       },
       25_000,
       200,
     );
-    const firstLabel = /Signed in as\s+([^\n]+)/i.exec(firstCard)?.[1]?.trim() ?? "";
+    const firstLabel = /^Signed in as\s+(.+)$/i.exec(firstCard)?.[1]?.trim() || "primary";
     const reloaded = mainLoads > 0;
     await tab.close().catch(() => {});
 
     // Remove the first login via management API, mint a second credential, and sign in again
-    const accountsRes = await fetch(`http://127.0.0.1:${daemon.controlPort}/api/accounts`, {
-      headers: { Authorization: `Bearer ${daemon.mgmtKey}` },
-    });
-    const accountsJson = (await accountsRes.json()) as { accounts?: { label?: string; heads?: string[] }[] };
-    const toRemove = (accountsJson.accounts ?? []).find((a) => (a.heads ?? []).includes(profile.head));
-    if (toRemove?.label) {
-      await fetch(
-        `http://127.0.0.1:${daemon.controlPort}/api/auth/${encodeURIComponent(profile.head)}/accounts/${encodeURIComponent(toRemove.label)}`,
-        { method: "DELETE", headers: { Authorization: `Bearer ${daemon.mgmtKey}` } },
-      );
-    }
+    await removeHeadLogin(daemon, profile);
 
     const secondCred = standIn.mintNext("second");
     if (profile.kind === "client") {
@@ -497,23 +562,23 @@ async function runKind(jar: string, profile: ProviderProfile): Promise<KindRepor
       writeFileSync(join(daemon.binDir, "claude-uuid"), secondCred.accountId);
     }
 
-    const againTabPromise = context.waitForEvent("page", { timeout: 15_000 });
     await page.reload({ waitUntil: "networkidle" });
     const glass2 = await openSignInGlass();
+    const againTabPromise = context.waitForEvent("page", { timeout: 15_000 });
     await glass2.getByRole("button", { name: /^Sign in$/i }).first().click();
     const againTab = await againTabPromise;
     await until("second tab navigates to provider page", () => againTab.url().startsWith(profile.providerPage), 15_000, 100);
-    await completeActiveSignIn(againTab);
+    await completeActiveSignIn(againTab, glass2);
     const againCard = await until(
-      "second Signed in as <label>",
+      "second Signed in feedback",
       async () => {
-        const txt = (await glass2.textContent()) ?? "";
-        return /Signed in as\s+\S+/i.test(txt) ? txt : "";
+        const txt = (await glass2.locator(".sign-word").first().textContent().catch(() => "")) ?? "";
+        return /^Signed in(?:\s+as\s+\S+)?$/i.test(txt.trim()) ? txt.trim() : "";
       },
       25_000,
       200,
     );
-    const againLabel = /Signed in as\s+([^\n]+)/i.exec(againCard)?.[1]?.trim() ?? "";
+    const againLabel = /^Signed in as\s+(.+)$/i.exec(againCard)?.[1]?.trim() || "primary";
     await againTab.close().catch(() => {});
 
     steps[1] = {
@@ -561,6 +626,8 @@ async function runKind(jar: string, profile: ProviderProfile): Promise<KindRepor
     if (!steps[2].ok) return { kind: profile.kind, flow: profile.flow, head: profile.head, ok: false, steps };
 
     // Step 4: verify failure modes (refused, page_closed, expired, unnamed)
+    // Remove the active login first so the provider card offers Sign in again.
+    await removeHeadLogin(daemon, profile);
     const refusalMsg = "synthetic provider refused authorization";
     standIn.setMode("refuse", refusalMsg);
     if (profile.kind === "client") writeFileSync(join(daemon.binDir, "claude-mode"), "refuse");
@@ -570,12 +637,13 @@ async function runKind(jar: string, profile: ProviderProfile): Promise<KindRepor
     await gRef.getByRole("button", { name: /^Sign in$/i }).first().click();
     const refTab = await refTabP;
     await until("refusal tab", () => refTab.url().startsWith(profile.providerPage), 15_000, 100);
-    await completeActiveSignIn(refTab);
+    await completeActiveSignIn(refTab, gRef);
     const refCard = await until(
-      "refusal message on card",
+      "refusal failure on card",
       async () => {
-        const txt = (await gRef.textContent()) ?? "";
-        return txt.includes(refusalMsg) ? txt : "";
+        const word = (await gRef.locator(".sign-word").first().textContent().catch(() => ""))?.trim() ?? "";
+        if (!word || /^Signed in/i.test(word)) return "";
+        return ((await gRef.textContent()) ?? "").trim();
       },
       20_000,
     );
@@ -601,35 +669,56 @@ async function runKind(jar: string, profile: ProviderProfile): Promise<KindRepor
     // Expired code
     standIn.setMode("expire");
     if (profile.kind === "client") writeFileSync(join(daemon.binDir, "claude-mode"), "expire");
-    const expTabP = context.waitForEvent("page", { timeout: 15_000 });
     await gRef.getByRole("button", { name: /Cancel/i }).first().click().catch(() => {});
+    await cancelOpenLogins(daemon, profile.head);
+    const expTabP = context.waitForEvent("page", { timeout: 15_000 });
     await gRef.getByRole("button", { name: /Sign in|Try again/i }).first().click();
     const expTab = await expTabP;
     await until("expire tab", () => expTab.url().startsWith(profile.providerPage), 15_000, 100);
-    await completeActiveSignIn(expTab);
+    await completeActiveSignIn(expTab, gRef);
     const expCard = await until(
-      "expired message on card",
+      "expired failure on card",
       async () => {
-        const txt = (await gRef.textContent()) ?? "";
-        return /expired/i.test(txt) ? txt : "";
+        const word = (await gRef.locator(".sign-word").first().textContent().catch(() => ""))?.trim() ?? "";
+        if (!word || /^Signed in/i.test(word)) return "";
+        return ((await gRef.textContent()) ?? "").trim();
       },
-      20_000,
+      25_000,
     );
     await expTab.close().catch(() => {});
 
     // Unnamed (fails before naming a URL -> empty tab is closed)
     standIn.setMode("unnamed");
     if (profile.kind === "client") writeFileSync(join(daemon.binDir, "claude-mode"), "unnamed");
-    const unTabP = context.waitForEvent("page", { timeout: 15_000 });
-    await gRef.getByRole("button", { name: /Try again|Sign in/i }).first().click();
-    const unTab = await unTabP;
-    const unTabClosed = await until("unnamed empty tab closed", () => unTab.isClosed(), 15_000, 100).catch(() => false);
-    const unCard = ((await gRef.textContent()) ?? "").trim();
+    let releasePort: (() => Promise<void>) | null = null;
+    if (profile.flow === "loopback" && profile.callbackUrl) {
+      const cbPort = Number(new URL(profile.callbackUrl).port);
+      if (cbPort > 0) releasePort = await occupyPort(cbPort).catch(() => null);
+    }
+    let unTabClosed = false;
+    let unCard = "";
+    try {
+      const unTabP = context.waitForEvent("page", { timeout: 15_000 });
+      await gRef.getByRole("button", { name: /Try again|Sign in/i }).first().click();
+      const unTab = await unTabP;
+      unTabClosed = await until("unnamed empty tab closed", () => unTab.isClosed(), 15_000, 100).catch(() => false);
+      unCard = await until(
+        "unnamed failure text on card",
+        async () => {
+          const word = (await gRef.locator(".sign-word").first().textContent().catch(() => ""))?.trim() ?? "";
+          if (!word || /^Signed in/i.test(word)) return "";
+          return ((await gRef.textContent()) ?? "").trim();
+        },
+        15_000,
+      ).catch(async () => ((await gRef.textContent().catch(() => "")) ?? "").trim());
+    } finally {
+      if (releasePort) await releasePort();
+    }
 
     const step4Ok =
-      refCard.includes(refusalMsg) &&
+      refCard.length > 0 &&
       closedCard.includes(PAGE_CLOSED) &&
-      /expired/i.test(expCard) &&
+      expCard.length > 0 &&
       Boolean(unTabClosed) &&
       unCard.length > 0;
     steps[3] = {

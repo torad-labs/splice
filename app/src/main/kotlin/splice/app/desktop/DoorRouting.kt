@@ -54,22 +54,27 @@ internal class DoorRouting {
         val tier = tiers.tierOf(base) ?: return null
         val native = tiers.modelOf(base)
         val picked = named && !ask.probe
-        if (picked && native != null) {
-            val exact = served(lineup, ask, native)
-            if (exact != null || tier != SMALL_TIER) return exact
-        }
-        return sideCall(lineup, ask, Tier(tier, native, default, picked))
+        // custom-provider (cp-tiers): a session on a provider runs every tier there as its model_slots map it, before a
+        // named model of Anthropic's is looked for among all the providers.
+        return heldProvider(lineup, ask)?.let { onHeld(lineup, it, native, tier) }
+            ?: namedOrDefault(lineup, ask, Tier(tier, native, default, picked))
     }
 
-    /** [tier] when no model of the picker was named for it: on the provider the session is on, else the default
-     *  model, which only Claude Code's own calls and its small tier run as when a model is named. */
-    private fun sideCall(lineup: DesktopLineup, ask: DoorAsk, tier: Tier): DoorRoute? {
-        val held = heldProvider(lineup, ask)
-        return when {
-            held != null -> onHeld(lineup, held, tier.native, tier.name)
-            !tier.picked || tier.name == SMALL_TIER -> defaulted(lineup, tier.name, tier.default)
-            else -> null
+    /** [tier] in a session on no provider: the very model a named Anthropic id names where a provider serves it, else
+     *  the default model for Claude Code's small tier alone. */
+    private fun namedOrDefault(lineup: DesktopLineup, ask: DoorAsk, tier: Tier): DoorRoute? {
+        if (tier.picked && tier.native != null) {
+            val exact = served(lineup, ask, tier.native)
+            if (exact != null || tier.name != SMALL_TIER) return exact
         }
+        return sideCall(lineup, tier)
+    }
+
+    /** [tier] in a session on no provider: the default model, which only Claude Code's own calls and its small tier run
+     *  as when a model is named. */
+    private fun sideCall(lineup: DesktopLineup, tier: Tier): DoorRoute? = when {
+        !tier.picked || tier.name == SMALL_TIER -> defaulted(lineup, tier.name, tier.default)
+        else -> null
     }
 
     /** The provider [ask]'s session is on, or null for a session on none. */

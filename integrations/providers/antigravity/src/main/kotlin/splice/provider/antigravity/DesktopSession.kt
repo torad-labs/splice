@@ -203,8 +203,12 @@ internal class DesktopSession(
 
     private fun finish(error: String?) {
         val p = checkNotNull(parts)
-        val cancelled = stop == STOP_CANCELLED || error != null
-        turn?.end(stop.takeUnless { it == STOP_CANCELLED || it == STOP_MAX_TURN_REQUESTS }, cancelled = cancelled)
+        val close = when {
+            error != null -> TurnClose.FAILED
+            stop == STOP_CANCELLED -> TurnClose.CANCELLED
+            else -> TurnClose.NORMAL
+        }
+        turn?.end(stop.takeUnless { it == STOP_CANCELLED || it == STOP_MAX_TURN_REQUESTS }, close)
         p.out(p.frames.result(TurnEnd(stop, error, clock() - startedAt, usage, (look ?: p.look).model, window)))
         p.record.write(busy = false)
     }

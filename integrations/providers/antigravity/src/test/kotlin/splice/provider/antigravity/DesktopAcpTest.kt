@@ -254,6 +254,31 @@ internal class DesktopAcpTest {
         assertEquals("from-claude", lines[1].str("parentUuid"), "Gemini's turns follow the conversation so far")
     }
 
+    @Test
+    fun `agy exiting mid-turn closes a pending tool call as failed before saying the error`() {
+        val prompt = lines(
+            "read l",
+            update(
+                """{"sessionUpdate":"tool_call","toolCallId":"t-err","title":"Run ls","kind":"execute",""" +
+                    """"status":"pending","rawInput":{"command":"ls -la"}}""",
+            ),
+        )
+        val seen = rig("$opened\n$prompt") {
+            send(USER)
+            next { it.str("type") == "result" }
+        }
+        assertEquals("true", seen.last()["is_error"]?.jsonPrimitive?.content)
+        val kept = Files.readAllLines(transcript("s-1")).map { Json.parseToJsonElement(it).jsonObject }
+        assertEquals(listOf("user", "assistant", "user", "assistant"), kept.map { it.str("type") })
+        val toolResult = kept[2].obj("message").array("content").single().jsonObject
+        assertEquals("tool_result", toolResult.str("type"))
+        assertEquals("t-err", toolResult.str("tool_use_id"))
+        assertEquals("true", toolResult["is_error"]?.jsonPrimitive?.content)
+        assertTrue(toolResult.str("content").orEmpty().isNotEmpty())
+        val errorText = kept[3].obj("message").array("content").single().jsonObject.str("text").orEmpty()
+        assertTrue("agy ended" in errorText, errorText)
+    }
+
     /** Desktop's session on the agent [script], driven by [drive]; every line Desktop received, in order. */
     private fun rig(
         script: String,

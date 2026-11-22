@@ -762,22 +762,26 @@ internal abstract class HoldRouteFixtures : HoldReplyFixtures() {
         done: () -> Boolean,
     ) =
         withContext(Dispatchers.Default) {
+            settle()
             while (!done() && time.passed() < atMost) {
-                settle()
                 val now = time.passed()
                 val next = minOf(time.nextDue() ?: (now + step), now + step, atMost)
-                val woken = time.parkedDues().count { it <= next }
                 val seen = answers()
-                time.advanceBy((next - now).coerceAtLeast(Duration.ZERO))
-                val answered = withTimeoutOrNull(ANSWER_MS) {
-                    while (!done() && answers() < seen + woken) delay(POLL_MS)
-                    true
-                }
-                // An unanswered wake must fail here; moving time again would hide the unsettled fixture.
-                assertTrue(answered == true) {
-                    "stage=virtual_clock_wake_unanswered from=$now until=$next woken=$woken " +
-                        "answers_before=$seen answers_now=${answers()} done=${done()} " +
-                        "parked=${time.parkedNow()} next_due=${time.nextDue()} wait_guard_ms=$ANSWER_MS"
+                val woken = time.advanceCountingWoken((next - now).coerceAtLeast(Duration.ZERO))
+                if (woken > 0) {
+                    val answered = withTimeoutOrNull(ANSWER_MS) {
+                        while (!done() && answers() < seen + woken) delay(POLL_MS)
+                        true
+                    }
+                    // An unanswered wake must fail here; moving time again would hide the unsettled fixture.
+                    assertTrue(answered == true) {
+                        "stage=virtual_clock_wake_unanswered from=$now until=$next woken=$woken " +
+                            "answers_before=$seen answers_now=${answers()} done=${done()} " +
+                            "parked=${time.parkedNow()} next_due=${time.nextDue()} wait_guard_ms=$ANSWER_MS"
+                    }
+                    // Settle thoroughly after a real wake so an in-flight loopback retry lands at this virtual time
+                    // rather than a clock step later on a loaded runner (#619).
+                    settle()
                 }
                 afterStep()
             }
@@ -789,11 +793,11 @@ internal abstract class HoldRouteFixtures : HoldReplyFixtures() {
 
     /** Waits in real time until the head has gone quiet: no wait parked or woken and no request sent for a few polls. */
     private suspend fun ScriptedHeads.settle() {
-        var seen = time.parkedNow() to provider.requests.size
+        var seen = Triple(time.parkedNow(), time.parksSoFar(), provider.requests.size)
         var quiet = 0
         while (quiet < SETTLE_POLLS) {
             delay(POLL_MS)
-            val now = time.parkedNow() to provider.requests.size
+            val now = Triple(time.parkedNow(), time.parksSoFar(), provider.requests.size)
             if (now == seen) quiet++ else quiet = 0
             seen = now
         }
@@ -825,7 +829,7 @@ internal abstract class HoldRouteFixtures : HoldReplyFixtures() {
     }
 
     private companion object {
-        const val SETTLE_POLLS = 5
+        const val SETTLE_POLLS = 15
         const val POLL_MS = 2L
         const val EVENTUALLY_MS = 10_000L
 

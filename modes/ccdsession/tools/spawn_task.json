@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Short imperative action label under 60 characters for the suggested task chip and spawned session title."
+    },
+    "prompt": {
+      "type": "string",
+      "description": "Self-contained initial prompt for the spawned session, including file paths and enough context to act independently."
+    },
+    "tldr": {
+      "type": "string",
+      "description": "One or two plain-English sentences explaining what was noticed in this session and what the follow-up session will do, without file paths or code."
+    },
+    "cwd": {
+      "type": "string",
+      "description": "Optional absolute path to a different project root on this host when the follow-up belongs in another repository. Defaults to the current session folder."
+    }
+  },
+  "required": ["title", "prompt", "tldr"]
+}

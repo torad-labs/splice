@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "description": "The task_id returned by spawn_task (format: task_xxxxxxxx)."
+    },
+    "reason": {
+      "type": "string",
+      "description": "Optional brief explanation of why the suggestion is being withdrawn."
+    }
+  },
+  "required": ["task_id"]
+}

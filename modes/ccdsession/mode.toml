@@ -1,0 +1,14 @@
+name = "ccdsession"
+summary = "Suggested follow-up tasks and session chapters for sessions on the door."
+server = "ccd_session"
+handler = "splice.modes.ccdsession.CcdSessionMode"
+tools = ["spawn_task", "dismiss_task", "mark_chapter"]
+kind = "door"
+on = true
+
+[heads]
+only = []
+off = []
+
+[callers]
+off = ["desktop"]

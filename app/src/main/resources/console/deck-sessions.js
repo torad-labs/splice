@@ -61,6 +61,7 @@
   /* ---------- the live read: each session in the board's shape ---------- */
   const S = new Map(), GONE = new Map(), SCREEN = new Map(), seen = new Map();
   let heads = [], teamRows = [], accounts = [], perfRows = new Map(), readOk = null, readAt = 0, reading = true;
+  let suggestedTasks = [], sessionChapters = [];
   let events = [];
 
   /** a session's state, as the console has always read it: waiting on him, working, stalled, idle */
@@ -135,10 +136,15 @@
   }
 
   async function read() {
-    const [sessions, hd, tm] = await Promise.all([API.get('/api/sessions'), API.get('/api/heads'), API.get('/api/teams')]);
+    const [sessions, hd, tm, st, ch] = await Promise.all([
+      API.get('/api/sessions'), API.get('/api/heads'), API.get('/api/teams'),
+      API.get('/api/suggested-tasks'), API.get('/api/chapters'),
+    ]);
     readOk = sessions.ok; if (sessions.ok) readAt = Date.now();
     if (hd.ok) heads = (hd.body && hd.body.heads) || [];
     if (tm.ok) teamRows = ((tm.body && tm.body.teams) || []).filter(t => !t.archived);
+    if (st.ok) suggestedTasks = (st.body && st.body.tasks) || [];
+    if (ch.ok) sessionChapters = (ch.body && ch.body.chapters) || [];
     if (!sessions.ok) { paint(); return; }
     reading = !(sessions.body && sessions.body.reading === false);
     const lives = new Map(), waits = new Map();
@@ -1131,9 +1137,92 @@
     rn.append(F.name, rnb);
     F.sendline = h('p', 'rl-send');
     sec8.append(rn, F.sendline);
-    R.append(sec1, sec2, sec3, sec4, sec5, sec6, sec7, sec8);
-    F.stripDone = false; F.lamp = null; F.provKey = null;
+    F.tasksSec = h('section', 'sec');
+    F.tasksSec.append(h('h2', 'eyebrow', 'Suggested tasks'));
+    F.tasksList = h('div', 'rl-tasks');
+    F.tasksSec.append(F.tasksList);
+    F.tasksSec.hidden = true;
+    F.chapsSec = h('section', 'sec');
+    F.chapsSec.append(h('h2', 'eyebrow', 'Chapters'));
+    F.chapsList = h('div', 'rl-chaps');
+    F.chapsSec.append(F.chapsList);
+    F.chapsSec.hidden = true;
+    R.append(sec1, F.tasksSec, F.chapsSec, sec2, sec3, sec4, sec5, sec6, sec7, sec8);
+    F.stripDone = false; F.lamp = null; F.provKey = null; F.tasksSig = ''; F.chapsSig = '';
     F.name.value = s.name;
+  }
+  async function actSuggestedTask(task, mode) {
+    const claim = await API.post('/api/suggested-tasks/' + enc(task.task_id) + '/claim', { surface: 'console' });
+    if (!claim.ok) { composer.note('stalled', why(claim), 3000); await read(); return; }
+    if (mode === 'dismiss') {
+      await API.post('/api/suggested-tasks/' + enc(task.task_id) + '/resolve', { outcome: 'dismissed' });
+      composer.note('idle', 'Dismissed ' + task.title, 2500);
+      await read();
+      return;
+    }
+    if (mode === 'here') {
+      const sent = await API.post('/api/sessions/' + enc(task.session_id) + '/say', { text: task.prompt });
+      if (sent.ok) {
+        await API.post('/api/suggested-tasks/' + enc(task.task_id) + '/resolve', { outcome: 'here' });
+        composer.note('idle', 'Sent to this session', 2500);
+      } else {
+        await API.post('/api/suggested-tasks/' + enc(task.task_id) + '/resolve', { outcome: 'released' });
+        composer.note('stalled', why(sent), 3500);
+      }
+      await read();
+      return;
+    }
+    const s = S.get(task.session_id);
+    const cwd = task.cwd || (s && s.place) || '';
+    const started = await API.post('/api/sessions/start', { prompt: task.prompt, cwd, title: task.title });
+    if (started.ok && started.body && started.body.session_id) {
+      await API.post('/api/suggested-tasks/' + enc(task.task_id) + '/resolve', { outcome: 'started', session_id: started.body.session_id });
+      composer.note('idle', 'Started ' + task.title, 2500);
+    } else {
+      await API.post('/api/suggested-tasks/' + enc(task.task_id) + '/resolve', { outcome: 'released' });
+      composer.note('stalled', why(started), 3500);
+    }
+    await read();
+  }
+  function paintTasksAndChapters(s) {
+    if (!F.tasksSec || !F.chapsSec) return;
+    const tasks = suggestedTasks.filter(t => t.session_id === s.id && (t.state === 'pending' || t.state === 'in_flight'));
+    const tSig = tasks.map(t => t.task_id + ':' + t.state).join('|');
+    if (tSig !== F.tasksSig) {
+      F.tasksSig = tSig;
+      F.tasksList.replaceChildren();
+      setHidden(F.tasksSec, tasks.length === 0);
+      for (const task of tasks) {
+        const card = h('div', 'rl-task'); card.dataset.taskId = task.task_id;
+        card.append(h('div', 'rl-task-title', task.title || task.task_id));
+        if (task.tldr) card.append(h('p', 'rl-task-tldr', task.tldr));
+        const btns = h('div', 'rl-task-acts');
+        const busy = task.state === 'in_flight';
+        const mk = (lbl, mode, cls) => {
+          const b = h('button', 'btn press ' + cls, lbl); b.type = 'button'; b.disabled = busy;
+          b.addEventListener('click', () => actSuggestedTask(task, mode));
+          return b;
+        };
+        btns.append(mk('Start', 'start', 'primary'), mk('Do it here', 'here', 'quiet'), mk('Dismiss', 'dismiss', 'quiet'));
+        card.append(btns);
+        F.tasksList.append(card);
+      }
+    }
+    const chaps = sessionChapters.filter(c => c.session_id === s.id);
+    const cSig = chaps.map(c => c.created_at + ':' + c.title).join('|');
+    if (cSig !== F.chapsSig) {
+      F.chapsSig = cSig;
+      F.chapsList.replaceChildren();
+      setHidden(F.chapsSec, chaps.length === 0);
+      for (const ch of chaps) {
+        const row = h('div', 'rl-chap');
+        row.append(h('span', 'rl-chap-title', ch.title));
+        const ts = epoch(ch.created_at);
+        if (ts) row.append(h('span', 'rl-chap-at mono', agoText(Math.max(0, Date.now() - ts))));
+        if (ch.summary) row.title = ch.summary;
+        F.chapsList.append(row);
+      }
+    }
   }
   function rowBtn(label, sub, run, danger) {
     const b = h('button', 'rl-row press' + (danger ? ' danger' : '')); b.type = 'button';
@@ -1185,6 +1274,7 @@
     setTxt(F.worktree.v, s.worktree || 'None');
     setTxt(F.place.v, s.place || '—');
     setTxt(F.sendline, 'SendMessage(to="' + s.name + '")');
+    paintTasksAndChapters(s);
   }
   const windows = new Map();
   function windowOf(s) { return windows.get(s.head + '/' + s.model) || null; }

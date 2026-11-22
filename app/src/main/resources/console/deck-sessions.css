@@ -213,6 +213,16 @@ body.is-dragging { cursor: grabbing; user-select: none; }
 .srow-fix-nm { font-size: var(--fs-body); font-weight: var(--w-med); }
 .srow-fix-sub { font-size: var(--fs-small); color: var(--ink-faint); }
 
+/* suggested tasks & chapters (ccd-session) */
+.rl-tasks, .rl-chaps { display: grid; gap: var(--sp-2); }
+.rl-task { display: grid; gap: var(--sp-1); padding: var(--sp-2); border-radius: var(--r-inner); background: var(--fill); }
+.rl-task-title { font-size: var(--fs-small); font-weight: var(--w-med); color: var(--ink); overflow-wrap: anywhere; }
+.rl-task-tldr { margin: 0; font-size: var(--fs-micro); color: var(--ink-quiet); overflow-wrap: anywhere; }
+.rl-task-acts { display: flex; flex-wrap: wrap; gap: var(--sp-1); padding-top: var(--sp-1); }
+.rl-chap { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-2); padding: var(--sp-1) 0; }
+.rl-chap-title { font-size: var(--fs-small); color: var(--ink); overflow-wrap: anywhere; }
+.rl-chap-at { font-size: var(--fs-micro); color: var(--ink-faint); flex: none; }
+
 /* the header's live lamp: verdigris while the reads land, vermilion once splice stops answering */
 .status-lamp { --c: var(--verdigris); }
 .status.is-off .status-lamp { --c: var(--vermilion); }

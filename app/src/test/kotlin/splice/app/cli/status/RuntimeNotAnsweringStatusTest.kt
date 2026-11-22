@@ -1,5 +1,6 @@
 package splice.app.cli.status
 
+import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTimeoutPreemptively
@@ -18,11 +19,14 @@ import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.upstream.transport.LocalHttp
 import splice.upstream.transport.LocalHttpReply
+import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicReference
 
 /** Status says whether a turn would work, not whether the wrapper
  *  is installed: a local head whose runtime does not answer reads so, and the probe is bounded so
@@ -141,6 +145,41 @@ class RuntimeNotAnsweringStatusTest {
 
         assertEquals(listOf("http://127.0.0.1:8099/v1/models"), asked.toList())
         assertEquals(mapOf("bonsai" to ":8099", "bonsai-second" to ":8099"), down)
+    }
+
+    @Test
+    fun `the reach check sends the provider's bearer key and static headers`() {
+        val seenAuth = AtomicReference<String?>()
+        val seenHeader = AtomicReference<String?>()
+        val server = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0).apply {
+            createContext("/v1/models") { exchange ->
+                seenAuth.set(exchange.requestHeaders.getFirst("Authorization"))
+                seenHeader.set(exchange.requestHeaders.getFirst("X-Team-Tag"))
+                val status = if (seenAuth.get() == "Bearer test-secret") 200 else 401
+                exchange.sendResponseHeaders(status, -1)
+                exchange.close()
+            }
+            start()
+        }
+        try {
+            val keyed = ProviderConfig(
+                dialect = Dialect.OPENAI_CHAT,
+                baseUrl = "http://127.0.0.1:${server.address.port}/v1",
+                auth = AuthConfig(kind = "api-key", env = "TEST_KEYED_LOCAL"),
+                extraHeaders = mapOf("X-Team-Tag" to "alpha"),
+            )
+            val topo = Topology(
+                providers = mapOf("rt" to keyed),
+                heads = linkedMapOf("keyed" to head("rt", "claude-keyed", 3115)),
+            )
+            val env = EnvReader(mapOf("TEST_KEYED_LOCAL" to "test-secret")::get)
+            val down = LocalRuntimeReach().notAnswering(topo, env)
+            assertEquals(emptyMap<String, String>(), down)
+            assertEquals("Bearer test-secret", seenAuth.get())
+            assertEquals("alpha", seenHeader.get())
+        } finally {
+            server.stop(0)
+        }
     }
 }
 

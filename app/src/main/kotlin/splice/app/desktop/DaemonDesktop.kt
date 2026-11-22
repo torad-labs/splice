@@ -80,10 +80,18 @@ internal class DaemonDesktop(
     @Volatile
     private var lineups: DesktopProviders? = null
 
+    /** The gateway's served providers once [open] has run; null before. */
+    @Volatile
+    private var servedProviders: ServingProviders? = null
+
     @Volatile
     private var door: String? = null
     private val io = ProcessDispatchers().io()
     private val publishing = Mutex()
+
+    /** The gateway's usage source for [providerKey], or null before [open] or when no provider of that name serves. */
+    fun usageOf(providerKey: String): splice.usage.quota.HeadUsageSource? =
+        servedProviders?.invoke()?.firstOrNull { it.key == providerKey }?.usage
 
     /** The door on [controlPort], serving [providers], with the model catalog of the providers signed in now published
      *  before any route serves it, and again whenever [rosters] ask a provider's list with a new credential. Claude
@@ -97,6 +105,7 @@ internal class DaemonDesktop(
         val machine = ShareMachine(log).name()
         val catalog = PublishedCatalog(CatalogBuild(), CatalogFile(statePaths.modelCatalogFile, log), io)
         val lineups = DesktopProviders(providers, desktopOnly, aliases, catalog)
+        this.servedProviders = providers
         this.lineups = lineups
         rosters.credentialChanged = CredentialChanged { republish() }
         lineups.publish()

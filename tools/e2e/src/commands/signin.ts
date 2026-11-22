@@ -87,7 +87,7 @@ function buildTopologyToml(profile: ProviderProfile, controlPort: number, headPo
     `[heads.${profile.head}]`,
     `provider = "${provider}"`,
     `port = ${headPort}`,
-    `discovery_prefix = "claude-${profile.head}--"`,
+    `discovery_prefix = "claude-${provider}--"`,
     `pinned_model = "${profile.modelId}"`,
     "",
   ].join("\n");
@@ -374,7 +374,7 @@ async function sendDoorTurn(
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: `claude-${profile.head}--${profile.modelId}`,
+      model: `claude-${profile.providerKey}--${profile.modelId}`,
       max_tokens: 64,
       stream: false,
       messages: [{ role: "user", content: "say hello" }],
@@ -457,7 +457,7 @@ async function runKind(jar: string, profile: ProviderProfile): Promise<KindRepor
 
     const page = await context.newPage();
     const targetPage = profile.kind === "client" ? "accounts.html" : "providers.html";
-    await page.goto(`http://127.0.0.1:${daemon.controlPort}/${targetPage}`, { waitUntil: "networkidle" });
+    await page.goto(`http://127.0.0.1:${daemon.controlPort}/${targetPage}`, { waitUntil: "domcontentloaded" });
 
     async function openSignInGlass() {
       if (profile.kind === "client") {
@@ -562,7 +562,7 @@ async function runKind(jar: string, profile: ProviderProfile): Promise<KindRepor
       writeFileSync(join(daemon.binDir, "claude-uuid"), secondCred.accountId);
     }
 
-    await page.reload({ waitUntil: "networkidle" });
+    await page.reload({ waitUntil: "domcontentloaded" });
     const glass2 = await openSignInGlass();
     const againTabPromise = context.waitForEvent("page", { timeout: 15_000 });
     await glass2.getByRole("button", { name: /^Sign in$/i }).first().click();
@@ -631,7 +631,7 @@ async function runKind(jar: string, profile: ProviderProfile): Promise<KindRepor
     const refusalMsg = "synthetic provider refused authorization";
     standIn.setMode("refuse", refusalMsg);
     if (profile.kind === "client") writeFileSync(join(daemon.binDir, "claude-mode"), "refuse");
-    await page.reload({ waitUntil: "networkidle" });
+    await page.reload({ waitUntil: "domcontentloaded" });
     const gRef = await openSignInGlass();
     const refTabP = context.waitForEvent("page", { timeout: 15_000 });
     await gRef.getByRole("button", { name: /^Sign in$/i }).first().click();

@@ -464,12 +464,16 @@ async function runKind(jar: string, profile: ProviderProfile): Promise<KindRepor
         const addBtn = page.locator('[data-act="add"]');
         await addBtn.waitFor({ state: "visible", timeout: 15_000 });
         await addBtn.click();
-        return page.locator("#lens");
+        const g = page.locator(".lens:not([hidden])").first();
+        await g.waitFor({ state: "visible", timeout: 15_000 });
+        return g;
       }
       const card = page.locator(`[data-key="${profile.head}"], [data-key="claude-${profile.head}"], [data-key]`).first();
       await card.waitFor({ state: "visible", timeout: 15_000 });
       await card.click();
-      return page.locator("#lens, .lens, [data-lens]").first();
+      const g = page.locator(".lens:not([hidden])").first();
+      await g.waitFor({ state: "visible", timeout: 15_000 });
+      return g;
     }
 
     const cliPage = await captureCliPage(jar, daemon, profile);

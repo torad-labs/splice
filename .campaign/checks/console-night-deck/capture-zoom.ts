@@ -9,7 +9,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "@playwright/test";
-import { daemon, MIN, NOW, ROOT, session, world } from "./lib/deck.ts";
+import { daemon, HOUR, MIN, NOW, ROOT, session, world } from "./lib/deck.ts";
 
 const out = process.argv[process.argv.indexOf("--out") + 1] || "build/night-deck-captures/zoom-here";
 const dir = join(ROOT, out);
@@ -26,15 +26,37 @@ const TALK = { messages: [
   { index: 1, role: "assistant", message: "m1", model: "claude-opus-5-5", ts: NOW - 29 * MIN,
     text: "The parser reads the new column now. What changed:\n\n- **Columns** are split on two or more spaces.\n- The **phase** is kept as text.\n\n```ts\nexport function row(line: string): Tide {\n  const [time, height, phase] = line.trim().split(/\\s{2,}/);\n  return { time, height: Number(height), phase };\n}\n```\n\nAll four tests pass, and last year's file still reads: a row with no phase comes back with `phase: null`, which is what the chart expects for the years before the moon's phase was recorded in the table." },
 ], earlier: null };
+// nine providers, as a machine with most of them added has, each with requests over the week
+const MAKERS = [["claude-splice", "claude", "anthropic", "client"], ["acme", "claude-acme", "openai", "api-key"], ["north", "claude-north", "xai", "api-key"], ["south", "claude-south", "moonshot", "api-key"],
+  ["east", "claude-east", "openrouter", "api-key"], ["west", "claude-west", "deepseek", "api-key"], ["ridge", "claude-ridge", "openai", "api-key"], ["vale", "claude-vale", "openai", "api-key"], ["delta", "claude-delta", "openai", "api-key"]] as const;
+const heads = MAKERS.map(([key, label], i) => ({ key, label, state: "running", port: 41001 + i, gate: { inflight: i % 3 === 0 ? 1 : 0, queued: 0, max: 12 } }));
+const requests = (key: string, n: number) => Array.from({ length: 8 }, (_, i) => {
+  const failed = (n + i) % 9 === 4;
+  return { turn: `${key}-${i}`, turn_id: `${key}-${i}`, ts: NOW - (i * 19 + n * 3) * HOUR / 4 - (n + 1) * MIN, outcome: failed ? "error:rate-limited" : "ok", model: `${key}-large-2`,
+    session: `${names[(n + i) % names.length]}0001`, session_id: `${names[(n + i) % names.length]}0001`, total: failed ? 900 : 2_400 + i * 700, first_byte: failed ? null : 600 + i * 90,
+    arrival_to_upstream_write_ms: 40, attempts: 1, retries: 0, in_tokens: failed ? 0 : 12_000 + i * 900, cached_tokens: failed ? 0 : 9_000, cache_write_tokens: failed ? 0 : 500,
+    out_tokens: failed ? 0 : 300 + i * 120, cost_usd: failed ? 0 : 0.01 * (i + 1), plan_value_usd: null, account_label: null, req_bytes: 48_000 };
+});
+const perf = (_r: Request, url: URL) => {
+  const n = MAKERS.findIndex(([key]) => key === (url.searchParams.get("head") ?? ""));
+  if (n < 0) return Response.json({ error: "unknown head" }, { status: 400 });
+  const rows = requests(MAKERS[n]![0], n);
+  return { heads: [{ key: MAKERS[n]![0], label: MAKERS[n]![0], count: rows.length, returned: rows.length, truncated: false, rows, usage: { models: [], accounts: [], sessions: [], days: [] } }] };
+};
 const d = daemon(world({
+  "/api/heads": { heads },
+  "/api/status": { version: "9.8.7", registry: MAKERS.map(([key, label, family, authKind]) => ({ key, label, family, authKind })) },
+  "/api/models": { heads: MAKERS.map(([key]) => ({ head: key, models: [{ id: `${key}-large-2`, label: `${key[0]!.toUpperCase()}${key.slice(1)} Large 2` }] })) },
+  "/api/perf/turns": perf,
   "/api/sessions": { reading: true, sessions: rows },
   "/api/teams": { teams },
   "/api/sessions/harbor0001/transcript": (_r: Request, url: URL) => (url.searchParams.get("before") === "end" ? TALK : { messages: [] }),
   "/api/sessions/history": { sessions: [] },
 }));
 // his screen is 3840 x 2160: at a zoom of z the page is given 3840 / z px, and each of its px covers z of the screen's.
-// The last is a 1920 px window at 100%, the size the design was drawn at.
-const VIEWS = [["100", 3840, 2160, 1], ["80", 4800, 2700, 0.8], ["125", 3072, 1728, 1.25], ["1920-window", 1920, 1080, 1]] as const;
+// The last two are other screens at 100%: a 2560 x 1440 one, the narrowest that sets two halves of a page side by side,
+// and a 1920 px window, the size the design was drawn at.
+const VIEWS = [["100", 3840, 2160, 1], ["80", 4800, 2700, 0.8], ["125", 3072, 1728, 1.25], ["2560-window", 2560, 1440, 1], ["1920-window", 1920, 1080, 1]] as const;
 const PAGES = ["sessions.html", "sessions.html#harbor0001", "accounts.html", "activity.html", "providers.html", "settings.html", "teams.html"];
 const report: string[] = [];
 try {

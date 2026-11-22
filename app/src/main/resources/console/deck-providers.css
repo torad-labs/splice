@@ -1,5 +1,8 @@
 :root {
   --pv-max: 100rem;
+  --pv-wide: 204rem;
+  --pv-card: 30rem;         /* a provider's card on a wide window: about what a third of the page gives it at 1440 px */
+  --pv-local-card: 22rem;
   --pv-cols: 3;
   --pv-local-cols: 4;
   --pv-gap: 1.6rem;
@@ -138,3 +141,10 @@
 .cmp-fail { font-weight: var(--w-med); color: var(--vermilion); }
 .cmp-why { overflow-wrap: anywhere; color: var(--ink-quiet); }
 .cmp-text .btn { justify-self: start; }
+
+/* a window wider than 1920 px: a card keeps its width and more of them stand in a row, six on a 3840 px screen */
+@media (min-width: 121rem) {
+  .pv { max-width: var(--pv-wide); }
+  .pv-grid, .pv-tools { grid-template-columns: repeat(auto-fill, minmax(var(--pv-card), 1fr)); }
+  .pv-local { grid-template-columns: repeat(auto-fill, minmax(var(--pv-local-card), 1fr)); }
+}

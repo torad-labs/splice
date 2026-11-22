@@ -534,9 +534,16 @@ window.Deck = (() => {
   }
 
   /* ---------- a sign-in in a glass: api.js's SIGNIN steps [s], drawn with the kit's panel rows. Its buttons carry
-     data-act "signin" (Try again) and "cancel-signin" (Cancel), which the page holding the sign-in answers. ---------- */
+     data-act "signin" (Try again), "reopen-signin" (Open the sign-in page again) and "cancel-signin" (Cancel), which
+     the page holding the sign-in answers. ---------- */
   function signRows(s) {
     const box = h('div');
+    if (s.state === 'done') {
+      const r = h('div', 'lr');
+      r.append(h('div', 'lr-nm sign-word', s.label ? 'Signed in as ' + s.label : 'Signed in'));
+      box.append(r);
+      return box;
+    }
     if (s.state === 'fail') {
       const r = h('div', 'lr'); r.append(h('div', 'lr-nm sign-word', s.fail ? s.fail.word : 'Not completed'));
       if (s.why) r.append(h('div', 'lr-sub sign-why', s.why));
@@ -557,9 +564,19 @@ window.Deck = (() => {
     }
     const r = h('div', 'lr');
     r.append(h('div', 'lr-nm', s.state === 'ending' ? 'Cancelling' : 'Signing in'));
+    if (s.tabClosed) {
+      r.append(h('div', 'lr-sub sign-why', 'The sign-in page was closed before the sign-in finished.'));
+    }
     const ctl = h('div', 'lr-ctl');
-    if (s.url) { const o = h('a', 'btn press primary', s.by === 'code' ? 'Open the code page' : 'Open the sign-in page'); o.href = s.url; o.target = '_blank'; o.rel = 'noopener noreferrer'; ctl.append(o); }
-    else ctl.append(h('span', 'quiet small', 'Waiting for splice to start it'));
+    if (s.url && s.tabClosed) {
+      const o = h('button', 'btn press primary', s.by === 'code' ? 'Open the code page again' : 'Open the sign-in page again');
+      o.type = 'button'; o.dataset.act = 'reopen-signin'; ctl.append(o);
+    } else if (s.url) {
+      const o = h('a', 'btn press primary', s.by === 'code' ? 'Open the code page' : 'Open the sign-in page');
+      o.href = s.url; o.target = '_blank'; o.rel = 'noopener noreferrer'; ctl.append(o);
+    } else {
+      ctl.append(h('span', 'quiet small', 'Waiting for splice to start it'));
+    }
     if (s.by === 'code' && s.code) ctl.append(h('span', 'sign-code', s.code));
     r.append(ctl);
     if (s.by === 'paste') {

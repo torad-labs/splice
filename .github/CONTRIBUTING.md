@@ -129,6 +129,10 @@ GitHub release itself, only its notes:
    resulting push fires `release.yml` on `prod`: full gate, build, `release accept`, attestations, and a
    draft GitHub release that carries the `CHANGELOG.md` notes and no file. The version is derived from
    the promoted code, so the tag can never disagree with what shipped.
+   `release accept` also runs the end-to-end provider sign-in check (`bun tools/e2e signin`) over the
+   accepted jar before installation rehearsal, so any broken sign-in fails both `release.yml` and
+   `bun tools/release beta`. Run it alone with `bun tools/e2e signin [--kind <kind>] [--jar <path>]`,
+   or run a local install gated by the same check with `bun tools/release local [--jar <path>]`.
 4. Once that run is green, publish it from the maintainer's machine:
 
    ```bash

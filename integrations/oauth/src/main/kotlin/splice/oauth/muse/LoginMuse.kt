@@ -11,6 +11,7 @@ import kotlinx.serialization.json.buildJsonObject
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKind
 import splice.core.util.Cancellables
+import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -45,6 +46,7 @@ public class LoginMuse(
 ) {
 
     private val oauth = MuseOAuth()
+    private val env: EnvReader = EnvReader(System::getenv)
     private val json = Json { ignoreUnknownKeys = true }
     private val accountFiles = OAuthAccountFiles()
     private val loginReservations = OAuthLoginReservation()
@@ -74,12 +76,12 @@ public class LoginMuse(
                     headers = emptyMap(),
                 ),
                 deviceAuth = DeviceAuthEndpoint(
-                    url = MuseOAuthEndpoints.DEVICE_AUTHORIZATION_URL,
+                    url = MuseOAuthEndpoints.deviceAuthorizationUrl(env),
                     form = DeviceAuthForm { oauth.museDeviceAuthorizationForm(it) },
                     parse = DeviceAuthParse(::deviceAuth),
                 ),
                 tokenEndpoint = DeviceTokenEndpoint(
-                    url = MuseOAuthEndpoints.TOKEN_URL,
+                    url = MuseOAuthEndpoints.tokenUrl(env),
                     pollForm = TokenPollForm { code, id -> oauth.museTokenPollForm(code, id) },
                     toAuthJson = authJson,
                 ),

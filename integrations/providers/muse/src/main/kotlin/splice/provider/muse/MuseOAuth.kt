@@ -5,8 +5,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import splice.core.util.EnvReader
 import splice.core.util.FormEncoding
 import splice.core.util.JsonScalars
+import splice.core.util.LoopbackOverride
 import java.net.URI
 
 public object MuseOAuthEndpoints {
@@ -18,6 +20,15 @@ public object MuseOAuthEndpoints {
     public const val DEFAULT_EXPIRES_IN_S: Long = 600L
     public const val DEFAULT_INTERVAL_S: Long = 5L
     public const val MIN_INTERVAL_S: Long = 1L
+
+    public fun deviceAuthorizationUrl(env: EnvReader): String =
+        LoopbackOverride.url(env, "MUSE_OAUTH_DEVICE_AUTHORIZATION_URL", DEVICE_AUTHORIZATION_URL)
+
+    public fun tokenUrl(env: EnvReader): String =
+        LoopbackOverride.url(env, "MUSE_OAUTH_TOKEN_URL", TOKEN_URL)
+
+    public fun keyUrl(env: EnvReader): String =
+        LoopbackOverride.url(env, "MUSE_OAUTH_KEY_URL", KEY_URL)
 }
 
 /** Parsed Muse device-authorization response. */

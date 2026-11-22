@@ -516,6 +516,7 @@
     if (!openId) return;
     unmark();
     const id = openId; openId = null;
+    if (signs.get(id)?.state === 'done') signs.delete(id);
     lensOff && lensOff(); lensOff = null;
     Deck.hide(lens).then(() => { const el = marked(id); el && el.isConnected && el.focus({ preventScroll: true }); });
   }
@@ -523,7 +524,6 @@
   /** starts splice's sign-in for [a] (a new login when [a] is null: Claude's, or [p]'s when a provider is named), held
    *  in the account's glass while it runs */
   function signIn(a, p) {
-    const account = a || null;
     const key = a ? a.id : p ? 'add:' + p.key : 'add';
     const s = signs.get(key) || {};
     const hd = a ? headOf(a) : p ? p.key : head;
@@ -531,8 +531,8 @@
     s.on = {
       held: () => signs.get(key) === s,
       draw: () => { if (openId === key) refill(); },
-      // a login that was added has a lane or a row of its own once it is read, and the Add glass closes on it
-      done: () => { signs.delete(key); read().then(() => (!account && openId === key ? closeLens() : refill())); },
+      // keep the done sign-in visible in the open glass so the person sees "Signed in as <label>" without a reload
+      done: () => { read().then(() => refill()); },
       failed: () => refill(),
     };
     signs.set(key, s);
@@ -546,7 +546,7 @@
     title.append(h('h3', '', p ? 'Add login' : 'Add account'), h('div', 'mono small quiet', p ? 'A ' + p.name + ' login for ' + p.command : 'A Claude login splice can move to'));
     hd.append(lamp('out'), title, x); lens.append(hd);
     const s = signs.get(p ? 'add:' + p.key : 'add');
-    if (s && s.state !== 'left' && s.state !== 'done') lens.append(Deck.signRows(s));
+    if (s && s.state !== 'left') lens.append(Deck.signRows(s));
     else { const acts = h('div', 'acts'), b = h('button', 'btn press primary', 'Sign in'); b.dataset.act = 'signin'; acts.append(b); lens.append(acts); }
   }
   function openAdd(p) {
@@ -693,6 +693,7 @@
       if (r && r.state === 'read' && !r.spending) { r.arm = k === 'reset-arm' ? act.dataset.k : null; r.said = null; refill(); const yes = lens.querySelector('[data-act="reset-use"]'); yes && yes.focus(); }
     }
     if (k === 'reset-use') useReset(id, act.dataset.k);
+    if (k === 'reopen-signin') { const s = signs.get(id); if (s) SIGNIN.reopen(s, s.on); }
     if (k === 'cancel-signin') { const s = signs.get(id); if (s) SIGNIN.cancel(s, s.on).then(over => { if (over) signs.delete(id); refill(); }); }
   });
   $('#backList').addEventListener('click', e => { const li = e.target.closest('li'); if (li && refs[li.dataset.id]) { refs[li.dataset.id].lane.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => openLens(li.dataset.id), 350); } });

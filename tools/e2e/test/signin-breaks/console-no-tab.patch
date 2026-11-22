@@ -1,0 +1,12 @@
+diff --git a/app/src/main/resources/console/api.js b/app/src/main/resources/console/api.js
+--- a/app/src/main/resources/console/api.js
++++ b/app/src/main/resources/console/api.js
+@@ -382,7 +382,6 @@
+   async function start(s, on) {
+     quiet(s);
+     unopened(s);
+-    let tab = null;
+-    try { tab = window.open("about:blank", "_blank"); if (tab) tab.opener = null; } catch { tab = null; }
++    const tab = null;
+     Object.assign(s, { state: "wait", by: "browser", code: null, url: null, id: null, label: null, fail: null, why: "", back: null, down: 0, gen: (s.gen || 0) + 1, tab, tabAt: null, tabClosed: false, tabTimer: null });
+     on.draw();

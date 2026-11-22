@@ -169,6 +169,20 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
       return fail(`release accept: ${sidecar} differs from ${entry} in splice.jar`);
     }
   }
+  // ── sign-in check over this exact jar, before the install rehearsal ──────────────────────────
+  const e2eCli = join(repoRoot, "tools", "e2e", "index.ts");
+  if (existsSync(e2eCli)) {
+    const signInRun = Bun.spawnSync(["bun", e2eCli, "signin", "--jar", jar], {
+      cwd: repoRoot,
+      env: Bun.env,
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    if (signInRun.exitCode !== 0) {
+      return fail("release accept: the sign-in check failed");
+    }
+  }
+
   // ── install.sh, against these exact bytes ────────────────────────────────────────────────────
   const first = makeSandbox();
   const localEnv = {

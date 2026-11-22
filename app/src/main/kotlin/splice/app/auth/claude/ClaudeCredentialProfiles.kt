@@ -19,7 +19,9 @@ import kotlinx.serialization.json.JsonIgnoreUnknownKeys
 import splice.accounts.claude.ClaudeAccountIdentity
 import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
+import splice.core.util.EnvReader
 import splice.core.util.LogSink
+import splice.core.util.LoopbackOverride
 import splice.core.util.SecureFile
 import splice.oauth.AuthHttpClientFactory
 import splice.upstream.codemode.ProcessElapsedNow
@@ -112,6 +114,7 @@ internal class ClaudeProfileProbe(
     private val userAgent: ClientUserAgent,
     private val log: LogSink,
     private val client: AuthClient = AuthClient(AuthHttpClientFactory()::create),
+    private val env: EnvReader = EnvReader(System::getenv),
 ) : ClaudeProfileCall {
     private val json = Json
 
@@ -125,7 +128,8 @@ internal class ClaudeProfileProbe(
         }
 
     private suspend fun fetch(token: String): ClaudeProfileResult = client.open().use { http ->
-        val response = http.get(CLAUDE_PROFILE_URL) {
+        val url = LoopbackOverride.url(env, "CLAUDE_OAUTH_PROFILE_URL", CLAUDE_PROFILE_URL)
+        val response = http.get(url) {
             header("Authorization", "Bearer $token")
             header("Accept", "application/json")
             userAgent.latest()?.let { header("User-Agent", it) }

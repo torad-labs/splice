@@ -234,6 +234,16 @@ export function startStandIn(profile: ProviderProfile): StandInServer {
         });
       }
 
+      // Claude OAuth profile verification endpoint
+      if (path.endsWith("/api/oauth/profile")) {
+        return Response.json({
+          account: {
+            uuid: current.accountId,
+            email: `${current.accountId}@synthetic.example`,
+          },
+        });
+      }
+
       // Inference endpoints (Responses or Anthropic Messages)
       if (path.endsWith("/responses") || path.endsWith("/v1/messages") || path.endsWith("/messages")) {
         const cred = extractCredential(req);
@@ -294,6 +304,10 @@ export function startStandIn(profile: ProviderProfile): StandInServer {
             MUSE_OAUTH_DEVICE_AUTHORIZATION_URL: `${baseUrl}/oidc/device/authorization/`,
             MUSE_OAUTH_TOKEN_URL: `${baseUrl}/oidc/device/token/`,
             MUSE_OAUTH_KEY_URL: `${baseUrl}/muse-code/key`,
+          };
+        case "client":
+          return {
+            CLAUDE_OAUTH_PROFILE_URL: `${baseUrl}/api/oauth/profile`,
           };
         default:
           return {};

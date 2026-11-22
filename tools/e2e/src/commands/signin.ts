@@ -456,21 +456,15 @@ async function runKind(jar: string, profile: ProviderProfile): Promise<KindRepor
     });
 
     const page = await context.newPage();
-    const targetPage = profile.kind === "client" ? "accounts.html" : "providers.html";
-    await page.goto(`http://127.0.0.1:${daemon.controlPort}/${targetPage}`, { waitUntil: "domcontentloaded" });
+    await page.goto(`http://127.0.0.1:${daemon.controlPort}/accounts.html`, { waitUntil: "domcontentloaded" });
 
     async function openSignInGlass() {
-      if (profile.kind === "client") {
-        const addBtn = page.locator('[data-act="add"]');
-        await addBtn.waitFor({ state: "visible", timeout: 15_000 });
-        await addBtn.click();
-        const g = page.locator(".lens:not([hidden])").first();
-        await g.waitFor({ state: "visible", timeout: 15_000 });
-        return g;
-      }
-      const card = page.locator(`[data-key="${profile.head}"], [data-key="claude-${profile.head}"], [data-key]`).first();
-      await card.waitFor({ state: "visible", timeout: 15_000 });
-      await card.click();
+      const trigger =
+        profile.kind === "client"
+          ? page.locator('[data-act="add"]')
+          : page.locator(`.rail-r [data-add="${profile.head}"]`);
+      await trigger.waitFor({ state: "visible", timeout: 15_000 });
+      await trigger.click();
       const g = page.locator(".lens:not([hidden])").first();
       await g.waitFor({ state: "visible", timeout: 15_000 });
       return g;

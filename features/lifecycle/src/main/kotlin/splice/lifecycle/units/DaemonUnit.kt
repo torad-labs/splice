@@ -5,7 +5,9 @@
 // lays no unit, rather than one that systemd or the shell would read as another path.
 package splice.lifecycle.units
 
+import splice.core.util.Cancellables
 import java.nio.file.Path
+import java.util.jar.JarFile
 
 /** splice.service for an install whose JVM is [javaHome] and whose `splice` link is [splice]. */
 public class DaemonUnit(private val javaHome: Path, private val splice: Path) {
@@ -13,9 +15,28 @@ public class DaemonUnit(private val javaHome: Path, private val splice: Path) {
     public fun bytes(): ByteArray? {
         if (refusal() != null) return null
         val template = javaClass.getResourceAsStream(TEMPLATE)?.use { it.readBytes().decodeToString() } ?: return null
-        return SLOT.replace(template) { if (it.value == JAVA_HOME_SLOT) javaHome.toString() else splice.toString() }
-            .encodeToByteArray()
+        return render(template)
     }
+
+    /** The unit's bytes rendered from the template shipped inside [jar], used by `splice upgrade` so an activated
+     *  release lays its own `splice.service` before the daemon restarts (#525). Null where [refusal] applies or [jar]
+     *  carries no unit template. */
+    public fun bytesFromJar(jar: Path): ByteArray? {
+        if (refusal() != null) return null
+        val entryName = TEMPLATE.removePrefix("/")
+        val template = Cancellables.runCatchingBestEffort {
+            JarFile(jar.toFile()).use { archive ->
+                archive.getJarEntry(entryName)?.let { entry ->
+                    archive.getInputStream(entry).use { it.readBytes().decodeToString() }
+                }
+            }
+        }.getOrNull() ?: return null
+        return render(template)
+    }
+
+    private fun render(template: String): ByteArray =
+        SLOT.replace(template) { if (it.value == JAVA_HOME_SLOT) javaHome.toString() else splice.toString() }
+            .encodeToByteArray()
 
     /** Why no unit can be laid for these paths, or null when one can. Each must be absolute and hold no quote,
      *  backslash, dollar, backtick, percent, colon or control character: systemd's quoting and specifiers, the shell

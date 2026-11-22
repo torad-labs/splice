@@ -33,11 +33,13 @@ import io.ktor.server.routing.routing
 import io.ktor.server.sse.SSE
 import io.netty.channel.socket.SocketChannelConfig
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import splice.core.util.LogSink
 import splice.head.admission.AdmissionWindow
 import splice.head.admission.HeadAdmission
 import splice.http.ingress.HeapIngress
+import splice.http.listen.ActiveCallFence
 import splice.http.listen.AdoptedBootstrap
 import splice.upstream.codemode.ProcessDispatchers
 import java.util.concurrent.atomic.AtomicBoolean
@@ -46,6 +48,9 @@ import java.util.concurrent.atomic.AtomicInteger
 // Grace/timeout for Netty engine.stop after HeadServer's drain window.
 private const val STOP_GRACE_MS = 500L
 private const val STOP_TIMEOUT_MS = 2_000L
+
+// why: bound for any call still inside a route handler to unwind while Netty's event loop is alive (#525).
+private const val HEAD_CALL_UNWIND_MS = 200L
 
 // Concurrent long-lived SSE turns per head (2x the 1000-stream design target).
 private const val RUNNING_LIMIT = 2048
@@ -81,6 +86,7 @@ internal class HeadEngine(
 ) : ActiveCalls {
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null
+    private val callFence = ActiveCallFence()
 
     /** What the connector actually bound in the current [start]; null while stopped. */
     @Volatile
@@ -109,6 +115,7 @@ internal class HeadEngine(
         // G26: local (not a class field) so a control-plane restart (POST /api/heads/:head/restart)
         // re-arms verification instead of going permanently silent after the first restart.
         val nodelayLogged = AtomicBoolean(false)
+        callFence.open()
         val engine = embeddedServer(
             Netty,
             serverConfig {
@@ -118,6 +125,15 @@ internal class HeadEngine(
                     install(SSE)
                     // v0.4.0: a DNS-rebinding page is refused before routing (ClientAuth.admitsHost).
                     intercept(ApplicationCallPipeline.Plugins) { if (!clientAuth.admitsHost(call)) finish() }
+                    intercept(ApplicationCallPipeline.Call) {
+                        val job = coroutineContext[Job]
+                        callFence.enter(job)
+                        try {
+                            proceed()
+                        } finally {
+                            callFence.leave(job)
+                        }
+                    }
                     routing { routes(this, callDispatcher) }
                 }
             },
@@ -217,6 +233,7 @@ internal class HeadEngine(
     }
 
     fun stop() {
+        callFence.cancelAndAwait(HEAD_CALL_UNWIND_MS)
         server?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
         server = null
         boundPort = null

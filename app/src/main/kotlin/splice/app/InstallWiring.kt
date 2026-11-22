@@ -93,6 +93,11 @@ internal object InstallWiring {
         return HubUnits(unitFolder(env, output), output)
     }
 
+    /** Splice's own systemd user units folder on Linux, for `splice upgrade` to refresh `splice.service`; null off
+     *  Linux (#525). */
+    fun daemonUnits(env: EnvReader): SpliceUnits? =
+        if (linux()) unitFolder(env, TerminalOutput(::println)) else null
+
     /** Splice's units folder under the user's data home, beneath the user's own folder under the config home, whose
      *  units override splice's. The record of the copies splice once wrote into the latter lives in splice's state,
      *  under mcp-hub. */

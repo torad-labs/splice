@@ -1,5 +1,6 @@
 :root {
   --mc-max: 100rem;
+  --mc-wide: 204rem;
   --crv-h: 8rem;
   --crv-area: rgb(111 168 207 / 0.14);
   --crv-line: rgb(111 168 207 / 0.85);
@@ -129,3 +130,11 @@
 .crv-ax span:first-child { transform: none; }
 .crv-ax span:last-child { transform: translateX(calc(-1 * 100%)); }
 .mc-live { --c: var(--verdigris); }
+
+/* a window of 2560 px or more: what splice is doing stands on the left and its parts beside it, each half as wide as
+   the page is on a 1920 px window, so the whole of Settings is on a 3840 px screen at once */
+@media (min-width: 160rem) {
+  .mc { max-width: var(--mc-wide); grid-template-columns: repeat(var(--two), minmax(0, 1fr)); column-gap: var(--sp-7); align-items: start; }
+  .mc-head { grid-column: 1 / -1; }
+  .mc-sys { padding-top: 0; border-top: 0; }
+}

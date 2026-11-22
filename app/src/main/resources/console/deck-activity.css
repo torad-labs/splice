@@ -1,5 +1,6 @@
 :root {
   --ac-max: 100rem;
+  --ac-wide: 204rem;
   --ac-hours: 168;
   --figs-cols: 5;
   --where-cols: 5;
@@ -146,3 +147,14 @@
 .lens .lx { width: 100%; }
 .ac-live { --c: var(--verdigris); }
 .ac-head-r { display: flex; align-items: center; gap: var(--sp-5); }
+
+/* a window of 2560 px or more: the window's figures, its strip and where it went stand on the left, and the latest
+   requests beside them from the top, so a 3840 px screen shows the summary and some fifty requests at once. Each
+   half is as wide as the page is on a 1920 px window. The last row takes what the list is longer by. */
+@media (min-width: 160rem) {
+  .ac { max-width: var(--ac-wide); grid-template-columns: [sum-start] minmax(0, 1fr) [sum-end list-start] minmax(0, 1fr) [list-end];
+    grid-template-rows: auto [body-start] auto auto auto 1fr [body-end]; column-gap: var(--sp-7); align-items: start; }
+  .ac-head { grid-column: 1 / -1; }
+  .ac-figs, .ac-strip, .ac-sec { grid-column: sum; }
+  .ac-sec[aria-labelledby="latestH"] { grid-column: list; grid-row: body; }
+}

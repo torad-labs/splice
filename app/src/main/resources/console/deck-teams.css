@@ -1,5 +1,7 @@
 :root {
   --tm-max: 100rem;
+  --tm-wide: 204.8rem;   /* two teams side by side, each the page's width on a 1920 px window, and the gap between */
+  --sys-cols-wide: 6;
   --band-gap: 4.8rem;
   --band-cols: 24rem minmax(0, 1fr);
   --band-col-gap: 3.6rem;
@@ -101,3 +103,11 @@
 .lens .ask { grid-column: 1 / -1; }
 .dimmed { opacity: var(--dim-a); }
 .lens .lr-ctl.auto-col { grid-column: auto; }
+
+/* a window of 2560 px or more: two teams stand side by side, each as wide as the page is on a 1920 px window, so a
+   3840 px screen shows twice the teams. The cards under them keep their width. */
+@media (min-width: 160rem) {
+  .tm { max-width: var(--tm-wide); }
+  .tm-bands { grid-template-columns: repeat(var(--two), minmax(0, 1fr)); column-gap: var(--band-gap); }
+  .tm-more { grid-template-columns: repeat(var(--sys-cols-wide), minmax(0, 1fr)); }
+}

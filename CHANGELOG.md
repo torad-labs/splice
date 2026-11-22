@@ -36,8 +36,9 @@
   and sign-in, and Compare models. Activity holds the window's requests and where they went, and a request opens
   whole. Settings draws splice as what it is, each part opening its own controls, Modes among them. It has a night
   and a day look. Its type and controls are one size on every screen, a wider window shows more of a page (more
-  team columns, a longer time axis) with reading text kept to a readable width, and the browser's zoom scales it as
-  it scales any page. A page nothing is
+  team columns on Sessions, a longer time axis, two teams side by side on Teams, more providers in a row, and the
+  latest requests beside Activity's summary as Settings' parts stand beside what splice is doing) with reading text
+  kept to a readable width, and the browser's zoom scales it as it scales any page. A page nothing is
   happening on draws nothing, so the console stays quick on that screen: its panels are solid, a lamp pulses when
   it comes alive and then rests, and what a page shows is redrawn only when it changed.
 

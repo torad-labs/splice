@@ -45,13 +45,18 @@ internal class SideBySideDesktop(
         val profile = profileDir()
         Files.createDirectories(profile)
         val log = LogSink { err.line(it.trimEnd()) }
-        DesktopKey(paths.desktopKeyFile, log).ensure()
+        val _ = DesktopKey(paths.desktopKeyFile, log).get()
         val records = DesktopRecords(paths.desktopFile, log)
         if (!records.get().on) records.update { it.copy(on = true) }
         val helper = DesktopPrograms(paths.stateDir).lay()
         val isolatedEnv = EnvReader { key -> if (key == XDG_CONFIG_HOME) profile.toString() else env(key) }
-        val library = DesktopAppLibrary(DesktopAppConfig(isolatedEnv))
-        library.putIn(SIDE_BY_SIDE_CONFIG_ID, door, helper, held = null)
+        val config = DesktopAppConfig(isolatedEnv)
+        val library = DesktopAppLibrary(config)
+        val applied = DesktopLibraryFiles().read(config.meta)?.let(config::applied)
+        val alreadyOnDoor = applied?.let(library::doorOf)?.trimEnd('/') == door.trimEnd('/')
+        if (!alreadyOnDoor) {
+            library.putIn(SIDE_BY_SIDE_CONFIG_ID, door, helper, held = null)
+        }
         return profile
     }
 

@@ -12,8 +12,8 @@ import splice.core.topology.CLAUDE_SPLICE_COMMAND
 import splice.core.util.EnvReader
 import splice.launch.install.InstallCommand
 import splice.launch.install.InstallResult
-import splice.terminal.MultiSelectOption
 import splice.terminal.MultiSelectOutcome
+import splice.terminal.SelectOption
 import splice.terminal.WizardFrame
 
 /** Which optional side-by-side convenience launchers the operator opted to install during `splice setup`. */
@@ -24,7 +24,7 @@ internal data class LauncherChoice(
 
 /** Prompts the operator to tick optional side-by-side launchers (multi-select). */
 internal fun interface LauncherPicker {
-    operator fun invoke(options: List<MultiSelectOption>, initial: Set<String>): MultiSelectOutcome
+    operator fun invoke(options: List<SelectOption<String>>, initial: Set<String>): MultiSelectOutcome<String>
 }
 
 internal class SetupLaunchers(
@@ -41,12 +41,12 @@ internal class SetupLaunchers(
         )
         if (!prompts.hasConsole()) return LauncherChoice()
         val options = listOf(
-            MultiSelectOption(
+            SelectOption(
                 value = OPT_CLI,
                 label = CLAUDE_SPLICE_COMMAND,
                 hint = "CLI launcher in ~/.local/bin/$CLAUDE_SPLICE_COMMAND",
             ),
-            MultiSelectOption(
+            SelectOption(
                 value = OPT_DESKTOP_APP,
                 label = SIDE_BY_SIDE_APP_NAME,
                 hint = "App launcher in ${appLaunchers.platformHint()}",

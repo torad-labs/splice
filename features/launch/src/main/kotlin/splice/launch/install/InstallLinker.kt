@@ -64,6 +64,9 @@ internal class InstallLinker(
         return if (refusal == null) InstallResult.Linked else InstallResult.Refused(refusal)
     }
 
+    /** Link `splice` itself into `~/.local/bin/splice` so the CLI stays on PATH. */
+    internal fun installSelf(env: EnvReader): InstallResult = installShortcut(SELF_COMMAND, env)
+
     /** Link a standalone command (such as `splice` or `claude-splice`) directly to the launch shim. */
     internal fun installShortcut(command: String, env: EnvReader): InstallResult {
         val launchShim = layout.launchShimPath(env)
@@ -140,19 +143,18 @@ internal class InstallLinker(
      *  topology — the same shape as the command-collision check above, and for the same reason: install.sh
      *  must not print success over a topology it could not honour. Null when the name can be linked. */
     private fun replaceableRefusal(bin: Path, command: String): String? {
-        val link = layout.wrapperLinkOrNull(bin, command) ?: return bareNameRefusal(bin, command)
+        val link = layout.wrapperLinkOrNull(bin, command)
+            ?: return "wrapper command '$command' must be a bare name directly under $bin"
         return notSymlinkRefusal(link)
     }
-
-    private fun bareNameRefusal(bin: Path, command: String): String =
-        "wrapper command '$command' must be a bare name directly under $bin"
 
     private fun notSymlinkRefusal(link: Path): String? =
         if (Files.exists(link, NOFOLLOW_LINKS) && !link.isSymbolicLink()) "$link exists and is not a symlink" else null
 
     /** Links one wrapper; the sentence for why it could not be, or null when it is linked. */
     private fun linkOne(bin: Path, headKey: String, command: String, launchShim: Path): String? {
-        val link = layout.wrapperLinkOrNull(bin, command) ?: return bareNameRefusal(bin, command)
+        val link = layout.wrapperLinkOrNull(bin, command)
+            ?: return "wrapper command '$command' must be a bare name directly under $bin"
         notSymlinkRefusal(link)?.let { return it }
         return try {
             // DR-67: delete only a CONFIRMED symlink, then claim exclusively — a foreign file that

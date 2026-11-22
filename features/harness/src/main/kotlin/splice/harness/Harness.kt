@@ -27,28 +27,16 @@ import splice.head.port.TurnHarness
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** What a head's turns go through: the head's name, the capabilities splice.toml declares there, the seam their calls
- *  go through, the model's calls of them (decision 12), and the modes' hooks (modes/README.md, "Hooks"). */
-internal data class HeadTurns(
-    val head: String,
-    val capabilities: List<Capability>,
-    val calls: CapabilityCall,
-    val agent: AgentCalls,
-    val hooks: HookRuns? = null,
-)
-
-/** The capabilities splice.toml declares, at head [turns]'s name, over the threads' records. */
+/** The capabilities splice.toml declares, at [agent]'s head, over the threads' records, with the seam their calls go
+ *  through and the modes' hooks (modes/README.md, "Hooks"). */
 internal class Harness(
-    private val turns: HeadTurns,
+    private val agent: AgentCalls,
+    private val calls: CapabilityCall,
     private val records: ThreadRecords,
     private val log: LogSink,
     private val clock: ElapsedClock,
+    private val hooks: HookRuns? = null,
 ) : TurnHarness {
-    private val head = turns.head
-    private val capabilities = turns.capabilities
-    private val calls = turns.calls
-    private val agent = turns.agent
-    private val hooks = turns.hooks
     private val starts = HookStarts(hooks, records)
     private val rules = CapabilityRules()
 
@@ -78,7 +66,7 @@ internal class Harness(
         if (request == null) return ruled(null, turn, first = false, start = HookStarts.Start())
         val thread = request.thread
         val first = thread != null && records.firstTurn(thread, request.turn, request.answered)
-        val session = CallFor(head, turn, request).agentSession()
+        val session = CallFor(agent.head, turn, request).agentSession()
         val start = if (session == null) HookStarts.Start() else starts.of(session, request, turn, thread, first)
         if (start.refusal != null) {
             if (first) records.update(checkNotNull(thread)) { it.undone() }
@@ -120,10 +108,10 @@ internal class Harness(
         // A second request of the thread ends the wait of the first: neither places anything, both go on as today.
         waits.remove(thread)?.complete(SUPERSEDED)
         val hash = records.hashOf(request.firstUser)
-        val on = CallFor(head, turn, request)
+        val on = CallFor(agent.head, turn, request)
         // The capabilities whose rules name the request, in the order splice.toml declares them.
         val named = if (turn.holdable && !stopping.get()) {
-            capabilities.filter { rules.names(it, head, request, first) }
+            agent.capabilities.filter { rules.names(it, agent.head, request, first) }
         } else {
             emptyList()
         }
@@ -144,7 +132,7 @@ internal class Harness(
     private suspend fun notCalled(named: List<Capability>, on: CallFor): Map<String, String> =
         named.mapNotNull { capability -> calls.notCalled(capability, on)?.let { capability.name to it } }.toMap().also {
             it.forEach { (name, why) ->
-                log("[$head] capability $name was not called (session ${on.request.sessionId}): $why\n")
+                log("[${agent.head}] capability $name was not called (session ${on.request.sessionId}): $why\n")
             }
         }
 
@@ -156,8 +144,8 @@ internal class Harness(
         hash: String?,
         hooks: List<HookState>,
     ): ThreadRecord {
-        val firsts = capabilities.filter {
-            it.call.byRule && it.call.rule.turn == CapabilityTurn.FIRST && it.onFor(head)
+        val firsts = agent.capabilities.filter {
+            it.call.byRule && it.call.rule.turn == CapabilityTurn.FIRST && it.onFor(agent.head)
         }
         val states = firsts.map { CapabilityState(it.name, if (it in due) WAITING else NEVER_CALLED) }
         val taken = record.copy(first = FirstTurn.TAKEN, firstHash = hash, hooks = record.hooks + hooks)
@@ -230,7 +218,7 @@ internal class Harness(
         why: String,
     ): String {
         due.forEach { mark(thread, it, CapabilityState(it.name, FAILED)) }
-        log("[$head] capability ${capability.name} stopped waiting (session ${on.request.sessionId}): $why\n")
+        log("[${agent.head}] capability ${capability.name} stopped waiting (session ${on.request.sessionId}): $why\n")
         return "${capability.name}: $why"
     }
 
@@ -264,7 +252,7 @@ internal class Harness(
             is CallEnd.Placed -> null.also { mark(thread, capability, CapabilityState(name, PLACED, end.text)) }
             CallEnd.Passed -> null.also { mark(thread, capability, CapabilityState(name, NEVER_CALLED)) }
             is CallEnd.Refused -> Decline.CapabilityRefused(name, end.reason).also {
-                log("[$head] capability $name refused a turn (session $session): ${end.reason}\n")
+                log("[${agent.head}] capability $name refused a turn (session $session): ${end.reason}\n")
             }
             is CallEnd.Failed -> failed(thread, capability, end, on)
         }
@@ -276,10 +264,10 @@ internal class Harness(
         val name = capability.name
         val session = on.request.sessionId
         if (capability.limits.onFailure == CapabilityFailure.CLOSED) {
-            log("[$head] capability $name failed: ${end.why}; the turn is refused (session $session)\n")
+            log("[${agent.head}] capability $name failed: ${end.why}; the turn is refused (session $session)\n")
             return Decline.CapabilityFailed(name, end.why)
         }
-        log("[$head] capability $name failed: ${end.why}; the turn goes on without it (session $session)\n")
+        log("[${agent.head}] capability $name failed: ${end.why}; the turn goes on without it (session $session)\n")
         end.stopped?.let { on.turn.saysUntilAnswered(it, capability.notice.color) }
         mark(thread, capability, CapabilityState(name, FAILED))
         return null

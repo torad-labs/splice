@@ -34,7 +34,7 @@ public class HeadHarness {
         val besides = AgentBeside(inputs.capabilities, inputs.tools, kept, answers, LifecycleScope(io))
         val agent = AgentCalls(head, inputs.capabilities, inputs.tools, kept, answers, besides, stops)
         val hooks = HookRuns(head, inputs.hooks, http, mcp, log)
-        return Harness(HeadTurns(head, inputs.capabilities, calls, agent, hooks), records, log, clock)
+        return Harness(agent, calls, records, log, clock, hooks)
     }
 }
 

@@ -11,7 +11,10 @@ private val HOOK_KEYS = setOf("order") + ModeHookMoment.entries.map { it.wire }
 private val MOMENT_KEYS = setOf("timeout_s", "on_failure", "worker")
 private val WORKER_KEYS = setOf("kind", "url", "auth_env", "server", "tool")
 
+/** why: a hook silent for 30 seconds is not about to answer; a manifest asks for longer where its work needs it. */
 private const val HOOK_TIMEOUT_S = 30L
+
+/** why: a hook may not hold a turn for more than an hour, whatever its manifest asks for. */
 private const val HOOK_TIMEOUT_MAX_S = 3600L
 
 /** A mode's hooks as its manifest declares them, and the order they run in among the other modes'. */

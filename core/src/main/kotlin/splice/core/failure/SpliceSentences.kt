@@ -102,7 +102,7 @@ internal class DeclineSentences(private val spoken: Spoken) {
             is Decline.BadBody, is Decline.Unfit, Decline.ForeignHost, Decline.BadLocalKey, is Decline.SpliceKeyAsLogin,
             Decline.LivenessProbe, Decline.NoSharedLogin, Decline.NotLaunched,
             -> local(why, facts)
-            is Decline.CapabilityRefused, is Decline.CapabilityFailed -> capability(why, facts)
+            is Decline.CapabilityRefused, is Decline.CapabilityFailed, is Decline.ModeRefused -> refused(why, facts)
         }
     }
 
@@ -113,13 +113,16 @@ internal class DeclineSentences(private val spoken: Spoken) {
         "This request took too long to reach splice"
     }
 
-    /** A capability refused the turn, or failed closed (docs/specs/harness.md, decision 6): its name, and why. */
-    private fun capability(why: Decline, facts: LineFacts): Said = when (why) {
+    /** A capability refused the turn or failed closed (docs/specs/harness.md, decision 6), or a mode's hook refused
+     *  it (modes/README.md, "Hooks"): its name, and why. */
+    private fun refused(why: Decline, facts: LineFacts): Said = when (why) {
         // The sentence ends with its own full stop, so a reason the worker ended with one does not get two.
         is Decline.CapabilityRefused ->
             Said("${why.name} refused this turn: ${why.reason.trimEnd().removeSuffix(".")}")
         is Decline.CapabilityFailed ->
             Said("${why.name} could not finish its work (${why.why}), so the turn was not sent")
+        is Decline.ModeRefused ->
+            Said("mode ${why.name} refused this turn: ${why.reason.trimEnd().removeSuffix(".")}")
         is Decline.TooLarge, is Decline.Budget, is Decline.Preflight, is Decline.UnknownModel,
         is Decline.Untranslatable, Decline.HeapBusy, Decline.ReadTimeout, is Decline.BadBody, is Decline.Unfit,
         Decline.ForeignHost, Decline.BadLocalKey, is Decline.SpliceKeyAsLogin, Decline.LivenessProbe,
@@ -153,7 +156,7 @@ internal class DeclineSentences(private val spoken: Spoken) {
         )
         is Decline.TooLarge, is Decline.Budget, is Decline.Preflight, is Decline.UnknownModel,
         is Decline.Untranslatable, Decline.HeapBusy, Decline.ReadTimeout, is Decline.CapabilityRefused,
-        is Decline.CapabilityFailed,
+        is Decline.CapabilityFailed, is Decline.ModeRefused,
         -> said(why, facts)
     }
 

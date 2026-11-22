@@ -154,6 +154,7 @@ private object Section11 {
         is Decline.TooLarge, is Decline.Unfit, is Decline.Budget, is Decline.BadBody, is Decline.UnknownModel,
         Decline.ForeignHost, Decline.LivenessProbe, Decline.NoSharedLogin,
         is Decline.Untranslatable, is Decline.CapabilityRefused, is Decline.CapabilityFailed,
+        is Decline.ModeRefused,
         -> Fam.P
     }
 

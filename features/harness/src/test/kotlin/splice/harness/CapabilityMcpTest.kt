@@ -54,7 +54,11 @@ class CapabilityMcpTest(@param:TempDir private val tmp: Path) {
     fun `the tool is called in the session's folder with the declared fields, and its text is placed`() =
         runBlocking {
             val server = stdio(Does.ANSWERS)
-            val head = rig.head(listOf(capability()), folder = work, mcpServers = loading(server.entry()))
+            val head = rig.head(
+                listOf(capability()),
+                folder = work,
+                workers = RigWorkers(mcpServers = loading(server.entry())),
+            )
 
             val stream = rig.send(head, Turn("s1", opening("Add a flag")))
 
@@ -79,7 +83,11 @@ class CapabilityMcpTest(@param:TempDir private val tmp: Path) {
     fun `a server at a URL is spoken to there, with its entry's headers, and its session is ended after`() =
         runBlocking {
             val server = HttpMcp().also(https::add)
-            val head = rig.head(listOf(capability()), folder = work, mcpServers = loading(server.entry()))
+            val head = rig.head(
+                listOf(capability()),
+                folder = work,
+                workers = RigWorkers(mcpServers = loading(server.entry())),
+            )
 
             rig.send(head, Turn("s1", opening("Add a flag")))
 
@@ -98,7 +106,7 @@ class CapabilityMcpTest(@param:TempDir private val tmp: Path) {
             val head = rig.head(
                 listOf(capability(CapabilityFailure.CLOSED, timeoutS = 1)),
                 folder = f.folder,
-                mcpServers = loading(f.entry),
+                workers = RigWorkers(mcpServers = loading(f.entry)),
             )
 
             val stream = rig.send(head, Turn(what, opening("Add a flag")))
@@ -115,7 +123,11 @@ class CapabilityMcpTest(@param:TempDir private val tmp: Path) {
     fun `open, each failure lets the turn go on as it is today`() = runBlocking {
         failures().forEach { f ->
             val what = f.what
-            val head = rig.head(listOf(capability(timeoutS = 1)), folder = f.folder, mcpServers = loading(f.entry))
+            val head = rig.head(
+                listOf(capability(timeoutS = 1)),
+                folder = f.folder,
+                workers = RigWorkers(mcpServers = loading(f.entry)),
+            )
 
             val stream = rig.send(head, Turn(what, opening("Add a flag")))
 
@@ -127,7 +139,11 @@ class CapabilityMcpTest(@param:TempDir private val tmp: Path) {
     @Test
     fun `a call that passes its time limit is cancelled at the server, which is stopped`() = runBlocking {
         val server = stdio(Does.HANGS)
-        val head = rig.head(listOf(capability(timeoutS = 1)), folder = work, mcpServers = loading(server.entry()))
+        val head = rig.head(
+            listOf(capability(timeoutS = 1)),
+            folder = work,
+            workers = RigWorkers(mcpServers = loading(server.entry())),
+        )
 
         rig.send(head, Turn("slow", opening("Add a flag")))
 

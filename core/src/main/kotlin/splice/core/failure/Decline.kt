@@ -63,6 +63,9 @@ public sealed class Decline {
 
     /** Capability [name], which fails closed, could not finish its work: [why] says what went wrong, never a key. */
     public data class CapabilityFailed(val name: String, val why: String) : Decline()
+
+    /** Mode [name]'s hook refused the turn with its own [reason] (modes/README.md, "Hooks"). */
+    public data class ModeRefused(val name: String, val reason: String) : Decline()
 }
 
 public enum class PreflightKind { COMPACT_OVERFLOW, COMPACTABLE, FIRST_EXCHANGE }

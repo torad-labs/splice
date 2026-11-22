@@ -39,6 +39,11 @@ internal data class CapabilityState(val name: String, val state: String, val tex
     val placed: Boolean get() = state == PLACED
 }
 
+/** What one mode's session-start hook left in a thread: [name] is `mode:<mode>`, [state] is what it left (a context
+ *  text, or a chosen model), and [text] is that text or model. */
+@Serializable
+internal data class HookState(val name: String, val state: String, val text: String? = null)
+
 /** What one thread holds. [firstHash] is the hash of its first user message at the turn the capabilities were called
  *  for; a request whose first message hashes otherwise carries nothing (a compaction replaced it). */
 @Serializable
@@ -46,14 +51,28 @@ internal data class ThreadRecord(
     val first: FirstTurn = FirstTurn.UNDECIDED,
     val firstHash: String? = null,
     val capabilities: List<CapabilityState> = emptyList(),
+    val hooks: List<HookState> = emptyList(),
 ) {
     /** The texts placed in this thread, in the order the capabilities ran, for a first message that hashes [hash]. */
     fun placedFor(hash: String?): List<String> =
         if (hash == null || hash != firstHash) emptyList() else capabilities.filter { it.placed }.mapNotNull { it.text }
 
-    /** The thread after a refused first turn: its first turn not yet come, and the capabilities called for it as if
-     *  they never were. */
-    fun undone(): ThreadRecord = copy(first = FirstTurn.UNDECIDED, firstHash = null, capabilities = emptyList())
+    /** The contexts the modes' session-start hooks placed, in their order, for a first message that hashes [hash]. */
+    fun hookTextsFor(hash: String?): List<String> =
+        if (hash == null || hash != firstHash) {
+            emptyList()
+        } else {
+            hooks.filter { it.state == HOOK_CONTEXT }.mapNotNull { it.text }
+        }
+
+    /** The model a mode's session-start hook chose, for a first message that hashes [hash]. */
+    fun hookModelFor(hash: String?): String? =
+        if (hash == null || hash != firstHash) null else hooks.lastOrNull { it.state == HOOK_MODEL }?.text
+
+    /** The thread after a refused first turn: its first turn not yet come, and what the modes and capabilities left
+     *  for it as if they never ran. */
+    fun undone(): ThreadRecord =
+        copy(first = FirstTurn.UNDECIDED, firstHash = null, capabilities = emptyList(), hooks = emptyList())
 
     /** This record with [state]'s capability in that state, in its place, or after the others when it is new. */
     fun with(state: CapabilityState): ThreadRecord {
@@ -73,6 +92,14 @@ internal class ThreadRecords(private val dir: Path?, private val log: LogSink) {
     private val records = ConcurrentHashMap<String, ThreadRecord>()
 
     fun of(thread: String): ThreadRecord = records.computeIfAbsent(thread) { read(it) ?: ThreadRecord() }
+
+    /** Whether [thread]'s first turn is [turn], decided once: at the thread's first request that streams and carries
+     *  tools. One that already holds an answer marks the thread as first seen mid-conversation, which never has one. */
+    fun firstTurn(thread: String, turn: Boolean, answered: Boolean): Boolean {
+        if (!turn || of(thread).first != FirstTurn.UNDECIDED) return false
+        if (answered) update(thread) { it.copy(first = FirstTurn.MIDWAY) }
+        return !answered
+    }
 
     /** Replaces [thread]'s record with what [change] makes of it, on disk before it returns. */
     fun update(thread: String, change: RecordChange): ThreadRecord {
@@ -118,3 +145,7 @@ internal const val WAITING = "waiting"
 internal const val PLACED = "placed"
 internal const val FAILED = "failed"
 internal const val NEVER_CALLED = "never"
+
+/** What a mode's session-start hook left in a thread: a context text, or the model it chose. */
+internal const val HOOK_CONTEXT = "hook-context"
+internal const val HOOK_MODEL = "hook-model"

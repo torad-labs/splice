@@ -36,6 +36,7 @@ ship off.
 | `[heads]` `only` | list of heads | `[]` | Empty: every head. Otherwise the only heads the mode is ever offered on. |
 | `[heads]` `off` | list of heads | `[]` | Heads the mode is never offered on. |
 | `[callers]` `off` | list of callers | `[]` | Callers the mode is never offered to: `"door"` (Claude Code on splice's door, plain `claude`), `"head"` (a head's own command, e.g. `claude-astra`) or `"desktop"` (Claude Desktop's own sessions). |
+| `hooks` | table | none | The door's moments the mode acts on: each `[hooks.<moment>]` table, and `order` among the modes' hooks. See "Hooks". |
 | `[[resources]]` | tables | none | Only for `kind = "mcp"`: each resource the mode serves. |
 | `uri` | string | required | The resource's `ui://…` uri. |
 | `name` (in `[[resources]]`) | string | the last part of `uri` | The resource's name. |
@@ -107,6 +108,41 @@ and a client that draws MCP Apps can show its pages.
   any tool's result, so the answer has to stand without the page.
 - **The session.** A call's `ModeSession.id` is the client's MCP session id, not the id `/api/sessions` gives the
   session, and its folder and model are not known: the MCP transport does not carry them.
+
+## Hooks
+
+A mode may act at the door's moments, as Claude Code's hooks do inside Claude Code, whatever harness sends the turn
+and whatever provider answers it.
+
+```toml
+[hooks]
+order = 10                 # among all modes' hooks of one moment; ties by mode name
+
+[hooks.session_start]
+timeout_s = 5              # 1 to 3600; default 30
+on_failure = "closed"      # "open" (default): the turn goes on; "closed": it is refused
+
+[hooks.request]
+worker = { kind = "http", url = "http://127.0.0.1:9100/hook", auth_env = "HOOK_KEY" }
+```
+
+- **Moments.** `session_start` is a session's first turn: add context at the end of its first user message, choose the
+  model its turns run on, or refuse the session with a reason the person reads. `request` sees the whole request on
+  its way to the provider and may replace it. A manifest naming any other moment is a finding: a moment appears here
+  when splice serves it, never as a name that does nothing.
+- **Who answers.** Without a `worker`, the mode's handler answers in-process and must implement `ModeHooks`
+  (`hook(call)`, answer `Pass` by default). `worker.kind = "http"` posts the call as JSON and reads one JSON line
+  back; `worker.kind = "mcp"` calls a tool the MCP hub serves. Both receive `moment`, `session` and `body`, and answer
+  `{"answer":"pass"}`, `context`/`model`/`refuse` (with `text`, `model`, `reason`), or `rewrite` (with `body`).
+- **Time and failure.** Each hook has its own time limit. One that errs or runs out of time lets the turn go on and
+  says so in splice's log, unless its manifest says `on_failure = "closed"`, which refuses the turn.
+- **Order.** Every mode's hooks of one moment run in the order their manifests' `order` decides, ties by mode name.
+- **Kept.** What a session-start hook places or chooses is recorded before the turn goes upstream, and placed again
+  byte for byte on every later request of the session. A compaction that replaces the first message ends it.
+- **What it is not.** A request hook shapes what the provider sees; it cannot run a tool for the harness. The harness
+  still runs its own tools, on its own machine, with its own permissions.
+
+`GET /api/modes` lists each mode's hooks with their moment, time limit, failure policy, order and worker.
 
 ## The contract
 

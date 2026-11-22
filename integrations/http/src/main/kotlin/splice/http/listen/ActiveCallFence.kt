@@ -21,20 +21,19 @@ public class ActiveCallFence {
         stopping = false
     }
 
-    /** Runs [block] while [job] is registered for shutdown unwinding; rejects new calls once stopping. */
-    public suspend inline fun <T> track(job: Job?, block: () -> T): T {
-        if (job != null) {
-            active.add(job)
-            if (stopping) {
-                active.remove(job)
-                throw CancellationException("server stopping")
-            }
+    /** Registers [job] for shutdown unwinding; throws CancellationException once stopping. */
+    public fun enter(job: Job?) {
+        if (job == null) return
+        active.add(job)
+        if (stopping) {
+            active.remove(job)
+            throw CancellationException("server stopping")
         }
-        return try {
-            block()
-        } finally {
-            if (job != null) active.remove(job)
-        }
+    }
+
+    /** Unregisters [job] once its call coroutine finishes. */
+    public fun leave(job: Job?) {
+        if (job != null) active.remove(job)
     }
 
     /** Marks the server stopping, cancels every active call coroutine, and waits up to [unwindMs] for them to finish

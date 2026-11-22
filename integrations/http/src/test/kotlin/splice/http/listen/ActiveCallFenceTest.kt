@@ -66,8 +66,12 @@ internal class ActiveCallFenceTest {
         serverConfig {
             module {
                 intercept(ApplicationCallPipeline.Call) {
-                    fence.track(coroutineContext[Job]) {
+                    val job = coroutineContext[Job]
+                    fence.enter(job)
+                    try {
                         withContext(Dispatchers.IO) { proceed() }
+                    } finally {
+                        fence.leave(job)
                     }
                 }
                 routing {

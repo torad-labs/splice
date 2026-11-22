@@ -46,8 +46,12 @@ internal class ControlEngine(
                     guard.admit(this)
                     guard.refuseForeignHosts(this)
                     intercept(ApplicationCallPipeline.Call) {
-                        callFence.track(coroutineContext[Job]) {
+                        val job = coroutineContext[Job]
+                        callFence.enter(job)
+                        try {
                             withContext(callDispatcher) { proceed() }
+                        } finally {
+                            callFence.leave(job)
                         }
                     }
                     routing {

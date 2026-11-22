@@ -126,7 +126,13 @@ internal class HeadEngine(
                     // v0.4.0: a DNS-rebinding page is refused before routing (ClientAuth.admitsHost).
                     intercept(ApplicationCallPipeline.Plugins) { if (!clientAuth.admitsHost(call)) finish() }
                     intercept(ApplicationCallPipeline.Call) {
-                        callFence.track(coroutineContext[Job]) { proceed() }
+                        val job = coroutineContext[Job]
+                        callFence.enter(job)
+                        try {
+                            proceed()
+                        } finally {
+                            callFence.leave(job)
+                        }
                     }
                     routing { routes(this, callDispatcher) }
                 }

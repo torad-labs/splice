@@ -22,16 +22,24 @@ internal class ManifestCheck(private val folder: ModeFolder, private val handler
         }
         val manifest = ManifestRead(toml, folder.name, faults).manifest()
         val resources = ResourcesRead(folder, faults).resources(toml["resources"], manifest?.kind)
-        val mode = manifest?.let { whole(it, resources) }
+        val hooks = HooksRead(faults).hooks(toml["hooks"])
+        val mode = manifest?.let { whole(it, resources, hooks) }
         return mode to faults.list
     }
 
-    /** The mode of [manifest] once its tools and handler are read, or null when any finding was made. */
-    private fun whole(manifest: ModeManifest, resources: List<ModeResource>): FoundMode? {
+    /** The mode of [manifest] once its tools, hooks and handler are read, or null when any finding was made. */
+    private fun whole(manifest: ModeManifest, resources: List<ModeResource>, hooks: ModeHooksRead): FoundMode? {
         val tools = ToolsRead(folder, faults).tools(manifest.tools, manifest.server)
         val handler = handlers[manifest.handler]
         if (handler == null) faults.report("handler ${manifest.handler} is not a class splice could load for it")
+        if (handler != null && hooks.hooks.any { it.worker == null }) {
+            if (handler !is ModeHooks) {
+                faults.report(
+                    "a hook with no worker is answered in-process, and ${manifest.handler} is not a ModeHooks",
+                )
+            }
+        }
         if (handler == null || faults.any()) return null
-        return FoundMode(manifest, tools, resources, folder.read(PROMPT)?.trim(), handler)
+        return FoundMode(manifest, tools, resources, folder.read(PROMPT)?.trim(), handler, hooks.hooks, hooks.order)
     }
 }

@@ -29,6 +29,7 @@ import splice.app.head.HeadBoot
 import splice.app.head.HeadCapabilities
 import splice.app.head.HeadKeptFiles
 import splice.app.head.HeadMcpServers
+import splice.app.head.HeadModeHooks
 import splice.app.head.HeadOthers
 import splice.app.head.HeadProbes
 import splice.app.head.HeadPromptInputs
@@ -42,6 +43,7 @@ import splice.app.head.ServedProviderAssembly
 import splice.app.head.books.BooksKeys
 import splice.app.modes.DaemonModes
 import splice.app.modes.ModeBoot
+import splice.app.modes.ModeHooks
 import splice.app.modes.ModeTools
 import splice.app.probe.LocalWindowRefresh
 import splice.app.provider.AntigravityJoin
@@ -253,6 +255,10 @@ public class Daemon(
                 HeadAgentTools { key ->
                     controlPlane.modes?.takeIf { m -> m.catalog.modes.any { it.manifest.kind == ModeKind.DOOR } }
                         ?.let { ModeTools(it, key) }
+                },
+                hooks = HeadModeHooks { key ->
+                    controlPlane.modes?.takeIf { m -> m.catalog.modes.any { it.hooks.isNotEmpty() } }
+                        ?.let { ModeHooks(it, key) }
                 },
             )
         }

@@ -30,6 +30,12 @@
   turn's output (`max_output_tokens`) and pass its error messages whole (`error_messages = "whole"`).
   `splice add provider` installs a definition a team publishes, and `[door.commands.<name>]` gives a team's wrapper
   a command of its own on the door.
+- **A mode can hook the door.** A mode's manifest may declare a `[hooks.session_start]` handler that adds context to
+  a session's first message, chooses the model its turns run on, or refuses the session, and a `[hooks.request]`
+  handler that sees and changes a whole request on its way to the provider. A handler runs in-process (the mode's
+  class implements `ModeHooks`) or as an HTTP endpoint or an MCP tool, with its own time limit; a failure lets the
+  turn go on unless the manifest says closed. Hooks run in the order the manifests give, and what a session-start
+  hook adds is kept byte for byte on every later request of the session. `GET /api/modes` lists them.
 
 - **The console is rebuilt: six pages on one design.** Sessions shows teams as columns of their sessions, and a
   session opens into its conversation, read through the session reader below: Markdown, highlighted code, each tool

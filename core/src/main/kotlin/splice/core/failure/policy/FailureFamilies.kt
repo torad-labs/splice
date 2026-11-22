@@ -76,7 +76,7 @@ internal object FailureFamilies {
         is Decline.Preflight -> ClientWire.Family.T
         is Decline.TooLarge, is Decline.Unfit, is Decline.Budget, is Decline.BadBody, is Decline.UnknownModel,
         Decline.ForeignHost, Decline.LivenessProbe, Decline.NoSharedLogin, is Decline.Untranslatable,
-        is Decline.CapabilityRefused, is Decline.CapabilityFailed,
+        is Decline.CapabilityRefused, is Decline.CapabilityFailed, is Decline.ModeRefused,
         -> ClientWire.Family.P
     }
 }

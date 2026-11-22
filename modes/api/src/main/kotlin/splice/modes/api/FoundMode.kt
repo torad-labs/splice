@@ -53,14 +53,16 @@ public data class ModeResource(
     val content: String?,
 )
 
-/** A whole mode: its manifest, tools in manifest order, resources, its prompt (`prompt.md`, trimmed) or null, and
- *  the handler the ServiceLoader made. */
+/** A whole mode: its manifest, tools in manifest order, resources, the hooks it declares, its prompt (`prompt.md`,
+ *  trimmed) or null, the handler the ServiceLoader made, and the order its hooks run in among the modes' ([hookOrder]). */
 public data class FoundMode(
     val manifest: ModeManifest,
     val tools: List<ModeTool>,
     val resources: List<ModeResource>,
     val prompt: String?,
     val handler: Mode,
+    val hooks: List<ModeHook> = emptyList(),
+    val hookOrder: Int = 0,
 ) {
     val name: String get() = manifest.name
 }

@@ -16,6 +16,9 @@ import splice.core.capability.CapabilityTurn
 import splice.core.failure.Decline
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
+import splice.harness.agent.AgentSession
+import splice.harness.hook.HookRuns
+import splice.harness.hook.HookStarts
 import splice.head.port.HarnessEnd
 import splice.head.port.HarnessRequest
 import splice.head.port.HarnessTurn
@@ -24,17 +27,29 @@ import splice.head.port.TurnHarness
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** The capabilities splice.toml declares, at head [head], over the threads' records. */
+/** What a head's turns go through: the head's name, the capabilities splice.toml declares there, the seam their calls
+ *  go through, the model's calls of them (decision 12), and the modes' hooks (modes/README.md, "Hooks"). */
+internal data class HeadTurns(
+    val head: String,
+    val capabilities: List<Capability>,
+    val calls: CapabilityCall,
+    val agent: AgentCalls,
+    val hooks: HookRuns? = null,
+)
+
+/** The capabilities splice.toml declares, at head [turns]'s name, over the threads' records. */
 internal class Harness(
-    private val head: String,
-    private val capabilities: List<Capability>,
+    private val turns: HeadTurns,
     private val records: ThreadRecords,
-    private val calls: CapabilityCall,
     private val log: LogSink,
     private val clock: ElapsedClock,
-    /** The model's calls of the capabilities (decision 12). */
-    private val agent: AgentCalls,
 ) : TurnHarness {
+    private val head = turns.head
+    private val capabilities = turns.capabilities
+    private val calls = turns.calls
+    private val agent = turns.agent
+    private val hooks = turns.hooks
+    private val starts = HookStarts(hooks, records)
     private val rules = CapabilityRules()
 
     /** The wait each thread's held turn is in, which a second request of the thread or the head's stop ends with the
@@ -60,21 +75,51 @@ internal class Harness(
     /** [request] is null for a request the harness reads nothing of. The turn is held only where [turn] can be held
      *  (a request that does not stream cannot). */
     override suspend fun around(request: HarnessRequest?, turn: HarnessTurn): HarnessEnd {
-        val ruled = ruled(request, turn)
-        if (request == null || ruled !is HarnessEnd.Go) return ruled
-        return when (val agent = agent.around(request, turn)) {
-            is AgentEnd.Refused -> HarnessEnd.Refused(agent.why)
-            is AgentEnd.Go -> ruled.copy(sending = agent.sending, rounds = agent.rounds)
+        if (request == null) return ruled(null, turn, first = false, start = HookStarts.Start())
+        val thread = request.thread
+        val first = thread != null && records.firstTurn(thread, request.turn, request.answered)
+        val session = CallFor(head, turn, request).agentSession()
+        val start = if (session == null) HookStarts.Start() else starts.of(session, request, turn, thread, first)
+        if (start.refusal != null) {
+            if (first) records.update(checkNotNull(thread)) { it.undone() }
+            return HarnessEnd.Refused(Decline.ModeRefused(start.refusedBy ?: "a mode", start.refusal))
         }
+        val ruled = ruled(request, turn, first, start)
+        return if (ruled is HarnessEnd.Go) asked(start, ruled, request, turn, session) else ruled
+    }
+
+    /** The turn as the modes' request hooks leave it: the model a session-start hook chose and the body a request hook
+     *  rewrote, or the refusal one made. */
+    private suspend fun asked(
+        start: HookStarts.Start,
+        ruled: HarnessEnd.Go,
+        request: HarnessRequest,
+        turn: HarnessTurn,
+        session: AgentSession?,
+    ): HarnessEnd {
+        val end = when (val end = agent.around(request, turn)) {
+            is AgentEnd.Refused -> return HarnessEnd.Refused(end.why)
+            is AgentEnd.Go -> end
+        }
+        val hooked = hooks?.request(session, turn.sending, end.sending, start.model)
+            ?: HookRuns.Hooked(end.sending, null, null)
+        if (hooked.refusal != null) {
+            return HarnessEnd.Refused(Decline.ModeRefused(hooked.refusedBy ?: "a mode", hooked.refusal))
+        }
+        return ruled.copy(sending = hooked.body?.takeUnless { it === turn.sending }, rounds = end.rounds)
     }
 
     /** What the capabilities called by rule make of [request]. */
-    private suspend fun ruled(request: HarnessRequest?, turn: HarnessTurn): HarnessEnd {
+    private suspend fun ruled(
+        request: HarnessRequest?,
+        turn: HarnessTurn,
+        first: Boolean,
+        start: HookStarts.Start,
+    ): HarnessEnd {
         val thread = request?.thread ?: return HarnessEnd.Go(emptyList())
         // A second request of the thread ends the wait of the first: neither places anything, both go on as today.
         waits.remove(thread)?.complete(SUPERSEDED)
         val hash = records.hashOf(request.firstUser)
-        val first = firstTurn(thread, request)
         val on = CallFor(head, turn, request)
         // The capabilities whose rules name the request, in the order splice.toml declares them.
         val named = if (turn.holdable && !stopping.get()) {
@@ -84,8 +129,12 @@ internal class Harness(
         }
         val skipped = notCalled(named, on)
         val due = named.filter { it.name !in skipped }
-        if (first) records.update(thread) { taken(it, due, hash) }
-        val end = if (due.isEmpty()) HarnessEnd.Go(records.of(thread).placedFor(hash)) else held(thread, due, on, hash)
+        if (first) records.update(thread) { taken(it, due, hash, start.states) }
+        val end = if (due.isEmpty()) {
+            HarnessEnd.Go(records.of(thread).placedFor(hash) + start.contexts)
+        } else {
+            held(thread, due, on, hash, start.contexts)
+        }
         val notes = skipped.map { (name, why) -> "$name: $why" }
         return if (end is HarnessEnd.Go && notes.isNotEmpty()) end.copy(skipped = notes) else end
     }
@@ -99,23 +148,20 @@ internal class Harness(
             }
         }
 
-    /** Whether [request] is its thread's first turn, decided once: at the thread's first request that streams and
-     *  carries tools. One that already holds an answer marks the thread as first seen mid-conversation, which never
-     *  has one. */
-    private fun firstTurn(thread: String, request: HarnessRequest): Boolean {
-        if (!request.turn || records.of(thread).first != FirstTurn.UNDECIDED) return false
-        if (request.answered) records.update(thread) { it.copy(first = FirstTurn.MIDWAY) }
-        return !request.answered
-    }
-
     /** The thread's first turn has come: the hash of its first message, and each capability's state, written down
      *  before any is called. */
-    private fun taken(record: ThreadRecord, due: List<Capability>, hash: String?): ThreadRecord {
+    private fun taken(
+        record: ThreadRecord,
+        due: List<Capability>,
+        hash: String?,
+        hooks: List<HookState>,
+    ): ThreadRecord {
         val firsts = capabilities.filter {
             it.call.byRule && it.call.rule.turn == CapabilityTurn.FIRST && it.onFor(head)
         }
         val states = firsts.map { CapabilityState(it.name, if (it in due) WAITING else NEVER_CALLED) }
-        return states.fold(record.copy(first = FirstTurn.TAKEN, firstHash = hash)) { acc, state -> acc.with(state) }
+        val taken = record.copy(first = FirstTurn.TAKEN, firstHash = hash, hooks = record.hooks + hooks)
+        return states.fold(taken) { acc, state -> acc.with(state) }
     }
 
     private suspend fun held(
@@ -123,6 +169,7 @@ internal class Harness(
         due: List<Capability>,
         on: CallFor,
         hash: String?,
+        contexts: List<String>,
     ): HarnessEnd {
         val startedMs = clock()
         val ended = CompletableDeferred<String>()
@@ -136,7 +183,7 @@ internal class Harness(
             waits.remove(thread, ended)
             on.turn.release(Held(due.map { it.name }, clock() - startedMs, failures.toList()))
         }
-        if (outcome == null) return HarnessEnd.Go(records.of(thread).placedFor(hash))
+        if (outcome == null) return HarnessEnd.Go(records.of(thread).placedFor(hash) + contexts)
         // A refused turn was not the thread's first turn: the next request the rule names is called.
         if (due.any { it.call.rule.turn == CapabilityTurn.FIRST }) records.update(thread) { record -> record.undone() }
         return HarnessEnd.Refused(outcome)

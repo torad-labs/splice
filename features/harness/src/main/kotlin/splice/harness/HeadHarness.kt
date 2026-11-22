@@ -5,6 +5,7 @@ package splice.harness
 
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
+import splice.harness.hook.HookRuns
 import splice.head.port.TurnHarness
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
@@ -32,7 +33,8 @@ public class HeadHarness {
         // runs.
         val besides = AgentBeside(inputs.capabilities, inputs.tools, kept, answers, LifecycleScope(io))
         val agent = AgentCalls(head, inputs.capabilities, inputs.tools, kept, answers, besides, stops)
-        return Harness(head, inputs.capabilities, records, calls, log, clock, agent)
+        val hooks = HookRuns(head, inputs.hooks, http, mcp, log)
+        return Harness(HeadTurns(head, inputs.capabilities, calls, agent, hooks), records, log, clock)
     }
 }
 

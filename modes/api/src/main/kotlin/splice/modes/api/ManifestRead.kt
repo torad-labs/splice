@@ -4,7 +4,7 @@ package splice.modes.api
 import kotlinx.serialization.json.JsonObject
 
 private val TOP_KEYS =
-    setOf("name", "summary", "server", "handler", "tools", "kind", "on", "heads", "callers", "resources")
+    setOf("name", "summary", "server", "handler", "tools", "kind", "on", "heads", "callers", "resources", "hooks")
 private const val NAME_RULE = "[a-z][a-z0-9]*"
 private const val TOOL_RULE = "[a-z][a-z0-9_]*, with no __"
 

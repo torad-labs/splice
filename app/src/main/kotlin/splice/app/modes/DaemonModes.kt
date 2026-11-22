@@ -45,5 +45,10 @@ internal class DaemonModes(
             state(mode, head).on
     }
 
+    /** Every mode on for a session of [head] whose requests come from [caller], door or mcp: what may hook it. */
+    fun hooksOn(head: String, caller: ModeCaller): List<FoundMode> = catalog.modes.filter { mode ->
+        ModeRule.offeredTo(mode.manifest, caller) && state(mode, head).on && mode.hooks.isNotEmpty()
+    }
+
     fun store(mode: String): ModeStore = stores.computeIfAbsent(mode) { FileModeStore(stateDir, it) }
 }

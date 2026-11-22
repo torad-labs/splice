@@ -221,6 +221,14 @@ remote.*.url
 remote.*.window	
 server	
 server.admins	
+server.backup	
+server.backup.access_key_env	
+server.backup.endpoint	
+server.backup.every	
+server.backup.path_style	
+server.backup.region	
+server.backup.secret_key_env	
+server.backup.to	
 server.budgets	
 server.budgets.action	
 server.budgets.person_daily_usd	

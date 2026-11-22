@@ -32,9 +32,13 @@ import splice.server.HeadUpstreams
 import splice.server.ServerMode
 import splice.server.ServerReach
 import splice.server.TeamGateway
+import splice.server.backup.BackupRun
+import splice.server.backup.ServerBackupStore
 import splice.share.ShareMachine
 import splice.upstream.codemode.ProcessDispatchers
+import splice.upstream.codemode.ProcessWaiter
 import java.nio.file.Path
+import java.time.Clock
 
 internal class DaemonServer(
     private val topology: Topology,
@@ -102,8 +106,15 @@ internal class DaemonServer(
         Cancellables.runCatchingBestEffort {
             val offered = ManagedSharedHeads(heads, topology, config, ShareMachine(log).name())
             val folder = stateDir.resolve(SERVER_STATE)
-            val reach = ServerReach(turnKey, served, EnvReader(System::getenv), gateway)
-            ServerMode(topology.server, folder, ProcessDispatchers().io(), log, upstreams = this)
+            val env = EnvReader(System::getenv)
+            val io = ProcessDispatchers().io()
+            val reach = ServerReach(turnKey, served, env, gateway)
+            ServerBackupStore(
+                topology.server.backup,
+                folder,
+                BackupRun(io, Clock.systemUTC(), ProcessWaiter(), log),
+            ).restoreIfEmpty(env)
+            ServerMode(topology.server, folder, io, log, upstreams = this)
                 .also { it.open(address, offered, reach, configDir, secret()) }
         }.onSuccess { mode ->
             running = mode

@@ -13,7 +13,7 @@ afterAll(async () => { await browser?.close(); s?.stop(); });
 const OPENED: [string, string][] = [
   ["sessions.html#s-made-up", "Sessions"], ["accounts.html?x=1", "Accounts"], ["teams.html", "Teams"],
   ["activity.html?project=-&win=30d", "Activity"], ["activity.html#request=t-1", "Activity"],
-  ["providers.html?cmd=claude-acme", "Providers"], ["providers.html?open=compare", "Providers"], ["settings.html#gates", "Settings"],
+  ["providers.html?cmd=claude-acme", "Providers"], ["providers.html?open=compare", "Providers"], ["server.html", "Server"], ["settings.html#gates", "Settings"],
 ];
 
 test("each page marks its own nav item and only that one, whatever its address carries", async () => {

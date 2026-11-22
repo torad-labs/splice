@@ -252,6 +252,35 @@ class ServerConfigFindingsTest {
         val found = refused(server(bad) + head())
         assertEquals(setOf("server.client.download_url", "server.forward_auth.allow"), found.map { it.path }.toSet())
     }
+
+    @Test
+    fun `server backup accepts folder or signed S3 target and refuses malformed target or missing keys`() {
+        val good = """
+            [server.backup]
+            to = "s3://team-backups/prod"
+            endpoint = "https://r2.team.example"
+            region = "auto"
+            path_style = true
+            access_key_env = "BACKUP_S3_KEY"
+            secret_key_env = "BACKUP_S3_SECRET"
+            every = "30m"
+        """.trimIndent()
+        val ready = ConfigFindings.read(server(good) + head(), directory, configDir = directory)
+        val backup = assertInstanceOf(ConfigRead.Ready::class.java, ready, ready.toString()).topology.server.backup
+        assertEquals("s3://team-backups/prod", backup.to)
+        assertEquals("30m", backup.every)
+
+        val bad = """
+            [server.backup]
+            to = "s3://team-backups/prod"
+            every = "forever"
+        """.trimIndent()
+        val found = refused(server(bad) + head())
+        assertEquals(
+            setOf("server.backup.every", "server.backup.access_key_env", "server.backup.secret_key_env"),
+            found.map { it.path }.toSet(),
+        )
+    }
 }
 
 private const val API_KEY = """{ kind = "api-key", env = "BOX_KEY" }"""

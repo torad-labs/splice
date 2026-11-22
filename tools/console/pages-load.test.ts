@@ -32,8 +32,8 @@ afterAll(async () => {
   server.stop(true);
 });
 
-test("the console folder holds the six pages and no other", () => {
-  expect(pages).toEqual(["accounts.html", "activity.html", "providers.html", "sessions.html", "settings.html", "teams.html"]);
+test("the console folder holds the seven Night Deck pages and no other", () => {
+  expect(pages).toEqual(["accounts.html", "activity.html", "providers.html", "server.html", "sessions.html", "settings.html", "teams.html"]);
 });
 
 // AN ADDRESS NAMES ONLY THE PAGE'S OWN TOPICS. Settings' topic table inherits Object.prototype, so an address naming an

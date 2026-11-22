@@ -12,16 +12,10 @@ import splice.core.topology.ServerConfig
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.server.audit.ServerAudit
+import splice.server.backup.BackupRun
+import splice.server.backup.ServerBackupStore
 import splice.server.metrics.MetricPeople
 import splice.server.metrics.ServerMetrics
-import splice.server.signin.IdTokens
-import splice.server.signin.SigninClient
-import splice.server.signin.SigninIssuer
-import splice.server.signin.SigninParts
-import splice.share.RefusalVoice
-import splice.share.RelayClock
-import splice.share.RelaySpeaker
-import splice.share.ShareRelay
 import splice.share.SharedHead
 import splice.share.SharedHeads
 import splice.upstream.Waiter
@@ -60,6 +54,10 @@ public class ServerMode(
     /** What a kept-alive turn's silences are waited out on (F4, `keepalive_seconds`): the process clock. */
     private val waiter: Waiter = ProcessWaiter(),
 ) {
+    /** Durable state snapshots & on-demand backup (F14). Startup restore runs via [ServerBackupStore.restoreIfEmpty]
+     *  before constructing [ServerMode] so fresh disks fail closed before any store reads [folder]. */
+    public val backup: ServerBackupStore = ServerBackupStore(server.backup, folder, BackupRun(io, clock, waiter, log))
+
     private val keys = ServerKeys(folder.resolve(KEYS_FILE), io, clock)
     private val people = ServerPeople(folder.resolve(PEOPLE_FILE), io)
     private val limits = PersonLimits(server.limits, people, server.teams, clock)
@@ -101,30 +99,14 @@ public class ServerMode(
         configDir: Path,
         signinSecret: String? = null,
     ) {
-        val speaker = RelaySpeaker(RefusalVoice(SERVER_ERROR_PREFIX), SERVER_LOG_TAG)
-        val served = ServedHeads(heads, server.commands)
-        metrics.serving(served)
-        val parts = ServerParts(
-            keys = keys,
-            limits = limits,
-            heads = served,
-            carriers = TurnCarriers(
-                ShareRelay(reach.turnKey, heads.machine, log, speaker, RelayClock(waiter)),
-                reach.gateway,
-            ),
-            people = people,
-            upstreams = upstreamApi,
-            books = books.open(reach, metrics),
-        )
-        val tls = server.pem(configDir)?.let { PemTls(it).keyStore() }
-        val signin = server.signin?.let { signin ->
-            val issuer = SigninIssuer(SigninClient(signin, signinSecret), io, clock)
-            SigninParts(signin, issuer, IdTokens(signin, issuer, clock))
-        }
-        val opened = ServerListener(server, parts, tls, AdminReads(books.usageApi, metrics, audit), io, log, signin)
+        val admin = AdminReads(books.usageApi, metrics, audit, backup)
+        val stores = ListenerStores(keys, people, limits, upstreamApi, books, metrics, admin)
+        val opened = ServerListenerWiring(server, stores, io, log, clock, waiter)
+            .build(heads, reach, configDir, signinSecret)
         opened.start(address)
         listener = opened
         books.exporting(reach.env)
+        backup.open(reach.env)
     }
 
     /** Closes the listener and writes when each key was last used, so a restart loses none of it. */
@@ -133,10 +115,10 @@ public class ServerMode(
         listener = null
         books.close()
         keys.keepUse(olderThanMs = 0)
+        backup.close()
     }
 }
 
 private const val KEYS_FILE = "keys.json"
 private const val PEOPLE_FILE = "people.json"
 private const val AUDIT_FILE = "audit.jsonl"
-private const val SERVER_LOG_TAG = "server"

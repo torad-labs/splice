@@ -10,7 +10,7 @@ import splice.core.topology.toml.TomlKeys
 internal class ServerLedgerChecks(private val server: ServerConfig) {
     private val keys = TomlKeys()
 
-    fun findings(): List<TopologyFinding> = reference() + teams() + export() + budgets()
+    fun findings(): List<TopologyFinding> = reference() + teams() + export() + backup() + budgets()
 
     private fun reference(): List<TopologyFinding> {
         val card = server.reference
@@ -33,14 +33,30 @@ internal class ServerLedgerChecks(private val server: ServerConfig) {
     private fun export(): List<TopologyFinding> {
         val export = server.export
         if (!export.declared) return emptyList()
-        val target = export.to.trim()
+        return targetFindings(EXPORT, export.to, export.everyMs, export.accessKeyEnv, export.secretKeyEnv)
+    }
+
+    private fun backup(): List<TopologyFinding> {
+        val backup = server.backup
+        if (!backup.declared) return emptyList()
+        return targetFindings(BACKUP, backup.to, backup.everyMs, backup.accessKeyEnv, backup.secretKeyEnv)
+    }
+
+    private fun targetFindings(
+        prefix: String,
+        rawTo: String,
+        everyMs: Long?,
+        accessKeyEnv: String?,
+        secretKeyEnv: String?,
+    ): List<TopologyFinding> {
+        val target = rawTo.trim()
         val where = "must be a folder (file:///var/lib/splice-usage) or a bucket (s3://bucket/prefix)"
             .takeUnless { writable(target) }
-        val every = "must be a duration, as in \"1h\" or \"15m\"".takeIf { export.everyMs == null }
-        val signed = if (target.startsWith(S3_SCHEME)) signing(export) else emptyList()
+        val every = "must be a duration, as in \"1h\" or \"15m\"".takeIf { everyMs == null }
+        val signed = if (target.startsWith(S3_SCHEME)) signing(prefix, accessKeyEnv, secretKeyEnv) else emptyList()
         return listOfNotNull(
-            where?.let { TopologyFinding("$EXPORT.to", it) },
-            every?.let { TopologyFinding("$EXPORT.every", it) },
+            where?.let { TopologyFinding("$prefix.to", it) },
+            every?.let { TopologyFinding("$prefix.every", it) },
         ) + signed
     }
 
@@ -52,13 +68,13 @@ internal class ServerLedgerChecks(private val server: ServerConfig) {
     }
 
     /** A bucket is written with SigV4, so both halves of its key must come from somewhere, and never from the file. */
-    private fun signing(export: ServerExport): List<TopologyFinding> {
+    private fun signing(prefix: String, accessKeyEnv: String?, secretKeyEnv: String?): List<TopologyFinding> {
         val named = "names the environment variable the bucket's %s is read from; set it, as in \"%s\""
         return listOfNotNull(
-            TopologyFinding("$EXPORT.access_key_env", named.format("access key", "USAGE_S3_KEY"))
-                .takeIf { export.accessKeyEnv.isNullOrBlank() },
-            TopologyFinding("$EXPORT.secret_key_env", named.format("secret key", "USAGE_S3_SECRET"))
-                .takeIf { export.secretKeyEnv.isNullOrBlank() },
+            TopologyFinding("$prefix.access_key_env", named.format("access key", "USAGE_S3_KEY"))
+                .takeIf { accessKeyEnv.isNullOrBlank() },
+            TopologyFinding("$prefix.secret_key_env", named.format("secret key", "USAGE_S3_SECRET"))
+                .takeIf { secretKeyEnv.isNullOrBlank() },
         )
     }
 
@@ -77,6 +93,7 @@ internal class ServerLedgerChecks(private val server: ServerConfig) {
 private const val TABLE = "server"
 private const val REFERENCE = "$TABLE.reference"
 private const val EXPORT = "$TABLE.export"
+private const val BACKUP = "$TABLE.backup"
 private const val BUDGETS = "$TABLE.budgets"
 
 /** How `[server.export] to` names a folder and a bucket. */

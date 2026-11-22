@@ -55,6 +55,25 @@ public data class ServerExport(
     val everyMs: Long? get() = ServerDurations.read(every)
 }
 
+/** `[server.backup]` (F14): where hourly server-state snapshots are stored (`file:///dir` or `s3://bucket/prefix`)
+ *  and restored from on a fresh disk. Boot fails closed if local state is empty and this target cannot be checked. */
+@Serializable
+public data class ServerBackup(
+    val to: String = "",
+    val endpoint: String? = null,
+    val region: String? = null,
+    @SerialName("path_style") val pathStyle: Boolean = false,
+    @SerialName("access_key_env") val accessKeyEnv: String? = null,
+    @SerialName("secret_key_env") val secretKeyEnv: String? = null,
+    val every: String = DEFAULT_EXPORT_EVERY,
+) {
+    /** Whether durable backup snapshots are configured. */
+    public val declared: Boolean get() = to.isNotBlank()
+
+    /** [every] in milliseconds, or null when it is no duration. */
+    public val everyMs: Long? get() = ServerDurations.read(every)
+}
+
 /** `[server.budgets]`: the daily budget every person is held to unless one of their own is set, and what reaching a
  *  budget does: `block` refuses the next turn, `warn` serves it. */
 @Serializable

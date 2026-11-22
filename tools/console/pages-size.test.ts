@@ -63,7 +63,7 @@ const sizes = (page: Page) => page.evaluate(() => {
   return { nav: Math.round(document.querySelector("nav.nav")!.getBoundingClientRect().height), tab: size("nav.nav .tab"), heading: size("h1"), sideways: document.documentElement.scrollWidth > innerWidth };
 });
 
-for (const file of ["sessions.html", "accounts.html", "teams.html", "providers.html", "activity.html", "settings.html"]) {
+for (const file of ["sessions.html", "accounts.html", "teams.html", "providers.html", "activity.html", "server.html", "settings.html"]) {
   test(`${file} is the same size at 1440, 3072, 3840 and 4800 px, and none scrolls sideways`, async () => {
     const seen = [];
     for (const width of [1440, 3072, 3840, 4800]) {

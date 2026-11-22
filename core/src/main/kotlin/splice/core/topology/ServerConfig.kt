@@ -49,6 +49,9 @@ public data class ServerConfig(
     /** `[server.forward_auth]` (F13): dashboard SSO check (`GET /server/forward-auth`) admitting admins and emails
      *  matching [ServerForwardAuth.allow]; null disables the endpoint. */
     @SerialName("forward_auth") val forwardAuth: ServerForwardAuth? = null,
+    /** `[server.backup]` (F14): durable state snapshots (`keys.json`, `people.json`, `budgets.json`, `ledger.jsonl`,
+     *  `audit.jsonl`) written on a schedule and restored fail-closed on a fresh disk. */
+    val backup: ServerBackup = ServerBackup(),
 ) {
     /** Whether the file carries a `[server]` table at all, whatever it holds. */
     val declared: Boolean get() = this != ServerConfig()

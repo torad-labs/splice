@@ -76,7 +76,7 @@ async function atRest(file: string, settle: number): Promise<{ running: string[]
 
 // long enough for a lamp that has just come alive to finish its two pulses, and for a page's first reads to land
 const SETTLE = 9_000;
-for (const file of ["sessions.html", "accounts.html", "teams.html", "providers.html", "activity.html", "settings.html"]) {
+for (const file of ["sessions.html", "accounts.html", "teams.html", "providers.html", "activity.html", "server.html", "settings.html"]) {
   test(`${file} at rest runs no animation and writes nothing`, async () => {
     const got = await atRest(file, SETTLE);
     bunExpect(got.running).toEqual([]);

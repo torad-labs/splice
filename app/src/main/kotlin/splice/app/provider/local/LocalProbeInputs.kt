@@ -12,6 +12,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.UpstreamWindows
 import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
+import splice.core.wire.HttpStatus
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.topology.TopologyLoader
 import splice.upstream.local.LocalModel
@@ -155,10 +156,8 @@ private class OnceGetHttp(private val delegate: LocalHttp) : LocalHttp {
         return delegate(method, url, null).also { replies[url] = it }
     }
 
-    fun answeredProps(root: String): Boolean = replies["$root/props"]?.status == HTTP_OK
+    fun answeredProps(root: String): Boolean = replies["$root/props"]?.status == HttpStatus.OK
 }
-
-private const val HTTP_OK = 200
 
 /** What asking a local runtime about a head's rows found ([LocalProbeInputs.check]). */
 internal sealed class LocalRowsCheck {

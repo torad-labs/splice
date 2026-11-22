@@ -7,9 +7,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.core.util.JsonScalars
+import splice.core.wire.HttpStatus
 import splice.upstream.transport.LocalHttp
-
-private const val HTTP_OK = 200
 
 public class LocalPropsWindow(baseUrl: String, private val http: LocalHttp) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -17,7 +16,7 @@ public class LocalPropsWindow(baseUrl: String, private val http: LocalHttp) {
 
     /** The `default_generation_settings.n_ctx` served by a llama-server `/props` endpoint, or null. */
     public fun read(): Long? = http("GET", "$root/props", null)
-        ?.takeIf { it.status == HTTP_OK }
+        ?.takeIf { it.status == HttpStatus.OK }
         ?.let { parse(it.body) }
         ?.let { it["default_generation_settings"] as? JsonObject }
         ?.let { JsonScalars.long(it, "n_ctx")?.takeIf { n -> n > 0 } }

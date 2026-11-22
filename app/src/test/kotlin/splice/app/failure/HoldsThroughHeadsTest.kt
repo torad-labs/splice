@@ -141,6 +141,7 @@ internal class HoldsThroughHeadsTest : HoldRouteFixtures() {
                         // The first 2 s tick notices the hold frame before counting its 30 s silence interval.
                         eventually { stream.finished || stream.soFar().arrivals.lastOrNull() != arrived }
                     }
+                    awaitRetryAt(10.minutes + 2.seconds) { stream.finished }
                 },
             ) { stream.finished }
             val answer = stream.finish()
@@ -803,6 +804,12 @@ internal abstract class HoldRouteFixtures : HoldReplyFixtures() {
         }
     }
 
+    /** At [due] the woken hold sends its retry over loopback; let it land before advancing the clock (#619). */
+    protected suspend fun ScriptedHeads.awaitRetryAt(due: Duration, finished: () -> Boolean) {
+        if (finished() || time.passed() < due) return
+        if (provider.requests.size < 2) eventually { finished() || provider.requests.size >= 2 }
+    }
+
     /** Waits in real time, a few seconds at most, for [check]. */
     protected suspend fun eventually(check: () -> Boolean) = withContext(Dispatchers.Default) {
         withTimeout(EVENTUALLY_MS) {
@@ -829,7 +836,7 @@ internal abstract class HoldRouteFixtures : HoldReplyFixtures() {
     }
 
     private companion object {
-        const val SETTLE_POLLS = 15
+        const val SETTLE_POLLS = 5
         const val POLL_MS = 2L
         const val EVENTUALLY_MS = 10_000L
 

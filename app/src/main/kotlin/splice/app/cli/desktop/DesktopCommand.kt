@@ -16,17 +16,22 @@
 //   splice desktop launch <command> [args...]      what a managed processWrapper starts the Code tab through: runs the
 //                                                  command, with the desktop key where Desktop stripped it when it
 //                                                  launches on this door; needs no daemon
+//   splice desktop acp [claude args...]            what Desktop's launcher runs in place of `claude` for an Antigravity
+//                                                  model: the session runs on `agy acp` (DesktopAcpCommand); needs no
+//                                                  daemon
 package splice.app.cli.desktop
 
 import splice.app.LifecycleWiring
 import splice.app.cli.hook.StreamDevice
 import splice.app.cli.hook.StreamTerminal
+import splice.app.desktop.acp.DesktopAcpCommand
 import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 
 internal const val DESKTOP_USAGE =
-    "[--json] | on [--model <id>] [--yes] | off | rotate-key | credential | launch <command> [args...]"
+    "[--json] | on [--model <id>] [--yes] | off | rotate-key | credential | launch <command> [args...] | " +
+        "acp [claude args...]"
 
 /** Whether the person said yes to a question asked on the terminal. */
 internal fun interface DesktopConfirm {
@@ -53,7 +58,8 @@ internal class DesktopCommand(
         usage = "splice desktop $DESKTOP_USAGE",
     )
 
-    fun run(args: List<String>): Int = when {
+    suspend fun run(args: List<String>): Int = when {
+        args.firstOrNull() == "acp" -> DesktopAcpCommand(env, err).run(args.drop(1))
         args == listOf("credential") -> DesktopCredential(out, err).run(StatePaths(envReader = env).desktopKeyFile)
         args.firstOrNull() == "launch" -> DesktopLaunch(env, err).run(args.drop(1))
         args.firstOrNull() == "on" && "--yes" in args -> verbs.run(args - "--yes")

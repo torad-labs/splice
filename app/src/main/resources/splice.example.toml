@@ -1029,6 +1029,11 @@ discovery_prefix = "claude--"
 #                           Desktop's launcher reads these to recognize this splice's gateway or Mantle door.
 #   CLAUDE_CODE_HOST_AUTH_ENV_VAR
 #                           The credential variable Desktop's gateway launcher names for Claude Code.
+#   CLAUDE_CONFIG_DIR, CLAUDE_CODE_ENTRYPOINT and CLAUDE_CODE_HOST_SESSION_ID
+#                           set by Claude Desktop, never by an operator, on the `claude` it starts: `splice desktop
+#                           acp`, which runs a session on agy in place of `claude`, reads them as Claude Code does,
+#                           for the folder its transcript and session record go in (~/.claude when unset), what
+#                           started it, and Desktop's id for the session.
 #   SSL_CERT_FILE           an OS trust-bundle path used when extending the JVM's trusted roots.
 #   ANTHROPIC_CUSTOM_HEADERS newline-separated headers inherited by a launched Claude Code client.
 #                           splice keeps ambient headers, replaces any x-splice-client-wall-ms header with

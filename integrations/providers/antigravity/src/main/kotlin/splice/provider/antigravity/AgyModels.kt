@@ -8,16 +8,11 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonObject
 import splice.core.model.ModelCatalog
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
-import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -42,10 +37,11 @@ public class AgyModels(
     private val log: LogSink,
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher,
-    private val command: List<String> = AGY_COMMAND,
+    private val command: List<String> = agyCommand,
 ) {
     private val reader = AgyRosterReader()
     private val catalogs = AntigravityCatalog()
+    private val requests = AcpRequests()
 
     /** What agy offers now. */
     public suspend fun read(): AgyRead = withContext(io) { readOn() }
@@ -74,19 +70,22 @@ public class AgyModels(
         val read = agy.use { ask(it, scratch.toString()) }
         if (read !is AgyRead.Failed) return read
         val wrote = agy.unreadable?.let { " (agy wrote, unreadable: $it)" }.orEmpty()
-        return AgyRead.Failed(read.reason + lastWords(errors) + wrote)
+        return AgyRead.Failed(read.reason + agy.lastWords() + wrote)
     }
 
     private suspend fun ask(agy: AcpConnection, folder: String): AgyRead {
-        val hello = answer(agy, "initialize", initialize(), AGY_ANSWER_MS)
-        val opened =
-            if (hello is AcpAnswer.Result) answer(agy, "session/new", newSession(folder), AGY_ANSWER_MS) else hello
+        val hello = answer(agy, "initialize", requests.initialize(), AGY_ANSWER_MS)
+        val opened = if (hello is AcpAnswer.Result) {
+            answer(agy, "session/new", requests.newSession(folder), AGY_ANSWER_MS)
+        } else {
+            hello
+        }
         if (opened !is AcpAnswer.Result) return refusal(opened)
         val session = JsonScalars.str(opened.result, "sessionId")
         val window = withTimeoutOrNull(AGY_SHORT_MS) { windowOf(agy, session) }
             ?: AGY_WINDOW.also { log("[antigravity] agy reported no context window; every model gets $it tokens\n") }
         if (session != null) {
-            answer(agy, "session/close", sessionOf(session), AGY_SHORT_MS)
+            answer(agy, "session/close", requests.sessionOf(session), AGY_SHORT_MS)
         }
         val roster = reader.of(opened.result, window)
         return catalogs.of(roster)?.let { AgyRead.Offered(it) }
@@ -116,46 +115,13 @@ public class AgyModels(
         AcpAnswer.Ended -> AgyRead.Failed("agy ended before it answered")
         is AcpAnswer.Result -> AgyRead.Failed("agy answered out of turn")
     }
-
-    /** The last line agy wrote to its standard error, to say why it failed; empty when it wrote none. */
-    private fun lastWords(errors: File): String {
-        val lines = try {
-            errors.readLines()
-        } catch (unread: IOException) {
-            listOf("its standard error could not be read (${SafeFailureText.render(unread)})")
-        }
-        val last = lines.lastOrNull { it.isNotBlank() } ?: return ""
-        return " (agy said: ${last.take(LAST_WORDS_CHARS)})"
-    }
-
-    private fun initialize(): JsonObject = buildJsonObject {
-        put("protocolVersion", 1)
-        putJsonObject("clientCapabilities") {
-            putJsonObject("fs") {
-                put("readTextFile", false)
-                put("writeTextFile", false)
-            }
-            put("terminal", false)
-        }
-        putJsonObject("clientInfo") {
-            put("name", "splice")
-            put("title", "Splice for Claude Desktop")
-        }
-    }
-
-    private fun newSession(folder: String): JsonObject = buildJsonObject {
-        put("cwd", folder)
-        put("mcpServers", JsonArray(emptyList()))
-    }
-
-    private fun sessionOf(id: String): JsonObject = buildJsonObject { put("sessionId", id) }
 }
 
 /** agy as its installer puts it on PATH, run as an ACP server over stdio. */
-private val AGY_COMMAND = listOf("agy", "acp")
+internal val agyCommand: List<String> = listOf("agy", "acp")
 
 /** ACP's error code for "authentication required". */
-private const val AUTH_REQUIRED = -32000
+internal const val AUTH_REQUIRED: Int = -32000
 
 /** How long agy has to answer `initialize` and `session/new`: `session/new` asks Google for the account's models. */
 private const val AGY_ANSWER_MS = 60_000L
@@ -164,7 +130,4 @@ private const val AGY_ANSWER_MS = 60_000L
 private const val AGY_SHORT_MS = 5_000L
 
 /** The window agy 1.5.14 reports for every model (`usage_update.size`), taken when it sends none. */
-private const val AGY_WINDOW = 1_048_576L
-
-/** How much of agy's last line of standard error a failure quotes. */
-private const val LAST_WORDS_CHARS = 300
+internal const val AGY_WINDOW: Long = 1_048_576L

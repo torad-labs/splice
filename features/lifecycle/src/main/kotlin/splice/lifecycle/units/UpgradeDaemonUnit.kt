@@ -1,14 +1,11 @@
 // NEW: #525 — re-lays splice's own systemd user unit (`splice.service`) from the newly activated jar during
 // `splice upgrade` so unit updates (such as `ExecReload`) take effect without requiring a separate `splice install`.
-package splice.lifecycle.upgrade
+package splice.lifecycle.units
 
 import splice.core.config.InstallPaths
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.lifecycle.hub.HubUnits
-import splice.lifecycle.units.DAEMON_UNIT_NAME
-import splice.lifecycle.units.DaemonUnit
-import splice.lifecycle.units.SpliceUnits
 import java.nio.file.Path
 
 /** The systemd user units `splice upgrade` updates: the MCP hub's (when installed) and the daemon's (on Linux). */

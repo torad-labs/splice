@@ -22,12 +22,12 @@ import splice.lifecycle.prices.PriceRefreshSettings
 import splice.lifecycle.restart.ConfigRepair
 import splice.lifecycle.restart.RestartCommand
 import splice.lifecycle.start.DaemonColdStart
+import splice.lifecycle.units.UpgradeUnits
 import splice.lifecycle.upgrade.AutoUpdatePolicy
 import splice.lifecycle.upgrade.AutoUpdateSettings
 import splice.lifecycle.upgrade.SystemdUpgradeLauncher
 import splice.lifecycle.upgrade.UpgradeAuto
 import splice.lifecycle.upgrade.UpgradeRuns
-import splice.lifecycle.upgrade.UpgradeUnits
 import splice.lifecycle.upgrade.UpgradeVerb
 import splice.lifecycle.upgrade.VersionedRestart
 import splice.topology.TopologyLoader

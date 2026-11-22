@@ -23,9 +23,11 @@ import splice.app.control.mount.ControlMount
 import splice.http.listen.ActiveCallFence
 import splice.http.listen.HttpListenerThreads
 
-// ControlServer's lifecycle/limit constants, at their sanctioned file-scope home.
-private const val STOP_GRACE_MS = 100L
-private const val STOP_TIMEOUT_MS = 500L
+// why: short control-plane stop grace so SSE/MCP listeners do not stall daemon shutdown past its halt floor.
+private const val CONTROL_STOP_GRACE_MS = 100L
+
+// why: bound for Ktor application disposal after Netty event loops begin shutting down.
+private const val CONTROL_STOP_TIMEOUT_MS = 500L
 
 // why: bound for cancelled control calls to unwind while Netty's event loop is still alive (#525).
 private const val CONTROL_CALL_UNWIND_MS = 200L
@@ -74,14 +76,14 @@ internal class ControlEngine(
             // Ktor disposes the application after the event loops and waits for its calls under this timeout, not the
             // one [stop] passes. Unset it is 5s, and a session's GET /mcp/{name} event stream never ends on its own,
             // so every stop waited all 5s here, after the heads' own 5s, past the daemon's 57s halt floor (Oct 19).
-            shutdownGracePeriod = STOP_GRACE_MS
-            shutdownTimeout = STOP_TIMEOUT_MS
+            shutdownGracePeriod = CONTROL_STOP_GRACE_MS
+            shutdownTimeout = CONTROL_STOP_TIMEOUT_MS
             channelPipelineConfig = { pipeline -> guard.admit(pipeline) }
         }
     }
 
     fun stop(engine: EmbeddedServer<NettyApplicationEngine, *>?) {
         callFence.cancelAndAwait(CONTROL_CALL_UNWIND_MS)
-        engine?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
+        engine?.stop(CONTROL_STOP_GRACE_MS, CONTROL_STOP_TIMEOUT_MS)
     }
 }

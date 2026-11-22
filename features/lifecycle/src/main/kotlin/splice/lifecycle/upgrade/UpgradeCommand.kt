@@ -21,6 +21,8 @@ import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import splice.daemonclient.DaemonProbe
 import splice.daemonclient.DaemonSettings
+import splice.lifecycle.units.UpgradeDaemonUnit
+import splice.lifecycle.units.UpgradeUnits
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption

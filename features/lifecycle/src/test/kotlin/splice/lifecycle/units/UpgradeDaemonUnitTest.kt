@@ -1,6 +1,6 @@
 // #525 item 3: `splice upgrade` re-lays `splice.service` from the newly activated release jar so unit updates
 // (such as ExecReload) take effect without a separate `splice install`, while respecting user overrides.
-package splice.lifecycle.upgrade
+package splice.lifecycle.units
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -9,8 +9,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
-import splice.lifecycle.units.DAEMON_UNIT_NAME
-import splice.lifecycle.units.SpliceUnits
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.jar.JarEntry

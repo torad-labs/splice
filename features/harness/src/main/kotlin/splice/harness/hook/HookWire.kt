@@ -10,7 +10,7 @@ internal class HookWire {
     /** The answer [text] holds, an unreadable or unknown answer being [HookAnswer.Pass]. */
     fun answer(text: String, mode: String): HookAnswer {
         val obj = JsonScalars.objectOrNull(lenientJson, text.trim()) ?: return HookAnswer.Pass
-        val name = JsonScalars.str(obj, ANSWER) ?: return HookAnswer.Pass
+        val name = JsonScalars.str(obj, HOOK_ANSWER_KEY) ?: return HookAnswer.Pass
         return read(name, obj, mode)
     }
 
@@ -18,22 +18,24 @@ internal class HookWire {
     fun valid(answer: HookAnswer, moment: HookMoment): HookAnswer? = answer.takeIf { moment in moments(it) }
 
     private fun read(name: String, obj: JsonObject, mode: String): HookAnswer = when (name) {
-        "context" -> HookAnswer.AddContext(JsonScalars.str(obj, TEXT).orEmpty())
-        "model" -> HookAnswer.ChooseModel(JsonScalars.str(obj, MODEL) ?: JsonScalars.str(obj, TEXT).orEmpty())
+        "context" -> HookAnswer.AddContext(JsonScalars.str(obj, HOOK_TEXT_KEY).orEmpty())
+        "model" -> HookAnswer.ChooseModel(
+            JsonScalars.str(obj, HOOK_MODEL_KEY) ?: JsonScalars.str(obj, HOOK_TEXT_KEY).orEmpty(),
+        )
         "refuse" -> reason(obj, mode)
         "rewrite" -> rewritten(obj)
-        "replace" -> HookAnswer.Replace(JsonScalars.str(obj, TEXT).orEmpty())
-        "continue" -> HookAnswer.Continue(JsonScalars.str(obj, TEXT).orEmpty())
+        "replace" -> HookAnswer.Replace(JsonScalars.str(obj, HOOK_TEXT_KEY).orEmpty())
+        "continue" -> HookAnswer.Continue(JsonScalars.str(obj, HOOK_TEXT_KEY).orEmpty())
         else -> HookAnswer.Pass
     }
 
-    private fun reason(obj: JsonObject, mode: String): HookAnswer =
-        HookAnswer.Refuse(
-            JsonScalars.str(obj, REASON) ?: JsonScalars.str(obj, TEXT) ?: "mode $mode refused the turn",
-        )
+    private fun reason(obj: JsonObject, mode: String): HookAnswer {
+        val reason = JsonScalars.str(obj, HOOK_REASON_KEY) ?: JsonScalars.str(obj, HOOK_TEXT_KEY)
+        return HookAnswer.Refuse(reason ?: "mode $mode refused the turn")
+    }
 
     private fun rewritten(obj: JsonObject): HookAnswer =
-        (obj[BODY] as? JsonObject)?.let(HookAnswer::Rewrite) ?: HookAnswer.Pass
+        (obj[HOOK_BODY_KEY] as? JsonObject)?.let(HookAnswer::Rewrite) ?: HookAnswer.Pass
 
     /** The moments each answer is taken at (modes/README.md, "Hooks"): a hook may answer for its own moment only. */
     private fun moments(answer: HookAnswer): Set<HookMoment> = when (answer) {
@@ -45,8 +47,8 @@ internal class HookWire {
     }
 }
 
-private const val ANSWER = "answer"
-private const val TEXT = "text"
-private const val MODEL = "model"
-private const val REASON = "reason"
-private const val BODY = "body"
+private const val HOOK_ANSWER_KEY = "answer"
+private const val HOOK_TEXT_KEY = "text"
+internal const val HOOK_MODEL_KEY = "model"
+private const val HOOK_REASON_KEY = "reason"
+private const val HOOK_BODY_KEY = "body"

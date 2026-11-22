@@ -32,7 +32,7 @@ internal class ModeHooks(private val modes: DaemonModes, private val head: Strin
         mode.name,
         hookMoment(hook.moment),
         mode.hookOrder,
-        hook.timeoutS * MILLIS,
+        hook.timeoutS * 1_000L,
         hook.failClosed,
         worker(mode, hook),
     )
@@ -75,6 +75,3 @@ internal class ModeHooks(private val modes: DaemonModes, private val head: Strin
         is ModeHookAnswer.Continue -> HookAnswer.Continue(answer.text)
     }
 }
-
-/** One second, in the milliseconds the harness times a hook by. */
-private const val MILLIS = 1_000L

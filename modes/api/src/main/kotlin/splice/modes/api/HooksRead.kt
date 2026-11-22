@@ -11,8 +11,8 @@ private val HOOK_KEYS = setOf("order") + ModeHookMoment.entries.map { it.wire }
 private val MOMENT_KEYS = setOf("timeout_s", "on_failure", "worker")
 private val WORKER_KEYS = setOf("kind", "url", "auth_env", "server", "tool")
 
-private const val DEFAULT_TIMEOUT_S = 30L
-private const val MAX_TIMEOUT_S = 3600L
+private const val HOOK_TIMEOUT_S = 30L
+private const val HOOK_TIMEOUT_MAX_S = 3600L
 
 /** A mode's hooks as its manifest declares them, and the order they run in among the other modes'. */
 internal data class ModeHooksRead(val hooks: List<ModeHook> = emptyList(), val order: Int = 0)
@@ -53,12 +53,12 @@ internal class HooksRead(private val fault: ModeFaults) {
     }
 
     private fun timeout(moment: ModeHookMoment, table: JsonObject): Long {
-        val value = table["timeout_s"] ?: return DEFAULT_TIMEOUT_S
+        val value = table["timeout_s"] ?: return HOOK_TIMEOUT_S
         val seconds = (value as? JsonPrimitive)?.takeIf { !it.isString }?.content?.toLongOrNull()
-        if (seconds == null || seconds !in 1..MAX_TIMEOUT_S) {
-            fault.report("hooks.${moment.wire}.timeout_s is not 1 to $MAX_TIMEOUT_S")
+        if (seconds == null || seconds !in 1..HOOK_TIMEOUT_MAX_S) {
+            fault.report("hooks.${moment.wire}.timeout_s is not 1 to $HOOK_TIMEOUT_MAX_S")
         }
-        return seconds ?: DEFAULT_TIMEOUT_S
+        return seconds ?: HOOK_TIMEOUT_S
     }
 
     /** Whether a hook that errs or runs out of time refuses the turn. Absent or `open`: it goes on. */

@@ -57,7 +57,7 @@ internal class HookRuns(
     /** What the request hooks make of a turn: the model a session-start hook chose set in [original], then the rewrite
      *  a request hook made, or the reason one refused. [sending] is the body the agent itself changed, if any. */
     suspend fun request(session: AgentSession?, original: JsonObject, sending: JsonObject?, chosen: String?): Hooked {
-        val modelled = chosen?.let { JsonObject(original + (MODEL to JsonPrimitive(it))) }
+        val modelled = chosen?.let { JsonObject(original + (HOOK_MODEL_KEY to JsonPrimitive(it))) }
         val body = modelled ?: sending
         val batch = session?.let { run(HookMoment.REQUEST, it, body ?: original) }
         val refusal = batch?.refusal
@@ -139,6 +139,3 @@ internal class HookRuns(
      *  refusal. */
     data class Hooked(val body: JsonObject?, val refusal: String?, val refusedBy: String?)
 }
-
-/** The key a request names its model under, which a session-start hook may set. */
-private const val MODEL = "model"

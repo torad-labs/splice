@@ -18,24 +18,13 @@
 // ports and the guard is built in StandaloneMounts, beside the mount shape, for the same reason.
 package splice.app.control
 
-import io.ktor.http.ContentType
-import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.pluginOrNull
-import io.ktor.server.application.serverConfig
 import io.ktor.server.engine.EmbeddedServer
-import io.ktor.server.engine.connector
-import io.ktor.server.engine.embeddedServer
-import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
-import io.ktor.server.response.respondText
 import io.ktor.server.routing.RoutingNode
 import io.ktor.server.routing.RoutingRoot
-import io.ktor.server.routing.get
 import io.ktor.server.routing.getAllRoutes
-import io.ktor.server.routing.routing
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.withContext
 import splice.app.control.api.ControlAudit
 import splice.app.control.api.ControlHealthReport
 import splice.app.control.api.HeadResolver
@@ -74,18 +63,10 @@ import splice.core.config.ConfigService
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.diagnostics.logs.LogFileSource
-import splice.http.listen.ActiveCallFence
 import splice.launch.recipe.LaunchService
 import splice.lifecycle.restart.DaemonSuccessor
 import splice.lifecycle.restart.ShutdownDaemon
 import splice.sessions.registry.SessionSource
-
-// ControlServer's lifecycle/limit constants, at their sanctioned file-scope home.
-private const val STOP_GRACE_MS = 100L
-private const val STOP_TIMEOUT_MS = 500L
-
-// why: bound for cancelled control calls to unwind while Netty's event loop is still alive (#525).
-private const val CONTROL_CALL_UNWIND_MS = 200L
 
 /** What a control server reports about its heads: the /health body and the per-head signals (a silent runtime, a
  *  quota reset, a full window) the heads route and the doctor read. */
@@ -241,9 +222,10 @@ internal class ControlServer(
         listOfNotNull(peers?.let { ControlMount(it::register) }, mcp) + standalone.last
     private val resources: List<BoundResource> = listOfNotNull(mcp, sessionWake)
 
+    private val engineShell = ControlEngine(listen, guard, readings, mounts, runtime.callDispatcher)
+
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null
-    private val callFence = ActiveCallFence()
 
     /** Set by the first [stop] and never cleared: a server stopped at any point, before its bind included, refuses to bind. */
     private var stopRequested = false
@@ -274,8 +256,7 @@ internal class ControlServer(
      *  through the engine's suspend resolvedConnectors(). */
     public suspend fun start() {
         guard.mintKey() // mint eagerly BEFORE the port opens — a dashboard load must not race it
-        callFence.open()
-        val engine = controlEngine()
+        val engine = engineShell.open()
         refuseWhenStopped()
         engine.start(wait = false)
         // Netty's start binds with bind(...).sync() and completes the resolved connectors before it
@@ -308,50 +289,10 @@ internal class ControlServer(
             stopRequested
         }
         if (stoppedWhileBinding) {
-            callFence.cancelAndAwait(CONTROL_CALL_UNWIND_MS)
-            engine.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
+            engineShell.stop(engine)
             throw CancellationException("the control server was stopped while it was binding")
         }
     }
-
-    /** The engine and the whole route table it serves. Extracted from [start] (V4-136): the route
-     *  table has grown a row at a time and finally tripped the method-length wall, which was
-     *  measuring the TABLE rather than the startup sequence — two different jobs that never belonged
-     *  in one body. Adding a route should not be a reason to restructure startup, or the reverse. */
-    private fun controlEngine(): EmbeddedServer<NettyApplicationEngine, *> =
-        embeddedServer(
-            Netty,
-            serverConfig {
-                module {
-                    guard.admit(this)
-                    guard.refuseForeignHosts(this)
-                    intercept(ApplicationCallPipeline.Call) {
-                        callFence.track(coroutineContext[Job]) {
-                            withContext(runtime.callDispatcher) { proceed() }
-                        }
-                    }
-                    routing {
-                        get("/health") { call.respondText(readings.health.json(), ContentType.Application.Json) }
-                        mounts.forEach { it.register(this) }
-                    }
-                }
-            },
-        ) {
-            splice.http.listen.HttpListenerThreads.configure(this)
-            connector {
-                host = "127.0.0.1"
-                port = this@ControlServer.listen.port
-            }
-            // An inherited socket brings its own channel and parent handler (AdoptedBootstrap); the event loops are
-            // the ones this engine builds for itself either way.
-            listen.adopted?.let { adopted -> configureBootstrap = { adopted.applyTo(this) } }
-            // Ktor disposes the application after the event loops and waits for its calls under this timeout, not the one
-            // [stop] passes. Unset it is 5s, and a session's GET /mcp/{name} event stream never ends on its own, so every
-            // stop waited all 5s here, after the heads' own 5s, past the daemon's 57s halt floor (Oct 19, status 70).
-            shutdownGracePeriod = STOP_GRACE_MS
-            shutdownTimeout = STOP_TIMEOUT_MS
-            channelPipelineConfig = { pipeline -> guard.admit(pipeline) }
-        }
 
     /** #525: stops what rides on the listener and leaves the listener up. A hand-over calls it before the heads stop
      *  taking turns, because a hosted MCP child takes up to two seconds to die and that wait used to fall between the
@@ -366,8 +307,7 @@ internal class ControlServer(
     public fun stop() {
         stopRequested = true
         stopResources()
-        callFence.cancelAndAwait(CONTROL_CALL_UNWIND_MS)
-        server?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
+        engineShell.stop(server)
         server = null
         boundPort = null
     }

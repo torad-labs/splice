@@ -43,8 +43,8 @@ internal class DesktopFeatures(private val lineup: DesktopLineup) {
     private fun desktopRule(name: String, app: Boolean): Pair<String, String?>? = when {
         name == SSH -> UNAVAILABLE to SSH_WHY
         name in APP_OFF -> if (app) UNAVAILABLE to APP_OFF.getValue(name) else STATE_UNKNOWN to UNSETTLED
+        name in APP_PARTLY -> if (app) PARTLY to APP_PARTLY.getValue(name) else STATE_UNKNOWN to UNSETTLED
         name == TITLES -> if (app) WORKS to null else STATE_UNKNOWN to UNSETTLED
-        name == CODE_SESSIONS -> if (app) PARTLY to CODE_SESSIONS_WHY else STATE_UNKNOWN to UNSETTLED
         else -> null
     }
 
@@ -114,12 +114,18 @@ private const val REMOTE = "Remote Control and cloud environments"
 private const val CONNECTORS = "claude.ai connectors"
 private const val SSH = "SSH sessions"
 private const val CODE_SESSIONS = "your Claude Code sessions"
+private const val PROJECTS = "projects"
 private const val FEATURE_USAGE = "usage display"
 
 // Desktop's session list is its own, and its one bridge to the sessions on this computer is its import, which copies
 // each one in rather than following the tree. The shipped policy raises that offer; accepting it is the person's.
 private const val CODE_SESSIONS_WHY = "Desktop's list holds the sessions it started; accepting its import prompt " +
     "brings in the ones Claude Code has on this computer, and each new session comes the same way"
+
+// Chat and Cowork projects are controlled by managed setting `projectsEnabled` (enabled by Splice's default policy).
+// Code-tab projects with coordinatorSessionId are claude.ai server rows and require a claude.ai account.
+private const val PROJECTS_WHY = "Chat and Cowork projects work locally via projectsEnabled; " +
+    "Code-tab coordinator projects require a claude.ai account"
 
 // What Claude Desktop turns off in third-party mode, and how each is said.
 private val APP_OFF = mapOf(
@@ -128,12 +134,18 @@ private val APP_OFF = mapOf(
     CONNECTORS to "Claude Desktop turns them off in third-party mode",
 )
 
+// What Claude Desktop partly supports in third-party mode, and why.
+private val APP_PARTLY = mapOf(
+    CODE_SESSIONS to CODE_SESSIONS_WHY,
+    PROJECTS to PROJECTS_WHY,
+)
+
 private const val SSH_WHY = "the door listens on 127.0.0.1 only, which a session on another machine can't reach"
 
 // The features, in the order the spec names them (desktop-full, df-features).
 private val NAMES = listOf(
-    "auto mode", FEATURE_EFFORT, "context window and compaction", CODE_SESSIONS, TITLES, "subagents", WEB, FILES,
-    "MCP", "scheduled tasks", FAST, REMOTE, CONNECTORS, SSH, FEATURE_USAGE,
+    "auto mode", FEATURE_EFFORT, "context window and compaction", CODE_SESSIONS, PROJECTS, TITLES, "subagents", WEB,
+    FILES, "MCP", "scheduled tasks", FAST, REMOTE, CONNECTORS, SSH, FEATURE_USAGE,
 )
 
 private const val WORKS = "works"

@@ -1,5 +1,6 @@
 {
   "desktopHome": "standard",
+  "isClaudeCodeForDesktopEnabled": true,
   "isDesktopExtensionEnabled": true,
   "modelPrefer1mContext": true,
   "defaultModelEffort": "high",
@@ -14,21 +15,29 @@
   "userPluginMarketplacesEnabled": true,
   "userPluginUploadsEnabled": true,
   "isLocalDevMcpEnabled": true,
+  "mcpPersistentAlwaysAllowEnabled": true,
   "mcpToolTimeoutSec": 1800,
   "projectsEnabled": true,
   "scheduledTasksEnabled": true,
   "skillCreationEnabled": true,
   "keepAwakeEnabled": true,
   "developerModeEnabled": true,
+  "quickEntryScreenshotsEnabled": true,
+  "quickEntryFileSharingEnabled": true,
+  "userFileUploadsEnabled": true,
+  "promptSuggestionEnabled": true,
+  "claudeCodeProcessWrapperEnabled": true,
   "toolSearchEnabled": true,
   "skipWebFetchPreflight": true,
   "coworkEgressAllowedHosts": [
     "*"
   ],
   "builtinBrowserEnabled": true,
+  "builtinBrowserDefaultDomainPolicy": "allow",
   "deploymentDisplayName": "Splice",
   "claudeAiImport": {
     "enabled": true,
+    "automatic3pImport": true,
     "bannerBehavior": "show",
     "bannerMaxDismissals": 10
   }

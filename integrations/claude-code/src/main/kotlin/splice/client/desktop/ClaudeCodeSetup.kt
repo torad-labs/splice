@@ -23,12 +23,34 @@ internal class ClaudeCodeSetup(private val claudeDir: Path) {
     fun effort(): String? =
         JsonScalars.str(held(DESKTOP_SETTINGS_FILE), CLAUDE_EFFORT_LEVEL)?.takeIf { it in DESKTOP_EFFORT_LEVELS }
 
-    /** The marketplaces the person added that Desktop's configuration can name, in the order Claude Code holds them: a
-     *  GitHub repository, a git remote or a hosted marketplace file, with the branch and folder Claude Code keeps for
-     *  it. One read from a folder on this computer has no address Desktop could reach, and one Claude Code clones only
-     *  in part would be cloned whole by Desktop, so both are left out. */
-    fun marketplaces(): List<JsonObject> = held(KNOWN_MARKETPLACES_FILE)?.values.orEmpty()
-        .mapNotNull { known -> named((known as? JsonObject)?.get(MARKETPLACE_SOURCE)) }
+    /** The default permission mode in Claude Code (`permissions.defaultMode`), mapped to Desktop's
+     *  `codeDefaultPermissionMode` vocabulary when recognized. */
+    fun permissionMode(): String? {
+        val perms = held(DESKTOP_SETTINGS_FILE)?.get(CLAUDE_PERMISSIONS) as? JsonObject ?: return null
+        val raw = JsonScalars.str(perms, CLAUDE_DEFAULT_MODE)?.trim() ?: return null
+        return when (raw) {
+            "default" -> "manual"
+            in DESKTOP_PERMISSION_MODES -> raw
+            else -> null
+        }
+    }
+
+    /** Whether prompt suggestions are explicitly configured in Claude Code `settings.json`. */
+    fun promptSuggestionEnabled(): Boolean? =
+        JsonScalars.str(held(DESKTOP_SETTINGS_FILE), CLAUDE_PROMPT_SUGGESTION)?.toBooleanStrictOrNull()
+
+    /** The marketplaces the person added that Desktop's configuration can name, combining
+     *  `plugins/known_marketplaces.json` and `settings.json`'s `extraKnownMarketplaces`. A GitHub repository,
+     *  git remote or hosted marketplace file is carried with its branch and folder; local directories and
+     *  sparse-path repositories are omitted because Desktop cannot express them faithfully. */
+    fun marketplaces(): List<JsonObject> {
+        val fromKnown = held(KNOWN_MARKETPLACES_FILE)?.values.orEmpty()
+            .mapNotNull { known -> named((known as? JsonObject)?.get(MARKETPLACE_SOURCE)) }
+        val extraObj = held(DESKTOP_SETTINGS_FILE)?.get(EXTRA_KNOWN_MARKETPLACES) as? JsonObject
+        val fromExtra = extraObj?.values.orEmpty()
+            .mapNotNull { entry -> named((entry as? JsonObject)?.get(MARKETPLACE_SOURCE)) }
+        return fromKnown + fromExtra
+    }
 
     /** [source], a marketplace's source as Claude Code holds it, as Desktop's configuration names it; null for one
      *  Desktop can't be given. */
@@ -52,9 +74,16 @@ internal class ClaudeCodeSetup(private val claudeDir: Path) {
 
 // Claude Code's own key for the effort its sessions run at, in `settings.json`.
 private const val CLAUDE_EFFORT_LEVEL = "effortLevel"
+private const val CLAUDE_PERMISSIONS = "permissions"
+private const val CLAUDE_DEFAULT_MODE = "defaultMode"
+private const val CLAUDE_PROMPT_SUGGESTION = "promptSuggestionEnabled"
+private const val EXTRA_KNOWN_MARKETPLACES = "extraKnownMarketplaces"
 
 // The levels Desktop's `defaultModelEffort` takes; Claude Code has others (`auto`) that Desktop would read as none.
 private val DESKTOP_EFFORT_LEVELS = setOf("low", "medium", "high", "xhigh", "max")
+
+// The values Desktop's `codeDefaultPermissionMode` accepts.
+private val DESKTOP_PERMISSION_MODES = setOf("manual", "acceptEdits", "plan", "auto", "dontAsk", "bypassPermissions")
 
 // Where Claude Code keeps every marketplace it knows, under its config folder: one entry per name, each with `source`.
 private const val KNOWN_MARKETPLACES_FILE = "plugins/known_marketplaces.json"

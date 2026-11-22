@@ -1,6 +1,10 @@
 /* Sessions: the approved Night Deck board (prototype sessions/i-teams-reader), the page's own rules on the kit (deck.css). */
 :root {
   --team-min: 21rem;
+  --team-max: 34rem;
+  /* where the reading column starts on a window wider than 1920 px, so its middle is the window's middle and not the
+     middle of the room left of the rail: half the room it leaves, and half of what the rail takes on the right */
+  --read-lead: calc((100% - var(--read-w)) / 2 + (var(--rail-w) + var(--gap)) / 2);
   --team-gap: 1.6rem;
   --team-lamp: 2.4rem;
   --team-spark-h: 3.2rem;
@@ -26,7 +30,10 @@
 [hidden] { display: none !important; }
 
 /* ---------- the board: teams as columns; the count fits the width, so nothing scrolls sideways ---------- */
-.board { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: var(--team-gap); align-items: start; padding: var(--sp-3) 0 var(--sp-6); }
+/* a column is as wide as it gets on a 1920 px window and no wider: on a wider window more teams stand side by side,
+   and a board of few teams keeps to the left with room beside it, where it used to stretch three columns across
+   the whole of a 3840 px screen */
+.board { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, var(--team-max))); gap: var(--team-gap); align-items: start; padding: var(--sp-3) 0 var(--sp-6); }
 .team { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: var(--sp-3); min-width: 0; }
 .team.is-dragsrc { opacity: var(--dim); }
 .team.is-over .team-rows { background: var(--fill); }
@@ -142,6 +149,11 @@ body.is-dragging { cursor: grabbing; user-select: none; }
 .cv-door .sum-t { overflow-wrap: anywhere; min-width: 0; }
 .cv-door .sum-x { flex: none; font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-faint); }
 .cv-end { max-width: var(--read-w); padding-top: var(--sp-4); padding-bottom: var(--comp-clear); }
+/* a window wider than 1920 px: the conversation keeps its reading width and stands on the screen's middle, above the
+   composer, with the open session's actions over it. It kept to the left edge, beside two thirds of an empty screen. */
+@media (min-width: 121rem) {
+  .cv-steer, .cv-redir, .cv-thread, .cv-end { max-width: var(--read-w); margin-left: var(--read-lead); }
+}
 .cv-dock { display: grid; gap: var(--sp-2); }
 .cv-dock:empty { display: none; }
 .cv-dock .ask { max-width: var(--read-w); }

@@ -1,5 +1,5 @@
 /* The reader's own page: a plain one-column reading page in the console's dress. Every colour, face and size comes from
-   the Night Deck kit (/deck.css, night and day through its [data-theme] blocks, and its type that grows with the
+   the Night Deck kit (/deck.css, night and day through its [data-theme] blocks, and its one type size on every
    screen); the reader wears the kit's dress (its .reader class sets the --rv-* properties), and this file lays out the page's own few parts.
    Nov 21, 2026: it was dressed from /tokens.css, the stylesheet the Night Deck replaced. Its classes carry rvp- so
    that none meets a kit class of the same name (the kit's .bar is the nav, its .picker the model picker). */

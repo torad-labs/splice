@@ -64,7 +64,7 @@ export const PROFILES: Record<string, ProviderProfile> = {
     kind: "client",
     flow: "paste",
     head: "claude",
-    providerKey: "anthropic",
+    providerKey: "claude",
     dialect: "anthropic-passthrough",
     modelId: "claude-sonnet-4-6",
     providerPage: "https://claude.com/cai/oauth/authorize",
@@ -228,8 +228,8 @@ export function startStandIn(profile: ProviderProfile): StandInServer {
       // Muse key mint endpoint
       if (path.includes("/muse-code/key")) {
         return Response.json({
-          active: true,
-          payment_required: false,
+          is_subs_active: true,
+          require_payment: false,
           api_key: current.apiKey,
         });
       }

@@ -13,6 +13,8 @@
 //                                                       splice's configuration in Claude Desktop (desktop-full)
 //   POST /api/desktop/off                               `splice desktop off`
 //   POST /api/desktop/rotate-key                        `splice desktop rotate-key`
+//   POST /api/desktop/publish                           re-publish inferenceModels into every Desktop library on the
+//                                                       door, including newly created side-by-side folders
 //   GET  /api/claude                                    what `splice claude` says (docs/specs/door-default.md)
 //   POST /api/claude/door                               {"model"?}: `splice claude door [--model]`, linking
 //                                                       `claude` to splice where it is not yet (ClaudeLink)
@@ -30,6 +32,8 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import splice.app.control.api.ControlBodies
 import splice.app.control.mount.ControlGuard
 import splice.app.desktop.DESKTOP_ERROR_PREFIX
@@ -66,18 +70,11 @@ internal class DesktopRoutes(
                 desktop.door.models(call)
             }
         }
-        route.get("$DESKTOP_PATH/v1/models") {
-            val desktop = atDoor(call) ?: return@get
-            desktop.door.models(call)
-        }
-        route.get("$DESKTOP_PATH/v1/models") {
-            val desktop = atDoor(call) ?: return@get
-            desktop.door.models(call)
-        }
         route.get("/api/desktop") { guard.guarded(call) { state(call) } }
         route.post("/api/desktop/on") { guard.guarded(call) { on(call) } }
         route.post("/api/desktop/off") { guard.guarded(call) { act(call) { it.switch.off() } } }
         route.post("/api/desktop/rotate-key") { guard.guarded(call) { act(call) { it.switch.rotate() } } }
+        route.post("/api/desktop/publish") { guard.guarded(call) { publish(call) } }
         route.get("/api/claude") { guard.guarded(call) { claudeState(call) } }
         route.post("/api/claude/door") { guard.guarded(call) { toDoor(call) } }
         route.post("/api/claude/head") { guard.guarded(call) { act(call, CLAUDE) { it.claude.toHead() } } }
@@ -106,6 +103,12 @@ internal class DesktopRoutes(
     private suspend fun on(call: ApplicationCall) {
         val model = JsonScalars.str(jsonBody.parse(call), "model")?.ifEmpty { null }
         act(call) { it.switch.on(model) }
+    }
+
+    private suspend fun publish(call: ApplicationCall) {
+        if (opened(call) == null) return
+        ports.desktop?.publishAgain()
+        JsonReply(HttpStatusCode.OK, buildJsonObject { put("ok", true) }.toString()).send(call)
     }
 
     /** [doing] done, answered with what changed and the state after it ([of]'s), or refused with nothing changed. */

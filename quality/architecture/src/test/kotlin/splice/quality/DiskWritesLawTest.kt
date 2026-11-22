@@ -519,6 +519,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "features/server/src/main/kotlin/splice/server/audit/ServerAudit.kt" to mapOf("JsonlSink.appendLine(" to 1),
     // Server mode's hourly usage export to a folder (Nov 16, 2026), in the README's `[server.export]` folder row.
     "features/server/src/main/kotlin/splice/server/export/FolderTarget.kt" to mapOf("writeAtomic0600(" to 1),
+    // Server mode's durable state snapshots & startup restore (Nov 22, 2026), in the README's `[server.backup]` row.
+    "features/server/src/main/kotlin/splice/server/backup/FolderSnapshotTarget.kt" to mapOf("writeAtomic0600(" to 1),
+    "features/server/src/main/kotlin/splice/server/backup/ServerBackupStore.kt" to mapOf("writeAtomic0600(" to 1),
     "features/turns/src/main/kotlin/splice/head/compact/Compact.kt" to mapOf("JsonlSink.appendLine(" to 1),
     "features/turns/src/main/kotlin/splice/head/compaction/CompactionRecordings.kt" to mapOf("writeAtomic0600(" to 1),
     // A thread's capability record (Nov 17, 2026), in the README's `heads/<head>/capabilities/` row.

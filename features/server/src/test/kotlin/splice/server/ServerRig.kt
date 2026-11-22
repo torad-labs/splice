@@ -16,8 +16,11 @@ import splice.core.server.ServedTurnBoard
 import splice.core.testing.TestPorts
 import splice.core.topology.ServerAddress
 import splice.core.topology.ServerConfig
+import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.launch.LaunchSpec
+import splice.server.backup.BackupRun
+import splice.server.backup.ServerBackupStore
 import splice.share.SharedHead
 import splice.share.SharedHeads
 import splice.upstream.Waiter
@@ -80,14 +83,17 @@ internal class ServerRig(
         heads: List<SharedHead>,
         server: ServerConfig = config,
         signinSecret: String? = null,
+        env: EnvReader = EnvReader { null },
     ): ServerMode {
         val machine = object : SharedHeads {
             override val machine: String = "gpu-box"
 
             override fun offered(): List<SharedHead> = heads
         }
-        val reach = ServerReach(TurnKey(MgmtKey(StatePaths(baseOverride = state))), board)
-        val opened = ServerMode(server, state.resolve("server"), Dispatchers.IO, log, clock, upstreams, waiter)
+        val serverDir = state.resolve("server")
+        ServerBackupStore(server.backup, serverDir, BackupRun(Dispatchers.IO, clock, waiter, log)).restoreIfEmpty(env)
+        val reach = ServerReach(TurnKey(MgmtKey(StatePaths(baseOverride = state))), board, env)
+        val opened = ServerMode(server, serverDir, Dispatchers.IO, log, clock, upstreams, waiter)
         mode = opened
         opened.open(ServerAddress("127.0.0.1", port), machine, reach, state, signinSecret)
         return opened

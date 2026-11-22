@@ -12,6 +12,8 @@ import splice.core.topology.ServerConfig
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.server.audit.ServerAudit
+import splice.server.backup.BackupRun
+import splice.server.backup.ServerBackupStore
 import splice.server.metrics.MetricPeople
 import splice.server.metrics.ServerMetrics
 import splice.server.signin.IdTokens
@@ -60,6 +62,10 @@ public class ServerMode(
     /** What a kept-alive turn's silences are waited out on (F4, `keepalive_seconds`): the process clock. */
     private val waiter: Waiter = ProcessWaiter(),
 ) {
+    /** Durable state snapshots & on-demand backup (F14). Startup restore runs via [ServerBackupStore.restoreIfEmpty]
+     *  before constructing [ServerMode] so fresh disks fail closed before any store reads [folder]. */
+    public val backup: ServerBackupStore = ServerBackupStore(server.backup, folder, BackupRun(io, clock, waiter, log))
+
     private val keys = ServerKeys(folder.resolve(KEYS_FILE), io, clock)
     private val people = ServerPeople(folder.resolve(PEOPLE_FILE), io)
     private val limits = PersonLimits(server.limits, people, server.teams, clock)
@@ -121,10 +127,19 @@ public class ServerMode(
             val issuer = SigninIssuer(SigninClient(signin, signinSecret), io, clock)
             SigninParts(signin, issuer, IdTokens(signin, issuer, clock))
         }
-        val opened = ServerListener(server, parts, tls, AdminReads(books.usageApi, metrics, audit), io, log, signin)
+        val opened = ServerListener(
+            server,
+            parts,
+            tls,
+            AdminReads(books.usageApi, metrics, audit, backup),
+            io,
+            log,
+            signin,
+        )
         opened.start(address)
         listener = opened
         books.exporting(reach.env)
+        backup.open(reach.env)
     }
 
     /** Closes the listener and writes when each key was last used, so a restart loses none of it. */
@@ -133,6 +148,7 @@ public class ServerMode(
         listener = null
         books.close()
         keys.keepUse(olderThanMs = 0)
+        backup.close()
     }
 }
 

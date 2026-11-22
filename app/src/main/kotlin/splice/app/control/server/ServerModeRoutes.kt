@@ -39,6 +39,7 @@ internal class ServerModeRoutes(private val replies: ServerModeReplies, private 
         route.put("/api/server/teams/{$TEAM_PARAM}") { guard.guarded(call) { setTeam(call) } }
         route.get("/api/server/upstreams") { guard.guarded(call) { listUpstreams(call) } }
         route.get("/api/server/audit") { guard.guarded(call) { listAudit(call) } }
+        route.post("/api/server/backup") { guard.guarded(call) { runBackup(call) } }
     }
 
     private suspend fun listKeys(call: ApplicationCall) {
@@ -80,6 +81,11 @@ internal class ServerModeRoutes(private val replies: ServerModeReplies, private 
         val mode = running(call) ?: return
         val tail = call.request.queryParameters["tail"]?.toIntOrNull() ?: DEFAULT_AUDIT_TAIL
         say(call, mode.audit.list(tail))
+    }
+
+    private suspend fun runBackup(call: ApplicationCall) {
+        val mode = running(call) ?: return
+        say(call, mode.backup.now())
     }
 
     private suspend fun running(call: ApplicationCall): ServerMode? = replies.running(call)

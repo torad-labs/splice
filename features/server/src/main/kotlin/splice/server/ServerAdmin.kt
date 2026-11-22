@@ -20,13 +20,20 @@ import splice.core.wire.HttpStatus
 import splice.http.JsonBody
 import splice.server.audit.DEFAULT_AUDIT_TAIL
 import splice.server.audit.ServerAudit
+import splice.server.backup.ServerBackupStore
 import splice.server.ledger.UsageApi
 import splice.server.metrics.PROMETHEUS_TEXT
 import splice.server.metrics.ServerMetrics
 import splice.share.RefusalVoice
 
-/** What an admin reads over the listener beside the keys: the ledger's reports (F5), live metrics (F6) and audit log (F16). */
-internal data class AdminReads(val usage: UsageApi, val metrics: ServerMetrics, val audit: ServerAudit? = null)
+/** What an admin reads or triggers over the listener beside the keys: reports (F5), metrics (F6), audit (F16) and
+ *  durable state backups (F14). */
+internal data class AdminReads(
+    val usage: UsageApi,
+    val metrics: ServerMetrics,
+    val audit: ServerAudit? = null,
+    val backup: ServerBackupStore? = null,
+)
 
 internal class ServerAdmin(
     private val server: ServerConfig,
@@ -53,15 +60,19 @@ internal class ServerAdmin(
 
     /** What an admin's request for [path], the path after `/server/api`, comes to; null for a path that is none. */
     private suspend fun asked(call: ApplicationCall, actor: String, path: List<String>): ServerAnswer? {
-        val method = call.request.httpMethod
-        return when {
-            method == HttpMethod.Get && path == listOf(USAGE_ROUTE) ->
-                reads.usage.report(call.request.queryParameters)
-            method == HttpMethod.Get && path == listOf(AUDIT_ROUTE) ->
-                reads.audit?.list(call.request.queryParameters["tail"]?.toIntOrNull() ?: DEFAULT_AUDIT_TAIL)
-            path.firstOrNull() == KEYS_ROUTE && path.size <= 2 -> keyAction(call, actor, path.getOrNull(1))
-            else -> null
-        }
+        if (path.firstOrNull() == KEYS_ROUTE && path.size <= 2) return keyAction(call, actor, path.getOrNull(1))
+        return adminRoute(call, path)
+    }
+
+    private suspend fun adminRoute(call: ApplicationCall, path: List<String>): ServerAnswer? = when (path) {
+        listOf(USAGE_ROUTE) ->
+            reads.usage.report(call.request.queryParameters).takeIf { call.request.httpMethod == HttpMethod.Get }
+        listOf(AUDIT_ROUTE) ->
+            reads.audit
+                ?.takeIf { call.request.httpMethod == HttpMethod.Get }
+                ?.list(call.request.queryParameters["tail"]?.toIntOrNull() ?: DEFAULT_AUDIT_TAIL)
+        listOf(BACKUP_ROUTE) -> reads.backup?.takeIf { call.request.httpMethod == HttpMethod.Post }?.now()
+        else -> null
     }
 
     private suspend fun keyAction(call: ApplicationCall, actor: String, prefix: String?): ServerAnswer? = when {
@@ -97,4 +108,5 @@ private const val API_ROUTE = "api"
 private const val KEYS_ROUTE = "keys"
 private const val USAGE_ROUTE = "usage"
 private const val AUDIT_ROUTE = "audit"
+private const val BACKUP_ROUTE = "backup"
 private const val METRICS_ROUTE = "metrics"

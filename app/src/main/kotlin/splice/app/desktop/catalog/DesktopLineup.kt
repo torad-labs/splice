@@ -105,6 +105,19 @@ internal data class DesktopLineup(
 
     private fun standingFor(selector: String): String? = aliases.canonical(selector).takeIf { it != selector }
         ?: providers.firstNotNullOfOrNull { it.catalog.names.selectorOf(selector) }
+
+    /** The desktop-only provider and model for [selector] (e.g. `claude-antigravity--gem-4-neon`), or null when none
+     *  matches. Kept separate from [find] so terminal, network and team doors never route to desktop-only providers. */
+    fun findDesktopOnly(selector: String): Pair<ServedProvider, DoorModel>? {
+        val model = desktopModels.firstOrNull { it.model == selector }
+            ?: desktopModels.firstOrNull { ModelTierSuffix.strip(it.model) == selector }
+            ?: discovery.selectorOf(selector)?.let { listed -> desktopModels.firstOrNull { it.model == listed } }
+            ?: desktopOnly.firstNotNullOfOrNull { it.catalog.names.selectorOf(selector) }
+                ?.takeIf { it != selector }
+                ?.let { canonical -> return findDesktopOnly(canonical) }
+            ?: return null
+        return desktopOnly.firstOrNull { it.key == model.provider }?.let { it to model }
+    }
 }
 
 /** Which of the door's providers a caller may use. */

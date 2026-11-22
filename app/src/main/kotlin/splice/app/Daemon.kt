@@ -515,6 +515,7 @@ public class Daemon(
      *  means a SingleFlight token refresh raised by a turn still streaming inside the drain is cancelled by a job
      *  that turn does not own — a foreign CancellationException in a live turn. */
     private suspend fun closeBackground() {
+        antigravity.close()
         prices.close()
         headProbes.stop()
         managedHeadFactory.closeEvidenceLoads()

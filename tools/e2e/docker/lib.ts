@@ -8,7 +8,7 @@
  *  argv (a process listing would show them) and never printed.
  */
 import { appendFileSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 type Json = Record<string, unknown>;
 
@@ -126,62 +126,50 @@ const verbs: Record<string, (argv: readonly string[]) => void> = {
 
   /** head-contract <head> <model> <window> <rows id:window,…> <home> <recipe> <control-port> <mgmt-key-file>
    *
-   *  Each head materializes its OWN picker (settings.json availableModels + model, enforced, and a
-   *  .claude.json additionalModelOptionsCache row per model carrying its context_window) and hands
-   *  Claude Code ONE client window (the pinned row's); the four tier slots never share a BARE id;
-   *  the launch also packages the head (status line, /login command, its hook); and since v0.4.0 the
-   *  session uses the TURN key, never the management key, kept in a 0600 header file, so neither
-   *  settings.json nor curl's argv carries a key. Since the key rotation of 2026-10-26 the session holds
-   *  no planted token at all: Claude Code reads ANTHROPIC_AUTH_TOKEN only once, so a rotated key
-   *  stranded it. It reads the key through the apiKeyHelper in settings.json instead, which prints
-   *  the header file's bearer and which Claude Code runs again after a 401. */
+   *  head-catalog: every head's command starts Claude Code in gateway mode at the Splice gateway, in the
+   *  head's own folder, on the head's own model as the gateway lists it. The launch writes no model list
+   *  and no picker (no availableModels, model, enforceAvailableModels, tier slots or the options cache),
+   *  and the one window every gateway session holds is planted; the session holds the terminal's key,
+   *  never the management key. The launch still packages the head (status line, /login command, its
+   *  hook), and the status line reads the turn-key header file. */
   "head-contract"(argv) {
     const head = arg(argv, 0, "head");
     const model = arg(argv, 1, "model");
     const window = Number(arg(argv, 2, "window"));
-    const expectedRows = new Map(
-      arg(argv, 3, "rows").split(",").map((kv) => {
-        const [id = "", w = "0"] = kv.split(":");
-        return [id, Number(w)] as const;
-      }),
-    );
     const home = arg(argv, 4, "home");
     const recipe = readJson(arg(argv, 5, "recipe"));
     const env = obj(recipe["env"]);
     const control = arg(argv, 6, "control-port");
-    const mgmtKey = readFileSync(arg(argv, 7, "mgmt-key-file"), "utf8").trim();
+    const mgmtFile = arg(argv, 7, "mgmt-key-file");
+    const mgmtKey = readFileSync(mgmtFile, "utf8").trim();
+    const terminalKey = readFileSync(join(dirname(mgmtFile), "terminal-key"), "utf8").trim();
     const cfg = str(env["CLAUDE_CONFIG_DIR"]) || join(home, `.claude-${head}`);
     const settings = readJson(join(cfg, "settings.json"));
     const cache = (obj(readJson(join(cfg, ".claude.json")))["additionalModelOptionsCache"] ?? []) as unknown[];
-    const rows = new Map(cache.map(obj).map((row) => [str(row["value"]), row["context_window"]] as const));
     const statusline = str(obj(settings["statusLine"])["command"]);
     const hooks = (obj(settings["hooks"])["UserPromptSubmit"] ?? []) as unknown[];
     const hookCmds = hooks.flatMap((entry) => ((obj(entry)["hooks"] ?? []) as unknown[]).map((h) => str(obj(h)["command"])));
     const loginMd = join(cfg, "commands", "login.md");
     const pick = (keys: string[]) => Object.fromEntries(keys.map((k) => [k, env[k]]));
-    console.log("recipe:", JSON.stringify(pick(["ANTHROPIC_MODEL", "CLAUDE_CODE_MAX_CONTEXT_TOKENS", "CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_CONFIG_DIR"])));
+    console.log("recipe:", JSON.stringify(pick(["ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "CLAUDE_CODE_MAX_CONTEXT_TOKENS", "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY", "CLAUDE_CONFIG_DIR"])));
     console.log("picker:", JSON.stringify({ model: settings["model"], availableModels: settings["availableModels"],
-      enforceAvailableModels: settings["enforceAvailableModels"], rows: Object.fromEntries(rows) }));
+      enforceAvailableModels: settings["enforceAvailableModels"], rows: cache.length }));
     console.log("packaging:", JSON.stringify({ statusLine: statusline.replaceAll(mgmtKey, "[redacted]"),
       "login.md": existsSync(loginMd), UserPromptSubmit: hookCmds }));
+    check(env["ANTHROPIC_BASE_URL"] === `http://127.0.0.1:${control}/door`,
+      `ANTHROPIC_BASE_URL is ${String(env["ANTHROPIC_BASE_URL"])}`);
+    check(env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] === "1", "model discovery is not on");
     check(env["ANTHROPIC_MODEL"] === model, `ANTHROPIC_MODEL is ${String(env["ANTHROPIC_MODEL"])}`);
     check(env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] === String(window), `CLAUDE_CODE_MAX_CONTEXT_TOKENS is ${String(env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"])}`);
-    check(env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] === String(window), `CLAUDE_CODE_AUTO_COMPACT_WINDOW is ${String(env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"])}`);
-    check(rows.get(model) === window, `pinned row window in the picker cache: ${String(rows.get(model))}`);
-    check(settings["model"] === model, `settings model is ${String(settings["model"])}`);
-    check(JSON.stringify(settings["availableModels"]) === JSON.stringify([...expectedRows.keys()]),
-      `picker off: ${JSON.stringify(settings["availableModels"])}`);
-    check(settings["enforceAvailableModels"] === true, "picker is not enforced");
-    check(JSON.stringify([...rows].sort()) === JSON.stringify([...expectedRows].sort()), `rows: ${JSON.stringify([...rows])}`);
-    const slots = Object.keys(env).sort().filter((k) => /^ANTHROPIC_DEFAULT_(OPUS|SONNET|HAIKU|FABLE)_MODEL$/.test(k)).map((k) => str(env[k]));
-    console.log("slots:", JSON.stringify(slots));
-    const bare = slots.filter((v) => expectedRows.has(v));
-    const wrapped = slots.filter((v) => !expectedRows.has(v));
-    check(new Set(bare).size === bare.length, `two tiers carry one bare id, so /model draws that model twice: ${JSON.stringify(slots)}`);
-    check(wrapped.every((v) => [...expectedRows.keys()].some((m) => v.endsWith(`--${m}`))), `a tier points outside the roster: ${JSON.stringify(slots)}`);
-    check(env["ANTHROPIC_AUTH_TOKEN"] === undefined, "a gateway session is planted a token, which Claude Code reads only once");
-    check(strings(recipe["unset"]).includes("ANTHROPIC_AUTH_TOKEN"),
-      "the launch keeps an outer session's ANTHROPIC_AUTH_TOKEN, which would shadow the key helper");
+    check(env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] === undefined, "the launch plants a compaction window of a head's own");
+    check(env["ANTHROPIC_AUTH_TOKEN"] === terminalKey, "the session does not hold the terminal's key");
+    check(terminalKey !== mgmtKey && !JSON.stringify(env).includes(mgmtKey), "the session env holds the management key");
+    check(strings(recipe["unset"]).includes("ANTHROPIC_API_KEY"), "an outer ANTHROPIC_API_KEY is not scrubbed");
+    check(settings["model"] === undefined && settings["availableModels"] === undefined &&
+      settings["enforceAvailableModels"] === undefined, `a model list is in settings.json: ${JSON.stringify(settings["availableModels"])}`);
+    check(cache.length === 0, `a picker cache is in .claude.json: ${cache.length} row(s)`);
+    const slots = Object.keys(env).sort().filter((k) => /^ANTHROPIC_DEFAULT_(OPUS|SONNET|HAIKU|FABLE)_MODEL$/.test(k));
+    check(slots.length === 0, `the launch plants tier slots: ${JSON.stringify(slots)}`);
     check(!statusline.includes(mgmtKey), "no key inline in the status line command");
     const words = splitWords(statusline);
     const headerArg = words[3] ?? "";
@@ -230,34 +218,35 @@ const verbs: Record<string, (argv: readonly string[]) => void> = {
     check(out.includes(expected), `the replayed turn did not complete (no '${expected}')`);
   },
 
-  /** turn-key-placement <recipe> <settings.json> <state-dir> — after a relaunch the session env holds
-   *  no key (since the key rotation of 2026-10-26 the session reads its turn key through the key
-   *  helper, so a rotated key reaches it), neither key is in settings.json or the status line, and the
-   *  status line and the key helper both read <state>/turn-auth-header, which is 0600 and carries a
-   *  turn key, not the management key. */
+  /** turn-key-placement <recipe> <settings.json> <state-dir> — after a relaunch the session holds the
+   *  terminal's key, never the management key or a turn key, and settings.json carries no model list;
+   *  the status line reads <state>/turn-auth-header, which is 0600 and carries a turn key, not the
+   *  management key. */
   "turn-key-placement"(argv) {
     const recipe = readJson(arg(argv, 0, "recipe"));
     const env = obj(recipe["env"]);
     const settingsText = readFileSync(arg(argv, 1, "settings"), "utf8");
     const state = arg(argv, 2, "state-dir");
     const mgmt = readFileSync(join(state, "mgmt-key"), "utf8").trim();
+    const terminal = readFileSync(join(state, "terminal-key"), "utf8").trim();
     const settings = obj(JSON.parse(settingsText) as Json);
     const statusline = str(obj(settings["statusLine"])["command"]);
     const helper = str(settings["apiKeyHelper"]);
     const header = join(state, "turn-auth-header");
     const turn = existsSync(header) ? bearerIn(header) : "";
-    console.log("session env holds:", env["ANTHROPIC_AUTH_TOKEN"] === undefined ? "no key" : "a planted token");
+    console.log("session env holds:", env["ANTHROPIC_AUTH_TOKEN"] === terminal ? "the terminal's key" : "no key");
     console.log("header file:", header, existsSync(header) ? `0${mode(header).toString(8)}` : "missing",
       turn === "" ? "with no bearer" : turn === mgmt ? "carrying THE MANAGEMENT KEY" : "carrying a turn key");
-    check(env["ANTHROPIC_AUTH_TOKEN"] === undefined, "the relaunched session is planted a token, which Claude Code reads only once");
-    check(strings(recipe["unset"]).includes("ANTHROPIC_AUTH_TOKEN"),
-      "the relaunch keeps an outer session's ANTHROPIC_AUTH_TOKEN, which would shadow the key helper");
-    check(turn !== "" && turn !== mgmt, "turn-auth-header does not carry a turn key");
+    check(env["ANTHROPIC_AUTH_TOKEN"] === terminal, "the relaunched session does not hold the terminal's key");
+    check(strings(recipe["unset"]).includes("ANTHROPIC_API_KEY"), "the relaunch keeps an outer ANTHROPIC_API_KEY");
+    check(turn !== "" && turn !== mgmt && turn !== terminal, "turn-auth-header does not carry a turn key");
     check(!JSON.stringify(env).includes(mgmt) && !JSON.stringify(env).includes(turn), "a key is somewhere in the session env");
     check(!settingsText.includes(mgmt) && !settingsText.includes(turn), "a key is written into settings.json");
+    check(settings["availableModels"] === undefined && settings["model"] === undefined,
+      "a model list is written into settings.json");
     check(!statusline.includes(mgmt) && !statusline.includes(turn), "a key is in the status line argv");
     check(splitWords(statusline)[3] === `@${header}`, `the status line does not read ${header}: ${statusline}`);
-    check(helperPrints(helper) === turn, `the key helper does not print the turn key from ${header}: ${helper}`);
+    if (helper !== "") check(helperPrints(helper) === turn, `the key helper does not print the turn key from ${header}: ${helper}`);
     check(mode(header) === 0o600, "turn-auth-header is not 0600");
   },
 

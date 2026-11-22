@@ -556,7 +556,7 @@ old_session_turn() {
 step "a session launched under $FROM_TAG keeps working: its env (the management key) still runs a turn" in_dir "$HOME" old_session_turn
 
 step "head contract after relaunch: claudex (turn key, 0600 header file, roster, packaging)" \
-  head_contract claudex gpt-5-codex 272000 "gpt-5-codex:272000"
+  head_contract claudex claude-codex--gpt-5-codex 272000 "gpt-5-codex:272000"
 
 # The same relaunch, from the release notes' side: the key lives in <state>/turn-auth-header and
 # nowhere a process listing or a settings file would show it.
@@ -761,7 +761,7 @@ rotate_mgmt_key() {
 step "rotation: key deleted, daemon stopped, \`splice restart\` mints a fresh key; the old one is refused" rotate_mgmt_key
 
 header_follows() {
-  head_contract claudex gpt-5-codex 272000 "gpt-5-codex:272000" >/dev/null || { echo "the relaunch after rotation failed its contract"; return 1; }
+  head_contract claudex claude-codex--gpt-5-codex 272000 "gpt-5-codex:272000" >/dev/null || { echo "the relaunch after rotation failed its contract"; return 1; }
   if sha256sum < "$(resolve_state_dir)/turn-auth-header" | cmp -s - "$PRIVATE/header.pre-rotation"; then
     echo "turn-auth-header still holds the pre-rotation key after a launch"; return 1
   fi

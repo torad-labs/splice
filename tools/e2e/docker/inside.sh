@@ -75,13 +75,13 @@ launch_recipe() { # head port
     --data '{"dangerouslySkipPermissions":"","args":[]}' "http://127.0.0.1:$CONTROL_PORT/launch/$1" \
     | bun "$TOPOLOGY_CHECKS" launch-recipe "$2"
 }
-step "launch recipe: claudex base URL + API_TIMEOUT_MS > 900s" launch_recipe claudex "$CODEX_HEAD_PORT"
-step "launch recipe: mockchat base URL + API_TIMEOUT_MS > 900s" launch_recipe mockchat "$CHAT_HEAD_PORT"
+step "launch recipe: claudex base URL + API_TIMEOUT_MS > 900s" launch_recipe claudex "$CONTROL_PORT"
+step "launch recipe: mockchat base URL + API_TIMEOUT_MS > 900s" launch_recipe mockchat "$CONTROL_PORT"
 
 # ── 7b. per-head model roster + window, packaging, the turn key (head_contract in lib.sh) ─────
-step "head contract + packaging: claudex (gpt-5-codex @272k, status line, /login)" head_contract claudex gpt-5-codex 272000 "gpt-5-codex:272000"
-step "head contract + packaging: mockchat (mock-chat @128k, status line, /login)" head_contract mockchat mock-chat 128000 "mock-chat:128000"
-step "head contract + packaging: mockchat2 (mock-chat-2 @64k + a 128k row, status line, /login)" head_contract mockchat2 mock-chat-2 64000 "mock-chat-2:64000,mock-chat-2-big:128000"
+step "head contract + packaging: claudex (claude-codex--gpt-5-codex @272k, status line, /login)" head_contract claudex claude-codex--gpt-5-codex 272000 "gpt-5-codex:272000"
+step "head contract + packaging: mockchat (claude-mockchat--mock-chat @272k, status line, /login)" head_contract mockchat claude-mockchat--mock-chat 272000 "mock-chat:272000"
+step "head contract + packaging: mockchat2 (claude-mockchat2--mock-chat-2 @272k, status line, /login)" head_contract mockchat2 claude-mockchat2--mock-chat-2 272000 "mock-chat-2:272000"
 
 # ── 7c. the daemon's status line on a SCALED row ─────────────────────────────────────────────
 # Claude Code fixes its context window per process (the pinned row's) and splice scales the counts

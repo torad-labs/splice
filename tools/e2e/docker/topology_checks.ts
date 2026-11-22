@@ -43,7 +43,8 @@ function launchRecipe(port: string): void {
   const r = stdinJson();
   const env = obj(r["env"]);
   console.log(JSON.stringify(Object.fromEntries(RECIPE_KEYS.map((k) => [k, env[k] ?? null]))), "argv:", JSON.stringify(r["argv"]));
-  check(env["ANTHROPIC_BASE_URL"] === `http://127.0.0.1:${port}`, `ANTHROPIC_BASE_URL is ${env["ANTHROPIC_BASE_URL"]}`);
+  check(env["ANTHROPIC_BASE_URL"] === `http://127.0.0.1:${port}/door`, `ANTHROPIC_BASE_URL is ${env["ANTHROPIC_BASE_URL"]}`);
+  check(env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] === "1", "model discovery is not on");
   const timeout = String(env["API_TIMEOUT_MS"] ?? "") || "0";
   check(/^[0-9]+$/.test(timeout), `API_TIMEOUT_MS must be a plain decimal integer: ${env["API_TIMEOUT_MS"]}`);
   check(BigInt(timeout) > 900_000n, `API_TIMEOUT_MS must exceed the daemon 900s wall: ${env["API_TIMEOUT_MS"]}`);
@@ -206,7 +207,20 @@ async function exampleHeads(example: string, headsFile: string, port: string, ho
         pickerOk = pickerFree(settings) && !("additionalModelOptionsCache" in state);
       }
     } else {
-      windowOk = env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] === String(want);
+      // head-catalog: every head that does not forward the caller's login starts Claude Code in gateway mode at
+      // this machine's door, on its own model as the gateway lists it, with no list of its own and the door's one
+      // window.
+      const config = env["CLAUDE_CONFIG_DIR"];
+      check(config, `${head}: the launch recipe names no CLAUDE_CONFIG_DIR`);
+      const settings = JSON.parse(readFileSync(join(config, "settings.json"), "utf8")) as Json;
+      const state = JSON.parse(readFileSync(join(config, ".claude.json"), "utf8")) as Json;
+      pickerOk = pickerFree(settings) && !("additionalModelOptionsCache" in state);
+      tierOk = !Object.keys(env).some((k) => k.startsWith("ANTHROPIC_DEFAULT_"));
+      windowOk =
+        /^[0-9]+$/.test(String(env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"])) &&
+        env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] === "1" &&
+        String(env["ANTHROPIC_BASE_URL"]).endsWith("/door") &&
+        env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] === undefined;
     }
     const ok =
       selectorFree(env["ANTHROPIC_MODEL"]) === selectorFree(pinned) && windowOk && tierOk && pickerOk && linked && wrapper;

@@ -26,6 +26,7 @@ internal data class SessionLook(
     val permissionMode: String,
     val commands: List<AgyCommand>,
     val version: String,
+    val mcpServers: JsonArray = JsonArray(emptyList()),
 )
 
 /** What a turn's `result` reports. */
@@ -51,28 +52,32 @@ internal class DesktopFrames(internal val sessionId: String) {
         put("error", error)
     }
 
-    /** The answer to Desktop's `initialize`: agy's commands, its models, no agents, the default output style, and no
-     *  MCP server of Desktop's applied (they are not passed to agy). */
-    fun initialized(requestId: String, commands: List<AgyCommand>, models: JsonArray): JsonObject =
-        controlOk(
-            requestId,
-            buildJsonObject {
-                put("commands", commandsOf(commands))
-                put("agents", JsonArray(emptyList()))
-                put("output_style", OUTPUT_STYLE)
-                putJsonArray("available_output_styles") { add(JsonPrimitive(OUTPUT_STYLE)) }
-                put("models", models)
-                put("account", JsonObject(emptyMap()))
-                put("mcp_servers_applied", false)
-            },
-        )
+    /** The answer to Desktop's `initialize`: agy's commands, its models, no agents, the default output style, and
+     *  whether MCP servers were applied on agy. */
+    fun initialized(
+        requestId: String,
+        commands: List<AgyCommand>,
+        models: JsonArray,
+        mcpApplied: Boolean = false,
+    ): JsonObject = controlOk(
+        requestId,
+        buildJsonObject {
+            put("commands", commandsOf(commands))
+            put("agents", JsonArray(emptyList()))
+            put("output_style", OUTPUT_STYLE)
+            putJsonArray("available_output_styles") { add(JsonPrimitive(OUTPUT_STYLE)) }
+            put("models", models)
+            put("account", JsonObject(emptyMap()))
+            put("mcp_servers_applied", mcpApplied)
+        },
+    )
 
     fun init(look: SessionLook): JsonObject = framed("system") {
         put(SUBTYPE, "init")
         put("cwd", look.cwd)
         put("model", look.model)
         put("tools", JsonArray(claudeToolNames.map(::JsonPrimitive)))
-        put("mcp_servers", JsonArray(emptyList()))
+        put("mcp_servers", look.mcpServers)
         put("permissionMode", look.permissionMode)
         put("slash_commands", JsonArray(look.commands.map { JsonPrimitive(it.name) }))
         put("output_style", OUTPUT_STYLE)

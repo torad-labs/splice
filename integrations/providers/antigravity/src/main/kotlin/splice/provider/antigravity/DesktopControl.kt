@@ -1,0 +1,85 @@
+// Dispatches Claude Desktop control requests for DesktopSession (initialize, set_model, interrupt, mcp_*, settings).
+package splice.provider.antigravity
+
+import kotlinx.serialization.json.JsonObject
+import splice.core.util.JsonScalars
+
+/** Mutable session hooks exposed to [DesktopControl]. */
+internal interface SessionControlHost {
+    val agy: AgySession?
+    val commands: List<AgyCommand>
+    suspend fun ensureOpen(desktopSpecs: List<AgyMcpSpec>): DesktopParts
+    fun agy(message: JsonObject)
+    fun syncLook(model: String? = null, mode: String? = null)
+    fun cancelOrSwitch(switchOut: Boolean)
+}
+
+/** Handles `control_request` payloads from Claude Desktop for one agy session. */
+internal class DesktopControl(
+    private val host: SessionControlHost,
+    private val coordinator: AgyMcpCoordinator,
+    private val mcpState: McpState,
+    private val lists: DesktopLists,
+) {
+    suspend fun handle(id: String, request: JsonObject): JsonObject? {
+        val subtype = JsonScalars.str(request, "subtype")
+        return when (subtype) {
+            "initialize" -> {
+                val p = host.ensureOpen(coordinator.readInitializeSpecs(request))
+                p.frames.initialized(id, host.commands, lists.models(host.agy?.catalog), mcpState.applied)
+            }
+            "set_model" -> setModel(id, request)
+            "mcp_status" -> host.ensureOpen(emptyList()).frames.controlOk(id, mcpState.statusResponse())
+            "mcp_set_servers" -> {
+                val p = host.ensureOpen(emptyList())
+                val sink = object : AgyMessageSink {
+                    override fun accept(message: JsonObject) = host.agy(message)
+                }
+                val body = coordinator.setServers(host.agy, request, sink)
+                host.syncLook()
+                p.frames.controlOk(id, body)
+            }
+            else -> otherControl(id, subtype, request)
+        }
+    }
+
+    private suspend fun setModel(id: String, request: JsonObject): JsonObject? {
+        val requested = JsonScalars.str(request, "model").orEmpty()
+        if (requested.isNotEmpty() && !requested.startsWith(ANTIGRAVITY_MODEL_PREFIX)) {
+            host.cancelOrSwitch(switchOut = true)
+            return null
+        }
+        val p = host.ensureOpen(emptyList())
+        val refusal = host.agy?.model(requested)
+        if (refusal == null) host.syncLook(model = requested)
+        return refusal?.let { p.frames.controlError(id, it) } ?: p.frames.controlOk(id)
+    }
+
+    private suspend fun otherControl(id: String, subtype: String?, request: JsonObject): JsonObject {
+        val p = host.ensureOpen(emptyList())
+        return when (subtype) {
+            "interrupt" -> {
+                host.cancelOrSwitch(switchOut = false)
+                p.frames.controlOk(id)
+            }
+            "set_permission_mode", "apply_flag_settings" -> applySetting(p, id, request)
+            else -> p.frames.controlError(id, "$subtype is not offered by a session on agy")
+        }
+    }
+
+    private suspend fun applySetting(p: DesktopParts, id: String, request: JsonObject): JsonObject {
+        val mode = JsonScalars.str(request, "mode")
+        val refusal = if (mode != null) {
+            val blocked = p.look.permissionMode == BYPASS_MODE && mode != BYPASS_MODE
+            val res = if (blocked) STARTED_BYPASSING_MSG else host.agy?.mode(mode)
+            if (res == null) host.syncLook(mode = mode)
+            res
+        } else {
+            JsonScalars.str(request["settings"] as? JsonObject, "effortLevel")?.let { host.agy?.effort(it) }
+        }
+        return refusal?.let { p.frames.controlError(id, it) } ?: p.frames.controlOk(id)
+    }
+}
+
+private const val STARTED_BYPASSING_MSG =
+    "this session's agy was started without permission prompts; start a new session to have them"

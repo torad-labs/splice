@@ -75,15 +75,19 @@ internal class AgySession(private val agy: AcpConnection, val id: String, privat
         }
     }
 
-    /** Sends [content] (Desktop's message content) as a prompt; its id, whose answer arrives on [incoming], or null
-     *  once agy has ended. */
-    fun prompt(content: JsonElement): Long? {
+    /** Sends [content] (Desktop's message content) as a prompt, optionally preceded by [prefixText] for a live
+     *  handoff; its id, whose answer arrives on [incoming], or null once agy has ended. */
+    fun prompt(content: JsonElement, prefixText: String? = null): Long? {
         val params = buildJsonObject {
             put(SESSION_ID, id)
-            put("prompt", setup.blocks.of(content))
+            put("prompt", setup.blocks.of(content, prefixText))
         }
         return agy.post("session/prompt", params)
     }
+
+    /** Re-sends `session/resume` in [cwd] with [mcpServers] to add MCP servers to a live session; null on success. */
+    suspend fun resumeWithMcp(cwd: String, mcpServers: JsonArray): String? =
+        refusal(agy.request("session/resume", requests.resume(id, cwd, mcpServers)))
 
     fun cancel() {
         agy.notify("session/cancel", requests.sessionOf(id))

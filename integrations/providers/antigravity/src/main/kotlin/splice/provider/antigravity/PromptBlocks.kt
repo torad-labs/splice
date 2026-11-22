@@ -15,7 +15,8 @@ import splice.core.util.JsonScalars
 
 /** Builds prompt blocks for an agy whose prompts take [images] or not. */
 internal class PromptBlocks(private val images: Boolean) {
-    fun of(content: JsonElement): JsonArray = buildJsonArray {
+    fun of(content: JsonElement, prefixText: String? = null): JsonArray = buildJsonArray {
+        if (!prefixText.isNullOrEmpty()) add(text(prefixText))
         when (content) {
             is JsonPrimitive -> add(text(JsonScalars.str(content).orEmpty()))
             is JsonArray -> content.forEach { item -> (item as? JsonObject)?.let { block(it) }?.let { add(it) } }

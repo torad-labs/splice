@@ -66,6 +66,7 @@ internal class ClaudeArgsReader {
 internal const val DEFAULT_MODE: String = "default"
 
 private const val ADD_DIR = "--add-dir"
+internal const val STRICT_MCP_CONFIG: String = "--strict-mcp-config"
 
 /** The launcher's flag naming the Claude Code the translator stands in for. */
 private const val STANDS_IN_FOR = "--stands-in-for"

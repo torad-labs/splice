@@ -27,17 +27,25 @@ internal class DesktopAppLibrary(
     private val config: DesktopAppConfig = DesktopAppConfig(),
     /** The policy the build ships, which what the person set up in Claude Code is laid over. */
     private val defaults: DesktopPolicyDefaults = DesktopPolicyDefaults(),
-    private val profileSync: DesktopProfileSync = DesktopProfileSync(config.env),
+    private val profileSync: DesktopProfileSync = DesktopProfileSync(config.env, config.osName),
 ) {
     private val files = DesktopLibraryFiles()
+
+    /** The first existing managed configuration file for this platform (or the test fixture when redirected). */
+    private val managedFile: Path?
+        get() = (DesktopManagedPolicy.redirected?.let(::listOf) ?: config.managedFiles)
+            .firstOrNull { Files.exists(it, LinkOption.NOFOLLOW_LINKS) }
 
     /** Why splice's configuration can't be put in now, or null when it can: a managed configuration exists (which
      *  decides Desktop's provider over any local one; only its existence is asked), the library holds a file splice
      *  can't read, or the library can't be written. */
-    fun refusal(): String? = when {
-        managed() -> "${DesktopManagedPolicy.file} $MANAGED_DECIDES"
-        !Files.isDirectory(config.library) -> files.unwritable(config.library)
-        else -> unreadable(config.library) ?: files.unwritable(config.library)
+    fun refusal(): String? {
+        val activeManaged = managedFile
+        return when {
+            activeManaged != null -> "$activeManaged $MANAGED_DECIDES"
+            !Files.isDirectory(config.library) -> files.unwritable(config.library)
+            else -> unreadable(config.library) ?: files.unwritable(config.library)
+        }
     }
 
     /** splice's configuration [id] put in and applied, pointing Desktop at [door] with the credential [helper]. [held]
@@ -87,7 +95,7 @@ internal class DesktopAppLibrary(
     }
 
     /** Whether a managed configuration exists, asked of its existence alone. */
-    fun managed(): Boolean = Files.exists(DesktopManagedPolicy.file, LinkOption.NOFOLLOW_LINKS)
+    fun managed(): Boolean = managedFile != null
 
     /** The door address splice's configuration [id] gives Desktop, or null when it gives none. */
     fun doorOf(id: String): String? = files.read(config.file(id))?.let(config::door)
@@ -146,9 +154,11 @@ internal class DesktopAppLibrary(
     }
 }
 
-/** The managed configuration's path as this process reads it: the platform's ([DESKTOP_MANAGED_FILE]), root's, which
- *  decides Desktop's provider over any local one. [within] is the test seam: a test lends the process a fixture path
- *  for one block, since the machine running it may have a managed file of its own. */
+/** The managed configuration's test seam and Linux default path ([DESKTOP_MANAGED_FILE]): root's, which
+ *  decides Desktop's provider over any local one. On macOS, [DesktopAppConfig.managedFiles] supplies the MDM
+ *  preference plists under `/Library/Managed Preferences/` when [redirected] is null. [within] is the test seam:
+ *  a test lends the process a fixture path for one block, since the machine running it may have a managed file of
+ *  its own. */
 internal object DesktopManagedPolicy {
     @Volatile
     var redirected: Path? = null

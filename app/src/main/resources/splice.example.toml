@@ -1050,6 +1050,8 @@ discovery_prefix = "claude--"
 #                           test points it at a script so the upgrade can be driven as a process
 #   SPLICE_CONSOLE_DIR      an absolute folder the console serves its pages from instead of the jar,
 #                           so an edit to a page shows on reload; unset serves the packaged pages
+#   CLAUDE_USER_DATA_DIR    optional Claude Desktop userData directory override; when set, Desktop reads its
+#                           3P `configLibrary` directly beneath it instead of `<appData>/Claude-3p/configLibrary`
 #   XDG_CONFIG_HOME         where the config and key store live when it is set
 #   XDG_DATA_HOME           where `splice install --all` lays splice's systemd user units, in systemd/user
 #                           beneath it; unset is ~/.local/share

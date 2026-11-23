@@ -13,9 +13,12 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.app.control.McpLaunchFolders
 import splice.app.control.api.mcp.McpAccessRoutes
+import splice.app.control.api.mcp.McpHarnessRoutes
 import splice.control.mcp.McpHost
 import splice.control.mcp.McpRoutes
 import splice.control.mcp.hub.McpHubRoutes
+import splice.core.config.StatePaths
+import splice.core.util.LogSink
 
 /** The /mcp/{name} rows are the only ones that also admit the MCP access key ([Door.MCP]). The host's sweeper
  *  and its open sessions belong to this mount: the server starts and stops them through [start] and [stop]. */
@@ -24,13 +27,18 @@ internal class McpMount(
     private val guard: ControlGuard,
     private val plans: McpLaunchFolders,
     private val services: splice.app.control.McpServiceRefresh? = null,
+    statePaths: StatePaths? = null,
+    log: LogSink = LogSink {},
+    harnessesOverride: McpHarnessRoutes? = null,
 ) : ControlMount, BoundResource {
     private val routes = McpRoutes(host)
     private val hub = host.hub?.let(::McpHubRoutes)
     private val access = McpAccessRoutes(guard.mcpAccessKey)
+    private val harnesses = harnessesOverride ?: statePaths?.let { McpHarnessRoutes(it, log = log) }
 
     override fun register(route: Route) {
         route.get("/api/mcp") { guard.guarded(call) { ControlReplies.respond(call, status()) } }
+        registerHarnesses(route)
         registerReplacements(route)
         route.post("/api/mcp/access-key/rotate") { guard.guarded(call) { access.rotate(call) } }
         route.post("/api/mcp/access-key/headers") { guard.guarded(call) { access.headers(call) } }
@@ -75,6 +83,13 @@ internal class McpMount(
         route.post("/mcp/{name}") { guard.guarded(call, Door.MCP) { routes.post(call) } }
         route.get("/mcp/{name}") { guard.guarded(call, Door.MCP) { routes.stream(call) } }
         route.delete("/mcp/{name}") { guard.guarded(call, Door.MCP) { routes.delete(call) } }
+    }
+
+    private fun registerHarnesses(route: Route) {
+        val harness = harnesses ?: return
+        route.get("/api/mcp/harnesses") { guard.guarded(call) { harness.status(call) } }
+        route.post("/api/mcp/harnesses/import") { guard.guarded(call) { harness.importServers(call) } }
+        route.post("/api/mcp/harnesses/sync") { guard.guarded(call) { harness.syncHarnesses(call) } }
     }
 
     private fun registerReplacements(route: Route) {

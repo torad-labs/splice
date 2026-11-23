@@ -200,6 +200,8 @@ internal class ControlServer(
             guard,
             McpLaunchFolders(sessions, McpServerClasses { host.sharing.plan(it) }, statePaths = config.statePaths),
             runtime.mcpServices,
+            config.statePaths,
+            log,
         )
     }
     private val mounts: List<ControlMount> = listOf(

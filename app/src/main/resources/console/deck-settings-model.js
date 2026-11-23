@@ -37,7 +37,7 @@ window.SETTINGS_LIVE = (() => {
   const ON = { quotaPoll: 'auto', keepTranscriptCopies: true, perfCollectionEnabled: true };
   const PENDING_KEY = 'splice-settings-at-restart';
 
-  const S = { configRead: false, fmt: { dur, bytes, exact }, knobs: [], commands: [], week: {}, mcp: { shared: true, bytesNow: null, bytesIfShared: null, servers: [], sessions: null },
+  const S = { configRead: false, fmt: { dur, bytes, exact }, knobs: [], commands: [], week: {}, mcp: { shared: true, bytesNow: null, bytesIfShared: null, servers: [], sessions: null, harnesses: null },
     data: { stores: [] }, projects: { list: [], folders: [] }, alerts: { command: null, desktop: false, webhook: null }, version: { installed: null, previous: null, latest: null },
     paths: {}, running: { requests: 0, cutRequests: 0, sessions: 0 }, restartState: { status: 'idle', handsOver: false, drainMs: null, compactions: 0 }, upgradeRun: null, topology: null, history: null,
     // the modes splice carries, as GET /api/modes lists them (modes/README.md); null until read, or when splice did not answer
@@ -109,6 +109,31 @@ window.SETTINGS_LIVE = (() => {
     if (!res.ok || (res.body && res.body.ok === false)) return { state: 'refused', why: (res.body && res.body.findings && res.body.findings.length) ? 'Config error' : why(res) };
     S.topology = t; S.mcp.shared = on;
     return { state: res.body && res.body.restart_required ? 'restart' : 'applied' };
+  };
+  /** Import discovered user MCP servers into Splice's opt-in registry (`POST /api/mcp/harnesses/import`). */
+  S.importMcp = async (sources, servers) => {
+    const body = {};
+    if (Array.isArray(sources) && sources.length) body.sources = sources;
+    if (Array.isArray(servers) && servers.length) body.servers = servers;
+    const res = await API.post('/api/mcp/harnesses/import', body);
+    if (!res.ok || !res.body || res.body.ok === false) return { state: 'refused', why: why(res) };
+    if (res.body.state) S.mcp.harnesses = res.body.state;
+    S.deck = deck();
+    const n = res.body.imported || 0;
+    return { state: 'applied', word: n ? `Imported ${n}` : 'Up to date' };
+  };
+  /** Sync Splice MCP servers to one or more harnesses (`POST /api/mcp/harnesses/sync`). */
+  S.syncMcp = async (harnesses, importFirst = false) => {
+    const body = { import: !!importFirst };
+    if (Array.isArray(harnesses) && harnesses.length) body.harnesses = harnesses;
+    const res = await API.post('/api/mcp/harnesses/sync', body);
+    if (res.body && res.body.state) { S.mcp.harnesses = res.body.state; S.deck = deck(); }
+    if (!res.ok || !res.body || res.body.ok === false) {
+      const bad = res.body && Array.isArray(res.body.outcomes) ? res.body.outcomes.find(o => !o.ok) : null;
+      return { state: 'refused', why: (bad && bad.detail) || why(res) };
+    }
+    const anyChanged = Array.isArray(res.body.outcomes) && res.body.outcomes.some(o => o.changed);
+    return { state: 'applied', word: anyChanged ? 'Synced' : 'Up to date' };
   };
   /** alert outlets: desktop and a webhook address (PUT /api/alerts, the whole settings at once) */
   S.setAlert = async (outlet, value) => {
@@ -208,6 +233,8 @@ window.SETTINGS_LIVE = (() => {
       ] },
       { id: 'mcp', title: 'MCP servers', items: [
         { id: 'mcpShare', kind: 'share', label: 'Server instances', options: [{ v: true, label: 'Shared' }, { v: false, label: 'Per session' }] },
+        { id: 'mcpHarnesses', kind: 'mcpHarnesses', label: 'Connected harnesses' },
+        { id: 'mcpImport', kind: 'mcpImport', label: 'User MCP servers' },
         { id: 'mcpMaxServers', kind: 'steps', key: 'mcpMaxServers', label: 'Max running servers', adv: true, stops: steps([8, 16, 32, 64], String) },
         { id: 'mcpIdleTimeoutMs', kind: 'steps', key: 'mcpIdleTimeoutMs', label: 'Stop idle servers after', stops: steps([5 * MIN, 15 * MIN, 30 * MIN, HR], dur) },
         { id: 'mcpRequestTimeoutMs', kind: 'steps', key: 'mcpRequestTimeoutMs', label: 'Request timeout', adv: true, stops: steps([5 * MIN, 15 * MIN, 30 * MIN, HR], dur) },
@@ -274,8 +301,11 @@ window.SETTINGS_LIVE = (() => {
       longestSilenceMs: (at('waited') || {}).longest_silence_ms ?? null, peakToday: held ? held.peak : null, peakAt: held ? held.at : null };
   }
   S.read = async () => {
-    const [cfg, hd, al, up, ss, mcp, mem, stores, labels, edges, hist, pr, topo, modes, rst, upr] = await Promise.all(['/api/config', '/api/heads', '/api/alerts', '/api/upgrade', '/api/sessions',
-      '/api/mcp', '/api/mcp/memory', '/api/kept/stores', '/api/kept/labels', '/api/kept/edges', '/api/history', '/api/projects', '/api/topology', '/api/modes', '/api/daemon/restart', '/api/upgrade/run'].map(get));
+    const [cfg, hd, al, up, ss, mcp, mem, stores, labels, edges, hist, pr, topo, modes, rst, upr, hrRes] = await Promise.all([
+      ...['/api/config', '/api/heads', '/api/alerts', '/api/upgrade', '/api/sessions',
+        '/api/mcp', '/api/mcp/memory', '/api/kept/stores', '/api/kept/labels', '/api/kept/edges', '/api/history', '/api/projects', '/api/topology', '/api/modes', '/api/daemon/restart', '/api/upgrade/run'].map(get),
+      API.get('/api/mcp/harnesses'),
+    ]);
     if (!cfg) return false;
     // a splice that answers without its settings is drawn at splice's defaults, every row saying they were not read
     S.configRead = !!(cfg.effective && typeof cfg.effective === 'object');
@@ -310,8 +340,12 @@ window.SETTINGS_LIVE = (() => {
     readVersion(up);
     S.modes = modes && Array.isArray(modes.modes) ? modes.modes : null;
     S.paths = (cfg.paths && typeof cfg.paths === 'object') ? cfg.paths : {};
-    if (mem) S.mcp = { shared: daemon.mcp_share !== false && daemon.mcp_hosting !== false && !(mcp && mcp.hosting === false), sessions: mem.sessions ?? null, bytesNow: mem.bytes_now ?? null, bytesIfShared: mem.bytes_if_shared ?? null,
-      servers: (mem.servers || []).map(s => ({ name: s.name, shared: s.class === 'shared', why: s.why ? ({ variable: 'A different value in each session', relative_path: 'A different folder in each project', stateful: "Keeps one session's work", cwd: 'Starts in its own folder' })[s.why] || "Can't be shared" : null })) };
+    const mcpShared = daemon.mcp_share !== false && daemon.mcp_hosting !== false && !(mcp && mcp.hosting === false);
+    const nextHarnesses = hrRes && hrRes.ok && hrRes.body ? hrRes.body : hrRes && hrRes.status === 404 ? null : S.mcp.harnesses;
+    if (mem) S.mcp = { shared: mcpShared, sessions: mem.sessions ?? null, bytesNow: mem.bytes_now ?? null, bytesIfShared: mem.bytes_if_shared ?? null,
+      servers: (mem.servers || []).map(s => ({ name: s.name, shared: s.class === 'shared', why: s.why ? ({ variable: 'A different value in each session', relative_path: 'A different folder in each project', stateful: "Keeps one session's work", cwd: 'Starts in its own folder' })[s.why] || "Can't be shared" : null })),
+      harnesses: nextHarnesses };
+    else S.mcp = { ...S.mcp, shared: mcpShared, harnesses: nextHarnesses };
     const st = (stores && stores.stores) || {};
     S.history = hist;
     S.data.stores = [

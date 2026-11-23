@@ -26,7 +26,7 @@
     gates: ['maxInflight', 'maxQueued', 'maxRequestBytes', 'requestReadTimeoutMs', 'ingressReadIdleMs', 'materializationHeapBytes'],
     watch: ['stallLine'],
     limits: ['planPoll', 'usageWarnPct', 'budgetDefaultAction', 'alerts', 'usageWarnTokens5h'],
-    mcp: ['mcpShare', 'mcpIdleTimeoutMs', 'mcpUnshared', 'mcpMaxServers', 'mcpRequestTimeoutMs', 'mcpInitializeTimeoutMs'],
+    mcp: ['mcpShare', 'mcpHarnesses', 'mcpImport', 'mcpIdleTimeoutMs', 'mcpUnshared', 'mcpMaxServers', 'mcpRequestTimeoutMs', 'mcpInitializeTimeoutMs'],
     modes: [],   // no setting of /api/config: its rows are the modes GET /api/modes lists (modesLens)
     storage: ['transcriptView', 'keep', 'traceMaxBodyChars'],
     projects: ['projectsFolders', 'statuslineGitRoots'],
@@ -97,7 +97,10 @@
     fill($('[data-part="limits"]'), { part: 'limits', name: NAME.limits, fig: pctOf(v('usageWarnPct')), cap: 'Alert threshold for plan usage', vis: lv });
     const m = S.mcp, mv = h('div');
     if (m.bytesNow) mv.append(meterRow('Now', 1, 'var(--ink-faint)'), meterRow('Shared', (m.bytesIfShared || 0) / m.bytesNow, 'var(--verdigris)'));
-    fill($('[data-part="mcp"]'), { part: 'mcp', name: NAME.mcp, fig: F.bytes(m.bytesNow), cap: m.bytesIfShared != null ? `${F.bytes(m.bytesIfShared)} with one shared copy` : '', vis: mv });
+    const hList = m.harnesses && Array.isArray(m.harnesses.harnesses) ? m.harnesses.harnesses : [];
+    const hConn = hList.filter(x => x.connected).length;
+    const mcpCap = [m.bytesIfShared != null ? `${F.bytes(m.bytesIfShared)} with one shared copy` : '', hConn ? `${Deck.count(hConn, 'harness', 'harnesses')} synced` : ''].filter(Boolean).join(' · ');
+    fill($('[data-part="mcp"]'), { part: 'mcp', name: NAME.mcp, fig: F.bytes(m.bytesNow), cap: mcpCap, vis: mv });
     // a mode counts as on when any command has it on; the figure is how many are, of how many splice carries
     const md = S.modes, mdOn = md ? md.filter(x => Object.values(x.heads || {}).some(st => st.on)).length : null;
     fill($('[data-part="modes"]'), { part: 'modes', name: NAME.modes, fig: md ? String(mdOn) : '—', unit: md ? `of ${md.length} on` : '', cap: md ? 'Tools Splice adds to a session' : 'Not read' });
@@ -168,7 +171,7 @@
     anchor.setAttribute('aria-expanded', 'true');
     openPart = part; openAnchor = anchor;
     ins.openBeside(anchor, el => {
-      el.classList.toggle('wide', ['watch', 'storage', 'gates', 'limits', 'reasoning', 'cc', 'internals'].includes(part) || (!!anchor.dataset.gate && anchor.dataset.gate !== '*'));
+      el.classList.toggle('wide', ['watch', 'storage', 'gates', 'limits', 'reasoning', 'cc', 'internals', 'mcp'].includes(part) || (!!anchor.dataset.gate && anchor.dataset.gate !== '*'));
       const hd = h('div', 'hd'), gate = anchor.dataset.gate;
       if (gate && gate !== '*') hd.append(Deck.lamp('ready', pc(gate)));
       hd.append(h('h3', '', gate ? (gate === '*' ? 'No requests today' : provName(gate)) : NAME[part]));
@@ -366,6 +369,8 @@
         let c; c = choice(item.options, S.mcp.shared, v => commit(r, sv, () => S.setShare(v), () => c.set(S.mcp.shared)));
         ctl.append(c); out.push(r); break;
       }
+      case 'mcpHarnesses': out.push(...mcpHarnessesRows(item)); break;
+      case 'mcpImport': out.push(...mcpImportRows(item)); break;
       case 'folders': if (S.knob(item.key)) out.push(folders(item)); break;
       case 'list': {
         const { r, ctl } = row(item.id, `${item.label} · ${item.rows.length}`); r.querySelector('.sv').remove();
@@ -477,6 +482,83 @@
     t.addEventListener('click', () => commit(r, sv, () => S.testAlert()));
     ctl.append(t); out.push(r);
     return out;
+  }
+
+  function runMcpAction(btn, targetRow, targetSv, run) {
+    if (btn.disabled) return;
+    const enabled = [...ins.el.querySelectorAll('.btn')].filter(b => !b.disabled);
+    enabled.forEach(b => { b.disabled = true; });
+    commit(targetRow, targetSv, run).then(res => {
+      if (res && res.state !== 'refused') reopen();
+      else enabled.forEach(b => { b.disabled = false; });
+    });
+  }
+
+  function mcpHarnessesRows(item) {
+    const data = S.mcp.harnesses;
+    if (!data || !Array.isArray(data.harnesses)) return [];
+    const detectedIds = data.harnesses.filter(x => x.detected).map(x => x.id);
+    const { r, sv, ctl } = row(item.id, item.label, 'Sync Splice MCP servers to each harness');
+    const syncAll = h('button', 'btn primary press', 'Sync all detected'); syncAll.type = 'button';
+    syncAll.disabled = !detectedIds.length;
+    syncAll.addEventListener('click', () => runMcpAction(syncAll, r, sv, () => S.syncMcp(detectedIds, false)));
+    ctl.append(syncAll);
+    const sub = h('div', 'lr-sub');
+    data.harnesses.forEach(hr => {
+      const line = h('div', 'lr-cmd');
+      const lineId = `${item.id}:${hr.id}`;
+      line.dataset.item = lineId;
+      const nm = h('span');
+      const lamp = Deck.lamp(hr.connected ? 'ready' : 'next', hr.connected ? 'var(--verdigris)' : 'var(--ink-faint)');
+      nm.append(lamp, hr.label || hr.id);
+      const statusText = hr.connected ? 'Connected' : hr.detected ? 'Detected' : 'Not detected';
+      const rowSv = Deck.saveState({ rest: () => statusText });
+      const prev = told.get(lineId);
+      if (prev && Date.now() - prev.at < Deck.px('--dur') * 8) rowSv.set(prev.state, prev.word);
+      const btn = h('button', 'btn quiet press', hr.connected ? 'Resync' : 'Sync'); btn.type = 'button';
+      btn.addEventListener('click', () => runMcpAction(btn, line, rowSv, () => S.syncMcp([hr.id], false)));
+      const right = h('span', 'lr-acts'); right.append(btn, rowSv);
+      line.append(nm, h('span', 'faint small', hr.id), right);
+      sub.append(line);
+    });
+    r.append(sub);
+    return [r];
+  }
+
+  function mcpImportRows(item) {
+    const data = S.mcp.harnesses;
+    if (!data) return [];
+    const active = Array.isArray(data.servers) ? data.servers : [];
+    const avail = Array.isArray(data.available) ? data.available : [];
+    const subText = `${Deck.count(active.length, 'server')} in Splice MCP · ${avail.length} available to import`;
+    const { r, sv, ctl } = row(item.id, item.label, subText);
+    if (avail.length) {
+      const availNames = avail.map(s => s.name);
+      const allBtn = h('button', 'btn primary press', `Import all (${avail.length})`); allBtn.type = 'button';
+      allBtn.addEventListener('click', () => runMcpAction(allBtn, r, sv, () => S.importMcp([], availNames)));
+      ctl.append(allBtn);
+      const list = h('div', 'kvs fill lr-sub');
+      avail.forEach(srv => {
+        const d = h('div');
+        const btn = h('button', 'btn quiet press', 'Import'); btn.type = 'button';
+        btn.addEventListener('click', () => runMcpAction(btn, r, sv, () => S.importMcp([], [srv.name])));
+        d.append(h('span', '', `${srv.name} · ${srv.transport} · ${srv.source}`), btn);
+        list.append(d);
+      });
+      r.append(list);
+    } else {
+      ctl.append(h('span', 'faint small', 'All detected MCP servers are in Splice MCP'));
+    }
+    if (active.length) {
+      const list = h('div', 'kvs fill lr-sub');
+      active.forEach(srv => {
+        const d = h('div');
+        d.append(h('span', '', srv.name), h('b', '', `${srv.transport} · ${srv.source}`));
+        list.append(d);
+      });
+      r.append(list);
+    }
+    return [r];
   }
 
   function folders(item) {

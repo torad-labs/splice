@@ -13,6 +13,13 @@ import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
 import java.util.UUID
 
+/** How a turn ended: normally, cancelled by the user, or aborted by an error. */
+internal enum class TurnClose {
+    NORMAL,
+    CANCELLED,
+    FAILED,
+}
+
 /** Draws agy's updates for one session as Claude turns on [out], each whole message written to [transcript]. */
 internal class AgyTurn(
     private val frames: DesktopFrames,
@@ -59,21 +66,26 @@ internal class AgyTurn(
         return card
     }
 
-    /** [text] said whole as an assistant message: what went wrong, in the conversation. */
+    /** [text] said whole as an assistant message: what went wrong, in the conversation. Any still-unanswered tool calls
+     *  are paired with a failed `tool_result` first so the error message never separates a `tool_use` from its result. */
     fun say(text: String) {
-        stream(TEXT_BLOCK, text)
+        closePendingTools(UNFINISHED_TOOL_RESULT, failed = true)
+        val chunk = if (draw.streamingText) "\n\n$text" else text
+        stream(TEXT_BLOCK, chunk)
         finish(null)
     }
 
     /** Ends the message still open, with the turn's [stop], pairing any still-open tool call with its `tool_result`
-     *  for `claude --resume` and closing open subagent panes as `stopped` when the turn was [cancelled]. */
-    fun end(stop: String?, cancelled: Boolean = false) {
+     *  for `claude --resume` and closing open subagent panes as `stopped` when the turn was cancelled or failed. */
+    fun end(stop: String?, close: TurnClose = TurnClose.NORMAL) {
         finish(if (draw.callsTools) TOOL_USE_BLOCK else stop)
-        val fallback = if (cancelled) INTERRUPTED_RESULT else ""
-        for (id in tools.keys) {
-            if (answered.add(id)) emitResult(id, fallback, failed = cancelled)
+        val (fallback, failed) = when (close) {
+            TurnClose.NORMAL -> "" to false
+            TurnClose.CANCELLED -> INTERRUPTED_RESULT to true
+            TurnClose.FAILED -> UNFINISHED_TOOL_RESULT to true
         }
-        if (cancelled) closeOpenSubagents()
+        closePendingTools(fallback, failed)
+        if (failed) closeOpenSubagents()
     }
 
     /** Closes every still-open subagent pane as `stopped` (used on turn cancellation and when agy exits between
@@ -82,6 +94,12 @@ internal class AgyTurn(
         openSubagents.keys.toList().forEach { id ->
             openSubagents.remove(id)
             out(taskFrames.notification(id, TASK_STOPPED, ""))
+        }
+    }
+
+    private fun closePendingTools(fallback: String, failed: Boolean) {
+        for (id in tools.keys) {
+            if (answered.add(id)) emitResult(id, fallback, failed)
         }
     }
 
@@ -97,10 +115,9 @@ internal class AgyTurn(
         if (openSubagents.remove(id) != null) out(taskFrames.notification(id, status, text))
     }
 
-    /** A chunk of text or thought; after a tool call it begins a new message. */
+    /** A chunk of text or thought on the open message (or a new one once a tool result closed the previous). */
     private fun stream(type: String, chunk: String) {
         if (chunk.isEmpty()) return
-        if (draw.callsTools) finish(TOOL_USE_BLOCK)
         draw.stream(type, chunk)
     }
 
@@ -116,13 +133,14 @@ internal class AgyTurn(
     }
 
     private fun emitResult(id: String, text: String, failed: Boolean) {
-        finish(TOOL_USE_BLOCK)
+        finish(if (draw.callsTools) TOOL_USE_BLOCK else null)
+        val body = if (failed && text.isBlank()) FAILED_TOOL_RESULT else text
         val content = buildJsonArray {
             add(
                 buildJsonObject {
                     put("type", "tool_result")
                     put("tool_use_id", id)
-                    put("content", text)
+                    put("content", body)
                     put("is_error", failed)
                 },
             )
@@ -144,4 +162,6 @@ internal class AgyTurn(
 private const val TOOL_COMPLETED = "completed"
 private const val TOOL_FAILED = "failed"
 private const val TASK_STOPPED = "stopped"
-private const val INTERRUPTED_RESULT = "Interrupted"
+private const val INTERRUPTED_RESULT = "Interrupted by user"
+private const val UNFINISHED_TOOL_RESULT = "Tool did not finish"
+private const val FAILED_TOOL_RESULT = "Tool failed"

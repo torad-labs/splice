@@ -50,8 +50,11 @@ internal class MessageDraw(private val frames: DesktopFrames, private val out: D
     /** The tokens agy says the session's context holds, which each message reports as its input. */
     var used: Long = 0
 
-    /** Whether the open message called a tool, so text after it belongs to a new one. */
+    /** Whether the open message called a tool, so closing it carries `tool_use` as its stop reason. */
     val callsTools: Boolean get() = draft?.calledTools == true
+
+    /** Whether the open message is mid-way through a text block, so appended error text needs a paragraph break. */
+    val streamingText: Boolean get() = draft?.let { it.streaming == TEXT_BLOCK && it.text.isNotEmpty() } == true
 
     /** [chunk] of a block of kind [type] (`text` or `thinking`), opening the message and the block as needed. */
     fun stream(type: String, chunk: String) {

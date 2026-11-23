@@ -254,6 +254,83 @@ internal class DesktopAcpTest {
         assertEquals("from-claude", lines[1].str("parentUuid"), "Gemini's turns follow the conversation so far")
     }
 
+    @Test
+    fun `agy exiting mid-turn closes a pending tool call as failed before saying the error`() {
+        val prompt = lines(
+            "read l",
+            update(
+                """{"sessionUpdate":"tool_call","toolCallId":"t-err","title":"Run ls","kind":"execute",""" +
+                    """"status":"pending","rawInput":{"command":"ls -la"}}""",
+            ),
+        )
+        val seen = rig("$opened\n$prompt") {
+            send(USER)
+            next { it.str("type") == "result" }
+        }
+        assertEquals("true", seen.last()["is_error"]?.jsonPrimitive?.content)
+        val kept = Files.readAllLines(transcript("s-1")).map { Json.parseToJsonElement(it).jsonObject }
+        assertEquals(listOf("user", "assistant", "user", "assistant"), kept.map { it.str("type") })
+        val toolResult = kept[2].obj("message").array("content").single().jsonObject
+        assertEquals("tool_result", toolResult.str("type"))
+        assertEquals("t-err", toolResult.str("tool_use_id"))
+        assertEquals("true", toolResult["is_error"]?.jsonPrimitive?.content)
+        assertTrue(toolResult.str("content").orEmpty().isNotEmpty())
+        val errorText = kept[3].obj("message").array("content").single().jsonObject.str("text").orEmpty()
+        assertTrue("agy ended" in errorText, errorText)
+    }
+
+    @Test
+    fun `partial text before an error separates the error message with a blank line`() {
+        val prompt = lines(
+            "read l",
+            update(CHUNK.replace("TEXT", "Checking the config")),
+        )
+        val seen = rig("$opened\n$prompt") {
+            send(USER)
+            next { it.str("type") == "result" }
+        }
+        assertEquals("true", seen.last()["is_error"]?.jsonPrimitive?.content)
+        val kept = Files.readAllLines(transcript("s-1")).map { Json.parseToJsonElement(it).jsonObject }
+        assertEquals(listOf("user", "assistant"), kept.map { it.str("type") })
+        val text = kept[1].obj("message").array("content").single().jsonObject.str("text").orEmpty()
+        assertTrue(text.startsWith("Checking the config\n\nagy ended"), text)
+    }
+
+    @Test
+    fun `a steered turn ignores an error on the first prompt while the second prompt is still running`() {
+        val steerUser = """{"type":"user","message":{"role":"user","content":"continue"},""" +
+            """"parent_tool_use_id":null,"priority":"next","uuid":"u-2"}"""
+        val prompt = lines(
+            "read l",
+            update(
+                """{"sessionUpdate":"tool_call","toolCallId":"t-steer","title":"Run ls","kind":"execute",""" +
+                    """"status":"pending","rawInput":{"command":"ls"}}""",
+            ),
+            "read l",
+            """echo '{"jsonrpc":"2.0","id":3,"error":{"code":-32001,"message":"superseded"}}'""",
+            update(
+                """{"sessionUpdate":"tool_call_update","toolCallId":"t-steer","status":"completed",""" +
+                    """"content":[{"type":"content","content":{"type":"text","text":"ok"}}]}""",
+            ),
+            answer(4, "end_turn"),
+            "read l",
+        )
+        val seen = rig("$opened\n$prompt") {
+            send(USER)
+            next { it.str("type") == "stream_event" && it.obj("event").str("type") == "content_block_stop" }
+            send(steerUser)
+            next { it.str("type") == "result" }
+        }
+        assertEquals("false", seen.last()["is_error"]?.jsonPrimitive?.content)
+        val toolResult = seen.filter { it.str("type") == "user" }
+            .flatMap { (it.obj("message")["content"] as? JsonArray).orEmpty().map { b -> b.jsonObject } }
+            .single { it.str("type") == "tool_result" }
+        assertEquals("t-steer", toolResult.str("tool_use_id"))
+        assertEquals("false", toolResult["is_error"]?.jsonPrimitive?.content)
+        assertEquals("ok", toolResult.str("content"))
+        seen.forEach { assertFalse("superseded" in it.toString()) }
+    }
+
     /** Desktop's session on the agent [script], driven by [drive]; every line Desktop received, in order. */
     private fun rig(
         script: String,

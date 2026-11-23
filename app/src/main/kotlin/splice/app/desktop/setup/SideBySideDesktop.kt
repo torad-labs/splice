@@ -13,8 +13,11 @@ import splice.client.desktop.DesktopAppConfig
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
+import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
+import splice.daemonclient.ControlPlaneClient
+import splice.daemonclient.MgmtKeyRead
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -75,10 +78,18 @@ internal class SideBySideDesktop(
         }
         val door = "http://127.0.0.1:$port$DOOR_PATH"
         val profile = prepareProfile(door)
+        publishBestEffort(port)
         val command = buildCommand(executable, profile, extraArgs)
         val extraEnv = buildEnv(profile)
         out.line("splice: launching Claude (Splice) on $door (profile $profile)")
         return starter.start(command, extraEnv)
+    }
+
+    private fun publishBestEffort(port: Int) {
+        Cancellables.runCatchingCancellable {
+            val key = (AdminSupport.readMgmtKey(env) as? MgmtKeyRead.Present)?.key ?: return@runCatchingCancellable
+            ControlPlaneClient.post("http://127.0.0.1:$port/api/desktop/publish", key, "{}", PUBLISH_TIMEOUT_MS)
+        }
     }
 
     private fun buildCommand(executable: Path, profile: Path, extraArgs: List<String>): List<String> = when {
@@ -130,7 +141,10 @@ internal const val SIDE_BY_SIDE_DIR_NAME: String = "claude-splice"
 internal const val SIDE_BY_SIDE_WM_CLASS: String = "ai.torad.claude-splice"
 internal const val SIDE_BY_SIDE_DESKTOP_FILE: String = "ai.torad.claude-splice.desktop"
 internal const val SIDE_BY_SIDE_APP_NAME: String = "Claude (Splice)"
+internal const val CLAUDE_SPLICE_DESKTOP_ENV: String = "CLAUDE_SPLICE_DESKTOP"
 
 private const val SIDE_BY_SIDE_CONFIG_ID = "splice-side-by-side"
 private const val SIDE_BY_SIDE_XDG_CONFIG_HOME = "XDG_CONFIG_HOME"
-private const val CLAUDE_SPLICE_DESKTOP_ENV = "CLAUDE_SPLICE_DESKTOP"
+
+// why: best-effort first-launch publish must not stall launching Claude Desktop if the daemon is busy or older
+private const val PUBLISH_TIMEOUT_MS = 3_000

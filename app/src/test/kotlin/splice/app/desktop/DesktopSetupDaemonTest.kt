@@ -121,7 +121,6 @@ class DesktopSetupDaemonTest {
                 env = fixtureEnv,
                 out = TerminalOutput {},
                 err = TerminalOutput {},
-                osName = "Linux",
             )
             val profile = sideBySide.prepareProfile(door)
             val configFile = profile.resolve("Claude-3p/configLibrary/splice-side-by-side.json")
@@ -144,6 +143,10 @@ class DesktopSetupDaemonTest {
         val binDir = Files.createDirectories(tmp.resolve("bin"))
         val claudeBin = binDir.resolve("claude-desktop").also { Files.writeString(it, "#!/bin/sh\n") }
         assertTrue(claudeBin.toFile().setExecutable(true))
+        val macBin = Files.createDirectories(home.resolve("Applications/Claude.app/Contents/MacOS"))
+            .resolve("Claude")
+            .also { Files.writeString(it, "#!/bin/sh\n") }
+        assertTrue(macBin.toFile().setExecutable(true))
         val fixture = mapOf(
             "HOME" to home.toString(),
             "XDG_CONFIG_HOME" to xdg.toString(),
@@ -160,7 +163,6 @@ class DesktopSetupDaemonTest {
                 out = TerminalOutput {},
                 err = TerminalOutput { errLines += it },
                 daemon = DaemonUp { true },
-                osName = "Linux",
                 starter = DesktopProcessStarter { cmd, _ ->
                     launched += cmd
                     0
@@ -169,7 +171,7 @@ class DesktopSetupDaemonTest {
             assertEquals(0, sideBySide.launch(emptyList()))
             assertTrue(errLines.isEmpty(), errLines.toString())
             assertEquals(1, launched.size)
-            val configFile = xdg.resolve("claude-splice/Claude-3p/configLibrary/splice-side-by-side.json")
+            val configFile = sideBySide.profileDir().resolve("Claude-3p/configLibrary/splice-side-by-side.json")
             val written = json.parseToJsonElement(Files.readString(configFile)).jsonObject
             val models = written.getValue("inferenceModels").jsonArray.map { it.jsonObject.str("name") }
             assertEquals(listOf("claude-opus-5-5"), models)

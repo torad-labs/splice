@@ -1,12 +1,14 @@
 // NEW: desktop-full (docs/specs/desktop-full.md, df-app-on). Claude Desktop's third-party ("3P") local configuration,
 // as Desktop 5.11492.5 reads it (Nov 18, 2026;
-// https://claude.com/docs/third-party/claude-desktop/configuration-format): a library folder,
-// `$XDG_CONFIG_HOME/Claude-3p/configLibrary/` (Electron's appData on Linux, `~/.config` when unset), that holds one
-// `<id>.json` per configuration and `_meta.json`, which lists them (`entries`, each `{id, name}`) and names the one
-// Desktop applies (`appliedId`). Desktop reads it at launch and opens in 3P mode when the applied
-// configuration names a provider. A managed configuration ([DESKTOP_MANAGED_FILE]) decides the
-// provider over any local one. splice writes one configuration of its own there, at the person's command, pointing
-// Desktop at its door as a gateway; the credential is a helper Desktop runs, so no key is ever in the library.
+// https://claude.com/docs/third-party/claude-desktop/configuration-format): a library folder under Electron's appData
+// (`$XDG_CONFIG_HOME/Claude-3p/configLibrary/` on Linux, `~/.config` when unset;
+// `~/Library/Application Support/Claude-3p/configLibrary/` on macOS, where Electron ignores `XDG_CONFIG_HOME`) that
+// holds one `<id>.json` per configuration and `_meta.json`, which lists them (`entries`, each `{id, name}`) and names
+// the one Desktop applies (`appliedId`). Desktop reads it at launch and opens in 3P mode when the applied
+// configuration names a provider. A managed configuration ([DESKTOP_MANAGED_FILE] on Linux, MDM plists under
+// `/Library/Managed Preferences/` on macOS) decides the provider over any local one. splice writes one configuration
+// of its own there, at the person's command, pointing Desktop at its door as a gateway; the credential is a helper
+// Desktop runs, so no key is ever in the library.
 package splice.client.desktop
 
 import kotlinx.serialization.json.JsonArray
@@ -23,27 +25,58 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /** Where Desktop keeps its 3P configuration, and what splice's own configuration and its `_meta.json` entry hold. */
-public class DesktopAppConfig(public val env: EnvReader = EnvReader(System::getenv)) {
-    /** The config folder Desktop keeps its data under: `$XDG_CONFIG_HOME`, `~/.config` when that is unset. */
+public class DesktopAppConfig(
+    public val env: EnvReader = EnvReader(System::getenv),
+    public val osName: String = System.getProperty("os.name").orEmpty(),
+    private val userName: String = System.getProperty("user.name").orEmpty(),
+    private val baseDir: Path? = null,
+) {
+    private val isMac: Boolean get() = osName.startsWith(DESKTOP_MAC_OS_PREFIX, ignoreCase = true)
+
+    /** The config folder Desktop keeps its data under: [baseDir] when explicitly supplied, otherwise
+     *  `~/Library/Application Support` on macOS (Electron uses Cocoa's `NSApplicationSupportDirectory` and ignores
+     *  `XDG_CONFIG_HOME`) and `$XDG_CONFIG_HOME` or `~/.config` on Linux. */
     private val home: Path
-        get() = env(XDG_CONFIG_HOME)?.takeIf(String::isNotBlank)?.let(Path::of)
-            ?: UserHome.dir(env).resolve(DOT_CONFIG)
+        get() = baseDir ?: if (isMac) {
+            UserHome.dir(env).resolve(DESKTOP_MAC_APP_SUPPORT)
+        } else {
+            env(XDG_CONFIG_HOME)?.takeIf(String::isNotBlank)?.let(Path::of)
+                ?: UserHome.dir(env).resolve(DOT_CONFIG)
+        }
 
     /** What makes and fills splice's policy, over the person's own Claude folder. */
     private val policies: DesktopPolicy get() = DesktopPolicy(ClaudeCodeSetup(UserHome.claudeDir(env)))
 
-    /** The library folder: `$XDG_CONFIG_HOME/Claude-3p/configLibrary`, `~/.config` when that is unset. */
+    /** The library folder: `<home>/Claude-3p/configLibrary` (`~/Library/Application Support` on macOS;
+     *  `$XDG_CONFIG_HOME` or `~/.config` on Linux; or [baseDir] when explicitly supplied). */
     public val library: Path get() = home.resolve(APP_DATA).resolve(LIBRARY)
 
+    /** The platform managed configuration files Desktop reads over any local configuration: on Linux,
+     *  [DESKTOP_MANAGED_FILE]; on macOS, the machine- and user-scope MDM preference plists under
+     *  `/Library/Managed Preferences/` (`com.anthropic.claudefordesktop.plist`). Checking file existence without
+     *  opening or parsing macOS MDM plists is intentionally conservative per `docs/specs/desktop-full.md`. */
+    public val managedFiles: List<Path>
+        get() = if (isMac) {
+            listOfNotNull(
+                Path.of(DESKTOP_MAC_MANAGED_PREFS_DIR, DESKTOP_MAC_MANAGED_PLIST),
+                userName.takeIf(String::isNotBlank)?.let {
+                    Path.of(DESKTOP_MAC_MANAGED_PREFS_DIR, it, DESKTOP_MAC_MANAGED_PLIST)
+                },
+            )
+        } else {
+            listOf(Path.of(DESKTOP_MANAGED_FILE))
+        }
+
     /** The configuration of each Claude Desktop started on a config folder of its own one folder below this one's
-     *  (`XDG_CONFIG_HOME=~/.config/<name>`): a second Desktop run beside the person's own, which keeps its claude.ai
-     *  account, has its library there. Only a folder that holds a library is one. */
+     *  (`~/.config/<name>` or `$XDG_CONFIG_HOME/<name>` on Linux, `~/Library/Application Support/<name>` on macOS):
+     *  a second Desktop run beside the person's own, which keeps its claude.ai account, has its library there. Only a
+     *  folder that holds a library is one. */
     public fun beside(): List<DesktopAppConfig> {
         if (!Files.isDirectory(home)) return emptyList()
         val folders = Files.newDirectoryStream(home) { Files.isDirectory(it.resolve(APP_DATA).resolve(LIBRARY)) }
             .use { it.toList() }
         return folders.sorted().map { folder ->
-            DesktopAppConfig(EnvReader { key -> if (key == XDG_CONFIG_HOME) folder.toString() else env(key) })
+            DesktopAppConfig(env = env, osName = osName, userName = userName, baseDir = folder)
         }
     }
 
@@ -132,9 +165,11 @@ public class DesktopAppConfig(public val env: EnvReader = EnvReader(System::gete
         (meta[ENTRIES] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
 }
 
-/** Where Claude Desktop's managed configuration is, the platform's one place: root's, read by Desktop over any local
- *  configuration. Nothing in the environment moves it. splice only asks whether it exists, and never opens it. */
-public const val DESKTOP_MANAGED_FILE: String = "/etc/claude-desktop/managed-settings.json"
+/** Where Claude Desktop's managed configuration lives on Linux: root's file, read by Desktop over any local
+ *  configuration. On macOS Desktop reads MDM plists under `/Library/Managed Preferences/` instead (see
+ *  [DesktopAppConfig.managedFiles]). Nothing in the environment moves it. splice only asks whether it exists, and
+ *  never opens it. */
+internal const val DESKTOP_MANAGED_FILE: String = "/etc/claude-desktop/managed-settings.json"
 
 /** The header every request Desktop sends in app mode carries, which splice writes into its configuration's custom
  *  headers: how the door tells an app-mode request from a standard one. */
@@ -154,6 +189,10 @@ private const val HELPER_TTL_SEC = 300
 
 private const val XDG_CONFIG_HOME = "XDG_CONFIG_HOME"
 private const val DOT_CONFIG = ".config"
+private const val DESKTOP_MAC_OS_PREFIX = "Mac"
+private const val DESKTOP_MAC_APP_SUPPORT = "Library/Application Support"
+private const val DESKTOP_MAC_MANAGED_PREFS_DIR = "/Library/Managed Preferences"
+private const val DESKTOP_MAC_MANAGED_PLIST = "com.anthropic.claudefordesktop.plist"
 private const val APP_DATA = "Claude-3p"
 private const val LIBRARY = "configLibrary"
 private const val LIBRARY_FILE_SUFFIX = ".json"

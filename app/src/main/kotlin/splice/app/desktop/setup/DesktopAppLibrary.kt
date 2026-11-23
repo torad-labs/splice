@@ -15,7 +15,6 @@ package splice.app.desktop.setup
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.app.desktop.record.DesktopAppRecord
-import splice.client.desktop.DESKTOP_MANAGED_FILE
 import splice.client.desktop.DesktopAppConfig
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
@@ -27,17 +26,28 @@ internal class DesktopAppLibrary(
     private val config: DesktopAppConfig = DesktopAppConfig(),
     /** The policy the build ships, which what the person set up in Claude Code is laid over. */
     private val defaults: DesktopPolicyDefaults = DesktopPolicyDefaults(),
-    private val profileSync: DesktopProfileSync = DesktopProfileSync(config.env),
+    private val profileSync: DesktopProfileSync = DesktopProfileSync(config.env, config.osName),
+    private val managedPaths: List<Path> = config.managedFiles,
 ) {
     private val files = DesktopLibraryFiles()
+
+    /** The first existing managed configuration file for this platform (or the test fixture when redirected).
+     *  Checking file existence without opening or parsing macOS MDM plists is intentionally conservative per
+     *  `docs/specs/desktop-full.md`. */
+    private val managedFile: Path?
+        get() = (DesktopManagedPolicy.redirected?.let(::listOf) ?: managedPaths)
+            .firstOrNull { Files.exists(it, LinkOption.NOFOLLOW_LINKS) }
 
     /** Why splice's configuration can't be put in now, or null when it can: a managed configuration exists (which
      *  decides Desktop's provider over any local one; only its existence is asked), the library holds a file splice
      *  can't read, or the library can't be written. */
-    fun refusal(): String? = when {
-        managed() -> "${DesktopManagedPolicy.file} $MANAGED_DECIDES"
-        !Files.isDirectory(config.library) -> files.unwritable(config.library)
-        else -> unreadable(config.library) ?: files.unwritable(config.library)
+    fun refusal(): String? {
+        val activeManaged = managedFile
+        return when {
+            activeManaged != null -> "$activeManaged $MANAGED_DECIDES"
+            !Files.isDirectory(config.library) -> files.unwritable(config.library)
+            else -> unreadable(config.library) ?: files.unwritable(config.library)
+        }
     }
 
     /** splice's configuration [id] put in and applied, pointing Desktop at [door] with the credential [helper]. [held]
@@ -87,7 +97,7 @@ internal class DesktopAppLibrary(
     }
 
     /** Whether a managed configuration exists, asked of its existence alone. */
-    fun managed(): Boolean = Files.exists(DesktopManagedPolicy.file, LinkOption.NOFOLLOW_LINKS)
+    fun managed(): Boolean = managedFile != null
 
     /** The door address splice's configuration [id] gives Desktop, or null when it gives none. */
     fun doorOf(id: String): String? = files.read(config.file(id))?.let(config::door)
@@ -146,15 +156,12 @@ internal class DesktopAppLibrary(
     }
 }
 
-/** The managed configuration's path as this process reads it: the platform's ([DESKTOP_MANAGED_FILE]), root's, which
- *  decides Desktop's provider over any local one. [within] is the test seam: a test lends the process a fixture path
- *  for one block, since the machine running it may have a managed file of its own. */
+/** Test seam for redirecting Claude Desktop's managed configuration check away from the host's platform files
+ *  ([DesktopAppConfig.managedFiles]). [within] lends the process a fixture path for one block so tests never
+ *  depend on whether the machine running them carries a managed configuration of its own. */
 internal object DesktopManagedPolicy {
     @Volatile
     var redirected: Path? = null
-
-    /** The managed configuration's path. */
-    val file: Path get() = redirected ?: Path.of(DESKTOP_MANAGED_FILE)
 
     /** [block] run with [fixture] as the managed configuration's path, then the platform's again. */
     inline fun <T> within(fixture: Path, block: () -> T): T {

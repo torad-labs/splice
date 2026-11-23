@@ -43,7 +43,7 @@ class DesktopSetupTest {
         )
         EnvReader { vars[it] }
     }
-    private val library by lazy { tmp.resolve("config/Claude-3p/configLibrary") }
+    private val library by lazy { DesktopAppConfig(env).library }
     private val records by lazy { DesktopRecords(tmp.resolve("state/desktop.json")) {} }
     private val app by lazy {
         DesktopAppMode(records, DesktopAppLibrary(DesktopAppConfig(env)), DesktopPrograms(tmp.resolve("state")))
@@ -60,7 +60,7 @@ class DesktopSetupTest {
         assertTrue("desktop launch --state-dir" in Files.readString(launch), "it needs no variable of splice's")
         app.takeOut()
         assertFalse(Files.exists(library), "the folder splice made is gone")
-        assertFalse(Files.exists(tmp.resolve("config/Claude-3p/configLibrary/_meta.json")))
+        assertFalse(Files.exists(library.resolve("_meta.json")))
         assertFalse(Files.exists(tmp.resolve("state/desktop-credential")))
         assertFalse(Files.exists(tmp.resolve("state/desktop-launch")))
     }

@@ -36,10 +36,15 @@ internal class SideBySideDesktop(
 ) {
     private val paths = StatePaths(envReader = env)
 
-    /** The isolated config root (`~/.config/claude-splice`) that `DesktopAppConfig.beside()` discovers automatically. */
+    /** The isolated config root (`~/.config/claude-splice` on Linux, `~/Library/Application Support/claude-splice` on
+     *  macOS) that `DesktopAppConfig.beside()` discovers automatically. */
     fun profileDir(): Path {
-        val base = env(SIDE_BY_SIDE_XDG_CONFIG_HOME)?.takeIf { it.isNotBlank() }?.let(Path::of)
-            ?: UserHome.dir(env).resolve(".config")
+        val base = if (isMac()) {
+            UserHome.dir(env).resolve("Library/Application Support")
+        } else {
+            env(SIDE_BY_SIDE_XDG_CONFIG_HOME)?.takeIf { it.isNotBlank() }?.let(Path::of)
+                ?: UserHome.dir(env).resolve(".config")
+        }
         return base.resolve(SIDE_BY_SIDE_DIR_NAME)
     }
 
@@ -52,8 +57,7 @@ internal class SideBySideDesktop(
         val records = DesktopRecords(paths.desktopFile, log)
         if (!records.get().on) records.update { it.copy(on = true) }
         val helper = DesktopPrograms(paths.stateDir).lay()
-        val isolatedEnv = EnvReader { key -> if (key == SIDE_BY_SIDE_XDG_CONFIG_HOME) profile.toString() else env(key) }
-        val config = DesktopAppConfig(isolatedEnv)
+        val config = DesktopAppConfig(env = env, osName = osName, baseDir = profile)
         val library = DesktopAppLibrary(config, profileSync = DesktopProfileSync(env, osName))
         val applied = DesktopLibraryFiles().read(config.meta)?.let(config::applied)
         val alreadyOnDoor = applied?.let(library::doorOf)?.trimEnd('/') == door.trimEnd('/')
@@ -94,14 +98,16 @@ internal class SideBySideDesktop(
     }
 
     private fun buildCommand(executable: Path, profile: Path, extraArgs: List<String>): List<String> = when {
-        isMac() -> listOf(executable.toString(), "--user-data-dir=$profile") + extraArgs
+        isMac() -> listOf(executable.toString(), "--user-data-dir=${profile.resolve("Claude-3p")}") + extraArgs
         else -> listOf(executable.toString(), "--class=$SIDE_BY_SIDE_WM_CLASS") + extraArgs
     }
 
     private fun buildEnv(profile: Path): Map<String, String> = buildMap {
-        put(SIDE_BY_SIDE_XDG_CONFIG_HOME, profile.toString())
+        if (!isMac()) {
+            put(SIDE_BY_SIDE_XDG_CONFIG_HOME, profile.toString())
+            put("CHROME_DESKTOP", SIDE_BY_SIDE_DESKTOP_FILE)
+        }
         put(CLAUDE_SPLICE_DESKTOP_ENV, "1")
-        if (!isMac()) put("CHROME_DESKTOP", SIDE_BY_SIDE_DESKTOP_FILE)
     }
 
     internal fun findClaudeDesktop(): Path? {

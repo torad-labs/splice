@@ -30,6 +30,7 @@ import splice.app.desktop.record.DesktopKey
 import splice.app.desktop.setup.DesktopManagedPolicy
 import splice.app.desktop.setup.DesktopProcessStarter
 import splice.app.desktop.setup.SideBySideDesktop
+import splice.client.desktop.DesktopAppConfig
 import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -83,18 +84,19 @@ class DesktopSetupDaemonTest {
         val home = Files.createDirectories(tmp.resolve("home"))
         val settings = Files.createDirectories(home.resolve(".claude")).resolve("settings.json")
         Files.writeString(settings, """{"model":"claude-opus-5-5","env":{"FOO":"1"}}""")
-        val library = Files.createDirectories(tmp.resolve("config/Claude-3p/configLibrary"))
+        val xdg = tmp.resolve("config").toString()
+        // The daemon's environment: Desktop's configuration under the fixture home, never the person's.
+        val fixture = mapOf(
+            "HOME" to home.toString(),
+            "XDG_CONFIG_HOME" to xdg,
+        )
+        val fixtureEnv = EnvReader { fixture[it] }
+        val library = Files.createDirectories(DesktopAppConfig(fixtureEnv).library)
         // The person's own configuration, applied, which `on` stands in for and `off` puts back.
         val theirs = "0b7e3c1a-1111-4c2d-9e8f-123456789abc"
         val meta = """{"appliedId":"$theirs","entries":[{"id":"$theirs","name":"Work Bedrock"}]}"""
         Files.writeString(library.resolve("_meta.json"), meta)
         Files.writeString(library.resolve("$theirs.json"), """{"inferenceProvider":"bedrock"}""")
-        val xdg = tmp.resolve("config").toString()
-        // The daemon's environment: Desktop's configuration under the fixture home, never the person's.
-        val fixture = mapOf(
-            "XDG_CONFIG_HOME" to xdg,
-        )
-        val fixtureEnv = EnvReader { fixture[it] }
         withDaemon(tmp, home, fixtureEnv) { statePaths, mgmt ->
             on(mgmt, library, theirs, statePaths)
             desktopAsks(statePaths, mgmt)
@@ -119,7 +121,6 @@ class DesktopSetupDaemonTest {
                 env = fixtureEnv,
                 out = TerminalOutput {},
                 err = TerminalOutput {},
-                osName = "Linux",
             )
             val profile = sideBySide.prepareProfile(door)
             val configFile = profile.resolve("Claude-3p/configLibrary/splice-side-by-side.json")
@@ -142,6 +143,10 @@ class DesktopSetupDaemonTest {
         val binDir = Files.createDirectories(tmp.resolve("bin"))
         val claudeBin = binDir.resolve("claude-desktop").also { Files.writeString(it, "#!/bin/sh\n") }
         assertTrue(claudeBin.toFile().setExecutable(true))
+        val macBin = Files.createDirectories(home.resolve("Applications/Claude.app/Contents/MacOS"))
+            .resolve("Claude")
+            .also { Files.writeString(it, "#!/bin/sh\n") }
+        assertTrue(macBin.toFile().setExecutable(true))
         val fixture = mapOf(
             "HOME" to home.toString(),
             "XDG_CONFIG_HOME" to xdg.toString(),
@@ -158,7 +163,6 @@ class DesktopSetupDaemonTest {
                 out = TerminalOutput {},
                 err = TerminalOutput { errLines += it },
                 daemon = DaemonUp { true },
-                osName = "Linux",
                 starter = DesktopProcessStarter { cmd, _ ->
                     launched += cmd
                     0
@@ -167,7 +171,7 @@ class DesktopSetupDaemonTest {
             assertEquals(0, sideBySide.launch(emptyList()))
             assertTrue(errLines.isEmpty(), errLines.toString())
             assertEquals(1, launched.size)
-            val configFile = xdg.resolve("claude-splice/Claude-3p/configLibrary/splice-side-by-side.json")
+            val configFile = sideBySide.profileDir().resolve("Claude-3p/configLibrary/splice-side-by-side.json")
             val written = json.parseToJsonElement(Files.readString(configFile)).jsonObject
             val models = written.getValue("inferenceModels").jsonArray.map { it.jsonObject.str("name") }
             assertEquals(listOf("claude-opus-5-5"), models)

@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
@@ -95,6 +96,12 @@ class McpHarnessRoutesTest {
         }.start(wait = false)
         val boundPort = runBlocking { server.engine.resolvedConnectors().first().port }
         baseUrl = "http://127.0.0.1:$boundPort"
+    }
+
+    @BeforeEach
+    fun resetFixtures() {
+        Files.deleteIfExists(McpUserRegistry(statePaths).file)
+        seedFixtures(homeDir)
     }
 
     @AfterAll

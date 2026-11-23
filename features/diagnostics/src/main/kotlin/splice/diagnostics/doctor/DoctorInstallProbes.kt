@@ -8,11 +8,15 @@ package splice.diagnostics.doctor
 
 import splice.core.config.InstallPaths
 import splice.core.config.RunningJar
+import splice.core.retired.CommandRetirements
+import splice.core.topology.CLAUDE_SPLICE_COMMAND
+import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import splice.launch.install.InstallShim
 import splice.topology.TopologyLoader
+import splice.topology.TopologyStatePaths
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
@@ -41,18 +45,37 @@ internal class DoctorInstallProbes(private val probes: DoctorProbes, private val
     internal fun installationChecks(topo: DoctorTopology, envReader: EnvReader): List<DoctorCheck> {
         val paths = InstallPaths(envReader = envReader)
         val topology = (topo as? DoctorTopology.Parsed)?.topology
-        val commands = topology?.heads?.map { (k, h) -> h.claude.command ?: k }.orEmpty() + "splice"
+        val heads = topology?.heads?.map { (k, h) -> k to (h.claude.command ?: k) }.orEmpty()
+        // A retired command (`splice claude retire`, or a plan `splice setup` connected) has no link on purpose: its
+        // head keeps serving `claude` through the gateway, so the missing link is the state the person chose.
+        val retired = topology?.let { retirements(it, envReader) }.orEmpty()
+        val (gone, linked) = heads.partition { (key, _) -> key in retired }
+        val commands = linked.map { it.second } + "splice"
         val shim = paths.shareDir.resolve("splice-launch")
         // Orphans are judged only against a PARSED topology: with none, every head's wrapper would
         // read as a command no head claims.
         // The wrapped `claude` is the wrapper the claude-head prerequisite reports, so it is claimed too (V4-445).
-        val claimed = commands.toSet() + listOfNotNull(probes.wrappedCommand())
+        // `claude-splice` is the side-by-side launcher `splice setup` links onto the shim; no head names it.
+        val claimed = heads.map { it.second }.toSet() + commands + CLAUDE_SPLICE_COMMAND +
+            listOfNotNull(probes.wrappedCommand())
         val orphans = if (topology == null) emptyList() else path.orphanWrappers(paths.binDir, shim, claimed)
         return listOf(jarCheck(), shimCheck(shim, envReader)) +
             commands.map { path.wrapperCheck(paths.binDir.resolve(it), it) } +
+            gone.map { (key, command) -> retiredCheck(command, retired.getValue(key)) } +
             orphans +
             path.check(paths.binDir, envReader)
     }
+
+    /** Each retired head's key, with the selector its models run as in `claude` (null when it pins none). */
+    private fun retirements(topology: Topology, env: EnvReader): Map<String, String?> =
+        CommandRetirements(TopologyStatePaths(env).of(topology).stateDir).all().associate { it.key to it.selector }
+
+    private fun retiredCheck(command: String, selector: String?): DoctorCheck = DoctorCheck(
+        WRAPPER_CHECK,
+        CheckStatus.INFO,
+        "'$command' is retired: its models run in `claude` (${selector?.let { "/model $it" } ?: "/model"})",
+        notes = DoctorCheckNotes(command = command),
+    )
 
     private fun jarCheck(): DoctorCheck {
         val version = TopologyLoader.gatewayVersion()
@@ -204,3 +227,6 @@ internal class DoctorInstallProbes(private val probes: DoctorProbes, private val
 }
 
 private const val VERSION_MAX_CHARS = 48
+
+// The row a command's link is reported under, as DoctorPathCheck names it.
+private const val WRAPPER_CHECK = "wrapper"

@@ -1,0 +1,146 @@
+// `splice setup --update`, and the launcher offer it shares with the wizard: an existing install is asked only about
+// what it does not have yet, the plans it has are never asked again, and Claude (Splice) is offered only where Claude
+// Desktop is installed.
+package splice.app.cli.setup
+
+import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.app.capability.Capabilities
+import splice.app.capability.DesktopFacts
+import splice.app.capability.HarnessFacts
+import splice.app.capability.HubFacts
+import splice.app.capability.WrapperState
+import splice.app.desktop.setup.DesktopMode
+import splice.core.config.UserHome
+import splice.core.util.EnvReader
+import splice.terminal.ConfirmPrompt
+import splice.terminal.MultiSelectOutcome
+import splice.terminal.SelectOption
+import splice.terminal.Spinner
+import splice.terminal.WizardFrame
+import java.nio.file.Files
+import java.nio.file.Path
+
+class SetupUpdateTest {
+
+    @Test
+    fun `Claude (Splice) is not offered where Claude Desktop is not installed, and the reason is said`() {
+        val offered = mutableListOf<String>()
+        val said = StringBuilder()
+        val choice = SetupLaunchers(EnvReader { null }, osName = "Linux").offer(
+            prompts(said, launchers = { options -> offered += options.map { it.value } }),
+            desktop(program = null),
+        )
+        assertEquals(LauncherChoice(), choice)
+        assertEquals(listOf(OPT_CLI), offered)
+        assertTrue("Claude Desktop is not installed here" in said, said.toString())
+    }
+
+    @Test
+    fun `with Claude Desktop found, both launchers are offered and splice desktop on is named beside them`() {
+        val offered = mutableListOf<String>()
+        val said = StringBuilder()
+        SetupLaunchers(EnvReader { null }, osName = "Linux")
+            .offer(prompts(said, launchers = { options -> offered += options.map { it.value } }), desktop())
+        assertEquals(listOf(OPT_CLI, OPT_DESKTOP_APP), offered)
+        assertTrue("splice desktop on" in said, said.toString())
+    }
+
+    @Test
+    fun `an update offers no launcher that is already installed, and asks nothing when none is left`() {
+        var asked = 0
+        val choice = SetupLaunchers(EnvReader { null }, osName = "Linux").offer(
+            prompts(StringBuilder(), launchers = { asked++ }),
+            desktop(cli = true, app = true),
+            onlyNew = true,
+        )
+        assertEquals(LauncherChoice(), choice)
+        assertEquals(0, asked)
+    }
+
+    @Test
+    fun `an update with no splice set up says so and changes nothing`(@TempDir home: Path) {
+        val said = StringBuilder()
+        val ok = UserHome.within(home) {
+            runBlocking { update(said, facts = null).run() }
+        }
+        assertFalse(ok)
+        assertTrue("not set up here yet" in said, said.toString())
+        assertFalse(Files.exists(home.resolve(".config/splice/splice.toml")))
+    }
+
+    @Test
+    fun `an update of an install that has everything asks nothing and says there is nothing new`(@TempDir home: Path) {
+        val said = StringBuilder()
+        var checkups = 0
+        val toml = home.resolve(".config/splice/splice.toml")
+        val ok = UserHome.within(home) {
+            Files.createDirectories(toml.parent)
+            Files.writeString(toml, "[daemon]\ncontrol_port = 3096\nauto_update = false\n")
+            val complete = desktop(cli = true, app = true).copy(mode = DesktopMode.APP, wrapper = WrapperState.SPLICE)
+            runBlocking { update(said, facts = complete, onCheckup = { checkups++ }).run() }
+        }
+        assertTrue(ok)
+        assertTrue("Nothing new to set up" in said, said.toString())
+        assertEquals(1, checkups, "an update ends on the doctor, as setup does")
+        assertEquals("[daemon]\ncontrol_port = 3096\nauto_update = false\n", Files.readString(toml), "nothing written")
+    }
+
+    @Test
+    fun `an update says the managed processWrapper only root can fix`(@TempDir home: Path) {
+        val said = StringBuilder()
+        UserHome.within(home) {
+            val toml = Files.createDirectories(home.resolve(".config/splice")).resolve("splice.toml")
+            Files.writeString(toml, "[daemon]\ncontrol_port = 3096\nauto_update = false\n")
+            val other = desktop(cli = true, app = true).copy(mode = DesktopMode.APP, wrapper = WrapperState.OTHER)
+            runBlocking { update(said, facts = other).run() }
+        }
+        assertTrue("processWrapper names another program" in said, said.toString())
+    }
+
+    private fun update(said: StringBuilder, facts: DesktopFacts?, onCheckup: () -> Unit = {}): SetupUpdate {
+        val env = EnvReader { null }
+        val capabilities = facts?.let {
+            val harness = HarnessFacts(null, null, geminiShim = true, synced = emptySet())
+            Capabilities(it, harness, HubFacts(linux = true, on = false, systemd = true), autoUpdate = false)
+        }
+        return SetupUpdate(
+            prompts(said, console = false),
+            env,
+            SetupEffects(
+                env,
+                add = object : ProfileAdd {
+                    override suspend fun invoke(name: String): Boolean = error("an update adds no plan")
+
+                    override fun checkup(env: EnvReader) = onCheckup()
+                },
+            ),
+            detect = { SetupFacts(emptySet(), emptySet(), openRouterKey = false, daemonUp = false, capabilities) },
+            desktopOn = { error("nothing asked for splice desktop on") },
+        )
+    }
+
+    private fun prompts(
+        said: StringBuilder,
+        console: Boolean = true,
+        launchers: (List<SelectOption<String>>) -> Unit = {},
+    ) = SetupPrompts(
+        frame = WizardFrame(out = said, ask = ConfirmPrompt { _, default -> default }),
+        pickLaunchers = HeadPicker { options, _ ->
+            launchers(options)
+            MultiSelectOutcome.Chosen(emptyList())
+        },
+        spinner = Spinner(tty = false),
+        hasConsole = { console },
+    )
+
+    private fun desktop(
+        program: Path? = Path.of("/usr/bin/claude-desktop"),
+        cli: Boolean = false,
+        app: Boolean = false,
+    ) = DesktopFacts(program, DesktopMode.OFF, cli, app, WrapperState.NONE)
+}

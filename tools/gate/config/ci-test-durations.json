@@ -98,7 +98,6 @@
   "splice.app.cli.sessions.StandInDaemon": 0,
   "splice.app.cli.setup.ClaudeLaneTest": 0.106,
   "splice.app.cli.setup.ClaudeLaneTestKt": 0,
-  "splice.app.cli.setup.ClaudeWrapReplyTest": 0.004,
   "splice.app.cli.setup.FakeRig": 0,
   "splice.app.cli.setup.ProcessRigTest": 1.061,
   "splice.app.cli.setup.RigRefusalsTest": 0.03,

@@ -20,6 +20,10 @@ import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
 
+/** The catalogue row for Claude on the person's own plan (AddProfileCatalog's `claude`), which the tick list never
+ *  offers: `claude` runs on splice's door, and `splice add claude` adds that head by command. */
+internal const val CLAUDE_PROFILE: String = "claude"
+
 /** One head the wizard can still sign in. Shared with SetupCommand.kt across the 2026-09-16
  *  split, hence internal rather than file-private. */
 internal data class PendingOAuthHead(val key: String, val command: String)
@@ -45,8 +49,13 @@ internal fun interface ModelPicker {
 internal fun interface ProfileAdd {
     suspend operator fun invoke(name: String): Boolean
 
-    /** The checkup once the last head is added. An add that is not the real one has none to run. */
+    /** The checkup at the end of setup. An add that is not the real one has none to run. */
     fun checkup(env: EnvReader) = Unit
+
+    /** The commands of the heads keyed [keys] retired (`splice claude retire`): custom head commands are deprecated,
+     *  so a plan setup connects serves its models in `claude` and keeps no command of its own. An add that is not the
+     *  real one retires nothing. */
+    fun retire(keys: List<String>, env: EnvReader) = Unit
 }
 
 /** Tick-list + install loop so SetupCommand stays under the function ceiling. */
@@ -71,8 +80,7 @@ internal class SetupHeads(
 
     /** Returns what LANDED, which is a different list from what was ticked: `splice add` refuses a
      *  command collision or a topology that stops parsing. The daemon restarts once, after the last head, so it boots
-     *  on every head that landed; with none landed nothing restarts, and linking `claude` starts the daemon itself
-     *  (DaemonClaudeWrap). */
+     *  on every head that landed; with none landed nothing restarts. */
     suspend fun addAll(names: List<String>): List<String> {
         if (names.isEmpty()) return emptyList()
         val landed = mutableListOf<String>()
@@ -85,6 +93,9 @@ internal class SetupHeads(
         if (landed.isNotEmpty()) parts += "added ${landed.joinToString(", ")}"
         if (failed.isNotEmpty()) parts += "failed ${failed.joinToString(", ")}"
         println(parts.joinToString("; "))
+        // Each plan serves `claude` through the gateway; the command `splice add` linked for it is a deprecated custom
+        // head, which `splice doctor` would warn about right after setup made it (Nov 23, 2026).
+        if (landed.isNotEmpty()) add.retire(landed.map { profiles.find(it)?.head?.key ?: it }, env)
         return landed
     }
 

@@ -2,6 +2,10 @@
 // confirms. Split from SetupCommand, which runs the flow.
 package splice.app.cli.setup
 
+import splice.app.capability.Capabilities
+import splice.app.capability.DesktopFacts
+import splice.app.capability.WrapperState
+import splice.app.desktop.setup.DesktopMode
 import splice.configuration.add.AddProfiles
 import splice.core.topology.AuthKindRegistry
 import splice.terminal.WizardFrame
@@ -21,7 +25,30 @@ internal class SetupMenu(private val frame: WizardFrame, private val profiles: A
         }
         if (facts.openRouterKey) bits.add("an OpenRouter key")
         if (facts.daemonUp) bits.add("splice running")
+        facts.capabilities?.let { bits.addAll(tools(it)) }
         if (bits.isNotEmpty()) frame.step("Found here: ${bits.joinToString(", ")}")
+    }
+
+    /** The optional programs found, each in a few words: Claude Desktop with the mode splice has it in, agy and codex,
+     *  and a managed processWrapper where Claude Code's managed settings name one. */
+    private fun tools(facts: Capabilities): List<String> = buildList {
+        val desktop = facts.desktop
+        if (desktop.program != null) add("Claude Desktop (${mode(desktop)})")
+        if (facts.harness.agy != null) add("agy")
+        if (facts.harness.codex != null) add("codex")
+        when (desktop.wrapper) {
+            WrapperState.SPLICE -> add("a managed processWrapper on splice's desktop-launch")
+            WrapperState.OTHER -> add("a managed processWrapper naming another program")
+            WrapperState.NONE -> Unit
+        }
+    }
+
+    /** Claude Desktop's mode in the words the rest of the wizard uses. */
+    private fun mode(desktop: DesktopFacts): String = when (desktop.mode) {
+        DesktopMode.APP -> "all of it on splice"
+        DesktopMode.STANDARD -> "on splice's older Code-tab door"
+        DesktopMode.OTHER -> "on another configuration"
+        DesktopMode.OFF -> if (desktop.sideBySideApp) "Claude (Splice) beside it" else "not on splice"
     }
 
     fun summaryLines(path: Path, bin: Path, heads: List<String>, launchLines: List<String>): List<String> {
@@ -36,7 +63,12 @@ internal class SetupMenu(private val frame: WizardFrame, private val profiles: A
         val adding = if (heads.isEmpty()) {
             emptyList()
         } else {
-            listOf("Plans to connect: ${heads.joinToString(", ")}")
+            // Said before the confirm: setup retires each plan's command once it is added (SetupHeads.addAll).
+            listOf(
+                "Plans to connect: ${heads.joinToString(", ")}",
+                "Their models run in `claude` (`/model`); custom head commands are deprecated, so none is kept " +
+                    "(`splice claude restore <name>` brings one back)",
+            )
         }
         val keys = if (heads.any { name -> profiles.find(name)?.provider?.authKind == API_KEY_KIND }) {
             listOf("API keys written by splice add (keys.toml, 0600)")

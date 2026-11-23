@@ -4,6 +4,8 @@
 // bearer (LocalProbeInputs), the same transport the boot refusal probes with.
 package splice.app
 
+import splice.app.capability.CapabilityLook
+import splice.app.capability.CapabilityTools
 import splice.app.cli.AdminSupport
 import splice.app.desktop.lane.ClaudeLaneLook
 import splice.app.desktop.setup.DesktopLook
@@ -18,6 +20,7 @@ import splice.diagnostics.doctor.DaemonAnswers
 import splice.diagnostics.doctor.DoctorCommand
 import splice.diagnostics.doctor.DoctorFixes
 import splice.diagnostics.doctor.LocalRuntimeTransport
+import splice.diagnostics.doctor.ToolsRead
 import splice.topology.TopologyStatePaths
 
 internal object DoctorWiring {
@@ -38,6 +41,9 @@ internal object DoctorWiring {
             val log = LogSink { System.err.print(it) }
             ClaudeLaneLook(topology, paths, log).reading().copy(desktop = DesktopLook(paths, env, log).reading())
         },
+        // The optional programs splice works beside (Claude Desktop, agy, Codex, systemd for the MCP hub), read where the
+        // executable keeps them.
+        tools = ToolsRead { _, env -> CapabilityTools(CapabilityLook(env).read()).readings() },
     )
 
     /** The console's /api/doctor body: the `--json` report under the daemon's own environment, reading

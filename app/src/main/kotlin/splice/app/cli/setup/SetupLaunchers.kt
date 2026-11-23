@@ -4,6 +4,7 @@
 // optionally installs convenience shortcuts (`claude-splice` binary + OS Applications launcher).
 package splice.app.cli.setup
 
+import splice.app.capability.DesktopFacts
 import splice.app.desktop.setup.AppLauncherInstall
 import splice.app.desktop.setup.SIDE_BY_SIDE_APP_NAME
 import splice.app.desktop.setup.SideBySideLaunchers
@@ -28,25 +29,16 @@ internal class SetupLaunchers(
 ) {
     private val appLaunchers = SideBySideLaunchers(env, osName)
 
-    /** Explains side-by-side launching and asks which optional shortcuts to install (none in non-TTY). */
-    fun offer(prompts: SetupPrompts): LauncherChoice? {
-        prompts.frame.step(
-            "Default claude and Claude Desktop stay on your personal account. " +
-                "Run `splice launch claude` or `splice launch claude-desktop` anytime.",
-        )
-        if (!prompts.hasConsole()) return LauncherChoice()
-        val options = listOf(
-            SelectOption(
-                value = OPT_CLI,
-                label = CLAUDE_SPLICE_COMMAND,
-                hint = "CLI launcher in ~/.local/bin/$CLAUDE_SPLICE_COMMAND",
-            ),
-            SelectOption(
-                value = OPT_DESKTOP_APP,
-                label = SIDE_BY_SIDE_APP_NAME,
-                hint = "App launcher in ${appLaunchers.platformHint()}",
-            ),
-        )
+    /** Explains the two ways onto splice, side by side or all of Claude Desktop, and asks which optional shortcuts to
+     *  install (none in non-TTY). The Claude (Splice) app launcher is offered only where Claude Desktop is installed,
+     *  or where nothing looked ([desktop] null). With [onlyNew] (`splice setup --update`), a launcher already installed
+     *  is not offered again; with nothing left to offer, nothing is asked. */
+    fun offer(prompts: SetupPrompts, desktop: DesktopFacts? = null, onlyNew: Boolean = false): LauncherChoice? {
+        val options = options(desktop, onlyNew)
+        // An update with every launcher installed has nothing to say about them.
+        if (onlyNew && options.isEmpty()) return LauncherChoice()
+        intro(prompts, desktop == null || desktop.program != null)
+        if (!prompts.hasConsole() || options.isEmpty()) return LauncherChoice()
         return when (val picked = prompts.pickLaunchers(options, emptySet())) {
             is MultiSelectOutcome.Chosen -> LauncherChoice(
                 cliShortcut = OPT_CLI in picked.values,
@@ -54,6 +46,40 @@ internal class SetupLaunchers(
             )
             MultiSelectOutcome.Cancelled -> null
         }
+    }
+
+    /** The two ways onto splice, in words: side by side, or all of Claude Desktop where it is installed. */
+    private fun intro(prompts: SetupPrompts, desktopFound: Boolean) {
+        prompts.frame.step(
+            "Default claude and Claude Desktop stay on your personal account. " +
+                "Run `splice launch claude` or `splice launch claude-desktop` anytime to use splice beside them.",
+        )
+        prompts.frame.step(
+            if (desktopFound) {
+                "To put all of Claude Desktop (Chat, Cowork, Code) on splice instead: $DESKTOP_ON"
+            } else {
+                "Claude Desktop is not installed here, so its Claude (Splice) launcher is not offered."
+            },
+        )
+    }
+
+    /** The launchers to offer: `claude-splice`, and Claude (Splice) where Claude Desktop is installed (or nothing
+     *  looked); with [onlyNew], neither one already installed. */
+    private fun options(desktop: DesktopFacts?, onlyNew: Boolean): List<SelectOption<String>> {
+        val cliDone = onlyNew && desktop?.sideBySideCli == true
+        val appOffered = (desktop == null || desktop.program != null) && !(onlyNew && desktop?.sideBySideApp == true)
+        return listOfNotNull(
+            SelectOption(
+                value = OPT_CLI,
+                label = CLAUDE_SPLICE_COMMAND,
+                hint = "CLI launcher in ~/.local/bin/$CLAUDE_SPLICE_COMMAND",
+            ).takeUnless { cliDone },
+            SelectOption(
+                value = OPT_DESKTOP_APP,
+                label = SIDE_BY_SIDE_APP_NAME,
+                hint = "App launcher in ${appLaunchers.platformHint()}",
+            ).takeIf { appOffered },
+        )
     }
 
     /** Summary lines shown before confirmation. */
@@ -87,3 +113,6 @@ internal class SetupLaunchers(
 
 internal const val OPT_CLI: String = "claude-splice"
 internal const val OPT_DESKTOP_APP: String = "claude-desktop-app"
+
+// The full-app way onto splice, beside the side-by-side launchers.
+private const val DESKTOP_ON = "splice desktop on"

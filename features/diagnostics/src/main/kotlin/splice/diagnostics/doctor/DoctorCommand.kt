@@ -45,10 +45,12 @@ public class DoctorCommand(
     local: LocalRuntimeTransport,
     private val accountPools: AccountPoolRead = JdkAccountPoolRead(),
     lane: ClaudeLaneRead = ClaudeLaneRead { _, _ -> null },
+    tools: ToolsRead = ToolsRead { _, _ -> emptyList() },
 ) {
 
     private val probes = DoctorProbes(jar)
     private val lane = ClaudeLaneCheck(lane)
+    private val tools = DoctorToolChecks(tools)
     private val findingRenderer = DoctorFindingRenderer(output)
 
     // Install integrity is a separate section with separate inputs; it reads back into [probes] for
@@ -247,6 +249,9 @@ public class DoctorCommand(
         val sections = listOf(
             "prerequisites" to guarded { probes.prerequisiteChecks(envReader) },
             "installation" to guarded { installProbes.installationChecks(topo, envReader) },
+            // The optional programs splice works beside; with nothing to say the section is left out, not "nothing
+            // to report", since a machine that runs none of them has nothing to check.
+            TOOLS_SECTION to guarded { tools.checks(topology, envReader) },
             "configuration" to guarded {
                 config.configurationChecks(topo, configPath, live, runningTrace, unmapped) +
                     lane.checks(topology, envReader)
@@ -260,7 +265,7 @@ public class DoctorCommand(
             // JW-05: what actually HAPPENED — every section above reads configuration and presence;
             // this one reads the runtime instruments (health counters + perf outcome tail).
             "runtime" to guarded { doctorRuntime.runtimeChecks(snapshot, envReader, reads, topology) },
-        )
+        ).filterNot { (title, checks) -> title == TOOLS_SECTION && checks.isEmpty() }
         return DoctorRun(topology, sections, read, heads)
     }
 

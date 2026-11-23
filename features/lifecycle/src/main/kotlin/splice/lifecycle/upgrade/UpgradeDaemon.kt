@@ -152,4 +152,14 @@ internal class UpgradeDaemon(
     /** The release's own doctor, on the live jar: true only when it finds nothing red. */
     fun doctor(java: String, jar: Path): Boolean =
         process(listOf(java, "-jar", jar.toString(), "doctor"), true).code == 0
+
+    /** The release's own aftercare (UpgradeAftercare), on the live jar: its lines are said when it ran; a jar that has
+     *  no aftercare (an older release, after `--to` went back) answers with its usage and nothing is said. */
+    fun aftercare(java: String, jar: Path, auto: Boolean) {
+        val command = listOf(java, "-jar", jar.toString(), "upgrade", AFTERCARE_FLAG) +
+            listOfNotNull(AUTO_FLAG.takeIf { auto })
+        val ran = process(command, false)
+        val said = ran.stdout.trimEnd('\n')
+        if (ran.code == 0 && said.isNotEmpty()) said.lines().forEach(output::line)
+    }
 }

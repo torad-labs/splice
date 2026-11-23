@@ -5,10 +5,19 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.app.capability.Capabilities
+import splice.app.capability.DesktopFacts
+import splice.app.capability.HarnessFacts
+import splice.app.capability.HubFacts
+import splice.app.capability.WrapperState
+import splice.app.desktop.setup.DesktopMode
+import splice.configuration.add.AddProfiles
 import splice.configuration.add.DaemonUpProbe
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.util.EnvReader
+import splice.terminal.WizardFrame
+import java.nio.file.Path
 
 class SetupDetectionTest {
 
@@ -44,12 +53,37 @@ class SetupDetectionTest {
         assertEquals(allOwnedWires(), facts.spliceOwned)
     }
 
+    @Test
+    fun `the optional programs found are part of what setup reports`() {
+        val tools = Capabilities(
+            DesktopFacts(Path.of("/usr/bin/claude-desktop"), DesktopMode.STANDARD, false, false, WrapperState.OTHER),
+            HarnessFacts(Path.of("/usr/bin/agy"), null, geminiShim = true, synced = emptySet()),
+            HubFacts(linux = true, on = false, systemd = true),
+            autoUpdate = null,
+        )
+        val facts = SetupDetection(
+            env = emptyEnv(),
+            credentials = CredentialPresenceProbe { false },
+            daemon = DaemonUpProbe { false },
+            controlPort = ControlPortResolver { 0 },
+            look = CapabilityProbe { tools },
+        ).detect()
+        assertEquals(tools, facts.capabilities)
+        val said = StringBuilder()
+        SetupMenu(WizardFrame(out = said), AddProfiles()).printDetected(facts)
+        assertTrue("Claude Desktop (on splice's older Code-tab door)" in said, said.toString())
+        assertTrue("agy" in said, said.toString())
+        assertTrue("a managed processWrapper naming another program" in said, said.toString())
+        assertFalse("codex" in said, said.toString())
+    }
+
     private fun detect(env: EnvReader, files: Set<String>, daemonUp: Boolean) =
         SetupDetection(
             env = env,
             credentials = CredentialPresenceProbe { it in files },
             daemon = DaemonUpProbe { daemonUp },
             controlPort = ControlPortResolver { 0 },
+            look = CapabilityProbe { null },
         ).detect()
 
     private fun emptyEnv(): EnvReader = EnvReader { null }

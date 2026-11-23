@@ -44,9 +44,14 @@ public class UpgradeVerb(
     private val units: UpgradeUnits = UpgradeUnits(),
     /** splice.toml's update channel, which `--check` follows. */
     private val channel: AutoUpdateSettings = AutoUpdateSettings { null },
+    /** What the NEW jar does once its upgrade passed (`splice upgrade --aftercare`): the executable's maintenance and
+     *  its list of what is not set up yet. */
+    private val aftercare: UpgradeAftercare = UpgradeAftercare(output),
 ) {
     public fun upgrade(args: List<String>): Boolean {
         if (args == listOf("--check")) return UpgradeCheckLine(output, env, channel).answer()
+        // Run by the upgrade that just activated this jar, never by hand: `--auto` keeps it to the maintenance alone.
+        if (args.firstOrNull() == AFTERCARE_FLAG) return aftercare.run(auto = AUTO_FLAG in args)
         val settings = DaemonSettings(errors)
         val daemon = UpgradeDaemon(
             output,
@@ -154,7 +159,10 @@ internal class UpgradeCommand(
             layout.prunable().forEach(layout::discard)
             daemonUnit.refresh(layout.liveJar)
             when (val verdict = finish(version, installed, a.now, a.wait)) {
-                is Finished.Passed -> Upgraded.Ok(true).also { layout.rejected.forgive(version) }
+                is Finished.Passed -> Upgraded.Ok(true).also {
+                    layout.rejected.forgive(version)
+                    daemon.aftercare(java, layout.liveJar, a.auto)
+                }
                 is Finished.Failed -> putBack(version, installed, verdict)
             }
         }

@@ -121,7 +121,12 @@ Before anything stops, the new release's own `doctor` must answer and `check-con
 config, so a release that refuses your config is never activated. Before the restart, a running compaction is waited
 on for up to 30 minutes, the daemon's own cap on a turn, so it is not cut (`--now` skips that too). A command whose
 `upstreamTimeoutMs` is raised past 30 minutes is still waited on for only 30. After it, `/health` must report the new version within 15 seconds. If the wait expires, the
-release stays staged in `releases/<version>` and the command exits 1. A second upgrade while one runs is refused. The live launch shim is replaced to match the jar. An edit to a recorded
+release stays staged in `releases/<version>` and the command exits 1. A second upgrade while one runs is refused.
+Once the new release passes, its own aftercare runs: it lays the Antigravity shim and, where the MCP hub is installed,
+the hub's units and `mcp-front.env` again where they differ (nothing is started or restarted), and on an interactive
+upgrade it lists under "What's new / action needed" what this install has not set up yet, such as Claude Desktop on
+the older Code-tab door, `agy` or `codex` not synced with Splice MCP, or a managed `processWrapper` naming another
+program; `splice setup --update` sets those up. The daemon's automatic updates run the same upkeep and print no list. The live launch shim is replaced to match the jar. An edit to a recorded
 release's shim is saved as `splice-launch.edited` beside that release, with its diff printed;
 a flat install's live launcher is kept as `splice-launch.edited`, because splice cannot tell whether it was edited. It is also recorded as the rollback copy. `splice upgrade --rollback` puts the previous release back, waits for in-flight turns the same way, and refuses when that release would refuse your config; it is kept
 until the next successful upgrade. Config and credentials are never touched. On Linux x86-64, a release that lists
@@ -169,7 +174,7 @@ every failing check.
 
 ### Guided setup
 
-`splice setup` is what the installer tells you to run next. It says what it finds on the machine, then asks which plans to connect (a ChatGPT, Grok, Kimi or Muse sign-in, a DeepSeek or OpenRouter key), and links plain `claude` to splice on its door. On a machine whose `splice.toml` already has a head for `claude`, that head is kept as it is. Claude's models on your own Claude plan run on a head of their own, which is deprecated, added with `splice add claude`. It also asks whether sessions share MCP servers, and, on a Linux machine with an NVIDIA card, whether to run a local model. It shows a summary and writes nothing until you confirm; without a terminal it takes every default. The sections below are the same steps by hand.
+`splice setup` is what the installer tells you to run next. It says what it finds on the machine (the sign-ins and keys it can use, Claude Desktop and the mode splice has it in, `agy`, `codex`, and a managed `processWrapper`), then asks which plans to connect (a ChatGPT, Grok, Kimi or Muse sign-in, a DeepSeek or OpenRouter key). Each plan's models run in `claude` through the Splice gateway (`/model`); custom head commands are deprecated, so setup keeps none for the plans it connects (`splice claude restore <name>` brings one back). Your own `claude` and Claude Desktop stay on your personal account: setup offers the side-by-side `claude-splice` launcher and, where Claude Desktop is installed, a `Claude (Splice)` app launcher, and names `splice desktop on` for putting all of Claude Desktop on splice instead. Claude's models on your own Claude plan run on a head of their own, which is deprecated, added with `splice add claude`. It also asks whether sessions share MCP servers, which Modes to turn on, whether to install new releases automatically (`[daemon] auto_update`), and, on a Linux machine with an NVIDIA card, whether to run a local model. It shows a summary and writes nothing until you confirm; without a terminal it takes every default. It ends on `splice doctor`, with or without a plan. After an upgrade, `splice setup --update` asks only about what the new release adds that this install does not have yet. The sections below are the same steps by hand.
 
 ### API-key starter: OpenRouter
 
@@ -231,7 +236,8 @@ Admin verbs go through the `splice` command:
 
 ```bash
 splice status         # per-head status
-splice setup          # guided setup: pick a plan or key, add commands, sign in
+splice setup          # guided setup: pick a plan or key, launchers, Modes, sign in
+splice setup --update # after an upgrade: offer only what the new release adds, never re-ask your plans
 splice doctor         # check the whole install; every failing check prints its fix
 splice doctor --json  # the same as a redacted, shareable report (--with-logs, --out FILE, --live)
 splice add <profile>  # add a provider + head without editing TOML (codex|grok|kimi|muse|deepseek|openrouter|claude|local|api-key)
@@ -1024,6 +1030,7 @@ These files hold settings and statistics. Custom compaction instructions and tea
 | JVM temporary directory `splice-native-*/codex-code-mode-host` (`.exe` on Windows) | The pinned Codex executable extracted from the installed jar; no session content. Its SHA-256 is verified before it runs | Only you through the owner-only temporary directory on filesystems supporting POSIX permissions | Removed when the owning runtime closes, and otherwise when its JVM exits, normally or on SIGTERM as a restart stops the daemon; a JVM killed outright can leave the directory for normal temporary-file cleanup | `NativeHostArtifact.kt` |
 | `~/.local/bin/splice` and one command per head | Links to the launcher | Links only | Until `splice uninstall` | `InstallLinker.kt` |
 | `~/.local/share/splice/splice.jar` and `splice-launch` | The live daemon jar and launch shim; after an upgrade the jar links into the current release | The jar is 0644 and the launch shim 0755 | Replaced at install or upgrade | `UpgradeLayout.kt`, `UpgradeActivation.kt`, `install.sh` |
+| `~/.local/lib/splice/gemini/claude` | The program Claude Desktop runs in place of Claude Code for an Antigravity model: one line running `splice desktop acp` by the `splice` link's path. No key | Anyone (0755) | Laid by `install.sh`, and laid again where missing or naming another `splice` by `splice install --all`, `splice setup --update` and each `splice upgrade`'s aftercare | `GeminiShim.kt`, `install.sh` |
 | `~/.local/share/splice/managed-install` | One line naming what laid the install down: `install.sh`, or `splice upgrade` after an activation. The daemon's auto-update acts only where this marker exists, never on a jar copied into place by hand | Your umask | Kept; delete it to stop auto-update from replacing this install | `UpgradeLayout.kt`, `install.sh` |
 | `~/.splice/state/upgrade-rejected` | One release version per line: a release `splice upgrade` put back because it did not come up serving and ready or its doctor was red, and the release `--rollback` left. Auto-update skips them; a newer release and `splice upgrade --to` do not | Your umask, in the owner-only state directory | Kept; a `--to` that installs a listed version takes it off, and deleting the file clears the list | `UpgradeLayout.kt` |
 | `~/.local/share/splice/releases/<version>/splice.jar`, `splice-launch` and `splice-launch.edited`; `releases/current`, `releases/previous` and `releases/.upgrade.lock` | Installed release bytes, the current and previous links, an empty upgrade lock, and a changed launcher saved before replacement. A flat install's live launcher is kept as `splice-launch.edited`, because splice cannot tell whether it was edited. Its live bytes are also recorded as the release's rollback copy | A saved launcher keeps its original permissions; other release files use your umask | The current and previous release; older releases are deleted after each successful upgrade (a rollback deletes none). The empty lock remains | `UpgradeDownloadFiles.kt`, `UpgradeCommand.kt`, `UpgradeLayout.kt`, `UpgradeActivation.kt`, `UpgradeWrapper.kt`, `UpgradeLock.kt` |

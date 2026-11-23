@@ -10,17 +10,19 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
-import splice.client.Keys
 import splice.core.config.StatePaths
+import splice.core.mcp.MCP_BACKUP_HASH_CHARS
+import splice.core.topology.TopologyFileTarget
 import splice.core.util.JsonScalars
 import splice.core.util.SecureFile
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.HexFormat
 
 private const val AGY_BACKUP_DIR = "mcp-sync-backups"
-private const val AGY_BACKUP_HASH_CHARS = 12
+private const val AGY_SERVERS_KEY = "mcpServers"
 
 /** Syncs Splice MCP entries into Antigravity's `mcp_config.json` in agy's native `serverUrl`/`headers` shape. */
 internal class AgyMcpConfigWriter(private val paths: StatePaths) {
@@ -33,16 +35,23 @@ internal class AgyMcpConfigWriter(private val paths: StatePaths) {
     /** Writes [entries] (canonical Splice-planned JSON entries) into [configFile]. Returns true when modified. */
     fun sync(configFile: Path, entries: Map<String, JsonObject>): Boolean {
         if (entries.isEmpty()) return false
-        val existingText = readExisting(configFile)
-        val root = existingText?.let { JsonScalars.objectOrNull(json, it) } ?: JsonObject(emptyMap())
-        val currentServers = (root[Keys.MCP_SERVERS] as? JsonObject).orEmpty()
+        val target = TopologyFileTarget.of(configFile)
+        val existingText = readExisting(target)
+        val root = parseExisting(existingText)
+        val currentServers = (root[AGY_SERVERS_KEY] as? JsonObject).orEmpty()
         val (mergedServers, changed) = mergeEntries(currentServers, entries)
         if (!changed && existingText != null) return false
         val updatedRoot = buildUpdatedRoot(root, mergedServers)
         val rendered = json.encodeToString(JsonObject.serializer(), updatedRoot) + "\n"
         if (existingText != null) backup(existingText)
-        SecureFile.writeAtomic0600(configFile, rendered)
+        SecureFile.writeAtomic0600(target, rendered)
         return true
+    }
+
+    private fun parseExisting(existingText: String?): JsonObject {
+        if (existingText.isNullOrBlank()) return JsonObject(emptyMap())
+        return JsonScalars.objectOrNull(json, existingText)
+            ?: throw IOException("Existing agy mcp_config.json is malformed; refusing to overwrite")
     }
 
     private fun mergeEntries(
@@ -63,8 +72,8 @@ internal class AgyMcpConfigWriter(private val paths: StatePaths) {
 
     private fun buildUpdatedRoot(root: JsonObject, mergedServers: Map<String, JsonElement>): JsonObject =
         buildJsonObject {
-            root.filterKeys { it != Keys.MCP_SERVERS }.forEach { (k, v) -> put(k, v) }
-            putJsonObject(Keys.MCP_SERVERS) {
+            root.filterKeys { it != AGY_SERVERS_KEY }.forEach { (k, v) -> put(k, v) }
+            putJsonObject(AGY_SERVERS_KEY) {
                 mergedServers.entries.sortedBy { it.key }.forEach { (k, v) -> put(k, v) }
             }
         }
@@ -97,6 +106,7 @@ internal class AgyMcpConfigWriter(private val paths: StatePaths) {
             put("args", JsonArray(args.map(::JsonPrimitive)))
         }
         put("command", command)
+        JsonScalars.str(canonical, "cwd")?.takeIf { it.isNotBlank() }?.let { put("cwd", it) }
         put("disabled", false)
         val env = stringMap(canonical["env"] as? JsonObject)
         if (env.isNotEmpty()) {
@@ -118,8 +128,11 @@ internal class AgyMcpConfigWriter(private val paths: StatePaths) {
 
     private fun backup(previous: String) {
         val backupDir = paths.stateDir.resolve(AGY_BACKUP_DIR)
+        SecureFile.ownerOnlyDirectory(backupDir)?.let { reason ->
+            throw IOException("MCP sync backup directory is not owner-only: $reason")
+        }
         val digest = MessageDigest.getInstance("SHA-256").digest(previous.toByteArray(Charsets.UTF_8))
-        val hash = HexFormat.of().formatHex(digest).take(AGY_BACKUP_HASH_CHARS)
+        val hash = HexFormat.of().formatHex(digest).take(MCP_BACKUP_HASH_CHARS)
         val target = backupDir.resolve("agy-mcp_config.json.bak-$hash")
         if (!Files.exists(target)) SecureFile.writeAtomic0600(target, previous)
     }

@@ -109,10 +109,11 @@ internal class NativeCodexMcpConfig(paths: StatePaths) {
         entry: JsonObject,
     ) {
         try {
+            val keySegment = CodexMcpTomlScan().formatKey(name)
             session.request(
                 "config/value/write",
                 buildJsonObject {
-                    put("keyPath", "mcp_servers.$name")
+                    put("keyPath", "mcp_servers.$keySegment")
                     put("value", entry)
                     put("mergeStrategy", "replace")
                     put("filePath", configFile.toString())

@@ -12,7 +12,10 @@ import splice.client.mcp.McpLaunchPlanner
 import splice.client.mcp.McpPlan
 import splice.client.mcp.McpPlanScope
 import splice.client.mcp.McpServerInput
+import splice.client.mcp.TempleMcpEntry
+import splice.core.config.StatePaths
 import splice.core.config.UserHome
+import splice.core.mcp.McpUserRegistry
 import splice.core.util.JsonScalars
 import splice.core.util.PathProbe
 import splice.sessions.registry.ProcessEnvironment
@@ -47,7 +50,12 @@ internal class McpLaunchFolders(
     private val sessions: SessionSource?,
     /** Classes every planned server, whatever its source, beside its scope; null leaves the plans unclassed. */
     private val classes: McpServerClasses? = null,
-    private val planner: McpLaunchPlanner = McpLaunchPlanner(UserHome.dir()),
+    statePaths: StatePaths = StatePaths(),
+    private val planner: McpLaunchPlanner = McpLaunchPlanner(
+        UserHome.dir(),
+        temple = TempleMcpEntry(UserHome.dir(), paths = statePaths),
+        registry = McpUserRegistry(statePaths),
+    ),
     private val environment: ProcessEnvironment = ProcessEnvironment(),
 ) {
     /** The plan scope each census row kind is declared under: Claude Code calls a project record's servers local and

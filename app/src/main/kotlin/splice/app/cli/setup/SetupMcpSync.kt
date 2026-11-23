@@ -1,13 +1,16 @@
 // Opt-in `splice setup` step to bring existing user MCP servers into Splice MCP and sync them to
 // whichever harnesses (Claude, Antigravity/agy, Codex) the user wants connected. Completely silent in
-// non-TTY/headless mode or when neither external MCP servers nor agy/codex harnesses are detected.
+// non-TTY/headless mode or when neither unimported MCP servers nor agy/codex harnesses are detected.
 package splice.app.cli.setup
 
 import kotlinx.coroutines.CancellationException
+import splice.app.McpGlobalRead
 import splice.app.mcp.DiscoveredMcpServer
 import splice.app.mcp.McpHarnessDiscovery
 import splice.app.mcp.McpHarnessSync
 import splice.app.mcp.McpHarnessSyncSeams
+import splice.client.mcp.TempleMcpEntry
+import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.mcp.McpHarness
 import splice.core.mcp.McpUserRegistry
@@ -20,12 +23,6 @@ import splice.topology.TopologyStatePaths
 import java.io.IOException
 import java.nio.file.Path
 import java.time.Instant
-
-/** Combined MCP wizard choices held by [SetupCommand]'s plan. */
-internal data class McpSetupChoices(
-    val share: Boolean?,
-    val sync: McpSyncChoice = McpSyncChoice(),
-)
 
 /** User's opt-in MCP import and harness sync choices collected during `splice setup`. */
 internal data class McpSyncChoice(
@@ -40,11 +37,15 @@ internal class SetupMcpSync(
     private val env: EnvReader = EnvReader(System::getenv),
     private val seams: McpHarnessSyncSeams = McpHarnessSyncSeams(),
 ) {
-    /** Prompts interactively only when a TTY is present and external servers or agy/codex harnesses exist. */
+    /** Prompts interactively only when a TTY is present and unimported servers or agy/codex harnesses exist. */
     fun offer(prompts: SetupPrompts): McpSyncChoice? {
         if (!prompts.hasConsole()) return McpSyncChoice()
-        val discovery = McpHarnessDiscovery(UserHome.dir(env), env, seams.osName)
-        val discovered = dedupe(discovery.discover())
+        val home = UserHome.dir(env)
+        val paths = TopologyStatePaths(env, home).current()
+        val discovery = McpHarnessDiscovery(home, env, seams.osName)
+        val activeNames = McpGlobalRead(home, LogSink {}, TempleMcpEntry(home, env, paths), McpUserRegistry(paths))
+            .invoke().keys
+        val discovered = dedupe(discovery.discover()).filter { it.name !in activeNames }
         val detected = discovery.detectedHarnesses()
         val hasExternalHarness = McpHarness.AGY in detected || McpHarness.CODEX in detected
         if (discovered.isEmpty() && !hasExternalHarness) return McpSyncChoice()
@@ -92,7 +93,7 @@ internal class SetupMcpSync(
 
     private fun applyImport(
         servers: List<DiscoveredMcpServer>,
-        paths: splice.core.config.StatePaths,
+        paths: StatePaths,
         frame: WizardFrame,
     ) {
         try {
@@ -107,7 +108,7 @@ internal class SetupMcpSync(
     private suspend fun applySync(
         harnesses: Set<McpHarness>,
         home: Path,
-        paths: splice.core.config.StatePaths,
+        paths: StatePaths,
         frame: WizardFrame,
     ) {
         try {

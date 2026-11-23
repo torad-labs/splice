@@ -55,6 +55,7 @@ public class HostedMcpOverlay(
     private fun selectedTemple(): McpServerInput? = temple.server()?.let { server ->
         McpServerInput(server.name, server.entry, server.provenance)
     } ?: (servers()?.get(TEMPLE_MCP_NAME) as? JsonObject)?.let { McpServerInput(TEMPLE_MCP_NAME, it) }
+        ?: (registry.entries()[TEMPLE_MCP_NAME] as? JsonObject)?.let { McpServerInput(TEMPLE_MCP_NAME, it) }
 
     private fun templeEntries(entry: McpServerInput?): JsonObject =
         JsonObject(entry?.let { mapOf(TEMPLE_MCP_NAME to it.entry) }.orEmpty())

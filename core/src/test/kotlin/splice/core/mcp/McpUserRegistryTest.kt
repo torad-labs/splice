@@ -62,11 +62,15 @@ class McpUserRegistryTest {
     }
 
     @Test
-    fun `redactUrl strips query strings and fragments while preserving host and path`() {
+    fun `redactUrl strips userinfo, query strings and fragments while preserving host and path`() {
         val names = McpRegistryNames()
         assertEquals(
             "https://mcp.exa.ai/mcp",
             names.redactUrl("https://mcp.exa.ai/mcp?exaApiKey=secret-token#frag"),
+        )
+        assertEquals(
+            "https://mcp.torad.ai:8443/mcp",
+            names.redactUrl("https://user:pass@mcp.torad.ai:8443/mcp?token=abc#h"),
         )
         assertEquals("https://mcp.torad.ai/mcp", names.redactUrl("https://mcp.torad.ai/mcp"))
         assertNull(names.redactUrl(null))

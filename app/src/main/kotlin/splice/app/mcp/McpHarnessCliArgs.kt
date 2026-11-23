@@ -1,5 +1,5 @@
 // Argument parser for `splice mcp import` and `splice mcp sync`.
-package splice.app.cli.mcp
+package splice.app.mcp
 
 import splice.core.mcp.McpHarness
 import splice.core.mcp.McpImportSource

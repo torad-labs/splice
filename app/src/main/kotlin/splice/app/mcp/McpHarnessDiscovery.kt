@@ -4,7 +4,9 @@ package splice.app.mcp
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import splice.client.Keys
+import splice.app.MCP_HUB_FRONT_PORT
+import splice.app.cli.AdminSupport
+import splice.core.config.DEFAULT_CONTROL_PORT
 import splice.core.config.UserHome
 import splice.core.mcp.McpHarness
 import splice.core.mcp.McpImportSource
@@ -17,6 +19,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 private const val CLAUDE_DESKTOP_CONFIG_FILE = "claude_desktop_config.json"
+private const val DISCOVERY_CLAUDE_JSON = ".claude.json"
+private const val DISCOVERY_SERVERS_KEY = "mcpServers"
 
 /** One MCP server discovered on disk from a harness config file. */
 internal data class DiscoveredMcpServer(
@@ -39,9 +43,11 @@ internal class McpHarnessDiscovery(
         isLenient = true
     }
     private val codexToml = CodexMcpTomlCodec()
-    private val normalizer = McpEntryNormalizer()
+    private val normalizer = McpEntryNormalizer(
+        setOf(MCP_HUB_FRONT_PORT, DEFAULT_CONTROL_PORT, AdminSupport.controlPort(env)),
+    )
 
-    fun claudeCodeFile(): Path = home.resolve(Keys.CLAUDE_JSON)
+    fun claudeCodeFile(): Path = home.resolve(DISCOVERY_CLAUDE_JSON)
 
     fun claudeDesktopFile(): Path {
         val os = osName.lowercase()
@@ -107,7 +113,7 @@ internal class McpHarnessDiscovery(
         agyShape: Boolean,
     ): List<DiscoveredMcpServer> {
         val root = readJsonObject(file) ?: return emptyList()
-        val servers = root[Keys.MCP_SERVERS] as? JsonObject ?: return emptyList()
+        val servers = root[DISCOVERY_SERVERS_KEY] as? JsonObject ?: return emptyList()
         return servers.entries.mapNotNull { (name, value) ->
             val obj = value as? JsonObject ?: return@mapNotNull null
             val canonical = normalizer.normalize(obj, agyShape) ?: return@mapNotNull null

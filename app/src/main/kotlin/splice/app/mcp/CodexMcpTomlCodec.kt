@@ -1,5 +1,6 @@
 // Reads and updates Codex `[mcp_servers.<name>]` sections in `config.toml` without pulling a TOML
-// dependency into `:app`. Preserves all unrelated sections, comments, and per-server restriction keys.
+// dependency into `:app`. Preserves unrelated sections, `[[array_of_tables]]`, non-transport subtables,
+// multi-line values, comments, and per-server restriction keys.
 package splice.app.mcp
 
 import kotlinx.serialization.json.JsonArray
@@ -11,25 +12,28 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.core.util.JsonScalars
 
-private val SECTION_HEADER = Regex("^\\[([^\\[\\]]+)]\\s*$")
+private val TABLE_HEADER = Regex("^\\[([^\\[\\]]+)]\\s*$")
+private val ARRAY_TABLE_HEADER = Regex("^\\[\\[([^\\[\\]]+)]]\\s*$")
 
+// why: a Codex MCP subtable header has three dotted segments: mcp_servers.<name>.<subtable>.
 private const val SUBTABLE_SEGMENT_COUNT = 3
-private const val FIELD_COMMAND = "command"
-private const val FIELD_HEADERS = "headers"
-private const val FIELD_HTTP_HEADERS = "http_headers"
+private const val CODEX_TOML_COMMAND = "command"
+private const val CODEX_TOML_HEADERS = "headers"
+private const val CODEX_TOML_HTTP_HEADERS = "http_headers"
+private const val CODEX_TOML_ENV = "env"
 
-private val CODEX_TRANSPORT_KEYS = setOf(
-    FIELD_COMMAND,
+private val CODEX_CORE_TRANSPORT_KEYS = setOf(
+    CODEX_TOML_COMMAND,
     "args",
-    "env",
+    CODEX_TOML_ENV,
     "cwd",
-    "env_vars",
     "url",
-    FIELD_HEADERS,
-    FIELD_HTTP_HEADERS,
-    "env_http_headers",
-    "bearer_token_env_var",
+    CODEX_TOML_HEADERS,
+    CODEX_TOML_HTTP_HEADERS,
 )
+
+private val CODEX_AUTH_ENV_KEYS = setOf("bearer_token_env_var", "env_http_headers")
+private val CODEX_TRANSPORT_SUBTABLES = setOf(CODEX_TOML_HTTP_HEADERS, CODEX_TOML_HEADERS, CODEX_TOML_ENV)
 
 /** Parses and updates `[mcp_servers.<name>]` tables in Codex `config.toml` text. */
 internal class CodexMcpTomlCodec {
@@ -42,9 +46,9 @@ internal class CodexMcpTomlCodec {
         scan.joinMultilineValues(tomlText.lines()).forEach { rawLine ->
             val stripped = scan.stripComment(rawLine).trim()
             if (stripped.isEmpty()) return@forEach
-            val header = SECTION_HEADER.matchEntire(stripped)
-            if (header != null) {
-                current = parseSectionTarget(header.groupValues[1].trim())
+            val boundary = matchSectionBoundary(stripped)
+            if (boundary != null) {
+                current = boundary.target
             } else {
                 current?.let { applyKeyValue(it, stripped, raw) }
             }
@@ -59,7 +63,7 @@ internal class CodexMcpTomlCodec {
     /** Replaces or appends `[mcp_servers.<name>]` blocks for [entries], preserving unrelated TOML verbatim. */
     fun upsert(existing: String, entries: Map<String, JsonObject>): String {
         if (entries.isEmpty()) return existing
-        val preserved = extractNonTransportLines(existing, entries.keys)
+        val preserved = extractNonTransportLines(existing, entries)
         val filtered = stripTargetSections(existing, entries.keys).trimEnd()
         val blocks = entries.entries.sortedBy { it.key }.map { (name, entry) ->
             renderServerBlock(name, entry, preserved[name].orEmpty())
@@ -74,22 +78,20 @@ internal class CodexMcpTomlCodec {
         }
     }
 
-    private fun extractNonTransportLines(text: String, targets: Set<String>): Map<String, List<String>> {
+    private fun extractNonTransportLines(text: String, entries: Map<String, JsonObject>): Map<String, List<String>> {
         val kept = LinkedHashMap<String, MutableList<String>>()
         var activeName: String? = null
         var inSubtable = false
-        text.lines().forEach { line ->
+        scan.joinMultilineValues(text.lines()).forEach { line ->
             val trimmed = scan.stripComment(line).trim()
-            val header = SECTION_HEADER.matchEntire(trimmed)
-            val targetName = activeName
-            val inTargetMain = targetName != null && !inSubtable
-            if (header != null) {
-                val target = parseSectionTarget(header.groupValues[1].trim())
-                activeName = target?.name?.takeIf { it in targets }
-                inSubtable = target?.subtable != null
-            } else if (inTargetMain && '=' in trimmed) {
-                val key = scan.unquoteKey(trimmed.substringBefore('=').trim())
-                if (key !in CODEX_TRANSPORT_KEYS) {
+            val boundary = matchSectionBoundary(trimmed)
+            if (boundary != null) {
+                activeName = boundary.target?.name?.takeIf { it in entries }
+                inSubtable = boundary.target?.subtable != null
+            } else {
+                val targetName = activeName
+                val inMain = targetName != null && !inSubtable
+                if (inMain && shouldPreserveLine(trimmed, entries[targetName])) {
                     kept.getOrPut(checkNotNull(targetName)) { mutableListOf() }.add(line.trim())
                 }
             }
@@ -97,19 +99,35 @@ internal class CodexMcpTomlCodec {
         return kept
     }
 
+    private fun shouldPreserveLine(trimmed: String, replacement: JsonObject?): Boolean {
+        if ('=' !in trimmed) return false
+        val key = scan.unquoteKey(trimmed.substringBefore('=').trim())
+        val replacedAuth = replacement?.get(CODEX_TOML_HTTP_HEADERS) != null
+        val isReplacedKey = key in CODEX_CORE_TRANSPORT_KEYS || (replacedAuth && key in CODEX_AUTH_ENV_KEYS)
+        return !isReplacedKey
+    }
+
     private fun stripTargetSections(text: String, targets: Set<String>): String {
         val out = mutableListOf<String>()
         var skipping = false
         text.lines().forEach { line ->
             val trimmed = scan.stripComment(line).trim()
-            val header = SECTION_HEADER.matchEntire(trimmed)
-            if (header != null) {
-                val target = parseSectionTarget(header.groupValues[1].trim())
-                skipping = target != null && target.name in targets
+            val boundary = matchSectionBoundary(trimmed)
+            if (boundary != null) {
+                val target = boundary.target
+                val isTargetMainOrTransport = target != null && target.name in targets &&
+                    (target.subtable == null || target.subtable in CODEX_TRANSPORT_SUBTABLES)
+                skipping = isTargetMainOrTransport
             }
             if (!skipping) out.add(line)
         }
         return out.joinToString("\n")
+    }
+
+    private fun matchSectionBoundary(trimmed: String): SectionBoundary? {
+        if (ARRAY_TABLE_HEADER.matches(trimmed)) return SectionBoundary(null)
+        val match = TABLE_HEADER.matchEntire(trimmed) ?: return null
+        return SectionBoundary(parseSectionTarget(match.groupValues[1].trim()))
     }
 
     private fun renderServerBlock(name: String, entry: JsonObject, preservedLines: List<String>): String = buildString {
@@ -121,7 +139,7 @@ internal class CodexMcpTomlCodec {
             append(scan.quoteString(url))
             append("\n")
         }
-        JsonScalars.str(entry, FIELD_COMMAND)?.let { cmd ->
+        JsonScalars.str(entry, CODEX_TOML_COMMAND)?.let { cmd ->
             append("command = ")
             append(scan.quoteString(cmd))
             append("\n")
@@ -136,8 +154,9 @@ internal class CodexMcpTomlCodec {
             append(scan.quoteString(cwd))
             append("\n")
         }
-        renderStringMap(FIELD_HTTP_HEADERS, entry[FIELD_HTTP_HEADERS] as? JsonObject)?.let { append(it).append("\n") }
-        renderStringMap("env", entry["env"] as? JsonObject)?.let { append(it).append("\n") }
+        renderStringMap(CODEX_TOML_HTTP_HEADERS, entry[CODEX_TOML_HTTP_HEADERS] as? JsonObject)
+            ?.let { append(it).append("\n") }
+        renderStringMap(CODEX_TOML_ENV, entry[CODEX_TOML_ENV] as? JsonObject)?.let { append(it).append("\n") }
         preservedLines.forEach { append(it).append("\n") }
     }.trimEnd()
 
@@ -157,8 +176,9 @@ internal class CodexMcpTomlCodec {
         val server = raw.getOrPut(target.name) { MutableServer() }
         when (target.subtable) {
             null -> applyMainField(server, key, value)
-            FIELD_HTTP_HEADERS, FIELD_HEADERS -> scan.parseScalarString(value)?.let { server.headers[key] = it }
-            "env" -> scan.parseScalarString(value)?.let { server.env[key] = it }
+            CODEX_TOML_HTTP_HEADERS, CODEX_TOML_HEADERS ->
+                scan.parseScalarString(value)?.let { server.headers[key] = it }
+            CODEX_TOML_ENV -> scan.parseScalarString(value)?.let { server.env[key] = it }
             else -> Unit
         }
     }
@@ -167,7 +187,7 @@ internal class CodexMcpTomlCodec {
         when (key) {
             "enabled" -> if (value == "false") server.disabled = true
             "url" -> server.url = scan.parseScalarString(value)
-            FIELD_COMMAND -> server.command = scan.parseScalarString(value)
+            CODEX_TOML_COMMAND -> server.command = scan.parseScalarString(value)
             "cwd" -> server.cwd = scan.parseScalarString(value)
             else -> applyStructuredField(server, key, value)
         }
@@ -176,8 +196,8 @@ internal class CodexMcpTomlCodec {
     private fun applyStructuredField(server: MutableServer, key: String, value: String) {
         when (key) {
             "args" -> server.args = scan.parseStringArray(value)
-            FIELD_HTTP_HEADERS, FIELD_HEADERS -> server.headers.putAll(scan.parseInlineTable(value))
-            "env" -> server.env.putAll(scan.parseInlineTable(value))
+            CODEX_TOML_HTTP_HEADERS, CODEX_TOML_HEADERS -> server.headers.putAll(scan.parseInlineTable(value))
+            CODEX_TOML_ENV -> server.env.putAll(scan.parseInlineTable(value))
             else -> Unit
         }
     }
@@ -195,6 +215,8 @@ internal class CodexMcpTomlCodec {
     }
 
     private data class SectionTarget(val name: String, val subtable: String?)
+
+    private data class SectionBoundary(val target: SectionTarget?)
 
     private class MutableServer {
         var disabled: Boolean = false
@@ -219,18 +241,18 @@ internal class CodexMcpTomlCodec {
             put("type", "http")
             put("url", currentUrl)
             if (headers.isNotEmpty()) {
-                putJsonObject(FIELD_HEADERS) { headers.forEach { (k, v) -> put(k, v) } }
+                putJsonObject(CODEX_TOML_HEADERS) { headers.forEach { (k, v) -> put(k, v) } }
             }
         }
 
         private fun toStdioJson(currentCommand: String): JsonObject = buildJsonObject {
-            put(FIELD_COMMAND, currentCommand)
+            put(CODEX_TOML_COMMAND, currentCommand)
             if (args.isNotEmpty()) {
                 put("args", buildJsonArray { args.forEach { add(JsonPrimitive(it)) } })
             }
             cwd?.takeIf { it.isNotBlank() }?.let { put("cwd", it) }
             if (env.isNotEmpty()) {
-                putJsonObject("env") { env.forEach { (k, v) -> put(k, v) } }
+                putJsonObject(CODEX_TOML_ENV) { env.forEach { (k, v) -> put(k, v) } }
             }
         }
     }

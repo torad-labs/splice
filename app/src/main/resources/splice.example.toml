@@ -1051,6 +1051,7 @@ discovery_prefix = "claude--"
 #   SPLICE_CONSOLE_DIR      an absolute folder the console serves its pages from instead of the jar,
 #                           so an edit to a page shows on reload; unset serves the packaged pages
 #   XDG_CONFIG_HOME         where the config and key store live when it is set
+#   APPDATA                 Windows roaming config root read when locating Claude Desktop's MCP config file
 #   XDG_DATA_HOME           where `splice install --all` lays splice's systemd user units, in systemd/user
 #                           beneath it; unset is ~/.local/share
 #   SPLICE_PEER_KEY_FILE    the peer key file `splice peer send|inbox|status` presents, in place of

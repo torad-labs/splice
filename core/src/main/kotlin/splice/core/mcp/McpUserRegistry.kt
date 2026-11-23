@@ -23,21 +23,28 @@ import java.security.MessageDigest
 import java.util.HexFormat
 
 public const val MCP_REGISTRY_FILE_NAME: String = "mcp-registry.json"
-private const val REGISTRY_BACKUP_DIR = "mcp-registry-backups"
-private const val REGISTRY_VERSION = 1
-private const val BACKUP_HASH_CHARS = 12
-private const val FIELD_VERSION = "version"
-private const val FIELD_SERVERS = "servers"
-private const val FIELD_HARNESSES = "harnesses"
-private const val FIELD_ENTRY = "entry"
-private const val FIELD_SOURCE = "source"
-private const val FIELD_IMPORTED_AT = "imported_at"
+
+// why: 12 hex characters of SHA-256 give content-addressed MCP backups a compact, collision-resistant suffix.
+public const val MCP_BACKUP_HASH_CHARS: Int = 12
+
+// why: schema version 1 of the persisted mcp-registry.json envelope.
+private const val MCP_REGISTRY_SCHEMA_VERSION = 1
+
+private const val MCP_REGISTRY_BACKUP_DIR = "mcp-registry-backups"
+private const val MCP_REG_FIELD_VERSION = "version"
+private const val MCP_REG_FIELD_SERVERS = "servers"
+private const val MCP_REG_FIELD_HARNESSES = "harnesses"
+private const val MCP_REG_FIELD_ENTRY = "entry"
+private const val MCP_REG_FIELD_SOURCE = "source"
+private const val MCP_REG_FIELD_IMPORTED_AT = "imported_at"
 private const val WIRE_CLAUDE = "claude"
 private const val WIRE_CLAUDE_CODE = "claude-code"
 private const val WIRE_CLAUDE_DESKTOP = "claude-desktop"
 private const val WIRE_AGY = "agy"
 private const val WIRE_CODEX = "codex"
 private const val WIRE_MANUAL = "manual"
+
+private val USERINFO_PATTERN = Regex("(^[A-Za-z][A-Za-z0-9+.-]*://)[^/@]+@")
 
 /** Harnesses that Splice MCP can connect to and synchronize. */
 public enum class McpHarness(public val wire: String, public val displayName: String) {
@@ -90,20 +97,23 @@ public class McpRegistryNames {
         else -> null
     }
 
-    /** Strips query parameters and fragments from HTTP(S) URLs so API keys in query strings never leak. */
+    /** Strips userinfo (`user:pass@`), query parameters, and fragments so URL credentials never leak. */
     public fun redactUrl(raw: String?): String? {
         if (raw == null) return null
         return try {
             val uri = URI(raw)
-            if (uri.scheme == null || uri.authority == null) {
-                raw.substringBefore('?').substringBefore('#')
+            if (uri.scheme != null && uri.host != null) {
+                URI(uri.scheme, null, uri.host, uri.port, uri.path, null, null).toString()
             } else {
-                URI(uri.scheme, uri.authority, uri.path, null, null).toString()
+                fallbackRedact(raw)
             }
         } catch (_: URISyntaxException) {
-            raw.substringBefore('?').substringBefore('#')
+            fallbackRedact(raw)
         }
     }
+
+    private fun fallbackRedact(raw: String): String =
+        USERINFO_PATTERN.replace(raw.substringBefore('?').substringBefore('#'), "$1")
 }
 
 /** Reads and persists `<state>/mcp-registry.json` atomically with owner-only permissions. */
@@ -124,8 +134,8 @@ public class McpUserRegistry(private val paths: StatePaths) {
             McpRegistrySnapshot()
         } else {
             McpRegistrySnapshot(
-                servers = parseServers(root[FIELD_SERVERS] as? JsonObject),
-                harnesses = parseHarnesses(root[FIELD_HARNESSES] as? JsonArray),
+                servers = parseServers(root[MCP_REG_FIELD_SERVERS] as? JsonObject),
+                harnesses = parseHarnesses(root[MCP_REG_FIELD_HARNESSES] as? JsonArray),
             )
         }
     }
@@ -179,9 +189,9 @@ public class McpUserRegistry(private val paths: StatePaths) {
         val out = LinkedHashMap<String, McpRegistryRecord>()
         obj.forEach { (name, value) ->
             val rec = value as? JsonObject ?: return@forEach
-            val entry = rec[FIELD_ENTRY] as? JsonObject ?: return@forEach
-            val source = JsonScalars.str(rec, FIELD_SOURCE)?.let(names::source) ?: McpImportSource.MANUAL
-            val importedAt = JsonScalars.str(rec, FIELD_IMPORTED_AT)
+            val entry = rec[MCP_REG_FIELD_ENTRY] as? JsonObject ?: return@forEach
+            val source = JsonScalars.str(rec, MCP_REG_FIELD_SOURCE)?.let(names::source) ?: McpImportSource.MANUAL
+            val importedAt = JsonScalars.str(rec, MCP_REG_FIELD_IMPORTED_AT)
             out[name] = McpRegistryRecord(name, entry, source, importedAt)
         }
         return out
@@ -191,18 +201,18 @@ public class McpUserRegistry(private val paths: StatePaths) {
         arr.orEmpty().mapNotNull(JsonScalars::str).mapNotNull(names::harness).toSet()
 
     private fun encode(snapshot: McpRegistrySnapshot): JsonObject = buildJsonObject {
-        put(FIELD_VERSION, REGISTRY_VERSION)
-        putJsonObject(FIELD_SERVERS) {
+        put(MCP_REG_FIELD_VERSION, MCP_REGISTRY_SCHEMA_VERSION)
+        putJsonObject(MCP_REG_FIELD_SERVERS) {
             snapshot.servers.entries.sortedBy { it.key }.forEach { (name, record) ->
                 putJsonObject(name) {
-                    put(FIELD_ENTRY, record.entry)
-                    put(FIELD_SOURCE, record.source.wire)
-                    record.importedAt?.let { put(FIELD_IMPORTED_AT, it) }
+                    put(MCP_REG_FIELD_ENTRY, record.entry)
+                    put(MCP_REG_FIELD_SOURCE, record.source.wire)
+                    record.importedAt?.let { put(MCP_REG_FIELD_IMPORTED_AT, it) }
                 }
             }
         }
         put(
-            FIELD_HARNESSES,
+            MCP_REG_FIELD_HARNESSES,
             buildJsonArray {
                 snapshot.harnesses.sortedBy { it.wire }.forEach { add(JsonPrimitive(it.wire)) }
             },
@@ -210,9 +220,12 @@ public class McpUserRegistry(private val paths: StatePaths) {
     }
 
     private fun writeBackup(previous: String) {
-        val backupDir = paths.stateDir.resolve(REGISTRY_BACKUP_DIR)
+        val backupDir = paths.stateDir.resolve(MCP_REGISTRY_BACKUP_DIR)
+        SecureFile.ownerOnlyDirectory(backupDir)?.let { reason ->
+            throw IOException("MCP registry backup directory is not owner-only: $reason")
+        }
         val digest = MessageDigest.getInstance("SHA-256").digest(previous.toByteArray(Charsets.UTF_8))
-        val hash = HexFormat.of().formatHex(digest).take(BACKUP_HASH_CHARS)
+        val hash = HexFormat.of().formatHex(digest).take(MCP_BACKUP_HASH_CHARS)
         val target = backupDir.resolve("$MCP_REGISTRY_FILE_NAME.bak-$hash")
         if (!Files.exists(target)) SecureFile.writeAtomic0600(target, previous)
     }

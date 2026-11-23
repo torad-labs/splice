@@ -12,6 +12,7 @@ import kotlinx.serialization.json.put
 import splice.app.McpGlobalRead
 import splice.app.cli.AdminSupport
 import splice.app.mcp.DiscoveredMcpServer
+import splice.app.mcp.McpHarnessCliArgs
 import splice.app.mcp.McpHarnessDiscovery
 import splice.app.mcp.McpHarnessSync
 import splice.app.mcp.McpHarnessSyncSeams

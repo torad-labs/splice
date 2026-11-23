@@ -84,8 +84,7 @@ internal class SetupCommand(
 ) {
     private val frame = prompts.frame
     private val menu = SetupMenu(frame, profiles)
-    private val mcpShare = SetupMcpShare(frame, InstallWiring.units(env))
-    private val mcpSync = SetupMcpSync(env)
+    private val mcpShare = SetupMcpShare(prompts, InstallWiring.units(env), env)
     private val headChoices = SetupHeadChoices(prompts, profiles)
 
     /** The post-install OAuth tail, in splice.app.cli.setup since V4-156 (concentration). */
@@ -125,23 +124,13 @@ internal class SetupCommand(
         val bin = InstallLayout().localBin(env)
         val launchers = effects.launchers()
         val local = localModel.offer(path)
-        val share = mcpShare.ask(path)
-        val syncChoice = mcpSync.offer(prompts) ?: return WizardAnswer.Cancelled("cancelled")
+        val share = mcpShare.ask(path) ?: return WizardAnswer.Cancelled("cancelled")
         val summary = menu.summaryLines(path, bin, heads, launchers.summaryLines(launcherChoice)) +
-            choices.values.map { it.summary } + localModel.summary(local) + mcpShare.summary(share) +
-            mcpSync.summaryLines(syncChoice)
+            choices.values.map { it.summary } + localModel.summary(local) + mcpShare.summary(share)
         frame.note("Summary", summary)
         if (!frame.confirm("Install now?", true)) return WizardAnswer.Cancelled("not installing")
         effects.choose(choices)
-        return WizardAnswer.Plan(
-            path,
-            launchers,
-            launcherChoice,
-            picker,
-            heads,
-            local,
-            McpSetupChoices(share, syncChoice),
-        )
+        return WizardAnswer.Plan(path, launchers, launcherChoice, picker, heads, local, share)
     }
 
     private suspend fun install(plan: WizardAnswer.Plan): Boolean {
@@ -150,9 +139,8 @@ internal class SetupCommand(
         plan.launchers.apply(plan.launcherChoice, frame)
         localModel.install(plan.local)
         val topology = TopologyLoader.loadOrMaterialize(plan.path)
-        mcpShare.save(plan.path, plan.mcp.share)
-        mcpShare.hub(plan.path, plan.mcp.share)
-        mcpSync.apply(plan.mcp.sync, frame)
+        mcpShare.save(plan.path, plan.share)
+        mcpShare.hub(plan.path, plan.share)
         val ok = signIn.signInPendingHeads(topology)
         headChoices.checkLive(landed, topology, env)
         if (landed.isNotEmpty()) effects.checkup(env)
@@ -199,6 +187,6 @@ private sealed class WizardAnswer {
         val heads: List<String>,
         val local: Boolean,
         /** [daemon] mcp_share and optional user MCP import/harness sync choices. */
-        val mcp: McpSetupChoices,
+        val share: McpSetupAnswer,
     ) : WizardAnswer()
 }

@@ -277,6 +277,7 @@ class SetupCommandTest {
                         ),
                         loginHead = NO_REAL_LOGIN,
                         detect = { emptyFacts() },
+                        env = EnvReader { null },
                         localModel = SetupLocalModel(
                             SetupPrompts(),
                             EnvReader { null },

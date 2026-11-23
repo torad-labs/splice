@@ -9,6 +9,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -19,6 +20,7 @@ import splice.core.mcp.McpImportSource
 import splice.core.mcp.McpUserRegistry
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -35,8 +37,10 @@ class McpHarnessSyncTest {
         assertTrue("claude-code:eli-brain" in found)
         assertTrue("claude-code:ast-grep" in found)
         assertTrue("agy:torad-fleet" in found)
+        assertTrue("agy:local-app" in found, "non-splice loopback port must not be skipped")
         assertFalse("agy:off-server" in found)
         assertFalse("agy:loopback-hosted" in found)
+        assertFalse("agy:ipv6-hosted" in found)
         assertTrue("codex:hotswan" in found)
         assertTrue("codex:docs" in found)
         assertFalse("codex:disabled_one" in found)
@@ -44,7 +48,7 @@ class McpHarnessSyncTest {
     }
 
     @Test
-    fun `codex toml codec preserves unrelated sections and per-server restrictions`() {
+    fun `codex toml codec preserves multiline restrictions, array tables, and non-transport subtables`() {
         val codec = CodexMcpTomlCodec()
         val original = """
             model = "gpt-5.4"
@@ -52,6 +56,16 @@ class McpHarnessSyncTest {
             [mcp_servers.ast-grep]
             command = "old-cmd"
             tool_timeout_sec = 45
+            enabled_tools = [
+              "find_code",
+              "dump_syntax_tree",
+            ]
+
+            [mcp_servers.ast-grep.oauth]
+            client_id = "keep-oauth"
+
+            [[profiles]]
+            name = "work"
 
             [mcp_servers.keep_me]
             url = "https://keep.example/mcp"
@@ -71,9 +85,68 @@ class McpHarnessSyncTest {
         )
         assertTrue("""model = "gpt-5.4"""" in updated, updated)
         assertTrue("[mcp_servers.keep_me]" in updated, updated)
+        assertTrue("[mcp_servers.ast-grep.oauth]" in updated, updated)
+        assertTrue("[[profiles]]" in updated, updated)
         assertTrue("tool_timeout_sec = 45" in updated, updated)
+        assertTrue("""enabled_tools = [ "find_code", "dump_syntax_tree", ]""" in updated, updated)
         assertTrue("""url = "http://127.0.0.1:3096/mcp/ast-grep"""" in updated, updated)
         assertFalse("old-cmd" in updated, updated)
+    }
+
+    @Test
+    fun `agy writer fails closed on malformed json and preserves cwd on stdio servers`() {
+        val state = tmp.resolve("state")
+        val writer = AgyMcpConfigWriter(StatePaths(baseOverride = state, homeDir = tmp))
+        val bad = tmp.resolve("bad.json")
+        Files.writeString(bad, "{malformed-user-file")
+        assertThrows(IOException::class.java) {
+            writer.sync(bad, mapOf("srv" to buildJsonObject { put("command", "node") }))
+        }
+        assertEquals("{malformed-user-file", Files.readString(bad))
+
+        val good = tmp.resolve("good.json")
+        writer.sync(
+            good,
+            mapOf(
+                "local" to buildJsonObject {
+                    put("command", "node")
+                    put("cwd", "/opt/local")
+                },
+            ),
+        )
+        val parsed = Json.parseToJsonElement(Files.readString(good)).jsonObject
+            .getValue("mcpServers").jsonObject.getValue("local").jsonObject
+        assertEquals("/opt/local", parsed.getValue("cwd").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `sync honors daemon mcp_share false and leaves stdio unhosted`() = runBlocking {
+        val home = seedSyncFixtures(tmp.resolve("home-noshare"))
+        val state = tmp.resolve("state-noshare")
+        val cfgDir = home.resolve(".config").resolve("splice")
+        Files.createDirectories(cfgDir)
+        Files.writeString(cfgDir.resolve("splice.toml"), "[daemon]\nmcp_share = false\n")
+
+        val env = EnvReader { key ->
+            when (key) {
+                "SPLICE_STATE_DIR" -> state.toString()
+                "SPLICE_CONFIG" -> cfgDir.resolve("splice.toml").toString()
+                else -> null
+            }
+        }
+        val seams = McpHarnessSyncSeams(
+            osName = "Linux",
+            frontLive = McpFrontCheck { _, _ -> false },
+            codexRpc = CodexRpcSync { _, _ -> "rpc unavailable" },
+            bearerOverride = { "TEST-BEARER" },
+        )
+        val report = McpHarnessSync(home, StatePaths(baseOverride = state, homeDir = home), env, {}, seams)
+            .sync(setOf(McpHarness.AGY))
+        assertEquals(0, report.hostedCount)
+        val agyDoc = Json.parseToJsonElement(
+            Files.readString(home.resolve(".gemini").resolve("config").resolve("mcp_config.json")),
+        ).jsonObject.getValue("mcpServers").jsonObject
+        assertEquals("uvx", agyDoc.getValue("ast-grep").jsonObject.getValue("command").jsonPrimitive.content)
     }
 
     @Test
@@ -85,7 +158,7 @@ class McpHarnessSyncTest {
             val env = EnvReader { key -> if (key == "SPLICE_STATE_DIR") state.toString() else null }
             val seams = McpHarnessSyncSeams(
                 osName = "Linux",
-                frontReachable = LoopbackPortProbe { false },
+                frontLive = McpFrontCheck { _, _ -> false },
                 codexRpc = CodexRpcSync { _, _ -> "rpc unavailable in test" },
                 bearerOverride = { "TEST-MCP-BEARER" },
             )
@@ -117,9 +190,11 @@ class McpHarnessSyncTest {
         Files.writeString(
             home.resolve(".gemini").resolve("config").resolve("mcp_config.json"),
             """{"mcpServers":{"torad-fleet":{"command":"node","args":["/opt/fleet.mjs"],"disabled":false},""" +
+                """"local-app":{"serverUrl":"http://127.0.0.1:7740/mcp"},""" +
                 """"off-server":{"serverUrl":"https://off.example/mcp","disabled":true},""" +
+                """"ipv6-hosted":{"serverUrl":"http://[::1]:3096/mcp/ast-grep"},""" +
                 """"loopback-hosted":{"serverUrl":"http://127.0.0.1:3096/mcp/ast-grep",""" +
-                """"headers":{"Authorization":"Bearer K","X-Splice-Head":"agy"}}}}""",
+                """"headers":{"Authorization":"Bearer K","x-splice-head":"agy"}}}}""",
         )
         Files.writeString(
             home.resolve(".codex").resolve("config.toml"),
@@ -144,18 +219,9 @@ class McpHarnessSyncTest {
         Files.createDirectories(home.resolve(".codex"))
         Files.writeString(
             home.resolve(".claude.json"),
-            """
-            {
-              "mcpServers": {
-                "eli-brain": {
-                  "type": "http",
-                  "url": "https://mcp.torad.ai/mcp",
-                  "headers": {"Authorization": "Bearer BRAIN"}
-                },
-                "ast-grep": {"command": "uvx", "args": ["ast-grep-server"]}
-              }
-            }
-            """.trimIndent(),
+            """{"mcpServers":{"eli-brain":{"type":"http","url":"https://mcp.torad.ai/mcp",""" +
+                """"headers":{"Authorization":"Bearer BRAIN"}},""" +
+                """"ast-grep":{"command":"uvx","args":["ast-grep-server"]}}}""",
         )
         Files.writeString(
             home.resolve(".gemini").resolve("config").resolve("mcp_config.json"),

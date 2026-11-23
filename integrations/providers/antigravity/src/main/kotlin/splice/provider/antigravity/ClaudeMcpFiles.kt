@@ -6,7 +6,9 @@ package splice.provider.antigravity
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import splice.core.config.StatePaths
 import splice.core.config.UserHome
+import splice.core.mcp.McpUserRegistry
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
@@ -14,11 +16,12 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** Loads Claude Code's file-based MCP server declarations for [cwd]. */
+/** Loads Claude Code's file-based MCP server declarations for [cwd], seeded with opt-in Splice MCP registry entries. */
 internal class ClaudeMcpFiles(
     private val cwd: Path,
     private val env: EnvReader,
     private val log: LogSink,
+    private val registry: McpUserRegistry = McpUserRegistry(StatePaths(envReader = env, homeDir = UserHome.dir(env))),
 ) {
     private val reader = AgyMcpReader(log)
 
@@ -31,6 +34,7 @@ internal class ClaudeMcpFiles(
         val projectEntry = projectObject(claudeJson)
 
         val merged = LinkedHashMap<String, AgyMcpSpec>()
+        reader.fromConfigMap(registry.entries()).forEach { merged[it.name] = it }
         reader.fromConfigMap(claudeJson?.get("mcpServers") as? JsonObject).forEach { merged[it.name] = it }
         reader.fromConfigMap(projectEntry?.get("mcpServers") as? JsonObject).forEach { merged[it.name] = it }
         loadRepoMcpJson(settingsDir, projectEntry).forEach { merged[it.name] = it }

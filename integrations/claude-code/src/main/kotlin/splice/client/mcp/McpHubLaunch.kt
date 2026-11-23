@@ -144,19 +144,26 @@ public class McpHubLaunch(
         val plugins = if (flagHolds(launch.claude)) pluginsHeld(plan, runs) else emptyMap()
         val ownPlugin = plan.servers.filter { it.pluginRoot != null && it.pluginRoot !in plugins }.map { it.name }
         val held = runs - ownPlugin.toSet()
+        val ownEntries = ownPassthrough(plan, classes)
         val frontRan = front.hub.live() && Files.exists(dir.resolve(HUB_FRONT_STATE))
-        if (held.isEmpty() || !frontRan) return HubLaunchArgs(emptyList())
-        val file = (if (frontAnswers()) write(id, held, ownTemple(plan, classes)) else null)
+        val nothingToPass = held.isEmpty() && ownEntries.isEmpty()
+        if (nothingToPass || !frontRan) return HubLaunchArgs(emptyList())
+        val file = (if (frontAnswers()) write(id, held, ownEntries) else null)
             ?: return HubLaunchArgs(emptyList(), HUB_UNREACHED)
         val flags = plugins.values.sorted().flatMap { listOf(HUB_PLUGIN_FLAG, it) }
         return HubLaunchArgs(listOf("--mcp-config", file.toString()) + flags)
     }
 
-    private fun ownTemple(plan: McpLaunchPlan, classes: McpPlan): JsonObject {
-        val own = plan.servers.firstOrNull {
-            it.name == TEMPLE_MCP_NAME && classes.classOf(it.name) == McpShareClass.OWN
+    private fun ownPassthrough(plan: McpLaunchPlan, classes: McpPlan): JsonObject {
+        val entries = LinkedHashMap<String, JsonObject>()
+        plan.servers.forEach { server ->
+            val fromRegistry = server.source.fileName?.toString() == splice.core.mcp.MCP_REGISTRY_FILE_NAME
+            val isManaged = server.name == TEMPLE_MCP_NAME || fromRegistry
+            if (isManaged && classes.classOf(server.name) == McpShareClass.OWN) {
+                entries[server.name] = server.entry
+            }
         }
-        return JsonObject(own?.let { mapOf(it.name to it.entry) }.orEmpty())
+        return JsonObject(entries)
     }
 
     /** Each plugin whose every declared server, loaded or left out, the hub runs: its install folder, by itself. */

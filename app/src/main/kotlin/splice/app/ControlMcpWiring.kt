@@ -76,7 +76,12 @@ internal class ControlMcpWiring(
      *  ControlPlane.start to keep that budget; the census only WIDENS what `/api/mcp` can report, it never
      *  changes what [sharing] rewrites (see McpHostingWiring.kt's header). */
     fun host(home: Path, sharing: McpSharing, launchSpecs: List<LaunchSpec>): McpHost {
-        val globalRead = McpGlobalRead(home, log, TempleMcpEntry(home, paths = statePaths))
+        val globalRead = McpGlobalRead(
+            home,
+            log,
+            TempleMcpEntry(home, paths = statePaths),
+            splice.core.mcp.McpUserRegistry(statePaths),
+        )
         val inventory = McpInventoryWiring(home, sharing, globalRead, launchSpecs).inventory
         this.inventory = inventory
         this.sharing = sharing

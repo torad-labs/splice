@@ -2,6 +2,7 @@ package splice.app.mcp
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
+import splice.client.mcp.TEMPLE_MCP_NAME
 import splice.core.config.StatePaths
 import splice.core.util.LogSink
 import java.nio.file.Path
@@ -26,12 +27,16 @@ internal class NativeCodexMcp(
 
     private data class Connection(val session: NativeCodexMcpRpcSession, val shared: Boolean)
 
-    suspend fun install(home: Path, entry: JsonObject): String? {
+    suspend fun install(home: Path, entry: JsonObject): String? =
+        installAll(home, mapOf(TEMPLE_MCP_NAME to entry))
+
+    suspend fun installAll(home: Path, entries: Map<String, JsonObject>): String? {
+        if (entries.isEmpty()) return null
         val configFile = home.resolve("config.toml").toAbsolutePath().normalize()
         val connected = connect(home) ?: return NATIVE_CODEX_UNAVAILABLE_REASON
         val session = connected.session
         return try {
-            val changed = config.install(session, configFile, entry)
+            val changed = config.installAll(session, configFile, entries)
             val status = if (changed) "updated" else "matched"
             log("[mcp-service] Native Codex MCP config $status.\n")
             if (!connected.shared && socket.present(home)) {

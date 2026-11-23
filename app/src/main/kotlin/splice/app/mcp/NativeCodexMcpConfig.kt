@@ -8,15 +8,16 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.client.mcp.TEMPLE_MCP_NAME
 import splice.core.config.StatePaths
 import java.io.IOException
 import java.nio.file.Path
 
 private const val CODEX_CONFIG_BACKUP_REASON = "Could not create a secure Codex config backup."
 private const val CODEX_CONFIG_PERMISSION_REASON = "Codex config permissions could not be secured."
-private const val CODEX_CONFIG_WRITE_REASON = "The Codex config API could not update mcp_servers.temple."
+private const val CODEX_CONFIG_WRITE_REASON = "The Codex config API could not update mcp_servers."
 private const val CODEX_CONFIG_RELOAD_REASON = "The Codex MCP server config could not be reloaded."
-private const val CODEX_CONFIG_ENTRY_REASON = "The existing Codex temple entry is not an object."
+private const val CODEX_CONFIG_ENTRY_REASON = "An existing Codex mcp_servers entry is not an object."
 
 internal class NativeCodexMcpConfig(paths: StatePaths) {
     private val files = NativeCodexMcpFiles(paths)
@@ -37,27 +38,45 @@ internal class NativeCodexMcpConfig(paths: StatePaths) {
         session: NativeCodexMcpRpcSession,
         configFile: Path,
         entry: JsonObject,
+    ): Boolean = installAll(session, configFile, mapOf(TEMPLE_MCP_NAME to entry))
+
+    suspend fun installAll(
+        session: NativeCodexMcpRpcSession,
+        configFile: Path,
+        entries: Map<String, JsonObject>,
     ): Boolean {
+        if (entries.isEmpty()) return false
         val target = files.configTarget(configFile)
-        val layer = NativeCodexMcpLayers().read(session, configFile, target)
-        val currentEntry = templeEntry(layer.config)
-        val restrictions = currentEntry?.filterKeys { it !in transportFields }.orEmpty()
-        val desiredEntry = JsonObject(entry + restrictions)
-        if (desiredEntry == currentEntry) {
+        var layer = NativeCodexMcpLayers().read(session, configFile, target)
+        val pending = pendingUpdates(layer.config, entries)
+        if (pending.isEmpty()) {
             reload(session)
             return false
         }
-
-        val secure = containsBearerHeaders(layer.config) || containsBearerHeaders(desiredEntry)
+        val secure = containsBearerHeaders(layer.config) || pending.values.any(::containsBearerHeaders)
         if (!files.prepareWrite(target, secure)) fail(CODEX_CONFIG_BACKUP_REASON)
-        writeEntry(session, configFile, layer.version, desiredEntry)
+        pending.entries.forEachIndexed { index, (name, desiredEntry) ->
+            if (index > 0) layer = NativeCodexMcpLayers().read(session, configFile, target)
+            writeEntry(session, configFile, layer.version, name, desiredEntry)
+        }
         if (secure && !files.tighten(target)) fail(CODEX_CONFIG_PERMISSION_REASON)
         reload(session)
         return true
     }
 
-    private fun templeEntry(config: JsonObject): JsonObject? =
-        objectField(objectField(config, "mcp_servers"), "temple")
+    private fun pendingUpdates(config: JsonObject, entries: Map<String, JsonObject>): Map<String, JsonObject> {
+        val out = LinkedHashMap<String, JsonObject>()
+        entries.forEach { (name, entry) ->
+            val currentEntry = serverEntry(config, name)
+            val restrictions = currentEntry?.filterKeys { it !in transportFields }.orEmpty()
+            val desiredEntry = JsonObject(entry + restrictions)
+            if (desiredEntry != currentEntry) out[name] = desiredEntry
+        }
+        return out
+    }
+
+    private fun serverEntry(config: JsonObject, name: String): JsonObject? =
+        objectField(objectField(config, "mcp_servers"), name)
 
     private fun objectField(parent: JsonObject?, key: String): JsonObject? {
         val value = parent?.get(key)
@@ -86,13 +105,14 @@ internal class NativeCodexMcpConfig(paths: StatePaths) {
         session: NativeCodexMcpRpcSession,
         configFile: Path,
         version: String,
+        name: String,
         entry: JsonObject,
     ) {
         try {
             session.request(
                 "config/value/write",
                 buildJsonObject {
-                    put("keyPath", "mcp_servers.temple")
+                    put("keyPath", "mcp_servers.$name")
                     put("value", entry)
                     put("mergeStrategy", "replace")
                     put("filePath", configFile.toString())

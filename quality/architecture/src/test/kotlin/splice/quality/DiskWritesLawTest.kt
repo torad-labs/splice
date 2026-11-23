@@ -320,6 +320,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "writeAtomic0600(" to 2,
     ),
     "app/src/main/kotlin/splice/app/head/SessionFallbackStore.kt" to mapOf("writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/mcp/AgyMcpConfigWriter.kt" to mapOf("writeAtomic0600(" to 2),
+    "app/src/main/kotlin/splice/app/mcp/CodexMcpTomlWriter.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/mcp/NativeCodexMcpFiles.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/mcp/NativeCodexSocketProxy.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeAccountFolders.kt" to mapOf("writeAtomic0600(" to 4),
@@ -346,6 +348,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "core/src/main/kotlin/splice/core/retired/CommandRetirements.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/retired/RetiredHeads.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/speed/SessionSpeeds.kt" to mapOf("writeAtomic0600(" to 1),
+    // Opt-in user MCP server registry and its content-addressed backups, in the mcp-registry.json README row.
+    "core/src/main/kotlin/splice/core/mcp/McpUserRegistry.kt" to mapOf("writeAtomic0600(" to 2),
     // The private MCP receipt row: two platform branches create the same lock, one atomic publication writes each entry.
     "core/src/main/kotlin/splice/core/mcp/McpToolResultFiles.kt" to mapOf(
         "FileChannel.open(" to 2,

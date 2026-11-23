@@ -9,6 +9,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.putJsonObject
 import splice.client.Keys
+import splice.core.config.StatePaths
+import splice.core.mcp.McpUserRegistry
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
@@ -29,6 +31,7 @@ public class HostedMcpOverlay(
     private val dir: Path,
     private val log: LogSink,
     private val temple: TempleMcpEntry = TempleMcpEntry(home),
+    private val registry: McpUserRegistry = McpUserRegistry(StatePaths(homeDir = home)),
 ) {
     /** The launch's `--mcp-config <file>`, or nothing when [file] is null. */
     public fun args(headKey: String, templeEntry: McpServerInput? = selectedTemple()): List<String> =
@@ -36,12 +39,18 @@ public class HostedMcpOverlay(
 
     /** The file for a launch of [headKey], or null when nothing is hosted or that file cannot be read: the launch then
      *  runs over the existing servers as before. Rewritten per launch, so it follows the file and the bearer. */
-    public fun file(headKey: String, templeEntry: McpServerInput? = selectedTemple()): Path? =
-        write(JsonObject(servers().orEmpty() - TEMPLE_MCP_NAME + templeEntries(templeEntry)), headKey, templeEntry)
+    public fun file(headKey: String, templeEntry: McpServerInput? = selectedTemple()): Path? {
+        val local = servers().orEmpty()
+        val imported = registry.entries()
+        val combined = JsonObject(imported + local - TEMPLE_MCP_NAME + templeEntries(templeEntry))
+        val registryOnly = imported.keys - local.keys
+        return write(combined, headKey, templeEntry, registryOnly)
+    }
 
     /** A head that isolates the person's other MCP servers still receives the registered Temple service. */
     public fun managedArgs(headKey: String, templeEntry: McpServerInput? = selectedTemple()): List<String> =
-        write(templeEntries(templeEntry), headKey, templeEntry)?.let { listOf("--mcp-config", it.toString()) }.orEmpty()
+        write(templeEntries(templeEntry), headKey, templeEntry, emptySet())
+            ?.let { listOf("--mcp-config", it.toString()) }.orEmpty()
 
     private fun selectedTemple(): McpServerInput? = temple.server()?.let { server ->
         McpServerInput(server.name, server.entry, server.provenance)
@@ -50,12 +59,18 @@ public class HostedMcpOverlay(
     private fun templeEntries(entry: McpServerInput?): JsonObject =
         JsonObject(entry?.let { mapOf(TEMPLE_MCP_NAME to it.entry) }.orEmpty())
 
-    private fun write(servers: JsonObject, headKey: String, templeEntry: McpServerInput?): Path? {
+    private fun write(
+        servers: JsonObject,
+        headKey: String,
+        templeEntry: McpServerInput?,
+        registryOnly: Set<String>,
+    ): Path? {
         val inputs = servers.map { (name, entry) ->
             templeEntry?.takeIf { it.name == name } ?: McpServerInput(name, entry)
         }
         val plan = sharing.plan(inputs, headKey.ifBlank { null })
-        val names = plan.hosted.keys + listOf(TEMPLE_MCP_NAME).filter { it in servers }
+        val names = plan.hosted.keys + registryOnly.filter { it in servers } +
+            listOf(TEMPLE_MCP_NAME).filter { it in servers }
         if (names.isEmpty()) return null
         val body = buildJsonObject {
             putJsonObject(Keys.MCP_SERVERS) {

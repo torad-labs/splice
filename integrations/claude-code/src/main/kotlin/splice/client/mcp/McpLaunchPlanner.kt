@@ -23,6 +23,8 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import splice.client.Keys
 import splice.client.RealPathOrSelf
+import splice.core.config.StatePaths
+import splice.core.mcp.McpUserRegistry
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -41,6 +43,7 @@ public class McpLaunchPlanner(
     private val home: Path,
     private val managedSettings: Path = Path.of(PLAN_MANAGED_SETTINGS),
     private val temple: TempleMcpEntry = TempleMcpEntry(home),
+    private val registry: McpUserRegistry = McpUserRegistry(StatePaths(homeDir = home)),
 ) {
     private val json = SourceJson()
     private val realPath = RealPathOrSelf()
@@ -57,7 +60,10 @@ public class McpLaunchPlanner(
         val settings = settings(configDir, here, trusted(state, here, project))
         val approval = McpRepoApproval(settings + record)
         val (approved, waiting) = repoServers(here).partition { approval.verdict(it.name) == RepoVerdict.APPROVED }
-        val user = servers(McpPlanScope.USER, stateFile, state) + listOfNotNull(temple.server())
+        val registered = registry.entries().mapNotNull { (name, entry) ->
+            (entry as? JsonObject)?.let { McpPlannedServer(name, McpPlanScope.USER, registry.file, it) }
+        }
+        val user = registered + servers(McpPlanScope.USER, stateFile, state) + listOfNotNull(temple.server())
         val scoped = (user + approved + servers(McpPlanScope.LOCAL, stateFile, record)).associateBy { it.name }
         val plugins = McpPluginServers(configDir.resolve(PLUGINS_DIR), json)
             .servers(enabledPlugins(settings), project, here)

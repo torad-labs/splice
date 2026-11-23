@@ -24,6 +24,8 @@ import splice.client.mcp.PluginMcpJsonReader
 import splice.client.mcp.ProjectMcpServersReader
 import splice.client.mcp.RepoMcpJsonReader
 import splice.control.mcp.GlobalMcpServers
+import splice.core.config.StatePaths
+import splice.core.mcp.McpUserRegistry
 import splice.core.topology.DaemonConfig
 import splice.core.util.LogSink
 import splice.launch.LaunchSpec
@@ -50,6 +52,7 @@ internal class McpGlobalRead(
     private val home: Path,
     private val log: LogSink = LogSink(System.err::print),
     private val temple: splice.client.mcp.TempleMcpEntry = splice.client.mcp.TempleMcpEntry(home),
+    private val registry: McpUserRegistry = McpUserRegistry(StatePaths(homeDir = home)),
 ) : GlobalMcpServers {
     private val json = Json { ignoreUnknownKeys = true }
     private var lastFailure: String? = null
@@ -59,8 +62,9 @@ internal class McpGlobalRead(
 
     @Synchronized
     override fun inputs(): List<McpServerInput> {
+        val imported = registry.entries().map { (name, entry) -> McpServerInput(name, entry) }
         val declared = declared().map { (name, entry) -> McpServerInput(name, entry) }
-        return (declared + temple.inputs()).associateBy(McpServerInput::name).values.toList()
+        return (imported + declared + temple.inputs()).associateBy(McpServerInput::name).values.toList()
     }
 
     private fun declared(): JsonObject {

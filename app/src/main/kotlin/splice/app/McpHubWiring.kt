@@ -58,6 +58,7 @@ internal class McpHubWiring(
             UserHome.dir(),
             paths = splice.core.config.StatePaths(baseOverride = stateDir),
         ),
+        registry = splice.core.mcp.McpUserRegistry(splice.core.config.StatePaths(baseOverride = stateDir)),
     )
     private val darwin = DarwinPs()
 

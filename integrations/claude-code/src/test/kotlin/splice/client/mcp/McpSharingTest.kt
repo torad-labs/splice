@@ -191,4 +191,14 @@ class McpSharingTest {
         assertEquals(setOf("exa"), restarted.plan(changed).hosted.keys)
         assertFalse(Files.readString(file).contains("EXA_API_KEY"))
     }
+
+    @Test
+    fun `http transport rejection redacts query-string credentials from McpWhy`() {
+        val entries = Json.parseToJsonElement(
+            """{"exa": {"type": "http", "url": "https://mcp.exa.ai/mcp?exaApiKey=top-secret-key"}}""",
+        ).jsonObject
+        val plan = sharing().plan(entries)
+        assertEquals("https://mcp.exa.ai/mcp", plan.why.getValue("exa").value)
+        assertFalse(plan.why.getValue("exa").value.orEmpty().contains("top-secret-key"))
+    }
 }

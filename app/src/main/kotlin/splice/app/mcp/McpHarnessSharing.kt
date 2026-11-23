@@ -3,20 +3,25 @@
 package splice.app.mcp
 
 import splice.app.MCP_HUB_FRONT_PORT
+import splice.app.McpGlobalRead
 import splice.app.cli.AdminSupport
 import splice.client.mcp.McpAccessKey
 import splice.client.mcp.McpBearer
 import splice.client.mcp.McpRootsVerdicts
+import splice.client.mcp.McpServerInput
 import splice.client.mcp.McpShareChoice
 import splice.client.mcp.McpSharing
+import splice.client.mcp.TempleMcpEntry
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.mcp.McpUserRegistry
 import splice.core.topology.DaemonConfig
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.topology.TopologyLoader
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.Path
 
 /** Builds [McpSharing] and endpoint prefixes for [McpHarnessSync]. */
 internal class McpHarnessSharing(
@@ -25,6 +30,11 @@ internal class McpHarnessSharing(
     private val log: LogSink,
     private val seams: McpHarnessSyncSeams,
 ) {
+    /** The servers every harness is given, for [home]: what the person imported into Splice, `~/.claude.json`'s and
+     *  the Temple's. */
+    fun inputs(home: Path): List<McpServerInput> =
+        McpGlobalRead(home, log, TempleMcpEntry(home, env, paths), McpUserRegistry(paths)).inputs()
+
     fun endpointPrefix(): String {
         val useFront = seams.frontLive.live(paths.stateDir, MCP_HUB_FRONT_PORT)
         val port = if (useFront) MCP_HUB_FRONT_PORT else AdminSupport.controlPort(env)

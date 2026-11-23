@@ -1,5 +1,6 @@
 // Plans Splice's unified MCP server catalog (registry + ~/.claude.json + registered services) and syncs it
-// to every harness the user chose to connect: Claude Code / Desktop, Antigravity (agy), and Codex.
+// to every harness the user chose to connect: Claude Code / Desktop (its gateway profiles, McpDesktopSync),
+// Antigravity (agy), and Codex.
 package splice.app.mcp
 
 import kotlinx.serialization.json.JsonArray
@@ -55,16 +56,29 @@ internal class McpHarnessSync(
         sharing: McpSharing,
         basePlan: McpPlan,
     ): HarnessSyncOutcome = when (harness) {
-        McpHarness.CLAUDE -> HarnessSyncOutcome(
-            harness = McpHarness.CLAUDE,
-            ok = true,
-            changed = false,
-            serverCount = inputs.size,
-            hostedCount = basePlan.hosted.size,
-            detail = "Claude sessions load Splice MCP servers automatically through Splice's launch overlay",
-        )
+        McpHarness.CLAUDE -> syncClaude(inputs, basePlan)
         McpHarness.AGY -> syncAgy(inputs, sharing)
         McpHarness.CODEX -> syncCodex(inputs, sharing)
+    }
+
+    /** Claude Code sessions load every server through Splice's launch overlay; Claude Desktop on the gateway is given
+     *  them in each of its profiles (McpDesktopSync). */
+    private fun syncClaude(inputs: List<McpServerInput>, basePlan: McpPlan): HarnessSyncOutcome {
+        val profiles = McpDesktopSync(home, paths, env, seams.osName).sync()
+        val desktop = profiles.joinToString(", ") { (profile, changed, failed) ->
+            val verb = failed?.let { "could not write it ($it)" } ?: if (changed) "updated" else UP_TO_DATE
+            "$profile ($verb)"
+        }.ifEmpty { "no gateway profile found" }
+        val detail = "Claude Code sessions load Splice MCP servers through Splice's launch overlay; " +
+            "Claude Desktop: $desktop"
+        return HarnessSyncOutcome(
+            harness = McpHarness.CLAUDE,
+            ok = profiles.none { it.failed != null },
+            changed = profiles.any { it.changed },
+            serverCount = inputs.size,
+            hostedCount = basePlan.hosted.size,
+            detail = detail,
+        )
     }
 
     private fun syncAgy(inputs: List<McpServerInput>, sharing: McpSharing): HarnessSyncOutcome {
@@ -75,7 +89,7 @@ internal class McpHarnessSync(
         val target = discovery.agyConfigFile()
         return try {
             val changed = agyWriter.sync(target, entries)
-            val verb = if (changed) "updated" else "already up to date"
+            val verb = if (changed) "updated" else UP_TO_DATE
             HarnessSyncOutcome(McpHarness.AGY, true, changed, entries.size, plan.hosted.size, "$target ($verb)")
         } catch (failure: IOException) {
             val detail = "could not write $target (${failure::class.simpleName})"
@@ -96,7 +110,7 @@ internal class McpHarnessSync(
         }
         val rpcResult = rpc(discovery.codexHomeDir(), codexEntries)
         if (rpcResult.ok) {
-            val verb = if (rpcResult.changed) "synced" else "already up to date"
+            val verb = if (rpcResult.changed) "synced" else UP_TO_DATE
             return HarnessSyncOutcome(
                 McpHarness.CODEX,
                 true,
@@ -115,7 +129,7 @@ internal class McpHarnessSync(
         hostedCount: Int,
     ): HarnessSyncOutcome = try {
         val changed = codexFallback.sync(configFile, codexEntries)
-        val verb = if (changed) "updated" else "already up to date"
+        val verb = if (changed) "updated" else UP_TO_DATE
         HarnessSyncOutcome(McpHarness.CODEX, true, changed, codexEntries.size, hostedCount, "$configFile ($verb)")
     } catch (failure: IOException) {
         val detail = "could not update $configFile (${failure::class.simpleName})"
@@ -142,3 +156,6 @@ internal class McpHarnessSync(
         }
     }
 }
+
+// How a harness config that needed no change is named in its outcome.
+private const val UP_TO_DATE = "already up to date"

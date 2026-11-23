@@ -12,7 +12,7 @@ import splice.topology.TopologyStatePaths
 
 internal const val MCP_SERVICE_USAGE =
     "status [--json] | import [--from SOURCE|all] [--server NAME]... | " +
-        "sync [--to HARNESS|all] [--import] | " +
+        "sync [--to HARNESS|all] [--import] | $MCP_STDIO_USAGE | " +
         "install temple ((--script FILE [--command COMMAND] | --launch-file FILE) --url URL | --endpoint URL) " +
         "[--codex-home DIR]"
 
@@ -30,10 +30,13 @@ internal class McpServiceCommand(
     private val registration = McpServiceRegistration(env)
     private val harnessCli = McpHarnessCli(out, err, env)
 
-    suspend fun run(args: List<String>): Int {
-        if (args.firstOrNull() in setOf("status", "import", "sync")) {
-            return harnessCli.run(args)
-        }
+    suspend fun run(args: List<String>): Int = when (args.firstOrNull()) {
+        "stdio" -> McpStdioCommand(err = err, env = env).run(args.drop(1))
+        "status", "import", "sync" -> harnessCli.run(args)
+        else -> register(args)
+    }
+
+    private fun register(args: List<String>): Int {
         val parsed = requestParser.parse(args)
         val wanted = parsed.request
         if (wanted == null) {

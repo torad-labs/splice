@@ -1,4 +1,4 @@
-// NEW: desktop-full (docs/specs/desktop-full.md, df-app-on, df-credential and df-managed-launcher). The two programs
+// NEW: desktop-full (docs/specs/desktop-full.md, df-app-on, df-credential and df-managed-launcher). The programs
 // Claude Desktop runs for splice, each an owner-only (0700) script in the state folder, named by its absolute path:
 //
 //   <state dir>/desktop-credential   splice's configuration's `inferenceCredentialHelper`; runs `splice desktop
@@ -6,9 +6,11 @@
 //   <state dir>/desktop-launch       what a managed `processWrapper` can name; runs `splice desktop launch` with its
 //                                    arguments, which starts the Code tab's Claude Code with the desktop key where
 //                                    Desktop stripped it
+//   <state dir>/desktop-mcp          what `claude_desktop_config.json` names for an MCP server reached at a URL
+//                                    (desktop-3p-parity); runs `splice mcp stdio <name>`, the stdio bridge to it
 //
 // Desktop runs them with its own environment, which names no splice variable, so each bakes in, as absolute paths, the
-// Java, the jar and the state folder of the splice that laid it. Neither holds a key: the verbs read it from the state
+// Java, the jar and the state folder of the splice that laid it. None holds a key: the verbs read it from the state
 // folder each time. They are laid again at each `on` and each daemon start while splice's configuration is in
 // Desktop's library, so they follow an upgrade.
 package splice.app.desktop.setup
@@ -16,6 +18,7 @@ package splice.app.desktop.setup
 import splice.app.cli.AdminSupport
 import splice.core.util.SecureFile
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermission
 
@@ -25,6 +28,9 @@ internal class DesktopPrograms(private val stateDir: Path) {
 
     /** Where the launcher is laid. */
     val launch: Path = stateDir.resolve(LAUNCH_FILE).toAbsolutePath()
+
+    /** Where the MCP bridge is laid: the command `claude_desktop_config.json` names for a server reached at a URL. */
+    val mcp: Path = stateDir.resolve(MCP_FILE).toAbsolutePath()
 
     /** Both programs laid for this process's Java and jar; the credential helper's absolute path, which splice's
      *  configuration names. */
@@ -50,8 +56,20 @@ internal class DesktopPrograms(private val stateDir: Path) {
         return credential
     }
 
-    /** Both programs taken away; whether there was one. */
-    fun remove(): Boolean = listOf(credential, launch).map(Files::deleteIfExists).any { it }
+    /** The MCP bridge laid for this process's Java and jar where it does not already read so; its absolute path. */
+    fun layMcp(): Path {
+        val state = quoted(stateDir.toAbsolutePath().toString())
+        val text = "#!/bin/sh\n" +
+            "# Laid by splice for Claude Desktop. It holds no key: it runs `splice mcp stdio <name>`,\n" +
+            "# which reads the MCP access key from splice's state folder.\n" +
+            "SPLICE_STATE_DIR=$state exec ${spliceWords()} mcp stdio \"\$@\"\n"
+        val held = if (Files.isRegularFile(mcp, LinkOption.NOFOLLOW_LINKS)) Files.readString(mcp) else null
+        if (held != text || !Files.isExecutable(mcp)) SecureFile.writeAtomic(mcp, text, OWNER_ONLY_EXECUTABLE)
+        return mcp
+    }
+
+    /** Every program taken away; whether there was one. */
+    fun remove(): Boolean = listOf(credential, launch, mcp).map(Files::deleteIfExists).any { it }
 
     /** This splice as shell words: its Java and jar, or its class path when it runs from a build. */
     private fun spliceWords(): String {
@@ -76,6 +94,7 @@ private val OWNER_ONLY_EXECUTABLE = setOf(
 // The programs' names in the state folder.
 private const val CREDENTIAL_FILE = "desktop-credential"
 private const val LAUNCH_FILE = "desktop-launch"
+private const val MCP_FILE = "desktop-mcp"
 
 private const val JAVA_HOME = "java.home"
 private const val CLASS_PATH = "java.class.path"

@@ -19,6 +19,8 @@
 //   splice desktop acp [claude args...]            what Desktop's launcher runs in place of `claude` for an Antigravity
 //                                                  model: the session runs on `agy acp` (DesktopAcpCommand); needs no
 //                                                  daemon
+//   splice desktop wrapper [--print | --check]     the processWrapper Claude Code's managed settings need to start the
+//                                                  Code tab through desktop-launch: shown as it should read, or checked
 package splice.app.cli.desktop
 
 import splice.app.LifecycleWiring
@@ -31,7 +33,7 @@ import splice.core.util.EnvReader
 
 internal const val DESKTOP_USAGE =
     "[--json] | on [--model <id>] [--yes] | off | rotate-key | credential | launch <command> [args...] | " +
-        "acp [claude args...]"
+        "acp [claude args...] | wrapper [--print | --check]"
 
 /** Whether the person said yes to a question asked on the terminal. */
 internal fun interface DesktopConfirm {
@@ -62,6 +64,7 @@ internal class DesktopCommand(
         args.firstOrNull() == "acp" -> DesktopAcpCommand(env, err).run(args.drop(1))
         args == listOf("credential") -> DesktopCredential(out, err).run(StatePaths(envReader = env).desktopKeyFile)
         args.firstOrNull() == "launch" -> DesktopLaunch(env, err).run(args.drop(1))
+        args.firstOrNull() == "wrapper" -> DesktopWrapper(env, out).run(args.drop(1))
         args.firstOrNull() == "on" && "--yes" in args -> verbs.run(args - "--yes")
         args.firstOrNull() == "on" -> asked(args)
         else -> verbs.run(args)

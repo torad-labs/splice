@@ -53,7 +53,7 @@ internal class DesktopSession(
     override var commands: List<AgyCommand> = emptyList()
         private set
 
-    /** True once Desktop asked to switch to a non-Antigravity model so seatd-pipe can hand off to Claude Code. */
+    /** True once Desktop asked to switch to a non-Antigravity model, so the launch pipe hands off to Claude Code. */
     var switchingOut: Boolean = false
         private set
 

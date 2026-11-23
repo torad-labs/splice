@@ -289,8 +289,9 @@ public class Daemon(
     /** Every provider in splice.toml, served by the gateway on its own, with no head (gateway-no-heads). */
     private val providers = ServedProviderAssembly(topology, buildInputs, managedHeadFactory, log)
 
-    /** desktop-antigravity: Antigravity, a provider only Claude Desktop runs, once agy says what it offers. */
-    private val antigravity = AntigravityJoin(config, log)
+    /** desktop-antigravity: Antigravity, a provider only Claude Desktop runs, once agy says what it offers; never asked
+     *  when splice.toml says `[daemon] antigravity = false`. */
+    private val antigravity = AntigravityJoin(config, log, enabled = topology.daemon.antigravity != false)
 
     /** LAN share: the commands this machine runs on another's heads, and the listener that offers its own. */
     private val share = DaemonShare(topology, log, statePaths.stateDir)

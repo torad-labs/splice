@@ -16,7 +16,7 @@ import kotlin.io.path.relativeTo
 
 /** The host tools this box happens to run, which public source must not name. Assembled from parts
  *  so this file does not itself carry the literals it bans. */
-private val BANNED: List<String> = listOf("host" + "shield", "build" + "gate")
+private val BANNED: List<String> = listOf("host" + "shield", "build" + "gate", "seat" + "d")
 
 /** Generated output, images and archives are not prose and carry no requirement to state. */
 private val SKIP_EXTENSIONS = setOf("jar", "png", "ico", "woff2")

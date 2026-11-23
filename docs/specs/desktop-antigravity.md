@@ -6,8 +6,8 @@ Plan, Nov 21, 2026. Step 1 is built (Gemini rows in Desktop's picker); step 2 is
 
 Antigravity's Gemini models show in Claude Desktop's Code tab picker, each with its reasoning levels, like any other
 login provider's models. Pick one and the session runs on Marcos's Google AI subscription through Google's own
-`agy acp`. It has streaming replies, tool cards, permission prompts, Stop and history, shows in `seatd list` and the
-Temple, and takes his turns from the Eli app.
+`agy acp`. It has streaming replies, tool cards, permission prompts, Stop and history, keeps the running-session
+record any tool that lists Claude sessions reads, and takes turns from Desktop's own paths.
 
 ## The rules it keeps (Google's terms)
 
@@ -24,8 +24,11 @@ other models.
 ## Wiring
 
 ```
-Desktop --stream-json--> claude-door-launcher --> seatd-pipe --> splice-acp --ACP--> agy acp --> Google
+Desktop --stream-json--> <state>/desktop-launch (splice desktop launch) --> splice desktop acp --ACP--> agy acp --> Google
 ```
+
+Nothing outside splice is needed beyond Claude Code's managed `processWrapper` naming `<state>/desktop-launch`
+(`splice desktop wrapper` shows it), and Google's `agy`.
 
 ### 1. The catalog: Antigravity is one more login provider
 
@@ -55,22 +58,21 @@ The code is in `integrations/providers/antigravity`: `AcpConnection` (the ACP cl
 
 ### 2. The launcher picks the program
 
-`~/.local/bin/claude-door-launcher`: when argv has `--model=claude-antigravity--*`, the `claude` binary word becomes
-splice's translator, `~/.local/lib/splice/gemini/claude`. Nothing else in the script changes.
+`splice desktop launch` (`DesktopLaunch`, `app/.../desktop/pipe/`): when Desktop's command line has
+`--model=claude-antigravity--*` (or `--model claude-antigravity--*`), the session runs on `splice desktop acp
+--stands-in-for=<claude> <Desktop's arguments>` instead of Claude Code, so its turns never reach the door, which would
+refuse them as a model it doesn't serve. On Linux, a launch that carries the no-new-privileges bit (Desktop after an
+in-app restart) first runs itself again as a transient user service, `systemd-run --user --pipe --wait --quiet
+--collect --same-dir`, passing the environment by name only (`-E NAME`) and relaying TERM, INT and HUP (and QUIT where
+the Java runtime gives it up) to it (`PrivilegeEscape`, `EscapedLaunch`).
 
 ### 3. The translator is a `claude`
 
 The translator plays the role of `claude` for Desktop. It reads and writes the same stream-json and writes the same
-transcript and session files. So it is installed under that name: `install.sh` puts a shim called `claude` in
-`~/.local/lib/splice/gemini/`, and the shim `exec`s `splice desktop acp`.
-
-seatd picks a seat's profile by the program's file name, so a Gemini seat gets the `claude` profile, the same one
-every Desktop session has:
-
-- The Eli app's path, the inbox and the transcript lookup work as they do for Claude sessions.
-- seatd needs no new profile, no configuration and no code change.
-- An ordinary `sendMessage` from another seat goes to Claude's peer socket, which the translator doesn't open, so it
-  isn't delivered.
+transcript and session files, so a tool that knows Claude sessions finds a Gemini one the same way. `install.sh` also
+lays a shim called `claude` in `~/.local/lib/splice/gemini/` that `exec`s `splice desktop acp`, for a launcher of the
+person's own that swaps the `claude` program by name; `splice desktop launch` needs none. Claude's peer socket isn't
+opened, so a peer message to a Gemini session isn't delivered.
 
 The translator starts `agy acp` (`--add-dir` passed on;
 `--dangerously-skip-permissions` when Desktop's mode is `bypassPermissions`). It speaks stream-json to Desktop and ACP
@@ -92,8 +94,8 @@ to agy:
 
 The model name maps back to agy's id through `ReadableNames.upstreamOf`.
 
-Like `claude`, it writes `~/.claude/projects/<cwd>/<id>.jsonl` and `~/.claude/sessions/<pid>.json`, which Desktop and
-seatd already read.
+Like `claude`, it writes `~/.claude/projects/<cwd>/<id>.jsonl` and `~/.claude/sessions/<pid>.json`, which Desktop already
+reads.
 
 The ACP client is `AcpConnection` in `integrations/providers/antigravity` (step 1). The translator's mapping goes in
 that module beside it, and its `splice desktop acp` subcommand in `app/.../desktop/acp/`.
@@ -101,15 +103,18 @@ that module beside it, and its `splice desktop acp` subcommand in `app/.../deskt
 ### 5. A live session switches to Gemini and back (Marcos, Nov 21, 2026)
 
 Desktop changes a running session's model with `set_model` on the stdin of the process it already runs. It starts no
-new process, so the program itself has to change underneath the session. seatd-pipe is the one place that can do that:
-it wraps every Desktop session and relays its stdin, and it gives the session's stdout straight to the program, so it
-can give that same stdout to a new program without ever reading it. splice can't do it from the door: a turn that
-reaches the door comes from Claude Code, and Claude Code driving agy is what Google forbids.
+new process, so the program itself has to change underneath the session. `splice desktop launch` is the one place that
+can do that: for every stream-json session it relays Desktop's stdin (`DesktopPipe`, `PipeSession`), and it gives the
+session's stdout straight to the program, so it can give that same stdout to a new program without ever reading it.
+splice can't do it from the door: a turn that reaches the door comes from Claude Code, and Claude Code driving agy is
+what Google forbids.
 
-- **seatd-pipe (seatd's owner builds this):** it keeps the session's first line (`initialize`). When it relays a
+- **The launch pipe (splice):** it keeps the session's first line (`initialize`). When it relays a
   `set_model` to a `claude-antigravity--` model, it ends `claude`, starts the translator with the same session id,
   replays the kept `initialize`, then the `set_model`. A `set_model` back to any other model does the reverse:
-  it ends the translator and starts `claude --resume <session id>`. The seat, its scope and its name stay the same.
+  it ends the translator and starts `claude --resume <session id>`. The session id comes from Desktop's `--session-id`
+  or `--resume`, else from the running program's `<config>/sessions/<pid>.json`. Claude Code is only told its input
+  ended, so it finishes its turn; the translator is given the `set_model`, which cancels its turn and ends it.
 - **The translator (splice):** started mid-session, it answers the replayed `initialize` (Desktop ignores an answer
   to a request it already had answered) and the `set_model`. It opens an agy session and gives it the conversation
   so far, read from the session's Claude transcript. That handoff is lossy: Claude's reasoning and tool details
@@ -124,9 +129,8 @@ Each of these came up and was dropped. They stay out unless Marcos asks for them
 - **No new provider type, dialect or `splice add` profile.** Antigravity is a `ServedProvider` held apart from the
   door's, in `DesktopLineup.desktopOnly`, because `DoorCatalog` builds Desktop's list from served providers.
 - **No change to `DoorRouting`.** It already refuses a model it doesn't serve.
-- **No seatd profile and no `harness-profiles.json` entry.** The translator is named `claude`. seatd code is needed
-  only for the live switch (decision 5), which Marcos asked for on Nov 21.
-- **No sender check of any kind,** in seatd or in the translator.
+- **No profile for the translator in any session tool.** It keeps Claude Code's session files.
+- **No sender check of any kind** in the translator.
 - **No filtering of prompts Desktop writes itself:** `send_message`, dispatch, scheduled tasks, usage-limit
   auto-resume and the skipped-form line. They are part of the gap.
 - **No queueing of mid-turn messages for Send now / Cancel.** agy steers at once.
@@ -172,7 +176,8 @@ Each of these came up and was dropped. They stay out unless Marcos asks for them
 1. The ACP client and the Antigravity catalog source. Gemini rows appear in Desktop's picker with their reasoning
    levels. **Built Nov 21** (commit 361a0fb2c, then the review fixes).
 2. The translator, its `claude` shim and the launcher line. A Gemini session works end to end.
-3. The live switch (decision 5): seatd-pipe's swap, with seatd's owner, and the translator's mid-session start.
+3. The live switch (decision 5): the launch pipe's swap and the translator's mid-session start. **Built** in
+   `splice desktop launch`, with no program outside splice.
 4. Desktop's in-app tools for Gemini, so a Gemini session can orchestrate: the translator passes Desktop's MCP servers
    to agy in `session/new`.
 
@@ -184,7 +189,6 @@ Each of these came up and was dropped. They stay out unless Marcos asks for them
 - Effort changes reach agy.
 - Stop works.
 - A reopened session shows its history.
-- The seat is in `seatd list`.
-- An Eli-app message lands as a turn.
+- A live switch to Gemini and back keeps the conversation.
 
 Builds and tests run `on-box`. The live test runs here.

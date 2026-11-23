@@ -128,15 +128,7 @@ internal class ControlLaunchWiring(
         )
         return launch.also {
             it.loginGuard = owner
-            it.hubLaunch = McpHubLaunch(
-                McpLaunchPlanner(home, temple = temple),
-                sharing,
-                daemon.mcpAccess,
-                McpHubFront(MCP_HUB_FRONT_PORT, statePaths.stateDir.resolve("mcp-hub"), hub = hub),
-                log,
-                PluginFlagGate(PLUGIN_FLAG_PROVEN_VERSION, pluginFlags),
-                overlay = HostedMcpOverlay(home, sharing, statePaths.stateDir, log, temple),
-            )
+            it.hubLaunch = buildHubLaunch(home, sharing, temple, hub)
             // the mcp modes on for the launch's head and caller, read at each launch: a switch reaches the next one
             it.ownMcp = OwnMcpLaunch(
                 { head, caller -> ModeMcp { modes.held() }.on(head, caller).map { it.manifest.server } },
@@ -145,5 +137,23 @@ internal class ControlLaunchWiring(
                 log,
             )
         }
+    }
+
+    private fun buildHubLaunch(
+        home: Path,
+        sharing: McpSharing,
+        temple: splice.client.mcp.TempleMcpEntry,
+        hub: McpHubLive,
+    ): McpHubLaunch {
+        val registry = splice.core.mcp.McpUserRegistry(statePaths)
+        return McpHubLaunch(
+            McpLaunchPlanner(home, temple = temple, registry = registry),
+            sharing,
+            daemon.mcpAccess,
+            McpHubFront(MCP_HUB_FRONT_PORT, statePaths.stateDir.resolve("mcp-hub"), hub = hub),
+            log,
+            PluginFlagGate(PLUGIN_FLAG_PROVEN_VERSION, pluginFlags),
+            overlay = HostedMcpOverlay(home, sharing, statePaths.stateDir, log, temple, registry),
+        )
     }
 }

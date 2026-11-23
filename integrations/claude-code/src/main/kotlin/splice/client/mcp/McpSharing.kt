@@ -198,7 +198,7 @@ public class McpSharing(
     private fun launchRejection(entry: Entry, provenance: McpServerProvenance): Rejected? = when {
         entry.type != null && entry.type != "stdio" -> Rejected(
             "transport '${entry.type}' already serves many clients",
-            McpWhy("transport", entry.url ?: entry.type),
+            McpWhy("transport", splice.core.mcp.McpRegistryNames().redactUrl(entry.url) ?: entry.type),
         )
         entry.command == null -> Rejected("no command", McpWhy("no_command"))
         !shareByDefault.shared() ->

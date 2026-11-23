@@ -14,7 +14,11 @@ import java.nio.file.Path
 
 /** [configDirs] are the heads' config homes, by head key; [statePaths] is where the planner reads its registrations. */
 internal class HeadMcpServers(private val configDirs: Map<String, Path>, statePaths: StatePaths) : WorkerMcpServers {
-    private val planner = McpLaunchPlanner(UserHome.dir(), temple = TempleMcpEntry(UserHome.dir(), paths = statePaths))
+    private val planner = McpLaunchPlanner(
+        UserHome.dir(),
+        temple = TempleMcpEntry(UserHome.dir(), paths = statePaths),
+        registry = splice.core.mcp.McpUserRegistry(statePaths),
+    )
 
     override fun servers(head: String, folder: Path): Map<String, JsonObject> {
         val configDir = configDirs[head] ?: return emptyMap()

@@ -40,6 +40,11 @@ internal data class SetupPrompts(
         MultiSelectPrompt(KeyReader(System.`in`), TerminalMode(), System.out)
             .ask("Optional side-by-side launchers (Enter to skip)", options, initial, minimum = 0)
     },
+    /** Optional harnesses to sync Splice MCP servers to (`claude`, `agy`, `codex`). */
+    val pickMcpHarnesses: HeadPicker = HeadPicker { options, initial ->
+        MultiSelectPrompt(KeyReader(System.`in`), TerminalMode(), System.out)
+            .ask("Harnesses to sync with Splice MCP (Enter to skip)", options, initial, minimum = 0)
+    },
     val spinner: Spinner = Spinner(),
     /** Whether anyone is watching: it decides which heads start ticked, never what is offered. */
     val hasConsole: ConsolePresence = ConsolePresence { System.console() != null },

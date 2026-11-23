@@ -2,6 +2,7 @@ package splice.app.mcp
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
+import splice.client.mcp.TEMPLE_MCP_NAME
 import splice.core.config.StatePaths
 import splice.core.util.LogSink
 import java.nio.file.Path
@@ -26,27 +27,33 @@ internal class NativeCodexMcp(
 
     private data class Connection(val session: NativeCodexMcpRpcSession, val shared: Boolean)
 
-    suspend fun install(home: Path, entry: JsonObject): String? {
+    suspend fun install(home: Path, entry: JsonObject): String? =
+        installAllWithStatus(home, mapOf(TEMPLE_MCP_NAME to entry)).error
+
+    suspend fun installAllWithStatus(home: Path, entries: Map<String, JsonObject>): CodexRpcSyncResult {
+        if (entries.isEmpty()) return CodexRpcSyncResult(ok = true, changed = false)
         val configFile = home.resolve("config.toml").toAbsolutePath().normalize()
-        val connected = connect(home) ?: return NATIVE_CODEX_UNAVAILABLE_REASON
+        val connected = connect(home) ?: return CodexRpcSyncResult(ok = false, error = NATIVE_CODEX_UNAVAILABLE_REASON)
         val session = connected.session
         return try {
-            val changed = config.install(session, configFile, entry)
+            val changed = config.installAll(session, configFile, entries)
             val status = if (changed) "updated" else "matched"
             log("[mcp-service] Native Codex MCP config $status.\n")
             if (!connected.shared && socket.present(home)) {
-                "Native Codex MCP is saved, but its shared daemon could not reload it. Retry the installation."
+                val msg = "Native Codex MCP is saved, but its shared daemon could not reload it. " +
+                    "Retry the installation."
+                CodexRpcSyncResult(ok = false, changed = changed, error = msg)
             } else {
-                null
+                CodexRpcSyncResult(ok = true, changed = changed)
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: NativeCodexMcpConfigFailure) {
             log(failure.reason)
-            failure.reason
+            CodexRpcSyncResult(ok = false, error = failure.reason)
         } catch (failure: NativeCodexMcpRpcFailure) {
             log(failure.reason)
-            failure.reason
+            CodexRpcSyncResult(ok = false, error = failure.reason)
         } finally {
             session.close()
         }

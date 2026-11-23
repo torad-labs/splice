@@ -1,0 +1,144 @@
+// Plans Splice's unified MCP server catalog (registry + ~/.claude.json + registered services) and syncs it
+// to every harness the user chose to connect: Claude Code / Desktop, Antigravity (agy), and Codex.
+package splice.app.mcp
+
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import splice.app.McpGlobalRead
+import splice.client.mcp.McpPlan
+import splice.client.mcp.McpServerInput
+import splice.client.mcp.McpSharing
+import splice.client.mcp.TempleMcpEntry
+import splice.core.config.StatePaths
+import splice.core.mcp.McpHarness
+import splice.core.mcp.McpUserRegistry
+import splice.core.util.EnvReader
+import splice.core.util.JsonScalars
+import splice.core.util.LogSink
+import java.io.IOException
+import java.nio.file.Path
+
+/** Coordinates planning and syncing Splice MCP servers across Claude, Antigravity (agy), and Codex. */
+internal class McpHarnessSync(
+    private val home: Path,
+    private val paths: StatePaths,
+    private val env: EnvReader = EnvReader(System::getenv),
+    private val log: LogSink = LogSink {},
+    private val seams: McpHarnessSyncSeams = McpHarnessSyncSeams(),
+) {
+    private val discovery = McpHarnessDiscovery(home, env, seams.osName)
+    private val agyWriter = AgyMcpConfigWriter(paths)
+    private val codexFallback = CodexMcpTomlWriter(paths)
+    private val registry = McpUserRegistry(paths)
+    private val sharingFactory = McpHarnessSharing(paths, env, log, seams)
+
+    /** Syncs all Splice MCP servers to each harness in [harnesses] and remembers connected harnesses. */
+    suspend fun sync(harnesses: Set<McpHarness>): McpSyncReport {
+        registry.readStrict()
+        val endpointPrefix = sharingFactory.endpointPrefix()
+        val inputs = McpGlobalRead(home, log, TempleMcpEntry(home, env, paths), registry).inputs()
+        val sharing = sharingFactory.planner(endpointPrefix)
+        val basePlan = sharing.plan(inputs)
+        val outcomes = harnesses.sortedBy { it.wire }.map { harness ->
+            syncOne(harness, inputs, sharing, basePlan)
+        }
+        val succeeded = outcomes.filter { it.ok }.map { it.harness }.toSet()
+        if (succeeded.isNotEmpty()) registry.rememberHarnesses(succeeded)
+        return McpSyncReport(inputs.size, basePlan.hosted.size, endpointPrefix, outcomes)
+    }
+
+    private suspend fun syncOne(
+        harness: McpHarness,
+        inputs: List<McpServerInput>,
+        sharing: McpSharing,
+        basePlan: McpPlan,
+    ): HarnessSyncOutcome = when (harness) {
+        McpHarness.CLAUDE -> HarnessSyncOutcome(
+            harness = McpHarness.CLAUDE,
+            ok = true,
+            changed = false,
+            serverCount = inputs.size,
+            hostedCount = basePlan.hosted.size,
+            detail = "Claude sessions load Splice MCP servers automatically through Splice's launch overlay",
+        )
+        McpHarness.AGY -> syncAgy(inputs, sharing)
+        McpHarness.CODEX -> syncCodex(inputs, sharing)
+    }
+
+    private fun syncAgy(inputs: List<McpServerInput>, sharing: McpSharing): HarnessSyncOutcome {
+        val plan = sharing.plan(inputs, McpHarness.AGY.wire)
+        val entries = plan.rewritten.entries.mapNotNull { (name, elem) ->
+            (elem as? JsonObject)?.let { name to it }
+        }.toMap()
+        val target = discovery.agyConfigFile()
+        return try {
+            val changed = agyWriter.sync(target, entries)
+            val verb = if (changed) "updated" else "already up to date"
+            HarnessSyncOutcome(McpHarness.AGY, true, changed, entries.size, plan.hosted.size, "$target ($verb)")
+        } catch (failure: IOException) {
+            val detail = "could not write $target (${failure::class.simpleName})"
+            HarnessSyncOutcome(McpHarness.AGY, false, false, entries.size, plan.hosted.size, detail)
+        }
+    }
+
+    private suspend fun syncCodex(inputs: List<McpServerInput>, sharing: McpSharing): HarnessSyncOutcome {
+        val plan = sharing.plan(inputs, McpHarness.CODEX.wire)
+        val codexEntries = LinkedHashMap<String, JsonObject>()
+        plan.rewritten.forEach { (name, elem) ->
+            val obj = elem as? JsonObject ?: return@forEach
+            toCodexEntry(obj)?.let { codexEntries[name] = it }
+        }
+        val configFile = discovery.codexConfigFile()
+        val rpc = seams.codexRpc ?: CodexRpcSync { dir, map ->
+            NativeCodexMcp(paths, log).installAllWithStatus(dir, map)
+        }
+        val rpcResult = rpc(discovery.codexHomeDir(), codexEntries)
+        if (rpcResult.ok) {
+            val verb = if (rpcResult.changed) "synced" else "already up to date"
+            return HarnessSyncOutcome(
+                McpHarness.CODEX,
+                true,
+                rpcResult.changed,
+                codexEntries.size,
+                plan.hosted.size,
+                "$configFile ($verb via Codex config API)",
+            )
+        }
+        return syncCodexFallback(configFile, codexEntries, plan.hosted.size)
+    }
+
+    private fun syncCodexFallback(
+        configFile: Path,
+        codexEntries: Map<String, JsonObject>,
+        hostedCount: Int,
+    ): HarnessSyncOutcome = try {
+        val changed = codexFallback.sync(configFile, codexEntries)
+        val verb = if (changed) "updated" else "already up to date"
+        HarnessSyncOutcome(McpHarness.CODEX, true, changed, codexEntries.size, hostedCount, "$configFile ($verb)")
+    } catch (failure: IOException) {
+        val detail = "could not update $configFile (${failure::class.simpleName})"
+        HarnessSyncOutcome(McpHarness.CODEX, false, false, codexEntries.size, hostedCount, detail)
+    }
+
+    /** Converts a Splice-planned canonical MCP entry into Codex's `mcp_servers.<name>` shape. */
+    fun toCodexEntry(canonical: JsonObject): JsonObject? {
+        val url = JsonScalars.str(canonical, "url")
+        val command = JsonScalars.str(canonical, "command")
+        return when {
+            !url.isNullOrBlank() -> buildJsonObject {
+                put("url", url)
+                val headers = canonical["headers"] as? JsonObject
+                if (headers != null && headers.isNotEmpty()) put("http_headers", headers)
+            }
+            !command.isNullOrBlank() -> buildJsonObject {
+                put("command", command)
+                (canonical["args"] as? JsonArray)?.takeIf { it.isNotEmpty() }?.let { put("args", it) }
+                JsonScalars.str(canonical, "cwd")?.takeIf { it.isNotBlank() }?.let { put("cwd", it) }
+                (canonical["env"] as? JsonObject)?.takeIf { it.isNotEmpty() }?.let { put("env", it) }
+            }
+            else -> null
+        }
+    }
+}

@@ -108,8 +108,9 @@ public class McpHeaderRegeneration(
     }
 
     private fun hosted(entry: JsonObject): Boolean {
-        val url = JsonScalars.str(entry, "url") ?: return false
-        if (JsonScalars.str(entry, "type") !in setOf("http", "sse")) return false
+        val url = JsonScalars.str(entry, "url") ?: JsonScalars.str(entry, "serverUrl") ?: return false
+        val type = JsonScalars.str(entry, "type")
+        if (type != null && type !in setOf("http", "sse")) return false
         return endpointPrefixes.any { url.startsWith(it) && url.length > it.length }
     }
 

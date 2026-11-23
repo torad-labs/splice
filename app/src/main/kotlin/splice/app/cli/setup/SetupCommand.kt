@@ -84,7 +84,7 @@ internal class SetupCommand(
 ) {
     private val frame = prompts.frame
     private val menu = SetupMenu(frame, profiles)
-    private val mcpShare = SetupMcpShare(frame, InstallWiring.units(env))
+    private val mcpShare = SetupMcpShare(prompts, InstallWiring.units(env), env)
     private val headChoices = SetupHeadChoices(prompts, profiles)
 
     /** The post-install OAuth tail, in splice.app.cli.setup since V4-156 (concentration). */
@@ -124,7 +124,7 @@ internal class SetupCommand(
         val bin = InstallLayout().localBin(env)
         val launchers = effects.launchers()
         val local = localModel.offer(path)
-        val share = mcpShare.ask(path)
+        val share = mcpShare.ask(path) ?: return WizardAnswer.Cancelled("cancelled")
         val summary = menu.summaryLines(path, bin, heads, launchers.summaryLines(launcherChoice)) +
             choices.values.map { it.summary } + localModel.summary(local) + mcpShare.summary(share)
         frame.note("Summary", summary)
@@ -186,7 +186,7 @@ private sealed class WizardAnswer {
         val picker: SetupHeads,
         val heads: List<String>,
         val local: Boolean,
-        /** [daemon] mcp_share to write, or null when splice.toml already held an answer. */
-        val share: Boolean?,
+        /** [daemon] mcp_share and optional user MCP import/harness sync choices. */
+        val share: McpSetupAnswer,
     ) : WizardAnswer()
 }

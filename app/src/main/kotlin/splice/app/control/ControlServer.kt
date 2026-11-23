@@ -198,7 +198,7 @@ internal class ControlServer(
         McpMount(
             host,
             guard,
-            McpLaunchFolders(sessions, McpServerClasses { host.sharing.plan(it) }),
+            McpLaunchFolders(sessions, McpServerClasses { host.sharing.plan(it) }, statePaths = config.statePaths),
             runtime.mcpServices,
         )
     }

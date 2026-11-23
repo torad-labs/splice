@@ -77,6 +77,61 @@ class DesktopLaunchTest(@param:TempDir private val tmp: Path) {
         assertEquals(127, launch(emptyMap(), tmp.resolve("no-such-program").toString()))
         assertEquals(true, said.single().contains("could not be started"), said.toString())
     }
+
+    @Test
+    fun `side-by-side launch reads real splice toml and strips side-by-side env vars from child`() {
+        val customPort = PORT + 100
+        val home = Files.createDirectories(tmp.resolve("home"))
+        val spliceConfig = Files.createDirectories(home.resolve(".config/splice")).resolve("splice.toml")
+        Files.writeString(spliceConfig, "[daemon]\ncontrol_port = $customPort\n")
+        val sideBySideDir = Files.createDirectories(tmp.resolve("config/claude-splice")).toString()
+        val vars = mapOf(
+            "HOME" to home.toString(),
+            "XDG_CONFIG_HOME" to sideBySideDir,
+            "CHROME_DESKTOP" to "ai.torad.claude-splice.desktop",
+            "CLAUDE_SPLICE_DESKTOP" to "1",
+            "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS" to "1",
+            GATEWAY to "http://127.0.0.1:$customPort/door",
+            "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST" to "1",
+        )
+        val inherited = mapOf(
+            "XDG_CONFIG_HOME" to sideBySideDir,
+            "CHROME_DESKTOP" to "ai.torad.claude-splice.desktop",
+            "CLAUDE_SPLICE_DESKTOP" to "1",
+            "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS" to "1",
+            "KEEP_VAR" to "kept",
+        )
+        val script = "printf '%s|%s|%s|%s|%s|%s' " +
+            "\"\${ANTHROPIC_AUTH_TOKEN-UNSET}\" \"\${XDG_CONFIG_HOME-UNSET}\" \"\${CHROME_DESKTOP-UNSET}\" " +
+            "\"\${CLAUDE_SPLICE_DESKTOP-UNSET}\" \"\${CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS-UNSET}\" " +
+            "\"\${KEEP_VAR-UNSET}\" > \"\$1\""
+        val exit = DesktopLaunch(EnvReader { vars[it] }, TerminalOutput { said += it }, inherited)
+            .run(listOf(STATE_DIR_FLAG, tmp.resolve("state").toString(), "sh", "-c", script, "sh", out.toString()))
+        assertEquals(0, exit)
+        assertEquals("${key()}|UNSET|UNSET|UNSET|UNSET|kept", Files.readString(out))
+    }
+
+    @Test
+    fun `normal launch keeps inherited XDG and desktop environment variables`() {
+        val inherited = mapOf(
+            "XDG_CONFIG_HOME" to tmp.resolve("config").toString(),
+            "CHROME_DESKTOP" to "claude.desktop",
+            "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS" to "1",
+        )
+        val script = "printf '%s|%s|%s' " +
+            "\"\${XDG_CONFIG_HOME-UNSET}\" \"\${CHROME_DESKTOP-UNSET}\" " +
+            "\"\${CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS-UNSET}\" > \"\$1\""
+        val env = mapOf(
+            "XDG_CONFIG_HOME" to tmp.resolve("config").toString(),
+            "HOME" to tmp.resolve("home").toString(),
+            "SPLICE_CONTROL_PORT" to PORT.toString(),
+            GATEWAY to door,
+        )
+        val exit = DesktopLaunch(EnvReader { env[it] }, TerminalOutput { said += it }, inherited)
+            .run(listOf(STATE_DIR_FLAG, tmp.resolve("state").toString(), "sh", "-c", script, "sh", out.toString()))
+        assertEquals(0, exit)
+        assertEquals("${tmp.resolve("config")}|claude.desktop|1", Files.readString(out))
+    }
 }
 
 private const val PORT = 47_913

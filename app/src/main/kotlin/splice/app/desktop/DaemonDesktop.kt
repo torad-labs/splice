@@ -139,6 +139,15 @@ internal class DaemonDesktop(
         }
     }
 
+    /** Re-writes the current model list and policy into every Desktop library pointing at [door], including newly
+     *  created side-by-side (`library.beside()`) folders, without re-fetching upstream providers. */
+    suspend fun publishAgain() {
+        publishing.withLock {
+            val source = lineups ?: return
+            door?.let { publish(it, source.lineup()) }
+        }
+    }
+
     /** The model list and splice's policy given to every Claude Desktop whose applied configuration points at [door]:
      *  the person's own, and each one run beside it on a config folder of its own. */
     private suspend fun publish(door: String, lineup: DesktopLineup) {

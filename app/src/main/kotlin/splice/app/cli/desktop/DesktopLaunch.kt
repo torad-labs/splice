@@ -15,6 +15,7 @@ import splice.app.cli.AdminSupport
 import splice.app.desktop.DESKTOP_PATH
 import splice.app.desktop.DOOR_PATH
 import splice.app.desktop.record.DesktopKey
+import splice.app.desktop.setup.CLAUDE_SPLICE_DESKTOP_ENV
 import splice.core.config.STATE_DIR_ENV
 import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
@@ -29,7 +30,11 @@ import java.net.URISyntaxException
 import java.nio.file.Files
 import java.util.concurrent.Executors
 
-internal class DesktopLaunch(private val env: EnvReader, private val err: TerminalOutput) {
+internal class DesktopLaunch(
+    private val env: EnvReader,
+    private val err: TerminalOutput,
+    private val inheritedEnv: Map<String, String> = emptyMap(),
+) {
     /** [args] run as a command, given the desktop key when it launches on this splice's door; its exit code. */
     fun run(args: List<String>): Int {
         val state = args.takeIf { it.firstOrNull() == STATE_DIR_FLAG }?.getOrNull(1)
@@ -38,9 +43,10 @@ internal class DesktopLaunch(private val env: EnvReader, private val err: Termin
             err.line("usage: splice desktop launch <command> [args...]")
             return LAUNCH_USAGE_EXIT
         }
-        val here = state?.let { dir -> EnvReader { if (it == STATE_DIR_ENV) dir else env(it) } } ?: env
+        val sideBySide = env(CLAUDE_SPLICE_DESKTOP_ENV) == "1"
+        val here = sessionEnv(sideBySide, state)
         val process = ProcessBuilder(command).inheritIO()
-        keyed(here)?.let { name -> process.environment()[name] = key(here) }
+        configureEnv(process, here, sideBySide)
         return try {
             val child = process.start()
             // Desktop stopping the wrapper stops the session it started, rather than leaving it running alone.
@@ -51,6 +57,17 @@ internal class DesktopLaunch(private val env: EnvReader, private val err: Termin
             err.line("splice desktop launch: ${command.first()} could not be started: ${SafeFailureText.render(e)}")
             NOT_STARTED_EXIT
         }
+    }
+
+    private fun sessionEnv(sideBySide: Boolean, state: String?): EnvReader {
+        val session = if (sideBySide) EnvReader { if (it in SIDE_BY_SIDE_ENV) null else env(it) } else env
+        return state?.let { dir -> EnvReader { if (it == STATE_DIR_ENV) dir else session(it) } } ?: session
+    }
+
+    private fun configureEnv(process: ProcessBuilder, here: EnvReader, sideBySide: Boolean) {
+        if (inheritedEnv.isNotEmpty()) process.environment().putAll(inheritedEnv)
+        if (sideBySide) SIDE_BY_SIDE_ENV.forEach(process.environment()::remove)
+        keyed(here)?.let { name -> process.environment()[name] = key(here) }
     }
 
     /** The variable the desktop key goes in for this launch, or null when it is not on this splice's door. */
@@ -110,3 +127,12 @@ private const val LAUNCH_USAGE_EXIT = 2
 
 // A shell's exit for a command it could not run.
 private const val NOT_STARTED_EXIT = 127
+
+// Variables SideBySideDesktop sets on the isolated Desktop process (plus Desktop's beta flag) that must neither
+// redirect splice.toml resolution nor leak into Code tab sessions.
+private val SIDE_BY_SIDE_ENV = setOf(
+    "XDG_CONFIG_HOME",
+    "CHROME_DESKTOP",
+    CLAUDE_SPLICE_DESKTOP_ENV,
+    "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
+)

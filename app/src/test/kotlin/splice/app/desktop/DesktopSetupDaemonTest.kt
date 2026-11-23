@@ -25,12 +25,16 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.Daemon
+import splice.app.cli.desktop.DaemonUp
 import splice.app.desktop.record.DesktopKey
 import splice.app.desktop.setup.DesktopManagedPolicy
+import splice.app.desktop.setup.DesktopProcessStarter
+import splice.app.desktop.setup.SideBySideDesktop
 import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
+import splice.core.terminal.TerminalOutput
 import splice.core.testing.TestPorts
 import splice.core.util.EnvReader
 import splice.head.awaitListening
@@ -91,32 +95,118 @@ class DesktopSetupDaemonTest {
             "XDG_CONFIG_HOME" to xdg,
         )
         val fixtureEnv = EnvReader { fixture[it] }
+        withDaemon(tmp, home, fixtureEnv) { statePaths, mgmt ->
+            on(mgmt, library, theirs, statePaths)
+            desktopAsks(statePaths, mgmt)
+            off(mgmt, library, meta, theirs, statePaths)
+        }
+        assertEquals("""{"model":"claude-opus-5-5","env":{"FOO":"1"}}""", Files.readString(settings))
+    }
+
+    @Test
+    fun `POST api desktop publish populates inferenceModels into a newly created beside library`(@TempDir tmp: Path) {
+        val home = Files.createDirectories(tmp.resolve("home"))
+        val xdg = Files.createDirectories(tmp.resolve("config"))
+        val fixture = mapOf(
+            "HOME" to home.toString(),
+            "XDG_CONFIG_HOME" to xdg.toString(),
+            "SPLICE_STATE_DIR" to tmp.resolve("state").toString(),
+        )
+        val fixtureEnv = EnvReader { fixture[it] }
+        withDaemon(tmp, home, fixtureEnv) { _, mgmt ->
+            val door = "http://127.0.0.1:$controlPort/door"
+            val sideBySide = SideBySideDesktop(
+                env = fixtureEnv,
+                out = TerminalOutput {},
+                err = TerminalOutput {},
+                osName = "Linux",
+            )
+            val profile = sideBySide.prepareProfile(door)
+            val configFile = profile.resolve("Claude-3p/configLibrary/splice-side-by-side.json")
+            val before = json.parseToJsonElement(Files.readString(configFile)).jsonObject
+            assertFalse("inferenceModels" in before, before.toString())
+
+            val answer = post(mgmt, "/api/desktop/publish")
+            assertEquals("true", answer.str("ok"))
+
+            val after = json.parseToJsonElement(Files.readString(configFile)).jsonObject
+            val models = after.getValue("inferenceModels").jsonArray.map { it.jsonObject.str("name") }
+            assertEquals(listOf("claude-opus-5-5"), models)
+        }
+    }
+
+    @Test
+    fun `SideBySideDesktop launch populates inferenceModels via daemon publish`(@TempDir tmp: Path) {
+        val home = Files.createDirectories(tmp.resolve("home"))
+        val xdg = Files.createDirectories(tmp.resolve("config"))
+        val binDir = Files.createDirectories(tmp.resolve("bin"))
+        val claudeBin = binDir.resolve("claude-desktop").also { Files.writeString(it, "#!/bin/sh\n") }
+        assertTrue(claudeBin.toFile().setExecutable(true))
+        val fixture = mapOf(
+            "HOME" to home.toString(),
+            "XDG_CONFIG_HOME" to xdg.toString(),
+            "SPLICE_STATE_DIR" to tmp.resolve("state").toString(),
+            "SPLICE_CONTROL_PORT" to controlPort.toString(),
+            "PATH" to binDir.toString(),
+        )
+        val fixtureEnv = EnvReader { fixture[it] }
+        withDaemon(tmp, home, fixtureEnv) { _, _ ->
+            val errLines = mutableListOf<String>()
+            val launched = mutableListOf<List<String>>()
+            val sideBySide = SideBySideDesktop(
+                env = fixtureEnv,
+                out = TerminalOutput {},
+                err = TerminalOutput { errLines += it },
+                daemon = DaemonUp { true },
+                osName = "Linux",
+                starter = DesktopProcessStarter { cmd, _ ->
+                    launched += cmd
+                    0
+                },
+            )
+            assertEquals(0, sideBySide.launch(emptyList()))
+            assertTrue(errLines.isEmpty(), errLines.toString())
+            assertEquals(1, launched.size)
+            val configFile = xdg.resolve("claude-splice/Claude-3p/configLibrary/splice-side-by-side.json")
+            val written = json.parseToJsonElement(Files.readString(configFile)).jsonObject
+            val models = written.getValue("inferenceModels").jsonArray.map { it.jsonObject.str("name") }
+            assertEquals(listOf("claude-opus-5-5"), models)
+        }
+    }
+
+    private fun withDaemon(
+        tmp: Path,
+        home: Path,
+        fixtureEnv: EnvReader,
+        block: suspend (StatePaths, String) -> Unit,
+    ) {
         val provider = OneModelProvider()
-        fixtureHome(home, tmp) {
-            runBlocking {
-                val statePaths = StatePaths(baseOverride = tmp.resolve("state"), envReader = fixtureEnv)
-                val mgmt = MgmtKey(statePaths).get()
-                val key = tmp.resolve("anthropic.json").also { Files.writeString(it, """{"api_key":"sk-fixture"}""") }
-                val daemon = Daemon(
-                    topology = TopologyLoader.parse(toml(provider.baseUrl, key)),
-                    statePaths = statePaths,
-                    log = {},
-                    refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
-                )
-                daemon.start()
-                try {
-                    awaitListening(controlPort, headPort)
-                    on(mgmt, library, theirs, statePaths)
-                    desktopAsks(statePaths, mgmt)
-                    off(mgmt, library, meta, theirs, statePaths)
-                } finally {
-                    daemon.stop()
+        try {
+            fixtureHome(home, tmp) {
+                runBlocking {
+                    val statePaths = StatePaths(baseOverride = tmp.resolve("state"), envReader = fixtureEnv)
+                    val mgmt = MgmtKey(statePaths).get()
+                    val key = tmp.resolve("anthropic.json")
+                        .also { Files.writeString(it, """{"api_key":"sk-fixture"}""") }
+                    val daemon = Daemon(
+                        topology = TopologyLoader.parse(toml(provider.baseUrl, key)),
+                        statePaths = statePaths,
+                        log = {},
+                        refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
+                    )
+                    daemon.start()
+                    try {
+                        awaitListening(controlPort, headPort)
+                        block(statePaths, mgmt)
+                    } finally {
+                        daemon.stop()
+                    }
                 }
             }
+        } finally {
+            provider.stop()
+            client.close()
         }
-        provider.stop()
-        client.close()
-        assertEquals("""{"model":"claude-opus-5-5","env":{"FOO":"1"}}""", Files.readString(settings))
     }
 
     private suspend fun on(mgmt: String, library: Path, theirs: String, statePaths: StatePaths) {

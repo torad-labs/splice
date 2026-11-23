@@ -9,7 +9,8 @@
 //
 // desktop-policy (outcome 9): the configuration splice writes carries its policy for Desktop, the default the build
 // ships with what the person set up in Claude Code laid over it, and a daemon start gives the same to any applied
-// configuration that points Desktop at the door, filling what it leaves unset and changing nothing it sets.
+// configuration that points Desktop at the door, filling what it leaves unset and changing nothing it sets but
+// the values the person set in the console (DesktopPolicyLayers).
 package splice.app.desktop.setup
 
 import kotlinx.serialization.json.JsonArray
@@ -28,8 +29,13 @@ internal class DesktopAppLibrary(
     private val defaults: DesktopPolicyDefaults = DesktopPolicyDefaults(),
     private val profileSync: DesktopProfileSync = DesktopProfileSync(config.env, config.osName),
     private val managedPaths: List<Path> = config.managedFiles,
+    /** The Desktop policy values the person set in the console, laid over splice's policy; none when null. */
+    private val overrides: DesktopPolicyOverrides? = null,
 ) {
     private val files = DesktopLibraryFiles()
+
+    /** splice's policy for this Desktop, layer by layer, the console's values among them. */
+    val layers: DesktopPolicyLayers = DesktopPolicyLayers(config, defaults, overrides)
 
     /** The first existing managed configuration file for this platform (or the test fixture when redirected).
      *  Checking file existence without opening or parsing macOS MDM plists is intentionally conservative per
@@ -104,14 +110,17 @@ internal class DesktopAppLibrary(
 
     /** The library of each Claude Desktop started on a config folder of its own beside this one
      *  (DesktopAppConfig.beside). */
-    fun beside(): List<DesktopAppLibrary> = config.beside().map { DesktopAppLibrary(it, defaults, profileSync) }
+    fun beside(): List<DesktopAppLibrary> =
+        config.beside().map { DesktopAppLibrary(it, defaults, profileSync, overrides = overrides) }
 
     /** [models] written as the model list of the configuration this library applies, and splice's policy given to it
      *  where it says nothing (DesktopAppConfig.withPolicy), when that configuration points Desktop at [door]; whether
      *  anything was written. A library that applies none, or one that points elsewhere, is left as it is: this never
-     *  applies a configuration, never changes a key one sets, and never opens the managed file. Desktop reads it at
-     *  its next launch. */
-    fun publish(door: String, models: JsonArray? = null): Boolean {
+     *  applies a configuration, changes a key one sets only to the value the console holds for it, and never opens the
+     *  managed file. Desktop reads it at its next launch. The console's policy values are given over what the
+     *  configuration says, and each key of [reset], which the console no longer holds, goes back to splice's policy
+     *  (DesktopPolicyLayers.forced). */
+    fun publish(door: String, models: JsonArray? = null, reset: Set<String> = emptySet()): Boolean {
         val id = files.read(config.meta)?.let(config::applied) ?: return false
         val file = config.file(id).normalize()
         val current = file.takeIf { it.parent == config.library.normalize() }
@@ -120,7 +129,7 @@ internal class DesktopAppLibrary(
             ?.takeIf { config.door(it)?.trimEnd('/') == door.trimEnd('/') } ?: return false
         syncProfileBestEffort()
         val withModels = if (models != null) config.withModels(current, models) else current
-        val updated = config.withPolicy(withModels, policy())
+        val updated = layers.forced(config.withPolicy(withModels, policy()), reset)
         return if (updated == current) {
             false
         } else {
@@ -138,8 +147,9 @@ internal class DesktopAppLibrary(
     fun rewrite(id: String, door: String, helper: Path) =
         files.write(config.file(id), config.config(door, helper.toString(), policy()))
 
-    /** splice's policy for Desktop now: the build's default, with what the person set up in Claude Code over it. */
-    private fun policy(): JsonObject = config.policy(defaults.read())
+    /** splice's policy for Desktop now: the build's default, with what the person set up in Claude Code over it,
+     *  and the values they set in the console over that. */
+    private fun policy(): JsonObject = layers.effective()
 
     /** Why [library] can't be read: it can't be listed, a file in it can't be read, or its `_meta.json` holds no JSON
      *  object. Null when it can. */

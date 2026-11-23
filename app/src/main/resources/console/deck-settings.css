@@ -143,3 +143,14 @@
   .mc-head { grid-column: 1 / -1; }
   .mc-sys { padding-top: 0; border-top: 0; }
 }
+
+/* Desktop policy (deck-desktop-policy.js): a note over the rows when Desktop must be reopened or the overrides file is
+   unreadable, a whole number's field kept to a number's width, and a list with its add field */
+.lens .dp-note { padding: var(--sp-3); border-radius: var(--r-inner); background: var(--fill); }
+.lens .dp-note + .dp-note { border-top: 0; margin-top: var(--sp-2); }
+.lens .dp-note .lr-nm { display: block; }
+.lens .dp-need .lr-nm { color: var(--ormolu-text); }
+.lens .dp-num { flex: 0 0 var(--gl-val-w); }
+.lens .dp-list { flex: 1 1 100%; display: grid; gap: var(--sp-2); min-width: 0; }
+.lens .dp-add { display: flex; gap: var(--sp-2); min-width: 0; }
+.lens .dp-list .kvs div { align-items: center; }

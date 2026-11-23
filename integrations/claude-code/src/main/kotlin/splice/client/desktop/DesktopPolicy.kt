@@ -30,13 +30,20 @@ internal class DesktopPolicy(private val setup: ClaudeCodeSetup) {
         val markets = both(defaults[POLICY_MARKETPLACES], added).takeIf { added.isNotEmpty() }
             ?.let { mapOf(POLICY_MARKETPLACES to it) }
             .orEmpty()
-        return JsonObject(defaults + effort + permMode + suggestions + markets)
+        return JsonObject(given() + defaults + effort + permMode + suggestions + markets)
     }
 
-    /** What every configuration on the door holds, whoever made it. Gateway mode has no claude.ai sign-in: a person
-     *  who wants their Claude account and splice runs a second Desktop beside their own (DesktopAppConfig.beside), so
-     *  Desktop opens straight on splice and offers no sign-in. Projects, auto mode (with Claude Code's own check),
-     *  and model discovery are enabled by default unless the person explicitly sets them otherwise. */
+    /** Projects and auto mode, on unless the person sets them otherwise (in Desktop, or in the console's Desktop
+     *  policy): the lowest layer of the policy, under the default the build ships. */
+    private fun given(): JsonObject = buildJsonObject {
+        put("projectsEnabled", true)
+        put("autoModeEnabled", true)
+    }
+
+    /** What every configuration on the door holds, whoever made it, over any policy: nobody sets these from the
+     *  console (DesktopPolicyCatalog.locked). Gateway mode has no claude.ai sign-in: a person who wants their Claude
+     *  account and splice runs a second Desktop beside their own (DesktopAppConfig.beside), so Desktop opens straight
+     *  on splice and offers no sign-in. Model discovery is on, and auto mode runs without the server's own check. */
     fun standing(): JsonObject = buildJsonObject {
         // The live test (Nov 19, 2026, Desktop 5.11492.5): unset, Desktop first shows its chooser (Continue, or sign in
         // with claude.ai) and asks the door only once a person picks; "3p" opens it straight on splice. The second key
@@ -44,8 +51,6 @@ internal class DesktopPolicy(private val setup: ClaudeCodeSetup) {
         put("deploymentMode", "3p")
         put("disableDeploymentModeChooser", true)
         put(MODEL_DISCOVERY, true)
-        put("projectsEnabled", true)
-        put("autoModeEnabled", true)
         put("inferenceGatewayAutoModeServerChecks", false)
     }
 
@@ -102,4 +107,6 @@ private const val POLICY_EFFORT = "defaultModelEffort"
 private const val POLICY_MARKETPLACES = "allowedPluginMarketplaces"
 private const val POLICY_PERMISSION_MODE = "codeDefaultPermissionMode"
 private const val POLICY_PROMPT_SUGGESTION = "promptSuggestionEnabled"
-private const val POLICY_IMPORT = "claudeAiImport"
+
+/** Desktop's key for its claude.ai import settings, an object a configuration may hold part of. */
+public const val POLICY_IMPORT: String = "claudeAiImport"

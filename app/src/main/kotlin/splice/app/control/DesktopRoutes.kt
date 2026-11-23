@@ -15,7 +15,9 @@
 //   POST /api/desktop/rotate-key                        `splice desktop rotate-key`
 //   POST /api/desktop/publish                           re-publish inferenceModels into every Desktop library on the
 //                                                       door, including newly created side-by-side folders
-//   GET  /api/claude                                    what `splice claude` says (docs/specs/door-default.md)
+//   GET | PATCH /api/desktop/policy                     the Desktop policy keys the console sets, and setting them
+//                                                       (DesktopPolicyRoutes)
+//   GET  /api/claude                                   what `splice claude` says (docs/specs/door-default.md)
 //   POST /api/claude/door                               {"model"?}: `splice claude door [--model]`, linking
 //                                                       `claude` to splice where it is not yet (ClaudeLink)
 //   POST /api/claude/head                               `splice claude head`
@@ -29,12 +31,15 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
+import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.app.control.api.ControlBodies
+import splice.app.control.api.desktop.DesktopPolicyRoutes
+import splice.app.control.api.desktop.PolicyTargetSource
 import splice.app.control.mount.ControlGuard
 import splice.app.desktop.DESKTOP_ERROR_PREFIX
 import splice.app.desktop.DESKTOP_PATH
@@ -51,9 +56,12 @@ internal class DesktopRoutes(
     private val ports: ConsolePorts,
     private val guard: ControlGuard,
     private val link: ClaudeLink,
+    /** Where the Desktop policy routes find the daemon's Desktop part: the daemon's own, but a test's fixture. */
+    policyTargets: PolicyTargetSource = PolicyTargetSource { ports.desktop },
 ) {
     private val jsonBody = JsonBody()
     private val voice = RefusalVoice(DESKTOP_ERROR_PREFIX)
+    private val policy = DesktopPolicyRoutes(policyTargets)
 
     fun register(route: Route) {
         listOf(DOOR_PATH, DESKTOP_PATH).forEach { at ->
@@ -75,6 +83,8 @@ internal class DesktopRoutes(
         route.post("/api/desktop/off") { guard.guarded(call) { act(call) { it.switch.off() } } }
         route.post("/api/desktop/rotate-key") { guard.guarded(call) { act(call) { it.switch.rotate() } } }
         route.post("/api/desktop/publish") { guard.guarded(call) { publish(call) } }
+        route.get("/api/desktop/policy") { guard.guarded(call) { policy.read(call) } }
+        route.patch("/api/desktop/policy") { guard.guarded(call) { policy.patch(call) } }
         route.get("/api/claude") { guard.guarded(call) { claudeState(call) } }
         route.post("/api/claude/door") { guard.guarded(call) { toDoor(call) } }
         route.post("/api/claude/head") { guard.guarded(call) { act(call, CLAUDE) { it.claude.toHead() } } }

@@ -58,7 +58,8 @@ internal class SideBySideDesktop(
         if (!records.get().on) records.update { it.copy(on = true) }
         val helper = DesktopPrograms(paths.stateDir).lay()
         val config = DesktopAppConfig(env = env, osName = osName, baseDir = profile)
-        val library = DesktopAppLibrary(config, profileSync = DesktopProfileSync(env, osName))
+        val overrides = DesktopPolicyOverrides(paths.desktopPolicyOverridesFile)
+        val library = DesktopAppLibrary(config, profileSync = DesktopProfileSync(env, osName), overrides = overrides)
         val applied = DesktopLibraryFiles().read(config.meta)?.let(config::applied)
         val alreadyOnDoor = applied?.let(library::doorOf)?.trimEnd('/') == door.trimEnd('/')
         if (alreadyOnDoor) {

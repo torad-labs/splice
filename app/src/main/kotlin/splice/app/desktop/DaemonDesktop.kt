@@ -25,6 +25,8 @@ import splice.app.desktop.record.DesktopKey
 import splice.app.desktop.record.DesktopRecords
 import splice.app.desktop.setup.DesktopAppLibrary
 import splice.app.desktop.setup.DesktopAppMode
+import splice.app.desktop.setup.DesktopPolicyLayers
+import splice.app.desktop.setup.DesktopPolicyTarget
 import splice.app.desktop.setup.DesktopPrograms
 import splice.app.desktop.setup.DesktopSettingsFile
 import splice.app.desktop.setup.DesktopSettingsTidy
@@ -41,6 +43,7 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.share.ShareMachine
 import splice.upstream.codemode.ProcessDispatchers
+import java.time.Instant
 
 internal class DaemonDesktop(
     private val topology: Topology,
@@ -48,7 +51,7 @@ internal class DaemonDesktop(
     private val log: LogSink,
     /** Where Claude Desktop keeps its 3P configuration (desktop-full): the person's own, but a test's fixture home. */
     private val library: DesktopAppLibrary = DesktopAppLibrary(),
-) {
+) : DesktopPolicyTarget {
     private val key = DesktopKey(statePaths.desktopKeyFile, log)
     private val records = DesktopRecords(statePaths.desktopFile, log)
 
@@ -147,6 +150,33 @@ internal class DaemonDesktop(
             door?.let { publish(it, source.lineup()) }
         }
     }
+
+    /** splice's policy for Desktop, the console's values among it (DesktopPolicyLayers). */
+    override val policyLayers: DesktopPolicyLayers get() = library.layers
+
+    /** The console's Desktop policy given to every Claude Desktop on the door, each key of [reset] put back to splice's
+     *  policy, its model list as it stands; how many configurations changed, or null before [open]. A change is kept
+     *  as a write of splice's configuration, so [restartPending] says Desktop has yet to read it. */
+    override suspend fun publishPolicy(reset: Set<String>): Int? = publishing.withLock {
+        val at = door ?: return@withLock null
+        withContext(io) {
+            val written = (listOf(library) + library.beside()).count { desktop ->
+                Cancellables.runCatchingCancellable { desktop.publish(at, reset = reset) }.fold(
+                    onSuccess = { it },
+                    onFailure = {
+                        log("[desktop] the policy was not written: ${SafeFailureText.render(it)}\n")
+                        false
+                    },
+                )
+            }
+            if (written > 0) records.update { it.copy(configWrittenAt = Instant.now().toString()) }
+            written
+        }
+    }
+
+    /** Whether Claude Desktop, on splice's configuration, has not been reopened since splice last changed it, which it
+     *  reads only at launch; null when Desktop is not on splice's configuration, where the door can't tell. */
+    override fun restartPending(): Boolean? = app.relaunched()?.not()
 
     /** The model list and splice's policy given to every Claude Desktop whose applied configuration points at [door]:
      *  the person's own, and each one run beside it on a config folder of its own. */

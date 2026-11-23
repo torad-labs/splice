@@ -490,6 +490,7 @@ class SetupCommandTest {
                         prompts = prompts,
                         loginHead = NO_REAL_LOGIN,
                         detect = { emptyFacts().copy(spliceOwned = setOf("chatgpt-oauth", "muse-oauth")) },
+                        env = EnvReader { null },
                         // A console run reaches the local-model offer; left at its default it would
                         // spawn the real nvidia-smi. No card here, so it is never asked.
                         localModel = SetupLocalModel(

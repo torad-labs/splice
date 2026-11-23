@@ -12,7 +12,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.app.MCP_HUB_FRONT_PORT
 import splice.client.mcp.MCP_HEAD_HEADER
-import splice.core.config.DEFAULT_CONTROL_PORT
+import splice.core.config.Knob
 import splice.core.util.JsonScalars
 import java.net.URI
 import java.net.URISyntaxException
@@ -28,7 +28,7 @@ private const val NORMALIZE_COMMAND = "command"
 
 /** Converts harness-specific JSON MCP declarations into canonical Splice entries. */
 internal class McpEntryNormalizer(
-    private val splicePorts: Set<Int> = setOf(MCP_HUB_FRONT_PORT, DEFAULT_CONTROL_PORT),
+    private val splicePorts: Set<Int> = setOf(MCP_HUB_FRONT_PORT, Knob.CONTROL_PORT.count().toInt()),
 ) {
     fun normalize(obj: JsonObject, agyShape: Boolean): JsonObject? {
         if (isDisabled(obj)) return null

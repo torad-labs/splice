@@ -142,7 +142,7 @@ internal class ControlLaunchWiring(
     private fun buildHubLaunch(
         home: Path,
         sharing: McpSharing,
-        temple: TempleMcpEntry,
+        temple: splice.client.mcp.TempleMcpEntry,
         hub: McpHubLive,
     ): McpHubLaunch {
         val registry = splice.core.mcp.McpUserRegistry(statePaths)

@@ -128,6 +128,7 @@ internal class AgyMcpConfigWriter(private val paths: StatePaths) {
 
     private fun backup(previous: String) {
         val backupDir = paths.stateDir.resolve(AGY_BACKUP_DIR)
+        if (Files.isSymbolicLink(backupDir)) throw IOException("MCP sync backup directory must not be a link")
         SecureFile.ownerOnlyDirectory(backupDir)?.let { reason ->
             throw IOException("MCP sync backup directory is not owner-only: $reason")
         }

@@ -6,7 +6,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.app.MCP_HUB_FRONT_PORT
 import splice.app.cli.AdminSupport
-import splice.core.config.DEFAULT_CONTROL_PORT
+import splice.core.config.Knob
 import splice.core.config.UserHome
 import splice.core.mcp.McpHarness
 import splice.core.mcp.McpImportSource
@@ -44,7 +44,7 @@ internal class McpHarnessDiscovery(
     }
     private val codexToml = CodexMcpTomlCodec()
     private val normalizer = McpEntryNormalizer(
-        setOf(MCP_HUB_FRONT_PORT, DEFAULT_CONTROL_PORT, AdminSupport.controlPort(env)),
+        setOf(MCP_HUB_FRONT_PORT, Knob.CONTROL_PORT.count().toInt(), AdminSupport.controlPort(env)),
     )
 
     fun claudeCodeFile(): Path = home.resolve(DISCOVERY_CLAUDE_JSON)

@@ -221,6 +221,7 @@ public class McpUserRegistry(private val paths: StatePaths) {
 
     private fun writeBackup(previous: String) {
         val backupDir = paths.stateDir.resolve(MCP_REGISTRY_BACKUP_DIR)
+        if (Files.isSymbolicLink(backupDir)) throw IOException("MCP registry backup directory must not be a link")
         SecureFile.ownerOnlyDirectory(backupDir)?.let { reason ->
             throw IOException("MCP registry backup directory is not owner-only: $reason")
         }

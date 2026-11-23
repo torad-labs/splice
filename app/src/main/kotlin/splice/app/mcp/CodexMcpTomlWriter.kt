@@ -33,6 +33,7 @@ internal class CodexMcpTomlWriter(private val paths: StatePaths) {
 
     private fun backup(previous: String) {
         val backupDir = paths.stateDir.resolve(CODEX_BACKUP_DIR)
+        if (Files.isSymbolicLink(backupDir)) throw IOException("Codex MCP backup directory must not be a link")
         SecureFile.ownerOnlyDirectory(backupDir)?.let { reason ->
             throw IOException("Codex MCP backup directory is not owner-only: $reason")
         }

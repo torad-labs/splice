@@ -1,6 +1,6 @@
 // CLI verbs for opt-in user MCP import and multi-harness synchronization:
-// `splice mcp status [--json]`, `splice mcp import [--from <src>|all] [--server NAME]... [--yes]`,
-// and `splice mcp sync [--to <harness>|all] [--import] [--yes]`.
+// `splice mcp status [--json]`, `splice mcp import [--from <src>|all] [--server NAME]...`,
+// and `splice mcp sync [--to <harness>|all] [--import]`.
 package splice.app.cli.mcp
 
 import kotlinx.serialization.json.JsonObject
@@ -25,12 +25,13 @@ import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.topology.TopologyStatePaths
+import java.io.IOException
 import java.nio.file.Path
 import java.time.Instant
 
 private const val FLAG_JSON = "--json"
 private const val IMPORT_USAGE =
-    "usage: splice mcp import [--from claude-code|claude-desktop|agy|codex|all] [--server NAME]... [--yes]"
+    "usage: splice mcp import [--from claude-code|claude-desktop|agy|codex|all] [--server NAME]..."
 
 /** Executes `splice mcp status`, `splice mcp import`, and `splice mcp sync`. */
 internal class McpHarnessCli(
@@ -97,29 +98,46 @@ internal class McpHarnessCli(
         }
         val now = Instant.now().toString()
         val registry = McpUserRegistry(paths)
-        registry.merge(selected.map { it.toRecord(now) })
-        out.line("Imported ${selected.size} MCP server(s) into Splice MCP (${registry.file}):")
-        selected.forEach { srv ->
-            out.line("  ${srv.name} (${transportOf(srv.entry)}, from ${srv.source.wire})")
+        return try {
+            registry.merge(selected.map { it.toRecord(now) })
+            out.line("Imported ${selected.size} MCP server(s) into Splice MCP (${registry.file}):")
+            selected.forEach { srv ->
+                out.line("  ${srv.name} (${transportOf(srv.entry)}, from ${srv.source.wire})")
+            }
+            out.line("Run `splice mcp sync --to agy,codex` to connect your harnesses.")
+            0
+        } catch (failure: IOException) {
+            err.line("Could not update Splice MCP registry (${failure::class.simpleName}).")
+            1
         }
-        out.line("Run `splice mcp sync --to agy,codex` to connect your harnesses.")
-        return 0
     }
 
     private suspend fun runSync(args: List<String>): Int {
         val parsed = argParser.parseSync(args) ?: run {
-            err.line("usage: splice mcp sync [--to claude|agy|codex|all] [--import] [--yes]")
+            err.line("usage: splice mcp sync [--to claude|agy|codex|all] [--import]")
             return 2
         }
         val home = resolveHome()
         val paths = resolvePaths(home)
+        return try {
+            executeSync(parsed, home, paths)
+        } catch (failure: IOException) {
+            err.line("Could not update Splice MCP registry (${failure::class.simpleName}).")
+            1
+        }
+    }
+
+    private suspend fun executeSync(
+        parsed: splice.app.mcp.McpSyncArgs,
+        home: Path,
+        paths: StatePaths,
+    ): Int {
         val discovery = McpHarnessDiscovery(home, env, seams.osName)
         val registry = McpUserRegistry(paths)
         if (parsed.importFirst) {
             val found = dedupeDiscovered(discovery.discover())
             if (found.isNotEmpty()) {
-                val now = Instant.now().toString()
-                registry.merge(found.map { it.toRecord(now) })
+                registry.merge(found.map { it.toRecord(Instant.now().toString()) })
                 out.line("Imported ${found.size} MCP server(s) into Splice MCP.")
             }
         }

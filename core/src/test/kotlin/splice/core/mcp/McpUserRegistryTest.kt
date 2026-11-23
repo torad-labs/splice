@@ -4,10 +4,12 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.StatePaths
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
@@ -26,6 +28,15 @@ class McpUserRegistryTest {
         Files.createDirectories(registry.file.parent)
         Files.writeString(registry.file, "{not-valid-json")
         assertTrue(registry.read().servers.isEmpty())
+
+        val rec = McpRegistryRecord(
+            name = "new-srv",
+            entry = buildJsonObject { put("command", "node") },
+            source = McpImportSource.AGY,
+        )
+        assertThrows(IOException::class.java) { registry.merge(listOf(rec)) }
+        assertThrows(IOException::class.java) { registry.rememberHarnesses(setOf(McpHarness.AGY)) }
+        assertEquals("{not-valid-json", Files.readString(registry.file))
     }
 
     @Test

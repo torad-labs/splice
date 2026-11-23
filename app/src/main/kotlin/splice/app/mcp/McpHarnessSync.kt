@@ -36,6 +36,7 @@ internal class McpHarnessSync(
 
     /** Syncs all Splice MCP servers to each harness in [harnesses] and remembers connected harnesses. */
     suspend fun sync(harnesses: Set<McpHarness>): McpSyncReport {
+        registry.readStrict()
         val endpointPrefix = sharingFactory.endpointPrefix()
         val inputs = McpGlobalRead(home, log, TempleMcpEntry(home, env, paths), registry).inputs()
         val sharing = sharingFactory.planner(endpointPrefix)
@@ -90,16 +91,19 @@ internal class McpHarnessSync(
             toCodexEntry(obj)?.let { codexEntries[name] = it }
         }
         val configFile = discovery.codexConfigFile()
-        val rpc = seams.codexRpc ?: CodexRpcSync { dir, map -> NativeCodexMcp(paths, log).installAll(dir, map) }
-        val rpcError = rpc(discovery.codexHomeDir(), codexEntries)
-        if (rpcError == null) {
+        val rpc = seams.codexRpc ?: CodexRpcSync { dir, map ->
+            NativeCodexMcp(paths, log).installAllWithStatus(dir, map)
+        }
+        val rpcResult = rpc(discovery.codexHomeDir(), codexEntries)
+        if (rpcResult.ok) {
+            val verb = if (rpcResult.changed) "synced" else "already up to date"
             return HarnessSyncOutcome(
                 McpHarness.CODEX,
                 true,
-                true,
+                rpcResult.changed,
                 codexEntries.size,
                 plan.hosted.size,
-                "$configFile (synced via Codex config API)",
+                "$configFile ($verb via Codex config API)",
             )
         }
         return syncCodexFallback(configFile, codexEntries, plan.hosted.size)

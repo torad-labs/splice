@@ -14,6 +14,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.mcp.McpHarnessCli
+import splice.client.mcp.McpRootsVerdicts
+import splice.client.mcp.McpServerSpec
 import splice.core.config.StatePaths
 import splice.core.mcp.McpHarness
 import splice.core.mcp.McpImportSource
@@ -137,7 +139,7 @@ class McpHarnessSyncTest {
         val seams = McpHarnessSyncSeams(
             osName = "Linux",
             frontLive = McpFrontCheck { _, _ -> false },
-            codexRpc = CodexRpcSync { _, _ -> "rpc unavailable" },
+            codexRpc = CodexRpcSync { _, _ -> CodexRpcSyncResult(ok = false, error = "rpc unavailable") },
             bearerOverride = { "TEST-BEARER" },
         )
         val report = McpHarnessSync(home, StatePaths(baseOverride = state, homeDir = home), env, {}, seams)
@@ -159,7 +161,7 @@ class McpHarnessSyncTest {
             val seams = McpHarnessSyncSeams(
                 osName = "Linux",
                 frontLive = McpFrontCheck { _, _ -> false },
-                codexRpc = CodexRpcSync { _, _ -> "rpc unavailable in test" },
+                codexRpc = CodexRpcSync { _, _ -> CodexRpcSyncResult(ok = false, error = "rpc unavailable in test") },
                 bearerOverride = { "TEST-MCP-BEARER" },
             )
 
@@ -177,6 +179,135 @@ class McpHarnessSyncTest {
             assertEquals(0, exit, "stderr=$errLines stdout=$outLines")
             assertSyncedConfigs(home, paths)
             assertStatusRedactsSecrets(home, env, seams)
+        }
+
+    @Test
+    fun `codex toml codec handles dotted transport keys, quoted bracketed headers, nested arrays, and env auth`() {
+        val codec = CodexMcpTomlCodec()
+        val original = """
+            [mcp_servers.api]
+            url = "https://old.example/mcp"
+            http_headers.Authorization = "Bearer old"
+            bearer_token_env_var = "API_TOKEN"
+            env_http_headers = { "X-Api-Key" = "API_KEY_ENV" }
+            matrix = [
+              ["a", "b"],
+            ]
+
+            [mcp_servers.api.env_http_headers]
+            "X-Extra" = "EXTRA_ENV"
+
+            [projects."/home/user/[work]"]
+            trust_level = "trusted"
+        """.trimIndent() + "\n"
+
+        val keptAuth = codec.upsert(
+            original,
+            mapOf(
+                "api" to buildJsonObject {
+                    put("url", "https://new.example/mcp")
+                    putJsonObject("http_headers") { put("X-Custom", "1") }
+                },
+            ),
+        )
+        assertTrue("""[projects."/home/user/[work]"]""" in keptAuth, keptAuth)
+        assertTrue("""trust_level = "trusted"""" in keptAuth, keptAuth)
+        assertTrue("""bearer_token_env_var = "API_TOKEN"""" in keptAuth, keptAuth)
+        assertTrue("""[mcp_servers.api.env_http_headers]""" in keptAuth, keptAuth)
+        assertFalse("http_headers.Authorization" in keptAuth, keptAuth)
+
+        val replacedAuth = codec.upsert(
+            original,
+            mapOf(
+                "api" to buildJsonObject {
+                    put("url", "http://127.0.0.1:3096/mcp/api")
+                    putJsonObject("http_headers") { put("Authorization", "Bearer SPLICE") }
+                },
+            ),
+        )
+        assertTrue("""[projects."/home/user/[work]"]""" in replacedAuth, replacedAuth)
+        assertFalse("bearer_token_env_var" in replacedAuth, replacedAuth)
+        assertFalse("env_http_headers" in replacedAuth, replacedAuth)
+    }
+
+    @Test
+    fun `native codex config preserves env auth and env_vars unless replaced`() {
+        val paths = StatePaths(baseOverride = tmp.resolve("codex-cfg-state"), homeDir = tmp)
+        val cfg = NativeCodexMcpConfig(paths)
+        val existing = buildJsonObject {
+            putJsonObject("mcp_servers") {
+                putJsonObject("http-srv") {
+                    put("url", "https://old.example/mcp")
+                    put("bearer_token_env_var", "MY_TOKEN")
+                    putJsonObject("env_http_headers") { put("X-Key", "MY_KEY") }
+                    put("tool_timeout_sec", 30)
+                }
+                putJsonObject("stdio-srv") {
+                    put("command", "old")
+                    put("env_vars", Json.parseToJsonElement("""["KEEP_ME"]"""))
+                }
+            }
+        }
+        val kept = cfg.pendingUpdates(
+            existing,
+            mapOf(
+                "http-srv" to buildJsonObject { put("url", "https://new.example/mcp") },
+                "stdio-srv" to buildJsonObject { put("command", "new") },
+            ),
+        )
+        assertEquals("MY_TOKEN", kept.getValue("http-srv").getValue("bearer_token_env_var").jsonPrimitive.content)
+        assertTrue("env_http_headers" in kept.getValue("http-srv"))
+        assertTrue("env_vars" in kept.getValue("stdio-srv"))
+
+        val replaced = cfg.pendingUpdates(
+            existing,
+            mapOf(
+                "http-srv" to buildJsonObject {
+                    put("url", "http://127.0.0.1:3096/mcp/http-srv")
+                    putJsonObject("http_headers") { put("Authorization", "Bearer NEW") }
+                },
+                "stdio-srv" to buildJsonObject { put("url", "http://127.0.0.1:3096/mcp/stdio-srv") },
+            ),
+        )
+        assertFalse("bearer_token_env_var" in replaced.getValue("http-srv"))
+        assertFalse("env_http_headers" in replaced.getValue("http-srv"))
+        assertFalse("env_vars" in replaced.getValue("stdio-srv"))
+    }
+
+    @Test
+    fun `sync honors mcp-roots-bound, propagates rpc changed flag, and cli fails closed on bad registry`() =
+        runBlocking {
+            val home = seedSyncFixtures(tmp.resolve("home-roots"))
+            val state = tmp.resolve("state-roots")
+            Files.createDirectories(state)
+            McpRootsVerdicts(state.resolve("mcp-roots-bound"))
+                .record(McpServerSpec("ast-grep", "uvx", listOf("ast-grep-server"), emptyMap()))
+            val paths = StatePaths(baseOverride = state, homeDir = home)
+            val env = EnvReader { key -> if (key == "SPLICE_STATE_DIR") state.toString() else null }
+            val seams = McpHarnessSyncSeams(
+                osName = "Linux",
+                frontLive = McpFrontCheck { _, _ -> false },
+                codexRpc = CodexRpcSync { _, _ -> CodexRpcSyncResult(ok = true, changed = false) },
+                bearerOverride = { "TEST-BEARER" },
+            )
+            val report = McpHarnessSync(home, paths, env, {}, seams).sync(setOf(McpHarness.AGY, McpHarness.CODEX))
+            assertEquals(0, report.hostedCount, "roots-bound stdio server must stay per-session")
+            val codexOutcome = report.outcomes.first { it.harness == McpHarness.CODEX }
+            assertFalse(codexOutcome.changed)
+
+            Files.writeString(McpUserRegistry(paths).file, "{corrupted")
+            val errLines = mutableListOf<String>()
+            val cli = McpHarnessCli(
+                out = TerminalOutput {},
+                err = TerminalOutput { errLines += it },
+                env = env,
+                homeOverride = home,
+                seams = seams,
+            )
+            assertEquals(1, cli.run(listOf("import")))
+            assertEquals("{corrupted", Files.readString(McpUserRegistry(paths).file))
+            assertTrue(errLines.any { "Could not update Splice MCP registry" in it })
+            assertEquals(null, McpHarnessCliArgs().parseSync(listOf("--yes")))
         }
 
     private fun seedDiscoveryFixtures(home: Path): Path {

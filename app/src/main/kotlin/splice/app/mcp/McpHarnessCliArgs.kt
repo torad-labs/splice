@@ -9,7 +9,6 @@ private const val FLAG_FROM = "--from"
 private const val FLAG_TO = "--to"
 private const val FLAG_SERVER = "--server"
 private const val FLAG_IMPORT = "--import"
-private const val FLAG_YES = "--yes"
 private const val ALL_TOKEN = "all"
 
 internal data class McpImportArgs(val sources: List<McpImportSource>, val servers: Set<String>)
@@ -52,7 +51,6 @@ internal class McpHarnessCliArgs {
             servers.add(it)
             2
         }
-        FLAG_YES -> 1
         else -> null
     }
 
@@ -72,7 +70,6 @@ internal class McpHarnessCliArgs {
                     importFirst = true
                     i += 1
                 }
-                FLAG_YES -> i += 1
                 else -> valid = false
             }
         }

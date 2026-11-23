@@ -12,15 +12,14 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.core.util.JsonScalars
 
-private val TABLE_HEADER = Regex("^\\[([^\\[\\]]+)]\\s*$")
-private val ARRAY_TABLE_HEADER = Regex("^\\[\\[([^\\[\\]]+)]]\\s*$")
-
 // why: a Codex MCP subtable header has three dotted segments: mcp_servers.<name>.<subtable>.
 private const val SUBTABLE_SEGMENT_COUNT = 3
 private const val CODEX_TOML_COMMAND = "command"
 private const val CODEX_TOML_HEADERS = "headers"
 private const val CODEX_TOML_HTTP_HEADERS = "http_headers"
 private const val CODEX_TOML_ENV = "env"
+private const val CODEX_TOML_ENV_VARS = "env_vars"
+private const val CODEX_TOML_ENV_HTTP_HEADERS = "env_http_headers"
 
 private val CODEX_CORE_TRANSPORT_KEYS = setOf(
     CODEX_TOML_COMMAND,
@@ -32,7 +31,7 @@ private val CODEX_CORE_TRANSPORT_KEYS = setOf(
     CODEX_TOML_HTTP_HEADERS,
 )
 
-private val CODEX_AUTH_ENV_KEYS = setOf("bearer_token_env_var", "env_http_headers")
+private val CODEX_AUTH_ENV_KEYS = setOf("bearer_token_env_var", CODEX_TOML_ENV_HTTP_HEADERS)
 private val CODEX_TRANSPORT_SUBTABLES = setOf(CODEX_TOML_HTTP_HEADERS, CODEX_TOML_HEADERS, CODEX_TOML_ENV)
 
 /** Parses and updates `[mcp_servers.<name>]` tables in Codex `config.toml` text. */
@@ -64,7 +63,7 @@ internal class CodexMcpTomlCodec {
     fun upsert(existing: String, entries: Map<String, JsonObject>): String {
         if (entries.isEmpty()) return existing
         val preserved = extractNonTransportLines(existing, entries)
-        val filtered = stripTargetSections(existing, entries.keys).trimEnd()
+        val filtered = stripTargetSections(existing, entries).trimEnd()
         val blocks = entries.entries.sortedBy { it.key }.map { (name, entry) ->
             renderServerBlock(name, entry, preserved[name].orEmpty())
         }
@@ -100,34 +99,58 @@ internal class CodexMcpTomlCodec {
     }
 
     private fun shouldPreserveLine(trimmed: String, replacement: JsonObject?): Boolean {
-        if ('=' !in trimmed) return false
-        val key = scan.unquoteKey(trimmed.substringBefore('=').trim())
-        val replacedAuth = replacement?.get(CODEX_TOML_HTTP_HEADERS) != null
-        val isReplacedKey = key in CODEX_CORE_TRANSPORT_KEYS || (replacedAuth && key in CODEX_AUTH_ENV_KEYS)
-        return !isReplacedKey
+        val eq = scan.indexOfTopLevel(trimmed, '=')
+        if (eq <= 0) return false
+        val topKey = scan.splitDottedPath(trimmed.substring(0, eq).trim()).firstOrNull().orEmpty()
+        val replacesAuth = replacesAuth(replacement)
+        val replacesEnvVars = replacement?.get("url") != null || replacement?.get(CODEX_TOML_ENV_VARS) != null
+        val dropped = topKey in CODEX_CORE_TRANSPORT_KEYS ||
+            (replacesAuth && topKey in CODEX_AUTH_ENV_KEYS) ||
+            (replacesEnvVars && topKey == CODEX_TOML_ENV_VARS)
+        return !dropped
     }
 
-    private fun stripTargetSections(text: String, targets: Set<String>): String {
+    private fun replacesAuth(replacement: JsonObject?): Boolean {
+        if (replacement == null) return false
+        val httpHeaders = replacement[CODEX_TOML_HTTP_HEADERS] as? JsonObject
+        val plainHeaders = replacement[CODEX_TOML_HEADERS] as? JsonObject
+        val hasAuth = httpHeaders?.keys?.any { it.equals("authorization", ignoreCase = true) } == true ||
+            plainHeaders?.keys?.any { it.equals("authorization", ignoreCase = true) } == true
+        return hasAuth || replacement[CODEX_TOML_COMMAND] != null
+    }
+
+    private fun stripTargetSections(text: String, entries: Map<String, JsonObject>): String {
         val out = mutableListOf<String>()
+        val tracker = TomlMultilineTracker()
         var skipping = false
         text.lines().forEach { line ->
-            val trimmed = scan.stripComment(line).trim()
-            val boundary = matchSectionBoundary(trimmed)
-            if (boundary != null) {
-                val target = boundary.target
-                val isTargetMainOrTransport = target != null && target.name in targets &&
-                    (target.subtable == null || target.subtable in CODEX_TRANSPORT_SUBTABLES)
-                skipping = isTargetMainOrTransport
+            if (tracker.active) {
+                tracker.advanceLine(line)
+            } else {
+                val trimmed = scan.stripComment(line).trim()
+                val boundary = matchSectionBoundary(trimmed)
+                if (boundary != null) {
+                    skipping = shouldStripSection(boundary.target, entries)
+                } else if ('=' in trimmed) {
+                    tracker.advanceLine(line)
+                }
             }
             if (!skipping) out.add(line)
         }
         return out.joinToString("\n")
     }
 
+    private fun shouldStripSection(target: SectionTarget?, entries: Map<String, JsonObject>): Boolean {
+        if (target == null || target.name !in entries) return false
+        val sub = target.subtable
+        return sub == null ||
+            sub in CODEX_TRANSPORT_SUBTABLES ||
+            (sub == CODEX_TOML_ENV_HTTP_HEADERS && replacesAuth(entries[target.name]))
+    }
+
     private fun matchSectionBoundary(trimmed: String): SectionBoundary? {
-        if (ARRAY_TABLE_HEADER.matches(trimmed)) return SectionBoundary(null)
-        val match = TABLE_HEADER.matchEntire(trimmed) ?: return null
-        return SectionBoundary(parseSectionTarget(match.groupValues[1].trim()))
+        val header = TomlHeaderParser().parse(trimmed) ?: return null
+        return if (header.isArrayTable) SectionBoundary(null) else SectionBoundary(parseSectionTarget(header.path))
     }
 
     private fun renderServerBlock(name: String, entry: JsonObject, preservedLines: List<String>): String = buildString {

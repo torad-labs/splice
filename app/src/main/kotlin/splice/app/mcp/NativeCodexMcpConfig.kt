@@ -18,21 +18,25 @@ private const val CODEX_CONFIG_PERMISSION_REASON = "Codex config permissions cou
 private const val CODEX_CONFIG_WRITE_REASON = "The Codex config API could not update mcp_servers."
 private const val CODEX_CONFIG_RELOAD_REASON = "The Codex MCP server config could not be reloaded."
 private const val CODEX_CONFIG_ENTRY_REASON = "An existing Codex mcp_servers entry is not an object."
+private const val CODEX_FIELD_COMMAND = "command"
+private const val CODEX_FIELD_ENV_VARS = "env_vars"
+private const val CODEX_FIELD_HEADERS = "headers"
+private const val CODEX_FIELD_HTTP_HEADERS = "http_headers"
+private const val CODEX_FIELD_AUTHORIZATION = "authorization"
+private const val CODEX_FIELD_BEARER_ENV = "bearer_token_env_var"
 
 internal class NativeCodexMcpConfig(paths: StatePaths) {
     private val files = NativeCodexMcpFiles(paths)
-    private val transportFields = setOf(
-        "command",
+    private val coreTransportFields = setOf(
+        CODEX_FIELD_COMMAND,
         "args",
         "env",
         "cwd",
-        "env_vars",
         "url",
-        "headers",
-        "http_headers",
-        "env_http_headers",
-        "bearer_token_env_var",
+        CODEX_FIELD_HEADERS,
+        CODEX_FIELD_HTTP_HEADERS,
     )
+    private val authEnvFields = setOf(CODEX_FIELD_BEARER_ENV, "env_http_headers")
 
     suspend fun install(
         session: NativeCodexMcpRpcSession,
@@ -64,15 +68,34 @@ internal class NativeCodexMcpConfig(paths: StatePaths) {
         return true
     }
 
-    private fun pendingUpdates(config: JsonObject, entries: Map<String, JsonObject>): Map<String, JsonObject> {
+    internal fun pendingUpdates(config: JsonObject, entries: Map<String, JsonObject>): Map<String, JsonObject> {
         val out = LinkedHashMap<String, JsonObject>()
         entries.forEach { (name, entry) ->
             val currentEntry = serverEntry(config, name)
-            val restrictions = currentEntry?.filterKeys { it !in transportFields }.orEmpty()
-            val desiredEntry = JsonObject(entry + restrictions)
+            val replacesAuth = hasExplicitAuthHeader(entry) || entry.containsKey(CODEX_FIELD_COMMAND)
+            val replacesEnvVars = entry.containsKey("url") || entry.containsKey(CODEX_FIELD_ENV_VARS)
+            val preserved = currentEntry?.filterKeys { key ->
+                keepExistingField(key, replacesAuth, replacesEnvVars)
+            }.orEmpty()
+            val desiredEntry = JsonObject(entry + preserved)
             if (desiredEntry != currentEntry) out[name] = desiredEntry
         }
         return out
+    }
+
+    private fun keepExistingField(key: String, replacesAuth: Boolean, replacesEnvVars: Boolean): Boolean = when {
+        key in coreTransportFields -> false
+        key in authEnvFields -> !replacesAuth
+        key == CODEX_FIELD_ENV_VARS -> !replacesEnvVars
+        else -> true
+    }
+
+    private fun hasExplicitAuthHeader(entry: JsonObject): Boolean {
+        val httpHeaders = entry[CODEX_FIELD_HTTP_HEADERS] as? JsonObject
+        val plainHeaders = entry[CODEX_FIELD_HEADERS] as? JsonObject
+        val inHttp = httpHeaders?.keys?.any { it.equals(CODEX_FIELD_AUTHORIZATION, ignoreCase = true) } == true
+        val inPlain = plainHeaders?.keys?.any { it.equals(CODEX_FIELD_AUTHORIZATION, ignoreCase = true) } == true
+        return inHttp || inPlain
     }
 
     private fun serverEntry(config: JsonObject, name: String): JsonObject? =
@@ -97,8 +120,8 @@ internal class NativeCodexMcpConfig(paths: StatePaths) {
 
     private fun hasBearerHeaderKey(objectValue: JsonObject): Boolean =
         objectValue.keys.any { key ->
-            key.equals("authorization", ignoreCase = true) ||
-                key.equals("bearer_token_env_var", ignoreCase = true)
+            key.equals(CODEX_FIELD_AUTHORIZATION, ignoreCase = true) ||
+                key.equals(CODEX_FIELD_BEARER_ENV, ignoreCase = true)
         }
 
     private suspend fun writeEntry(

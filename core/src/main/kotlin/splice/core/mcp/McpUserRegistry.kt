@@ -140,6 +140,19 @@ public class McpUserRegistry(private val paths: StatePaths) {
         }
     }
 
+    /** Fail-closed read for mutating operations: refuses to wipe an existing malformed or unreadable registry. */
+    public fun readStrict(): McpRegistrySnapshot {
+        if (!Files.exists(file)) return McpRegistrySnapshot()
+        val text = Files.readString(file)
+        if (text.isBlank()) return McpRegistrySnapshot()
+        val root = JsonScalars.objectOrNull(json, text)
+            ?: throw IOException("Malformed MCP registry: $file")
+        return McpRegistrySnapshot(
+            servers = parseServers(root[MCP_REG_FIELD_SERVERS] as? JsonObject),
+            harnesses = parseHarnesses(root[MCP_REG_FIELD_HARNESSES] as? JsonArray),
+        )
+    }
+
     private fun readTextOrNull(): String? = try {
         if (Files.isRegularFile(file)) Files.readString(file) else null
     } catch (_: IOException) {
@@ -167,7 +180,7 @@ public class McpUserRegistry(private val paths: StatePaths) {
         records: List<McpRegistryRecord>,
         harnesses: Set<McpHarness>? = null,
     ): McpRegistrySnapshot {
-        val existing = read()
+        val existing = readStrict()
         val nextServers = LinkedHashMap(existing.servers)
         records.forEach { record -> nextServers[record.name] = record }
         val nextHarnesses = harnesses?.let { existing.harnesses + it } ?: existing.harnesses
@@ -178,7 +191,7 @@ public class McpUserRegistry(private val paths: StatePaths) {
 
     /** Records [harnesses] as connected without altering stored servers. */
     public fun rememberHarnesses(harnesses: Set<McpHarness>): McpRegistrySnapshot {
-        val existing = read()
+        val existing = readStrict()
         val updated = existing.copy(harnesses = existing.harnesses + harnesses)
         save(updated)
         return updated

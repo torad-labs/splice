@@ -6,6 +6,7 @@ import splice.app.MCP_HUB_FRONT_PORT
 import splice.app.cli.AdminSupport
 import splice.client.mcp.McpAccessKey
 import splice.client.mcp.McpBearer
+import splice.client.mcp.McpRootsVerdicts
 import splice.client.mcp.McpShareChoice
 import splice.client.mcp.McpSharing
 import splice.core.config.MgmtKey
@@ -41,6 +42,7 @@ internal class McpHarnessSharing(
             exclude = exclude,
             endpointPrefix = endpointPrefix,
             bearer = bearer,
+            rootsBound = McpRootsVerdicts(paths.stateDir.resolve("mcp-roots-bound"), log),
             shareByDefault = share,
         )
     }

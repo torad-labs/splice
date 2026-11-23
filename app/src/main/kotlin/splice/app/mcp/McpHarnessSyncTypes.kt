@@ -36,9 +36,16 @@ internal fun interface McpFrontCheck {
     fun live(stateDir: Path, port: Int): Boolean
 }
 
-/** Strategy for updating Codex via `codex app-server` RPC; returns null on success or an error message. */
+/** Outcome of a Codex `app-server` RPC sync attempt. */
+internal data class CodexRpcSyncResult(
+    val ok: Boolean,
+    val changed: Boolean = false,
+    val error: String? = null,
+)
+
+/** Strategy for updating Codex via `codex app-server` RPC. */
 internal fun interface CodexRpcSync {
-    suspend operator fun invoke(codexHome: Path, entries: Map<String, JsonObject>): String?
+    suspend operator fun invoke(codexHome: Path, entries: Map<String, JsonObject>): CodexRpcSyncResult
 }
 
 /** Injectable runtime seams for [McpHarnessSync], keeping constructor arity compact and tests hermetic. */

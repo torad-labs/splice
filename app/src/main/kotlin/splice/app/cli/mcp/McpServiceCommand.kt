@@ -11,8 +11,8 @@ import splice.daemonclient.PostReading
 import splice.topology.TopologyStatePaths
 
 internal const val MCP_SERVICE_USAGE =
-    "status [--json] | import [--from SOURCE|all] [--server NAME]... [--yes] | " +
-        "sync [--to HARNESS|all] [--import] [--yes] | " +
+    "status [--json] | import [--from SOURCE|all] [--server NAME]... | " +
+        "sync [--to HARNESS|all] [--import] | " +
         "install temple ((--script FILE [--command COMMAND] | --launch-file FILE) --url URL | --endpoint URL) " +
         "[--codex-home DIR]"
 

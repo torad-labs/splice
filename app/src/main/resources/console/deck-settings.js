@@ -484,23 +484,39 @@
     return out;
   }
 
+  function runMcpAction(btn, targetRow, targetSv, run) {
+    if (btn.disabled) return;
+    const enabled = [...ins.el.querySelectorAll('.btn')].filter(b => !b.disabled);
+    enabled.forEach(b => { b.disabled = true; });
+    commit(targetRow, targetSv, run).then(res => {
+      if (res && res.state !== 'refused') reopen();
+      else enabled.forEach(b => { b.disabled = false; });
+    });
+  }
+
   function mcpHarnessesRows(item) {
     const data = S.mcp.harnesses;
     if (!data || !Array.isArray(data.harnesses)) return [];
+    const detectedIds = data.harnesses.filter(x => x.detected).map(x => x.id);
     const { r, sv, ctl } = row(item.id, item.label, 'Sync Splice MCP servers to each harness');
     const syncAll = h('button', 'btn primary press', 'Sync all detected'); syncAll.type = 'button';
-    syncAll.addEventListener('click', () => commit(r, sv, () => S.syncMcp([], false)).then(reopen));
+    syncAll.disabled = !detectedIds.length;
+    syncAll.addEventListener('click', () => runMcpAction(syncAll, r, sv, () => S.syncMcp(detectedIds, false)));
     ctl.append(syncAll);
     const sub = h('div', 'lr-sub');
     data.harnesses.forEach(hr => {
       const line = h('div', 'lr-cmd');
+      const lineId = `${item.id}:${hr.id}`;
+      line.dataset.item = lineId;
       const nm = h('span');
       const lamp = Deck.lamp(hr.connected ? 'ready' : 'next', hr.connected ? 'var(--verdigris)' : 'var(--ink-faint)');
       nm.append(lamp, hr.label || hr.id);
       const statusText = hr.connected ? 'Connected' : hr.detected ? 'Detected' : 'Not detected';
       const rowSv = Deck.saveState({ rest: () => statusText });
+      const prev = told.get(lineId);
+      if (prev && Date.now() - prev.at < Deck.px('--dur') * 8) rowSv.set(prev.state, prev.word);
       const btn = h('button', 'btn quiet press', hr.connected ? 'Resync' : 'Sync'); btn.type = 'button';
-      btn.addEventListener('click', () => commit(line, rowSv, () => S.syncMcp([hr.id], false)).then(reopen));
+      btn.addEventListener('click', () => runMcpAction(btn, line, rowSv, () => S.syncMcp([hr.id], false)));
       const right = h('span', 'lr-acts'); right.append(btn, rowSv);
       line.append(nm, h('span', 'faint small', hr.id), right);
       sub.append(line);
@@ -517,14 +533,15 @@
     const subText = `${Deck.count(active.length, 'server')} in Splice MCP · ${avail.length} available to import`;
     const { r, sv, ctl } = row(item.id, item.label, subText);
     if (avail.length) {
+      const availNames = avail.map(s => s.name);
       const allBtn = h('button', 'btn primary press', `Import all (${avail.length})`); allBtn.type = 'button';
-      allBtn.addEventListener('click', () => commit(r, sv, () => S.importMcp([], [])).then(reopen));
+      allBtn.addEventListener('click', () => runMcpAction(allBtn, r, sv, () => S.importMcp([], availNames)));
       ctl.append(allBtn);
       const list = h('div', 'kvs fill lr-sub');
       avail.forEach(srv => {
         const d = h('div');
         const btn = h('button', 'btn quiet press', 'Import'); btn.type = 'button';
-        btn.addEventListener('click', () => commit(r, sv, () => S.importMcp([], [srv.name])).then(reopen));
+        btn.addEventListener('click', () => runMcpAction(btn, r, sv, () => S.importMcp([], [srv.name])));
         d.append(h('span', '', `${srv.name} · ${srv.transport} · ${srv.source}`), btn);
         list.append(d);
       });

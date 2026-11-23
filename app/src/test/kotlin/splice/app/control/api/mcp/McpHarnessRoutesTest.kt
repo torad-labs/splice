@@ -9,6 +9,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.engine.EmbeddedServer
@@ -57,6 +58,7 @@ class McpHarnessRoutesTest {
     private lateinit var server: EmbeddedServer<NettyApplicationEngine, *>
     private lateinit var baseUrl: String
     private lateinit var mgmtKey: String
+    private lateinit var scopedMcpKey: String
     private lateinit var homeDir: Path
     private lateinit var statePaths: StatePaths
 
@@ -74,6 +76,7 @@ class McpHarnessRoutesTest {
             managementFile = statePaths.mgmtKeyFile,
             source = keyStore::get,
         )
+        scopedMcpKey = accessKey()
         val guard = ControlAuth(keyStore, log = {}).guard()
         val sharing = McpSharing(true, emptySet(), "http://127.0.0.1:0/mcp/", accessKey, DirectoryProbe { false })
         val host = McpHost(sharing, { JsonObject(emptyMap()) }, log = {})
@@ -112,72 +115,88 @@ class McpHarnessRoutesTest {
 
     @Test
     fun `harness routes require management auth, validate inputs, and redact secrets`() = runBlocking {
-        val unauth = client.get("$baseUrl/api/mcp/harnesses")
-        assertEquals(HttpStatusCode.Unauthorized, unauth.status)
+        assertEquals(HttpStatusCode.Unauthorized, client.get("$baseUrl/api/mcp/harnesses").status)
+        assertEquals(HttpStatusCode.Unauthorized, client.post("$baseUrl/api/mcp/harnesses/import").status)
+        assertEquals(HttpStatusCode.Unauthorized, client.post("$baseUrl/api/mcp/harnesses/sync").status)
+        val mcpScoped = client.get("$baseUrl/api/mcp/harnesses") {
+            header("Authorization", "Bearer $scopedMcpKey")
+        }
+        assertEquals(HttpStatusCode.Unauthorized, mcpScoped.status)
 
         val initial = client.get("$baseUrl/api/mcp/harnesses") {
             header("Authorization", "Bearer $mgmtKey")
         }
         assertEquals(HttpStatusCode.OK, initial.status)
+        assertEquals("no-store", initial.headers[HttpHeaders.CacheControl])
         val initialText = initial.bodyAsText()
         assertNoSecrets(initialText)
-        val initialJson = json.parseToJsonElement(initialText).jsonObject
-        val availNames = initialJson.getValue("available").jsonArray
+        val availNames = json.parseToJsonElement(initialText).jsonObject
+            .getValue("available").jsonArray
             .map { it.jsonObject.getValue("name").jsonPrimitive.content }
         assertTrue("codex-only" in availNames)
         assertTrue("ide-only" in availNames)
 
-        val badImport = client.post("$baseUrl/api/mcp/harnesses/import") {
-            header("Authorization", "Bearer $mgmtKey")
-            contentType(ContentType.Application.Json)
-            setBody("""{"sources":["bogus"]}""")
-        }
-        assertEquals(HttpStatusCode.BadRequest, badImport.status)
+        assertEquals(HttpStatusCode.BadRequest, postAuthed("/api/mcp/harnesses/import", "{not-json").status)
+        val manualRes = postAuthed("/api/mcp/harnesses/import", """{"sources":["manual"]}""")
+        assertEquals(HttpStatusCode.BadRequest, manualRes.status)
+        val bogusRes = postAuthed("/api/mcp/harnesses/sync", """{"harnesses":["bogus"]}""")
+        assertEquals(HttpStatusCode.BadRequest, bogusRes.status)
     }
 
     @Test
-    fun `harness routes import, sync to agy and codex, and fail closed on malformed registry`() = runBlocking {
-        val imported = client.post("$baseUrl/api/mcp/harnesses/import") {
-            header("Authorization", "Bearer $mgmtKey")
-            contentType(ContentType.Application.Json)
-            setBody("""{"servers":["codex-only"]}""")
-        }
+    fun `unfiltered import skips already-active servers and sync writes agy and codex`() = runBlocking {
+        val imported = postAuthed("/api/mcp/harnesses/import", "{}")
         assertEquals(HttpStatusCode.OK, imported.status)
+        assertEquals("no-store", imported.headers[HttpHeaders.CacheControl])
         val importText = imported.bodyAsText()
         assertNoSecrets(importText)
-        val importCount = json.parseToJsonElement(importText).jsonObject
-            .getValue("imported").jsonPrimitive.content.toInt()
-        assertEquals(1, importCount)
+        val importJson = json.parseToJsonElement(importText).jsonObject
+        val importedNames = importJson.getValue("names").jsonArray.map { it.jsonPrimitive.content }.toSet()
+        assertEquals(setOf("codex-only", "ide-only"), importedNames)
 
-        val synced = client.post("$baseUrl/api/mcp/harnesses/sync") {
-            header("Authorization", "Bearer $mgmtKey")
-            contentType(ContentType.Application.Json)
-            setBody("""{"harnesses":["agy","codex"]}""")
-        }
+        val synced = postAuthed("/api/mcp/harnesses/sync", """{"harnesses":["agy","codex"]}""")
         assertEquals(HttpStatusCode.OK, synced.status)
         val syncText = synced.bodyAsText()
         assertNoSecrets(syncText)
-        val syncJson = json.parseToJsonElement(syncText).jsonObject
-        assertEquals("true", syncJson.getValue("ok").jsonPrimitive.content)
+        assertEquals("true", json.parseToJsonElement(syncText).jsonObject.getValue("ok").jsonPrimitive.content)
 
         val agyConfig = Files.readString(homeDir.resolve(".gemini").resolve("config").resolve("mcp_config.json"))
         assertTrue("codex-only" in agyConfig)
         assertTrue("eli-brain" in agyConfig)
+    }
 
-        val registryFile = McpUserRegistry(statePaths).file
-        val savedRegistry = Files.readString(registryFile)
-        try {
+    @Test
+    fun `malformed registry fails closed on import and sync, and partial failure reports 500 with state`() =
+        runBlocking {
+            val registryFile = McpUserRegistry(statePaths).file
+            Files.createDirectories(registryFile.parent)
             Files.writeString(registryFile, "{broken")
-            val failSync = client.post("$baseUrl/api/mcp/harnesses/sync") {
-                header("Authorization", "Bearer $mgmtKey")
-                contentType(ContentType.Application.Json)
-                setBody("""{"harnesses":["agy"]}""")
-            }
-            assertEquals(HttpStatusCode.InternalServerError, failSync.status)
+            val badImport = postAuthed("/api/mcp/harnesses/import", "{}")
+            assertEquals(HttpStatusCode.InternalServerError, badImport.status)
+            assertEquals("no-store", badImport.headers[HttpHeaders.CacheControl])
+            val badSync = postAuthed("/api/mcp/harnesses/sync", """{"harnesses":["agy"]}""")
+            assertEquals(HttpStatusCode.InternalServerError, badSync.status)
             assertEquals("{broken", Files.readString(registryFile))
-        } finally {
-            Files.writeString(registryFile, savedRegistry)
+
+            Files.deleteIfExists(registryFile)
+            Files.writeString(homeDir.resolve(".gemini").resolve("config").resolve("mcp_config.json"), "{bad-agy")
+            val partial = postAuthed("/api/mcp/harnesses/sync", """{"harnesses":["agy","codex"]}""")
+            assertEquals(HttpStatusCode.InternalServerError, partial.status)
+            val partialJson = json.parseToJsonElement(partial.bodyAsText()).jsonObject
+            assertEquals("false", partialJson.getValue("ok").jsonPrimitive.content)
+            val outcomes = partialJson.getValue("outcomes").jsonArray.associate {
+                val obj = it.jsonObject
+                obj.getValue("harness").jsonPrimitive.content to obj.getValue("ok").jsonPrimitive.content
+            }
+            assertEquals("false", outcomes["agy"])
+            assertEquals("true", outcomes["codex"])
+            assertTrue("state" in partialJson)
         }
+
+    private suspend fun postAuthed(path: String, body: String) = client.post("$baseUrl$path") {
+        header("Authorization", "Bearer $mgmtKey")
+        contentType(ContentType.Application.Json)
+        setBody(body)
     }
 
     private fun seedFixtures(home: Path) {

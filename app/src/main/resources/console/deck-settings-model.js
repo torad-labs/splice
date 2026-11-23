@@ -301,8 +301,11 @@ window.SETTINGS_LIVE = (() => {
       longestSilenceMs: (at('waited') || {}).longest_silence_ms ?? null, peakToday: held ? held.peak : null, peakAt: held ? held.at : null };
   }
   S.read = async () => {
-    const [cfg, hd, al, up, ss, mcp, mem, mcpHarnesses, stores, labels, edges, hist, pr, topo, modes, rst, upr] = await Promise.all(['/api/config', '/api/heads', '/api/alerts', '/api/upgrade', '/api/sessions',
-      '/api/mcp', '/api/mcp/memory', '/api/mcp/harnesses', '/api/kept/stores', '/api/kept/labels', '/api/kept/edges', '/api/history', '/api/projects', '/api/topology', '/api/modes', '/api/daemon/restart', '/api/upgrade/run'].map(get));
+    const [cfg, hd, al, up, ss, mcp, mem, stores, labels, edges, hist, pr, topo, modes, rst, upr, hrRes] = await Promise.all([
+      ...['/api/config', '/api/heads', '/api/alerts', '/api/upgrade', '/api/sessions',
+        '/api/mcp', '/api/mcp/memory', '/api/kept/stores', '/api/kept/labels', '/api/kept/edges', '/api/history', '/api/projects', '/api/topology', '/api/modes', '/api/daemon/restart', '/api/upgrade/run'].map(get),
+      API.get('/api/mcp/harnesses'),
+    ]);
     if (!cfg) return false;
     // a splice that answers without its settings is drawn at splice's defaults, every row saying they were not read
     S.configRead = !!(cfg.effective && typeof cfg.effective === 'object');
@@ -337,10 +340,12 @@ window.SETTINGS_LIVE = (() => {
     readVersion(up);
     S.modes = modes && Array.isArray(modes.modes) ? modes.modes : null;
     S.paths = (cfg.paths && typeof cfg.paths === 'object') ? cfg.paths : {};
-    if (mem) S.mcp = { shared: daemon.mcp_share !== false && daemon.mcp_hosting !== false && !(mcp && mcp.hosting === false), sessions: mem.sessions ?? null, bytesNow: mem.bytes_now ?? null, bytesIfShared: mem.bytes_if_shared ?? null,
+    const mcpShared = daemon.mcp_share !== false && daemon.mcp_hosting !== false && !(mcp && mcp.hosting === false);
+    const nextHarnesses = hrRes && hrRes.ok && hrRes.body ? hrRes.body : hrRes && hrRes.status === 404 ? null : S.mcp.harnesses;
+    if (mem) S.mcp = { shared: mcpShared, sessions: mem.sessions ?? null, bytesNow: mem.bytes_now ?? null, bytesIfShared: mem.bytes_if_shared ?? null,
       servers: (mem.servers || []).map(s => ({ name: s.name, shared: s.class === 'shared', why: s.why ? ({ variable: 'A different value in each session', relative_path: 'A different folder in each project', stateful: "Keeps one session's work", cwd: 'Starts in its own folder' })[s.why] || "Can't be shared" : null })),
-      harnesses: mcpHarnesses || null };
-    else if (mcpHarnesses) S.mcp = { ...S.mcp, harnesses: mcpHarnesses };
+      harnesses: nextHarnesses };
+    else S.mcp = { ...S.mcp, shared: mcpShared, harnesses: nextHarnesses };
     const st = (stores && stores.stores) || {};
     S.history = hist;
     S.data.stores = [

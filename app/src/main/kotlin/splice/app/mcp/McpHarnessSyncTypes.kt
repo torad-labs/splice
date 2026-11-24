@@ -66,4 +66,6 @@ internal data class McpHarnessSyncSeams(
     },
     val codexRpc: CodexRpcSync? = null,
     val bearerOverride: McpBearer? = null,
+    val controlPortOverride: Int? = null,
+    val agyPortProbe: LoopbackPortProbe? = null,
 )

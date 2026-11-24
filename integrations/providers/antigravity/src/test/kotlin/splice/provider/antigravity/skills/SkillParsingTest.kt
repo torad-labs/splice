@@ -72,6 +72,39 @@ internal class SkillParsingTest {
         assertEquals("###### $line", item.body)
     }
 
+    @Test
+    fun `a YAML comment ends a plain scalar while a hash inside a word or quotes is text`() {
+        val item = skill(
+            """
+            ---
+            name: commented # the folder name stays out of it
+            description: Use C# here # note
+            argument-hint: "<a # b>" # after the quote
+            user-invocable: FALSE # model only
+            disable-model-invocation: True # person only
+            ---
+            Body
+            """.trimIndent(),
+        )
+        assertEquals("commented", item.name)
+        assertEquals("Use C# here", item.description)
+        assertEquals("<a # b>", item.hint)
+        assertEquals(SkillUse(byUser = false, byModel = false), item.use)
+    }
+
+    @Test
+    fun `a comment on a continuation line ends a plain scalar`() {
+        val folded = skill("---\ndescription: first a#b\n  second # stop\n  third\n---\nBody line\n")
+        assertEquals("first a#b second", folded.description)
+    }
+
+    @Test
+    fun `a hash at the start of a value leaves it empty`() {
+        val empty = skill("---\ndescription: # nothing here\nuser-invocable: true # still typeable\n---\n# Heading\n")
+        assertEquals("Heading", empty.description, "an empty description falls back to the body")
+        assertEquals(SkillUse(byUser = true, byModel = true), empty.use)
+    }
+
     private fun skill(markdown: String): LocalSkillItem {
         val project = Files.createDirectories(tmp.resolve("project"))
         Files.createDirectory(project.resolve(".git"))

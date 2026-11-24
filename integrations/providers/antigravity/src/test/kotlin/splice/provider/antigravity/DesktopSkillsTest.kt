@@ -242,8 +242,8 @@ internal class DesktopSkillsTest {
     @Test
     fun `a model-only skill is indexed but not typeable, and a person-only skill is typeable but not indexed`() {
         val rig = rig()
-        writeFlagged(rig.home.resolve(".claude/skills/hidden"), "Model-only skill", "user-invocable: false")
-        writeFlagged(rig.home.resolve(".claude/skills/manual"), "Person-only skill", NO_MODEL)
+        writeFlagged(rig.home.resolve(".claude/skills/hidden"), "Model-only skill", "user-invocable: False # model")
+        writeFlagged(rig.home.resolve(".claude/skills/manual"), "Person-only skill", "$NO_MODEL # person only")
         writeFlagged(rig.home.resolve(".claude/skills/neither"), "Nobody's", "user-invocable: false", NO_MODEL)
         var menu = emptyList<String?>()
         var reloaded = emptyList<String?>()

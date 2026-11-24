@@ -40,16 +40,37 @@ internal class SkillFrontmatter(private val log: LogSink) {
         return line.substring(0, end).trimEnd() + "…"
     }
 
+    /** [key]'s value. A quoted scalar keeps a `#` inside its quotes and drops what follows the closing quote; a plain
+     *  one ends at a YAML comment (see [plain]); a block scalar (`>`, `|`, a comment allowed after the indicator)
+     *  keeps its lines whole. */
     private fun scalar(front: List<String>, key: String): String {
         val index = front.indexOfFirst { it.startsWith("$key:") }
         if (index < 0) return ""
         val inline = front[index].substringAfter(':').trim()
-        if (inline in BLOCK_MARKERS) return folded("", front, index)
-        val value = folded(inline, front, index)
-        return when (val quote = inline.firstOrNull()) {
-            '\'', '"' -> unquote(value, quote) ?: value
-            else -> value
+        val quote = inline.firstOrNull()?.takeIf { it == '\'' || it == '"' }
+        return when {
+            quote != null -> folded(inline, front, index).let { unquote(it, quote) ?: it }
+            uncommented(inline) in BLOCK_MARKERS -> folded("", front, index)
+            else -> plain(sequenceOf(inline) + continuation(front, index))
         }
+    }
+
+    /** A plain scalar's [lines] folded with spaces, each cut at its comment; a line that carried one ends it. */
+    private fun plain(lines: Sequence<String>): String {
+        val parts = mutableListOf<String>()
+        for (line in lines) {
+            val text = uncommented(line)
+            if (text.isNotEmpty()) parts += text
+            if (text != line.trim() && parts.isNotEmpty()) break
+        }
+        return parts.joinToString(" ")
+    }
+
+    /** [line] without its YAML comment: a `#` at its start or after whitespace begins one, while a `#` inside a word
+     *  (`C#`, `a#b`) is text. Trimmed. */
+    private fun uncommented(line: String): String {
+        val at = line.indices.firstOrNull { line[it] == '#' && (it == 0 || line[it - 1].isWhitespace()) }
+        return (if (at == null) line else line.substring(0, at)).trim()
     }
 
     private fun unquote(text: String, quote: Char): String? {
@@ -75,10 +96,12 @@ internal class SkillFrontmatter(private val log: LogSink) {
         else -> next?.takeIf { ch == '\\' && (it == quote || it == '\\') }
     }
 
-    private fun folded(inline: String, front: List<String>, index: Int): String {
-        val continuation = front.asSequence().drop(index + 1).takeWhile { it.isBlank() || it.first().isWhitespace() }
-        return (sequenceOf(inline) + continuation).map(String::trim).filter(String::isNotEmpty).joinToString(" ")
-    }
+    /** The indented lines after [index] that continue its value. */
+    private fun continuation(front: List<String>, index: Int): Sequence<String> =
+        front.asSequence().drop(index + 1).takeWhile { it.isBlank() || it.first().isWhitespace() }
+
+    private fun folded(inline: String, front: List<String>, index: Int): String =
+        (sequenceOf(inline) + continuation(front, index)).map(String::trim).filter(String::isNotEmpty).joinToString(" ")
 }
 
 private val BLOCK_MARKERS = setOf(">", ">-", ">+", "|", "|-", "|+")

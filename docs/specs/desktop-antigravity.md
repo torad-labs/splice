@@ -181,8 +181,10 @@ or writing `~/.gemini`.
 
 - **Where they come from** (`ClaudeSkillCatalog`, nearest first, and the first one with a given name wins):
   `.claude/skills` and `.agents/skills` in the session folder and each parent up to the repository root (the folder
-  holding `.git`); outside a repository the walk stops below the home folder, or at the filesystem root when the
-  session isn't under home. Then `<CLAUDE_CONFIG_DIR or ~/.claude>/skills`; `~/.agents/skills`; the skills in
+  holding `.git`), or up to the filesystem root outside a repository. The walk never includes the home folder itself,
+  in any case: it stops at the folder just below home, even for a repository rooted at `$HOME`, and is empty for a
+  session run in `$HOME`, because the user sources that follow cover `~/.claude` and `~/.agents`. Then
+  `<CLAUDE_CONFIG_DIR or ~/.claude>/skills`; `~/.agents/skills`; the skills in
   `$CLAUDE_CODE_DESKTOP_SKILLS_PLUGIN_DIR/skills` that its `manifest.json` doesn't turn off; then `.claude/commands`
   along the same walk and `<config>/commands`. They are scanned when the session starts, before agy opens, and
   again on each `reload_skills`.

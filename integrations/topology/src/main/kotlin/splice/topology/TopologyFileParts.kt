@@ -2,6 +2,8 @@ package splice.topology
 
 import splice.core.capability.CapabilityDeclarations
 import splice.core.capability.CapabilityToml
+import splice.core.topology.DesktopConfig
+import splice.core.topology.DesktopToml
 import splice.core.topology.Dialect
 import splice.core.topology.Topology
 import splice.core.topology.toml.ModsToml
@@ -12,15 +14,22 @@ internal class TopologyFileParts(text: String) {
     val capabilities = CapabilityToml.split(text)
     val modes = ModeTables.split(capabilities.rest)
     val mods = ModsToml(modes.rest).split()
+    val desktop = DesktopToml.split(mods.rest)
+    val rest: String get() = desktop.rest
 
     fun parse(): Topology {
         // Guard structures that the decoder cannot read, even when no boot findings are being collected.
         if (mods.findings.isNotEmpty()) throw TopologyRefusal(mods.findings)
-        TomlStructurePreflight.check(mods.rest)
-        val topology = ModeTables.attached(TopologyLoader.decode(mods.rest), modes.tables)
+        TomlStructurePreflight.check(rest)
+        val topology = ModeTables.attached(TopologyLoader.decode(rest), modes.tables)
         val messages = topology.headsSpeaking(Dialect.ANTHROPIC_PASSTHROUGH)
         val capabilities = CapabilityDeclarations(topology.heads.keys, messages = messages).read(capabilities.tables)
-        val extensions = topology.extensions.copy(mods = mods.config, capabilities = capabilities.capabilities)
+        val windows = desktop.read.config.takeIf { desktop.read.findings.isEmpty() } ?: DesktopConfig()
+        val extensions = topology.extensions.copy(
+            capabilities = capabilities.capabilities,
+            mods = mods.config,
+            desktop = windows,
+        )
         return topology.copy(extensions = extensions)
     }
 }

@@ -30,6 +30,10 @@ internal class DoorModelWire(private val tiers: AnthropicTiers, private val newe
         }
     }
 
+    /** The model's windows, as Desktop reads them: whether it has a 1M variant, read against splice.toml's
+     *  `[desktop]` big window (ServedModel.millionWindow), and its provider's real ceiling, never spelled past
+     *  it — where the configured Code-tab window differs from the model's own, scaling the counts a turn
+     *  reports carries the difference, not this number. */
     private fun windows(into: JsonObjectBuilder, model: ServedModel) {
         if (model.supports1m || model.fact.source?.containsKey("supports_1m") != true) {
             into.put("supports_1m", model.supports1m)

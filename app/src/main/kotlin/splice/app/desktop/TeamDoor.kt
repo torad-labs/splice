@@ -15,6 +15,7 @@ import splice.app.desktop.catalog.DesktopProviders
 import splice.app.desktop.catalog.DoorCatalog
 import splice.app.provider.ServedProvider
 import splice.core.client.SESSION_HEADER
+import splice.core.topology.DesktopConfig
 import splice.core.topology.Topology
 import splice.core.turn.TERMINAL_DOOR
 import splice.core.util.JsonScalars
@@ -40,7 +41,7 @@ internal class TeamDoor : TeamGateway {
      *  a person's allowlist still name a head by its command or key, and now a provider by its key. */
     fun open(providers: DesktopProviders, topology: Topology) {
         val names = TeamNames(topology)
-        opened = Opened(providers, topology.providers.keys.associateWith(names::of))
+        opened = Opened(providers, topology.providers.keys.associateWith(names::of), topology.desktop)
     }
 
     override suspend fun routed(
@@ -72,7 +73,7 @@ internal class TeamDoor : TeamGateway {
     override suspend fun models(call: ApplicationCall, voice: RefusalVoice, serves: ProviderFilter) {
         val open = opened ?: return voice.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, STARTING)
         val lineup = open.providers.lineup().serving { open.allows(it, serves) }
-        JsonReply(HttpStatusCode.OK, DoorCatalog(lineup).discovery().toString()).send(call)
+        JsonReply(HttpStatusCode.OK, DoorCatalog(lineup, open.desktop).discovery().toString()).send(call)
     }
 
     /** [call]'s body as a JSON object, under the widest bound a served provider takes; null once [call] is answered. */
@@ -89,7 +90,12 @@ internal class TeamDoor : TeamGateway {
         return null
     }
 
-    private class Opened(val providers: DesktopProviders, private val names: Map<String, Set<String>>) {
+    private class Opened(
+        val providers: DesktopProviders,
+        private val names: Map<String, Set<String>>,
+        /** splice.toml's `[desktop]` windows, which the discovery rows are read against. */
+        val desktop: DesktopConfig,
+    ) {
         fun namesOf(provider: String): Set<String> = names[provider].orEmpty()
 
         fun allows(provider: ServedProvider, serves: ProviderFilter): Boolean =

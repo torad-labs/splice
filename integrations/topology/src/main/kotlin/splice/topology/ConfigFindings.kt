@@ -75,12 +75,11 @@ public object ConfigFindings {
         runtimes: LocalRowFindings = LocalRowFindings { emptyList() },
         beside: BootSettings = BootSettings(),
     ): ConfigRead {
-        // The capability tables are read apart, so each wrong one is its own finding beside the schema's
-        // (docs/specs/harness.md, decision 1); every other layer reads the file with them blanked out. The
-        // `[modes.<name>]` tables are read apart the same way (modes/README.md).
+        // Read the extensions apart so their findings are reported alongside the schema's.
         val parts = TopologyFileParts(source)
         val mods = parts.mods
-        val text = mods.rest
+        val desktop = parts.desktop.read
+        val text = parts.rest
         // A structural finding is answered BEFORE any decode: a head roster written as an array of strings sends the
         // decoder into the loop the preflight exists to prevent, so the decoder never sees such a file.
         val structural = TomlStructurePreflight.failures(text).map { finding(it) }
@@ -91,7 +90,8 @@ public object ConfigFindings {
             .read(parts.capabilities.tables)
         val found = beside.modes?.of(mods.config, configDir ?: stateBase, topology)
         val modes = ModeSettingsReader(topology?.heads?.keys, found?.names, served(topology)).read(parts.modes.tables)
-        val elsewhere = declared.findings + modes.findings + mods.findings + found?.findings.orEmpty()
+        val elsewhere = declared.findings + modes.findings + mods.findings + desktop.findings +
+            found?.findings.orEmpty()
         if (decoded == null) return refused(structural + TopologyTypeMismatch.all(text) + elsewhere)
         if (topology == null) return refused(undecodable(text, requireNotNull(decoded.exceptionOrNull())) + elsewhere)
         val moves = ServingBoundMove(topology)
@@ -109,6 +109,7 @@ public object ConfigFindings {
             capabilities = declared.capabilities,
             modes = modes.settings,
             mods = mods.config,
+            desktop = desktop.config,
         )
         val ready = topology.copy(extensions = extensions)
         val warnings = TopologyFindings.warnings(topology)

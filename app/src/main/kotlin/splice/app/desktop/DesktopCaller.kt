@@ -39,6 +39,10 @@ internal class DesktopCaller(
     /** In app mode, the window Desktop gave the Code tab for the request's model (DesktopAppWindow); else [window]. */
     override fun windowOf(ask: DoorAsk): Long? = ask.appWindow ?: window()
 
+    /** An app-mode window is read off the request itself, beta and model weighed at the door, so it stands where
+     *  the beta would when the turn's counts are scaled. */
+    override fun requestWindowOf(ask: DoorAsk): Long? = ask.appWindow
+
     override val noHead: String = "no provider is in the door; `splice desktop` says why"
 
     override val notInDoor: String = "is not in the door; `splice desktop` lists the models it serves"

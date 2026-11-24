@@ -29,6 +29,10 @@ internal abstract class DoorCaller(
     /** The window [ask]'s session holds: the caller's own ([window]) unless the request says otherwise. */
     open fun windowOf(ask: DoorAsk): Long? = window()
 
+    /** The window read off [ask]'s own request, which outranks what its beta alone would say where the turn is
+     *  scaled; none by default, since a caller's window is its sessions', read from no one request. */
+    open fun requestWindowOf(ask: DoorAsk): Long? = null
+
     /** What a turn is refused with while no provider is in the door. */
     abstract val noHead: String
 

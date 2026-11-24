@@ -31,6 +31,10 @@ internal class ClientWindowWitness(private val posted: ClientWindows) {
         val headers = call.request.headers
         val betas = headers.getAll(BETA_HEADER).orEmpty().flatMap { it.split(',') }
         val said = CLAUDE_CODE_ONE_MILLION.takeIf { betas.any { it.trim().startsWith(ONE_MILLION_BETA) } }
+        // A gateway that read the window off this request itself (Desktop's app mode, weighed against splice.toml's
+        // `[desktop]` windows at the door) has already weighed the beta, so its reading stands in the beta's place:
+        // the beta alone would put back the client's own million over a configured one.
+        val requested = GatewayTurns.of(call)?.requestWindow?.takeIf { it > 0L }
         // The launch's window describes only an id the client sizes from the launch env; a `claude-` id is
         // sized from the client's own table, which only its status-line post reveals.
         val launched = headers[CLIENT_WINDOW_HEADER]?.trim()?.toLongOrNull()?.takeIf { it > 0L }
@@ -38,7 +42,7 @@ internal class ClientWindowWitness(private val posted: ClientWindows) {
         // A gateway turn carries the window its gateway holds for the session, which is what a session's own posts
         // taught it: so it sits where [posted] does, below what the request itself says (#706), never above it.
         val handed = GatewayTurns.of(call)?.clientWindow?.takeIf { it > 0L }
-        return said ?: launched ?: handed ?: posted.windowFor(meta.scope.sessionId)
+        return requested ?: said ?: launched ?: handed ?: posted.windowFor(meta.scope.sessionId)
     }
 }
 

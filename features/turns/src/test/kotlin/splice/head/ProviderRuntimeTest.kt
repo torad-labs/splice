@@ -15,6 +15,9 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -92,6 +95,37 @@ class ProviderRuntimeTest {
             assertEquals(200, answer.status, answer.text)
             assertTrue(provider.requests.any { it.path == "/chat/completions" }, "the mock never saw the turn")
             assertTrue("answered with no head" in answer.text, answer.text)
+        }
+    }
+
+    /** The `input_tokens` [answer] reports to the client. */
+    private fun reportedInput(answer: Answer): Long =
+        Json.parseToJsonElement(answer.text).jsonObject.getValue("usage").jsonObject
+            .getValue("input_tokens").jsonPrimitive.content.toLong()
+
+    @Test
+    fun `a gateway turn's counts scale to the window its gateway read off the request`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(reply { chatAnswer("answered") })
+            val runtime = headless.chat().runtime
+            val beta = mapOf("anthropic-beta" to "context-1m-2025-08-07")
+            // The scripted row declares 200,000 and its provider reports 12 input tokens. The door weighed this
+            // request's 1M beta against a configured 100,000 window (splice.toml's `[desktop]`), so its counts
+            // scale by 100,000/200,000 — not by the beta's own million, which would report 60.
+            val configured = GatewayTurn(
+                body("claude-scripted-headless-chat--scripted-model").toByteArray(),
+                "desktop",
+                100_000,
+                requestWindow = 100_000,
+            )
+            assertEquals(6L, reportedInput(post(runtime, configured, beta)))
+            // A window handed over as a session's alone still yields to the beta, as a terminal turn's does.
+            val handed = GatewayTurn(
+                body("claude-scripted-headless-chat--scripted-model").toByteArray(),
+                "claude",
+                100_000,
+            )
+            assertEquals(60L, reportedInput(post(runtime, handed, beta)))
         }
     }
 

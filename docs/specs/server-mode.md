@@ -402,7 +402,18 @@ server_admin_only = true   # and only the people `[server] admins` names
   `modes.<name>.server_routes`, so a mode's name never reads as a path the listener answers itself.
 
 A mode answers with `Mode.serve(request)`: its status, content type and body, or null for a path it does not have. Its
-code runs in the daemon, as every mode's does.
+code from built-in and external modes runs in the daemon.
+
+## The Desktop window on a served machine
+
+A splice that also serves Claude Desktop states the windows Desktop gives its Code tab in splice.toml's
+`[desktop]`: `code_window` (200,000 shipped) and `code_window_1m` (1,000,000 shipped, never below `code_window`).
+Desktop sets those windows itself in its Code tab's Claude Code and honors there the `max_input_tokens` discovery
+advertises, which stays each provider's real ceiling; splice authors the counts a Code-tab turn reports, so the
+door scales them by the configured window over the model's own and compaction agrees with the terminal setup even
+where the two windows differ. A model is advertised with a 1M variant when its real window reaches
+`code_window_1m`. The daemon reads the table at start (a restart, and Desktop's next launch), and the same reading
+serves the team door's model list.
 
 ## P3
 

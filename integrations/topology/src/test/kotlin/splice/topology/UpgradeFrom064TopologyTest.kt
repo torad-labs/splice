@@ -77,6 +77,11 @@ class UpgradeFrom064TopologyTest {
         )
         assertTrue(warnings.all { it.line != null }, "each says its line: $warnings")
         assertTrue(warnings.all { it.move != null }, "each offers its move: $warnings")
+        // The gateway reads the standing prompt as one value, so either warning moves text and mode together.
+        val prompt = warnings.single { it.path == "heads.realinfer.system_prompt" }.move
+        val mode = warnings.single { it.path == "heads.realinfer.system_prompt_mode" }.move
+        assertEquals(listOf("system_prompt", "system_prompt_mode"), prompt?.keys)
+        assertEquals(listOf("system_prompt_mode", "system_prompt"), mode?.keys)
         assertTrue(warnings.none { PROMPT in it.text() || "400000" in it.text() }, "no value is said: $warnings")
         val served = warnings.filter { it.path != "heads.realinfer.discovery_prefix" }
         assertTrue(served.all { "the gateway serves the provider with it" in it.message }, "$served")
@@ -127,6 +132,101 @@ class UpgradeFrom064TopologyTest {
         val window = warnings.single { it.path == "heads.realinfer.context_window" }
         assertTrue("says another, which the gateway serves" in window.message, window.message)
         assertNull(window.move, "a value the provider already says is the person's choice, never moved over it")
+    }
+
+    @Test
+    fun `a head's prompt mode is never moved beside a prompt its provider already says`() {
+        val own = PROVIDER.replace(
+            "auth = { kind = \"api-key\", env = \"REALINFER_KEY\" }",
+            "auth = { kind = \"api-key\", env = \"REALINFER_KEY\" }\nsystem_prompt = \"The provider's own.\"",
+        )
+        val warnings = TopologyFindings.warnings(TopologyLoader.parse(own + HEAD))
+        val prompt = warnings.filter { it.path.startsWith("heads.realinfer.system_prompt") }
+        val paths = prompt.map { it.path }.toSet()
+        assertEquals(setOf("heads.realinfer.system_prompt", "heads.realinfer.system_prompt_mode"), paths)
+        assertTrue(prompt.all { it.move == null }, "half a prompt is never moved over the provider's: $prompt")
+    }
+
+    @Test
+    fun `a head's replace is never moved to the provider while a sibling appends the same text`() {
+        val sibling = "\n[heads.sibling]\nprovider = \"realinfer\"\nport = 3313\n" +
+            "discovery_prefix = \"claude-realinfer--\"\npinned_model = \"glm-5.3-flash\"\nsystem_prompt = \"$PROMPT\"\n"
+        val head = HEAD.replace("system_prompt_mode = \"append\"", "system_prompt_mode = \"replace\"")
+        val warnings = TopologyFindings.warnings(TopologyLoader.parse(PROVIDER + head + sibling))
+        val prompt = warnings.filter { it.path.startsWith("heads.realinfer.system_prompt") }
+        val paths = prompt.map { it.path }.toSet()
+        assertEquals(setOf("heads.realinfer.system_prompt", "heads.realinfer.system_prompt_mode"), paths)
+        assertTrue(prompt.all { it.move == null }, "the sibling's append is never turned to replace: $prompt")
+        assertTrue(prompt.all { "served another standing prompt" in it.message }, "$prompt")
+
+        val same = sibling + "system_prompt_mode = \"replace\"\n"
+        val agreed = TopologyFindings.warnings(TopologyLoader.parse(PROVIDER + head + same))
+        val moves = agreed.filter { it.path.startsWith("heads.realinfer.system_prompt") }.map { it.move }
+        assertTrue(moves.all { it != null }, "heads served one prompt move it together: $agreed")
+    }
+
+    @Test
+    fun `heads appending one prompt, one saying so and one leaving it unsaid, move it as the gateway serves it`() {
+        val sibling = "\n[heads.sibling]\nprovider = \"realinfer\"\nport = 3313\n" +
+            "discovery_prefix = \"claude-realinfer--\"\npinned_model = \"glm-5.3-flash\"\nsystem_prompt = \"$PROMPT\"\n"
+        val topology = TopologyLoader.parse(PROVIDER + HEAD + sibling)
+        val gateway = HeadFallbacks(topology).providers().getValue("realinfer")
+        assertEquals(PROMPT, gateway.systemPrompt, "the heads agree, so the gateway serves their prompt today")
+        assertEquals(SystemPromptMode.APPEND, gateway.systemPromptMode ?: SystemPromptMode.APPEND)
+
+        val prompt = TopologyFindings.warnings(topology).filter { ".system_prompt" in it.path }
+        val paths = prompt.map { it.path }.toSet()
+        val expected = setOf(
+            "heads.realinfer.system_prompt",
+            "heads.realinfer.system_prompt_mode",
+            "heads.sibling.system_prompt",
+        )
+        assertEquals(expected, paths)
+        assertTrue(prompt.all { it.move != null }, "moving it leaves the gateway served the same prompt: $prompt")
+    }
+
+    @Test
+    fun `a head's mode is never moved beside the prompt the provider says, which the gateway serves as appended`() {
+        val own = PROVIDER.replace(
+            "auth = { kind = \"api-key\", env = \"REALINFER_KEY\" }",
+            "auth = { kind = \"api-key\", env = \"REALINFER_KEY\" }\nsystem_prompt = \"$PROMPT\"",
+        )
+        val head = HEAD.replace("system_prompt_mode = \"append\"", "system_prompt_mode = \"replace\"")
+        val sibling = "\n[heads.sibling]\nprovider = \"realinfer\"\nport = 3313\n" +
+            "discovery_prefix = \"claude-realinfer--\"\npinned_model = \"glm-5.3-flash\"\n" +
+            "system_prompt = \"$PROMPT\"\nsystem_prompt_mode = \"replace\"\n"
+        val topology = TopologyLoader.parse(own + head + sibling)
+        val gateway = HeadFallbacks(topology).providers().getValue("realinfer")
+        assertEquals(PROMPT, gateway.systemPrompt)
+        assertNull(gateway.systemPromptMode, "the gateway appends the provider's prompt today")
+
+        val prompt = TopologyFindings.warnings(topology).filter { ".system_prompt" in it.path }
+        val paths = prompt.map { it.path }.toSet()
+        assertEquals(setOf("heads.realinfer.system_prompt_mode", "heads.sibling.system_prompt_mode"), paths)
+        assertTrue(prompt.all { it.move == null }, "the gateway's append is never turned to replace: $prompt")
+        assertTrue(prompt.all { "the gateway serves the part of the standing prompt" in it.message }, "$prompt")
+    }
+
+    @Test
+    fun `a head's warning names its own line, never one in another provider's multi-line prompt`() {
+        val example = "\n[providers.other]\ndialect = \"openai-chat\"\nbase_url = \"https://other.invalid\"\n" +
+            "auth = { kind = \"api-key\", env = \"OTHER_KEY\" }\nsystem_prompt = \"\"\"\nA head looks like this:\n" +
+            "[heads.realinfer]\nsystem_prompt = \"not this one\"\ncontext_window = 1\n\"\"\"\n\n" +
+            "[[providers.other.models]]\nid = \"o\"\ncontext_window = 1000\n"
+        val lf = PROVIDER + example + HEAD
+        for (text in listOf(lf, lf.replace("\n", "\r\n"))) {
+            val read = read(text)
+            assertTrue(read is ConfigRead.Ready, "$read")
+            val warnings = (read as ConfigRead.Ready).warnings
+            val real = mapOf(
+                "system_prompt" to "system_prompt = \"$PROMPT\"",
+                "context_window" to "context_window = 400000",
+            )
+            for ((path, said) in real) {
+                val line = lf.lines().indexOf(said) + 1
+                assertEquals(line, warnings.single { it.path == "heads.realinfer.$path" }.line, "$path in $warnings")
+            }
+        }
     }
 
     @Test

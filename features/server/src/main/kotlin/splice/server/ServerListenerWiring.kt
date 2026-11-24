@@ -3,6 +3,8 @@ package splice.server
 
 import kotlinx.coroutines.CoroutineDispatcher
 import splice.core.topology.ServerConfig
+import splice.core.topology.ServerSignin
+import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.server.metrics.ServerMetrics
 import splice.server.signin.IdTokens
@@ -27,6 +29,8 @@ internal data class ListenerStores(
     val metrics: ServerMetrics,
     val admin: AdminReads,
 )
+
+internal data class ListenerSignins(val cli: SigninParts?, val browser: SigninParts?, val clock: Clock)
 
 internal class ServerListenerWiring(
     private val server: ServerConfig,
@@ -58,11 +62,26 @@ internal class ServerListenerWiring(
             books = stores.books.open(reach, stores.metrics),
         )
         val tls = server.pem(configDir)?.let { PemTls(it).keyStore() }
-        val signin = server.signin?.let { signin ->
-            val issuer = SigninIssuer(SigninClient(signin, signinSecret), io, clock)
-            SigninParts(signin, issuer, IdTokens(signin, issuer, clock))
+        val cli = server.signin?.let { signin(it, signinSecret) }
+        val browser = browserSignin(cli, reach.env)
+        val optional = OptionalRoutes(ListenerSignins(cli, browser, clock), reach.mods)
+        return ServerListener(server, parts, tls, stores.admin, io, log, optional)
+    }
+
+    private fun signin(policy: ServerSignin, secret: String?): SigninParts {
+        val issuer = SigninIssuer(SigninClient(policy, secret), io, clock)
+        return SigninParts(policy, issuer, IdTokens(policy, issuer, clock))
+    }
+
+    private fun browserSignin(cli: SigninParts?, env: EnvReader): SigninParts? {
+        val auth = server.forwardAuth?.takeIf { it.browserOrigin != null } ?: return null
+        val clientId = auth.clientId ?: return cli
+        val secret = auth.clientSecretEnv?.let { name ->
+            requireNotNull(env(name)?.takeIf(String::isNotBlank)) {
+                "server.forward_auth.client_secret_env names an unset or empty variable"
+            }
         }
-        return ServerListener(server, parts, tls, stores.admin, io, log, OptionalRoutes(signin, reach.mods))
+        return signin(checkNotNull(cli).signin.copy(clientId = clientId), secret)
     }
 }
 

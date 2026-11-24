@@ -19,18 +19,20 @@ import splice.core.server.ModRequest
 import splice.core.server.ModResponse
 import splice.core.server.ServerModRoutes
 import splice.core.server.modHeaders
-import splice.core.topology.ServerConfig
+import splice.core.topology.ServerTeams
 import splice.core.wire.HttpStatus
 import splice.server.ServerPeople
+import splice.server.caller.AdminAccess
 import splice.share.CappedBodies
 import splice.share.RefusalVoice
 
 /** The modes the listener hands `/server/mod/...` to ([routes]; null when the daemon offers none), read for
- *  [server]'s admins and [people]'s teams, refusing in [voice]. A mode's own code runs on [io]. */
+ *  [people]'s [teams] and [adminAccess] policy, refusing in [voice]. A mode's own code runs on [io]. */
 internal class ModRoute(
     private val routes: ServerModRoutes?,
-    private val server: ServerConfig,
+    private val teams: ServerTeams,
     private val people: ServerPeople,
+    private val adminAccess: AdminAccess,
     private val voice: RefusalVoice,
     private val io: CoroutineDispatcher,
 ) {
@@ -65,7 +67,7 @@ internal class ModRoute(
         return ModRequest(
             method = call.request.httpMethod.value,
             path = path,
-            caller = ModCaller(person, people.team(person, server.teams), server.admin(person)),
+            caller = ModCaller(person, people.team(person, teams), adminAccess.allows(call, person)),
             headers = modHeaders.mapNotNull { header -> call.request.headers[header]?.let { header to it } }.toMap(),
             query = call.request.queryParameters.entries().associate { (key, values) -> key to values.first() },
             body = body,

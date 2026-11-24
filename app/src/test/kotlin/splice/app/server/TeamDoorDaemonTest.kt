@@ -83,17 +83,20 @@ class TeamDoorDaemonTest {
         return printed.lines().first()
     }
 
-    private fun door(path: String, body: String?, key: String?): HttpResponse<String> {
+    private fun door(path: String, body: String?, key: String?, tag: String? = null): HttpResponse<String> {
         val publisher = body?.let(HttpRequest.BodyPublishers::ofString) ?: HttpRequest.BodyPublishers.noBody()
         val request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:$listen/door/v1/$path"))
             .method(if (body == null) "GET" else "POST", publisher)
             .header("Content-Type", "application/json")
         key?.let { request.header("Authorization", "Bearer $it") }
+        tag?.let { request.header("x-team-tag", it) }
         return http.send(request.build(), HttpResponse.BodyHandlers.ofString())
     }
 
-    private fun turn(selector: String, key: String?): HttpResponse<String> =
-        door("messages", """{"model":"$selector","max_tokens":32,"messages":[{"role":"user","content":"hi"}]}""", key)
+    private fun turn(selector: String, key: String?, tag: String? = null): HttpResponse<String> {
+        val body = """{"model":"$selector","max_tokens":32,"messages":[{"role":"user","content":"hi"}]}"""
+        return door("messages", body, key, tag)
+    }
 
     private fun models(key: String): List<String> =
         json.parseToJsonElement(door("models", null, key).body()).jsonObject.getValue("data").jsonArray
@@ -127,11 +130,14 @@ class TeamDoorDaemonTest {
     @Test
     fun `a turn carries the team key to no provider, and each provider is called with its own`() {
         val before = alpha.turns.size
-        assertEquals(200, turn("claude-alpha--alpha-1", everything).statusCode())
+        assertTrue(everything.startsWith("team_"))
+        assertEquals(200, turn("claude-alpha--alpha-1", everything, "tag=$everything").statusCode())
         val seen = alpha.turns[before]
         assertTrue("alpha-secret-key" in seen.everything, "alpha is called with its own key")
         assertFalse(everything in seen.everything, "the team key goes no further")
         assertFalse("beta-secret-key" in seen.everything)
+        assertEquals(200, turn("claude-alpha--alpha-1", everything, "ordinary-tag").statusCode())
+        assertTrue("ordinary-tag" in alpha.turns[before + 1].everything)
     }
 
     @Test
@@ -152,6 +158,7 @@ class TeamDoorDaemonTest {
             [server]
             listen = "127.0.0.1:$listen"
             commands = ["alpha", "beta"]
+            key_prefix = "team_"
 
             [door.selector_aliases]
             "zeta--" = "beta"
@@ -159,6 +166,7 @@ class TeamDoorDaemonTest {
             [providers.alpha]
             dialect = "anthropic-passthrough"
             base_url = "${alpha.baseUrl}"
+            forward_headers = ["x-team-tag"]
             auth = { kind = "api-key", file = "${keys.getValue("alpha")}" }
             [[providers.alpha.models]]
             id = "alpha-1"

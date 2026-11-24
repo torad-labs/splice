@@ -80,13 +80,17 @@ import splice.core.topology.ServerConfig
 import splice.core.util.LogSink
 import splice.core.wire.HttpStatus
 import splice.http.listen.HttpListenerThreads
+import splice.server.caller.AdminAccess
 import splice.server.caller.ClientAddresses
 import splice.server.caller.KeyAdmission
 import splice.server.ledger.ROUTE_MESSAGES
 import splice.server.mod.ModRoute
+import splice.server.signin.SigninAttempts
 import splice.server.signin.SigninRoute
 import splice.server.telemetry.OTLP_ROUTE
 import splice.server.telemetry.TelemetryRelay
+import splice.server.web.BrowserForwardAuth
+import splice.server.web.ForwardAuthRoute
 import splice.server.web.ServerPublicRoutes
 import splice.share.HEAD_API_ROOT
 import splice.share.HEAD_LAUNCH_ROUTE
@@ -107,29 +111,44 @@ internal class ServerListener(
     /** Blocking work runs here: reading a head's launch, and the relay's JDK I/O. */
     io: CoroutineDispatcher,
     private val log: LogSink,
-    /** How a sign-in is checked, when `[server.signin]` is set (F2), and the modes under `/server/mod/...`. */
-    optional: OptionalRoutes = OptionalRoutes(),
+    optional: OptionalRoutes,
 ) {
     private val voice = RefusalVoice(SERVER_ERROR_PREFIX)
     private val catalog = ShareCatalog(parts.heads, io, voice)
-    private val admin = ServerAdmin(server, KeyApi(parts.keys, log, reads.audit), reads, voice)
     private val addresses = ClientAddresses(server.trustedProxies)
-    private val signins = SigninRoute(optional.signin, KeyApi(parts.keys, log, reads.audit), addresses, voice, log)
-    private val publicRoutes = ServerPublicRoutes(server, parts.keys, parts.people, addresses, tls != null, voice)
+    private val identity = optional.signins
+    private val adminAccess = AdminAccess(server, addresses)
+    private val keys = KeyApi(parts.keys, log, reads.audit)
+    private val attempts = SigninAttempts(addresses, identity.clock)
+    private val admin = ServerAdmin(adminAccess, keys, reads, voice)
+    private val signins = SigninRoute(identity.cli, keys, attempts, voice, log)
+    private val browser = server.forwardAuth?.takeIf { it.browserOrigin != null }?.let { policy ->
+        BrowserForwardAuth(
+            policy,
+            checkNotNull(identity.browser),
+            parts.keys,
+            adminAccess,
+            attempts,
+            voice,
+            identity.clock,
+        )
+    }
+    private val forwardAuth = ForwardAuthRoute(server, parts.keys, parts.people, adminAccess, browser, voice)
+    private val publicRoutes = ServerPublicRoutes(server, addresses, tls != null, voice, forwardAuth)
     private val keyAdmission = KeyAdmission(parts.keys, addresses, log)
     private val watched = WatchedRelay()
     private val paths = RequestPaths()
     private val admission = TurnAdmission(parts, voice, catalog, watched)
     private val bound = ProviderBound(parts.keys, log)
     private val minimum = ClientMinimum(server.client)
-    private val teamDoor = TeamDoorRoute(server, parts, minimum, admission, voice)
+    private val teamDoor = TeamDoorRoute(server, parts, minimum, admission, voice, bound)
 
     /** How often a streamed turn's client is sent a keepalive while its answer is silent; null sends none. */
     private val keepalive = server.keepaliveSeconds.takeIf { it > 0 }?.seconds
     private val openAi = OpenAiRoute(parts, io, log, keepalive)
     private val profile = ProfileRoute(server, parts.heads, io, addresses, secure = tls != null)
     private val telemetry = server.telemetry?.let { TelemetryRelay(it, voice, log) }
-    private val mods = ModRoute(optional.mods, server, parts.people, voice, io)
+    private val mods = ModRoute(optional.mods, server.teams, parts.people, adminAccess, voice, io)
 
     /** The path the telemetry relay answers under (F8). */
     private val otlpRoute = listOf(SERVER_ROOT, OTLP_ROUTE)
@@ -270,7 +289,7 @@ internal class ServerListener(
         val chosen = listOfNotNull(preferred?.let { PREFERRED_UPSTREAM_HEADER to it }).toMap()
         // The head sends its provider the headers `forward_headers` names, and knows none of this server's keys.
         val held = bound.keyed(call, parts.upstreams.forwarded(head.key))
-        return HeadTurn(head, paths.spell(path) + paths.query(call), chosen + named, keepalive, held)
+        return HeadTurn(head, paths.spell(path) + bound.query(paths.query(call)), chosen + named, keepalive, held)
     }
 
     private suspend fun noSuchPath(call: ApplicationCall) {

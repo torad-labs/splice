@@ -6,7 +6,6 @@ package splice.server
 import splice.core.server.ServerModRoutes
 import splice.server.budget.BudgetGate
 import splice.server.ledger.TurnLedger
-import splice.server.signin.SigninParts
 import splice.share.ShareRelay
 import splice.share.SharedHeads
 
@@ -31,6 +30,5 @@ internal data class TurnCarriers(val relay: ShareRelay, val gateway: TeamGateway
  *  tokens of each person's turns that ended in the last minute (F12). */
 internal data class ServerBooks(val turns: TurnLedger, val budgets: BudgetGate, val tokens: MinuteTokens)
 
-/** The listener's routes that only some servers have: the sign-in, when `[server.signin]` is set (F2), and the modes
- *  the daemon offers under `/server/mod/...`, once it holds them. */
-internal data class OptionalRoutes(val signin: SigninParts? = null, val mods: ServerModRoutes? = null)
+/** The listener's optional sign-ins and the modes the daemon offers under `/server/mod/...`. */
+internal data class OptionalRoutes(val signins: ListenerSignins, val mods: ServerModRoutes?)

@@ -153,6 +153,18 @@ internal class ServerModRouteTest {
     }
 
     @Test
+    fun `an admin outside the server admin networks cannot use an admins-only mode`() {
+        serve(rig.config.copy(admins = listOf("ops@team.example"), adminCidrs = listOf("192.0.2.0/24")))
+        val key = mapOf("x-api-key" to rig.keyFor("ops@team.example"))
+        val denied = send("GET", "/server/mod/vault/tide", key)
+        assertEquals(403, denied.statusCode())
+        assertEquals("permission_error", error(denied).first)
+        val publicMode = send("GET", "/server/mod/harbor/tide", key)
+        assertEquals(200, publicMode.statusCode())
+        assertTrue(""""admin":false""" in publicMode.body(), publicMode.body())
+    }
+
+    @Test
     fun `a mode that does not serve here, a path it lacks and a mode that throws are each answered in errors`() {
         serve()
         val key = mapOf("x-api-key" to rig.keyFor("ada@team.example"))

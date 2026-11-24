@@ -355,6 +355,39 @@ class ServerConfigFindingsTest {
     }
 
     @Test
+    fun `server identity settings refuse invalid network cookie and header policy together`() {
+        val lines = """
+            admin_cidrs = ["192.0.2.1/64"]
+            key_prefix = "spk"
+            [server.signin]
+            issuer = "https://login.team.example"
+            client_id = "splice-team"
+            domains = ["team.example"]
+            hosted_domain = "@team.example"
+            [server.forward_auth]
+            browser_origin = "https://dash.team.example/private"
+            email_header = "Set-Cookie"
+            role_header = "X-Splice-Admin"
+            session_seconds = 0
+            client_secret_env = "DASHBOARD_SECRET"
+        """.trimIndent()
+        val paths = refused(server(lines) + head()).map { it.path }.toSet()
+        assertEquals(
+            setOf(
+                "server.admin_cidrs",
+                "server.key_prefix",
+                "server.signin.hosted_domain",
+                "server.forward_auth.browser_origin",
+                "server.forward_auth.email_header",
+                "server.forward_auth.role_header",
+                "server.forward_auth.session_seconds",
+                "server.forward_auth.client_secret_env",
+            ),
+            paths,
+        )
+    }
+
+    @Test
     fun `server backup accepts folder or signed S3 target and refuses malformed target or missing keys`() {
         val good = """
             [server.backup]

@@ -1,5 +1,6 @@
 package splice.app.control.peer
 
+import io.ktor.http.HttpStatusCode
 import splice.core.harness.HarnessPeerConfig
 import splice.core.harness.HarnessPeerProtocol
 import splice.sessions.note.PeerTarget
@@ -33,6 +34,8 @@ internal data class HarnessPeerMessage(
     val inbox: SessionRecord? = null,
 )
 
+internal data class HarnessPeerResolution(val target: PeerTarget, val local: LocalPeerBinding? = null)
+
 internal data class LocalPeerBinding(val config: HarnessPeerConfig, val owner: NativeProcess)
 
 internal class HarnessPeerDrivers(private val parts: PeerParts) {
@@ -43,23 +46,26 @@ internal class HarnessPeerDrivers(private val parts: PeerParts) {
     private val codex = CodexAppServerPeerDriver(native)
     private val fallback = LocalPeerDelivery(ProcessDispatchers().io())
 
-    fun resolve(query: String): PeerTarget {
+    fun resolve(query: String): HarnessPeerResolution {
         val peer = parts.store.get(query) ?: parts.store.list().singleOrNull { it.sessionId == query }
-        if (peer == null) return targets.resolve(query)
+        if (peer == null) return HarnessPeerResolution(targets.resolve(query))
         val owner = parts.store.nativeOwners[peer.name]
-        if (owner != null && !processes.live(owner)) return PeerTarget.NotRunning("the peer owner has exited")
+        if (owner != null && !processes.live(owner)) {
+            return HarnessPeerResolution(PeerTarget.NotRunning("the peer owner has exited"))
+        }
         return registeredTarget(peer, owner, query)
     }
 
-    private fun registeredTarget(peer: PeerConfig, owner: NativeProcess?, query: String): PeerTarget {
+    private fun registeredTarget(peer: PeerConfig, owner: NativeProcess?, query: String): HarnessPeerResolution {
         val harness = parts.store.harnesses[peer.name]
         val config = config(harness)
-        return when {
+        val target = when {
             harness != null && config?.autoSubscribe != true -> PeerTarget.NotRunning("the harness peer is not enabled")
-            localDriver(config) -> localTarget(peer, owner)
+            config != null && localDriver(config) -> return localTarget(peer, config, owner)
             peer.name in parts.store.nativeInboxes -> inboxTarget(peer.name)
             else -> targets.resolve(query)
         }
+        return HarnessPeerResolution(target)
     }
 
     private fun inboxTarget(name: String): PeerTarget {
@@ -82,31 +88,37 @@ internal class HarnessPeerDrivers(private val parts: PeerParts) {
         }
     }
 
-    suspend fun deliver(message: HarnessPeerMessage): SendOutcome {
+    suspend fun deliver(message: HarnessPeerMessage): SendOutcome =
+        message.local?.let { deliverLocal(message, it) } ?: deliverSocket(message)
+
+    private suspend fun deliverSocket(message: HarnessPeerMessage): SendOutcome {
         val peer = message.target.name?.let(parts.store::get) ?: return native.deliver(message)
         val owner = parts.store.nativeOwners[peer.name]
         if (owner != null && !processes.live(owner)) return SendOutcome.Failed("the peer owner has exited")
-        return dispatch(message, peer, owner)
+        return dispatch(message, peer)
     }
 
-    private suspend fun dispatch(message: HarnessPeerMessage, peer: PeerConfig, owner: NativeProcess?): SendOutcome {
+    private suspend fun dispatch(message: HarnessPeerMessage, peer: PeerConfig): SendOutcome {
         val config = config(parts.store.harnesses[peer.name])
         return when {
             config?.driver == HarnessPeerProtocol.ACP -> acp.deliver(message.copy(inbox = ownerRecord(peer.name)))
             message.target.sessionId != peer.sessionId -> native.deliver(message)
             peer.name in parts.store.codexThreads -> codex.deliver(message)
-            config != null && localDriver(config) -> deliverLocal(message, config, owner)
             else -> native.deliver(message)
         }
     }
 
-    private suspend fun deliverLocal(
-        message: HarnessPeerMessage,
-        config: HarnessPeerConfig,
-        owner: NativeProcess?,
-    ): SendOutcome {
-        if (owner == null) return SendOutcome.Failed("the peer has no live harness owner")
-        return fallback.deliver(message.copy(local = LocalPeerBinding(config, owner)))
+    private suspend fun deliverLocal(message: HarnessPeerMessage, binding: LocalPeerBinding): SendOutcome {
+        val name = message.target.name.orEmpty()
+        val sameSession = parts.store.get(name)?.sessionId == message.target.sessionId
+        val config = config(parts.store.harnesses[name])
+        val owner = parts.store.nativeOwners[name]
+        val current = if (config != null && owner != null) LocalPeerBinding(config, owner) else null
+        return if (sameSession && current == binding) {
+            fallback.deliver(message)
+        } else {
+            SendOutcome.Refused(HttpStatusCode.Conflict.value, "the target is no longer the resolved peer")
+        }
     }
 
     private fun config(harness: String?): HarnessPeerConfig? =
@@ -115,19 +127,22 @@ internal class HarnessPeerDrivers(private val parts: PeerParts) {
     private fun localDriver(config: HarnessPeerConfig?): Boolean =
         config?.driver == HarnessPeerProtocol.COMMAND || config?.driver == HarnessPeerProtocol.WEBHOOK
 
-    private fun localTarget(peer: PeerConfig, owner: NativeProcess?): PeerTarget {
-        if (owner == null) return PeerTarget.NotRunning("the peer has no live harness owner")
-        return PeerTarget.One(
-            SessionRecord(
-                peer.sessionId,
-                peer.name,
-                SessionStatus(),
-                SessionRoute.Unknown,
-                SessionAvailability.LIVE,
-                SessionProcess(owner.pid, peer.cwd, null, null, null, procStart = owner.procStart),
-                SessionClient(null, null),
-            ),
+    private fun localTarget(
+        peer: PeerConfig,
+        config: HarnessPeerConfig,
+        owner: NativeProcess?,
+    ): HarnessPeerResolution {
+        if (owner == null) return HarnessPeerResolution(PeerTarget.NotRunning("the peer has no live harness owner"))
+        val record = SessionRecord(
+            peer.sessionId,
+            peer.name,
+            SessionStatus(),
+            SessionRoute.Unknown,
+            SessionAvailability.LIVE,
+            SessionProcess(owner.pid, peer.cwd, null, null, null, procStart = owner.procStart),
+            SessionClient(null, null),
         )
+        return HarnessPeerResolution(PeerTarget.One(record), LocalPeerBinding(config, owner))
     }
 }
 

@@ -102,8 +102,9 @@ public class HarnessCatalog(configured: Map<String, HarnessConfig> = emptyMap())
     private fun validArgv(argv: List<String>): Boolean = absolute(argv.firstOrNull()) && argv.none { '\u0000' in it }
 
     private fun peerFindings(path: String, peer: HarnessPeerConfig): List<TopologyFinding> = buildList {
-        if (peer.driver == null) add(TopologyFinding("$path.protocol", "use a known peer protocol"))
-        val checksCommand = peer.driver == HarnessPeerProtocol.COMMAND || peer.deliverCmd.isNotEmpty()
+        val driver = peer.driver
+        peerProtocolFinding(driver)?.let { add(TopologyFinding("$path.protocol", it)) }
+        val checksCommand = driver == HarnessPeerProtocol.COMMAND || peer.deliverCmd.isNotEmpty()
         if (checksCommand && !validArgv(peer.deliverCmd)) {
             add(TopologyFinding("$path.deliver_cmd", "name an absolute executable path followed by its arguments"))
         }
@@ -111,6 +112,12 @@ public class HarnessCatalog(configured: Map<String, HarnessConfig> = emptyMap())
         if (checksWebhook && peer.loopbackWebhook() == null) {
             add(TopologyFinding("$path.webhook_url", "use an HTTP loopback URL without userinfo or a fragment"))
         }
+    }
+
+    private fun peerProtocolFinding(driver: HarnessPeerProtocol?): String? = when (driver) {
+        HarnessPeerProtocol.NATIVE, HarnessPeerProtocol.CODEX -> "use acp, command or webhook for a local harness"
+        HarnessPeerProtocol.ACP, HarnessPeerProtocol.COMMAND, HarnessPeerProtocol.WEBHOOK -> null
+        null -> "use a known peer protocol"
     }
 
     private fun absolute(executable: String?): Boolean = try {

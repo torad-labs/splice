@@ -12,6 +12,7 @@ public enum class DeliveryStatus(public val wire: String) {
     DELIVERED("delivered"),
     REFUSED("refused"),
     DROPPED("dropped"),
+    UNCONFIRMED("unconfirmed"),
 }
 
 /** Who a frame Splice writes is from: the peer's helper socket and its registered name. Built only from PeerStore. */

@@ -16,6 +16,11 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -27,6 +32,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -42,15 +49,24 @@ import splice.core.harness.HarnessConfig
 import splice.core.harness.HarnessPeerConfig
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.core.util.WallClock
 import splice.core.wire.HttpStatus
 import splice.head.admission.AdmissionErrorBody
 import splice.http.ingress.HeapIngress
+import splice.sessions.note.PeerNoteSocket
+import splice.sessions.note.PeerTargets
 import splice.sessions.peer.DeliveryStatus
 import splice.sessions.peer.PeerOutbox
 import splice.sessions.peer.PeerSender
 import splice.sessions.peer.SendOutcome
 import splice.sessions.peer.codex.CodexBinding
 import splice.sessions.peer.codex.CodexRequest
+import splice.sessions.peer.helper.HelperSetup
+import splice.sessions.peer.helper.HelperStart
+import splice.sessions.peer.helper.PeerHelper
+import splice.sessions.peer.helper.PeerSockets
+import splice.sessions.peer.journal.PeerInbox
+import splice.sessions.peer.journal.PeerJournal
 import splice.sessions.peer.owner.PeerOwnerProcesses
 import splice.sessions.peer.store.PeerStore
 import splice.sessions.registry.SessionAvailability
@@ -66,11 +82,14 @@ import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
+import splice.sessions.peer.helper.RunningHelper as BoundHelper
+
+private const val RECEIPT_POLL_MS = 10L
 
 class PeerNativeInboxRouteTest {
     private val log = LogSink { }
 
-    private class RecordingHelpers : PeerHelpers {
+    private class RecordingHelpers(private val socket: String? = null) : PeerHelpers {
         val started = mutableListOf<String>()
 
         override suspend fun start(name: String): Long? {
@@ -82,7 +101,7 @@ class PeerNativeInboxRouteTest {
 
         override fun reload(name: String) = Unit
 
-        override fun running(name: String): RunningHelper? = null
+        override fun running(name: String): RunningHelper? = socket?.let { RunningHelper(999L, it) }
     }
 
     private class RecordingOutbox : PeerOutbox {
@@ -241,6 +260,79 @@ class PeerNativeInboxRouteTest {
         }
     }
 
+    @Test
+    fun `native Claude sends show returned receipts in CLI and MCP without replacing its inbox`(@TempDir dir: Path) =
+        testApplication {
+            val user = System.getProperty("user.name")
+            val sockets = PeerSockets(dir, null, user)
+            val pid = ProcessHandle.current().pid()
+            val receiptSocket = sockets.pathFor(pid)
+            val outbox = RecordingOutbox()
+            val fixture = toolFixture(dir, HarnessCatalog(), outbox, receiptSocket.toString())
+            application { routing { fixture.mount.register(this) } }
+            val key = fixture.register(client, "caller-peer", "claude-code")
+            val registryDir = dir.resolve("registry")
+            val helper = startReturnHelper(dir, registryDir, sockets)
+            val journal = PeerJournal(helper.files.dir, log)
+            val wire = PeerNoteSocket(Dispatchers.IO, registryDirs = listOf(registryDir))
+            val inbox = PeerInbox(journal, wire, PeerSender(receiptSocket.toString(), "caller-peer"), log)
+            val targets = PeerTargets(object : SessionSource {
+                override fun read(): List<SessionRecord> = emptyList()
+                override fun list(): SessionListing = SessionListing(read())
+            })
+            try {
+                coroutineScope {
+                    val server = launch { helper.server(inbox, targets, Dispatchers.IO, user).serve() }
+                    try {
+                        val args = """{"to":"${fixture.codexName}","text":"hello","id":"receipt-id"}"""
+                        val sent = tool(client, key, "send_peer_message", args)
+                        assertEquals("queued", JsonScalars.str(sent, "status"))
+                        val recipient = PeerSender(receiptSocket.resolveSibling("recipient.sock").toString(), "codex")
+                        val address = outbox.sent.single().second.address
+                        assertTrue(wire.receipt(address, "receipt-id", DeliveryStatus.UNCONFIRMED, null, recipient))
+                        withTimeout(5_000) {
+                            while (journal.receiptFor("receipt-id") == null) delay(RECEIPT_POLL_MS)
+                        }
+                        val status = tool(client, key, "peer_status", """{"msgId":"receipt-id"}""")
+                        assertEquals("unconfirmed", JsonScalars.str(status, "status"))
+                        assertCliReceipt(client, key)
+                        assertRepliesUseNativeInbox(client, fixture, outbox)
+                        assertFalse(Files.exists(registryDir.resolve("$pid.json")))
+                    } finally {
+                        server.cancel()
+                    }
+                }
+            } finally {
+                helper.close()
+            }
+        }
+
+    private fun startReturnHelper(dir: Path, registryDir: Path, sockets: PeerSockets): BoundHelper {
+        val setup = HelperSetup(
+            "caller-peer",
+            dir.resolve("settings"),
+            dir.resolve("state"),
+            listOf(registryDir),
+            sockets,
+            "test",
+        )
+        val start = PeerHelper(setup, WallClock(System::currentTimeMillis)).start()
+        return assertInstanceOf(HelperStart.Started::class.java, start).helper
+    }
+
+    private suspend fun assertCliReceipt(client: HttpClient, key: String) {
+        val cli = client.get("/api/peer/status/receipt-id") { header(HttpHeaders.Authorization, "Bearer $key") }
+        val status = Json.parseToJsonElement(cli.bodyAsText()).jsonObject
+        assertEquals("unconfirmed", JsonScalars.str(status, "status"))
+    }
+
+    private suspend fun assertRepliesUseNativeInbox(client: HttpClient, fixture: ToolFixture, outbox: RecordingOutbox) {
+        val key = Files.readString(fixture.store.keyFile(fixture.codexName)).trim()
+        val reply = request(client, "/api/peer/send", key, """{"to":"caller-peer","text":"reply"}""")
+        assertEquals(HttpStatusCode.Accepted, reply.first)
+        assertEquals("/tmp/cc-socks/caller.sock", outbox.sent.last().first.process.messagingSocketPath)
+    }
+
     private fun localPeer(protocol: String, cmd: List<String> = emptyList(), url: String? = null): HarnessConfig =
         HarnessConfig(
             "Local",
@@ -282,7 +374,12 @@ class PeerNativeInboxRouteTest {
         }
     }
 
-    private suspend fun toolFixture(dir: Path, catalog: HarnessCatalog): ToolFixture {
+    private suspend fun toolFixture(
+        dir: Path,
+        catalog: HarnessCatalog,
+        outbox: RecordingOutbox = RecordingOutbox(),
+        receiptSocket: String = "/tmp/cc-socks/return.sock",
+    ): ToolFixture {
         val owner = checkNotNull(PeerOwnerProcesses().capture(ProcessHandle.current().pid()))
         val caller = sessionRecord("caller-id", "source", owner.pid, "/tmp/cc-socks/caller.sock")
         val bound = caller.copy(process = caller.process.copy(procStart = owner.procStart))
@@ -297,8 +394,8 @@ class PeerNativeInboxRouteTest {
 
             override fun list(): SessionListing = SessionListing(read())
         }
-        val services = PeerServices(RecordingHelpers(), PeerMailbox(store, dir.resolve("state"), log))
-        val parts = PeerParts(store, registry, RecordingOutbox(), PeerServiceSource { services }, log, catalog)
+        val services = PeerServices(RecordingHelpers(receiptSocket), PeerMailbox(store, dir.resolve("state"), log))
+        val parts = PeerParts(store, registry, outbox, PeerServiceSource { services }, log, catalog)
         val parent = ProcessHandle.current().parent().orElseThrow().pid()
         val fallbackOwner = checkNotNull(PeerOwnerProcesses().capture(parent))
         return ToolFixture(PeersMount(parts, guard(key, store)), store, key, dir, owner, name, fallbackOwner)

@@ -78,6 +78,7 @@ internal class PeerMailbox(
     private fun status(outcome: String, receipt: String?): String = when (receipt) {
         "delivered" -> PeerSubmission.DELIVERED.wire
         "held", "queued" -> PeerSubmission.QUEUED.wire
+        "unconfirmed" -> "unconfirmed"
         "denied", "refused", "dropped", "expired" -> "unavailable"
         else -> when (outcome) {
             "submitted" -> PeerSubmission.ACCEPTED.wire

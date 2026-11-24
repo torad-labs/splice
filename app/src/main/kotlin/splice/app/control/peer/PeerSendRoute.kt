@@ -80,9 +80,9 @@ internal class PeerSendRoute(
         if (id == null) block() else idLocks[(peer to id).hashCode().mod(ID_LOCKS)].withLock(action = block)
 
     /** A target that is not one running session alone on its socket is refused with the resolver's reason. */
-    private suspend fun resolved(config: PeerConfig, target: PeerTarget, sending: Sending): PeerAnswer =
-        when (target) {
-            is PeerTarget.One -> deliver(config, target.record, sending)
+    private suspend fun resolved(config: PeerConfig, resolution: HarnessPeerResolution, sending: Sending): PeerAnswer =
+        when (val target = resolution.target) {
+            is PeerTarget.One -> deliver(config, target.record, sending, resolution.local)
             is PeerTarget.None -> PeerReplies.unavailable(HttpStatusCode.NotFound, target.reason)
             is PeerTarget.Ambiguous -> PeerReplies.refuse(HttpStatusCode.Conflict, target.reason)
             is PeerTarget.NotRunning -> PeerReplies.unavailable(HttpStatusCode.Conflict, target.reason)
@@ -98,7 +98,12 @@ internal class PeerSendRoute(
     }
 
     /** Scope, the pin and the id, then rate, then the helper: spec 3.3's order, after the target resolved. */
-    private suspend fun deliver(config: PeerConfig, target: SessionRecord, sending: Sending): PeerAnswer {
+    private suspend fun deliver(
+        config: PeerConfig,
+        target: SessionRecord,
+        sending: Sending,
+        local: LocalPeerBinding?,
+    ): PeerAnswer {
         val refusal = refusal(config, target, sending)
         if (refusal != null) return refusal
         val wait = rate.take(config.name, limits.of(config.name))
@@ -109,14 +114,24 @@ internal class PeerSendRoute(
         return if (socket == null) {
             PeerReplies.unavailable(HttpStatusCode.ServiceUnavailable, HELPER_NOT_RUNNING)
         } else {
-            submit(config, target, sending, PeerSender(socket = socket, name = config.name))
+            val sender = PeerSender(socket = socket, name = config.name)
+            submit(config, sending, HarnessPeerMessage(target, sending.text, sender, sending.request.id, local))
         }
     }
 
-    private fun senderSocket(config: PeerConfig): String? = if (config.name in store.nativeInboxes) {
-        drivers.ownerRecord(config.name)?.process?.messagingSocketPath
-    } else {
-        parts.helpers?.running(config.name)?.socket
+    private suspend fun senderSocket(config: PeerConfig): String? {
+        val name = config.name
+        if (name !in store.nativeInboxes) return parts.helpers?.running(name)?.socket
+        val nativeSocket = drivers.ownerRecord(name)?.process?.messagingSocketPath ?: return null
+        return if (store.inboxRouting.usesReturnHelper(name)) receiptSocket(name) else nativeSocket
+    }
+
+    private suspend fun receiptSocket(name: String): String? {
+        val helpers = parts.helpers ?: return null
+        return helpers.running(name)?.socket ?: run {
+            helpers.start(name)
+            helpers.running(name)?.socket
+        }
     }
 
     private fun refusal(config: PeerConfig, target: SessionRecord, sending: Sending): PeerAnswer? {
@@ -133,14 +148,10 @@ internal class PeerSendRoute(
     }
 
     /** The sender is the principal's registration and its running helper, never anything from the request. */
-    private suspend fun submit(
-        config: PeerConfig,
-        target: SessionRecord,
-        sending: Sending,
-        sender: PeerSender,
-    ): PeerAnswer {
+    private suspend fun submit(config: PeerConfig, sending: Sending, message: HarnessPeerMessage): PeerAnswer {
+        val target = message.target
         val request = sending.request
-        val outcome = drivers.deliver(HarnessPeerMessage(target, sending.text, sender, request.id))
+        val outcome = drivers.deliver(message)
         val msgId = (outcome as? SendOutcome.Submitted)?.msgId ?: request.id
         val bytes = sending.text.toByteArray(Charsets.UTF_8).size
         parts.mail?.recordSend(config.name, SentRecord(msgId, target, bytes, outcome, request.digest))

@@ -82,14 +82,21 @@ public class PeerHelper(
         if (owner != null && !helpers.live(owner)) return HelperStart.Failed("the peer's native owner no longer runs")
         val peer = RecordPeer(config.name, config.sessionId, config.cwd, owner)
         val files = PeerStateFiles(setup.stateDir, setup.name)
+        val listed = !store.inboxRouting.usesReturnHelper(setup.name)
         return when (val lock = lock(files)) {
-            is LockTry.Held -> bind(config, peer, files, lock.lock)
+            is LockTry.Held -> bind(config, peer, files, lock.lock, listed)
             LockTry.Busy -> HelperStart.AlreadyRunning
             is LockTry.Refused -> HelperStart.Failed(lock.reason)
         }
     }
 
-    private fun bind(config: PeerConfig, peer: RecordPeer, files: PeerStateFiles, lock: HelperLock): HelperStart {
+    private fun bind(
+        config: PeerConfig,
+        peer: RecordPeer,
+        files: PeerStateFiles,
+        lock: HelperLock,
+        listed: Boolean,
+    ): HelperStart {
         val log = HelperLog(files.helperLog, clock)
         val self = setup.anchor?.let { helpers.of(it, clock()) } ?: helpers.self(clock())
         val socket = setup.sockets.pathFor(self.pid)
@@ -97,7 +104,8 @@ public class PeerHelper(
             is SocketBind.Bound -> {
                 if (!setup.sockets.inClientFolder(socket)) log.note("socket outside the client folder: no receipts")
                 val token = HexFormat.of().formatHex(ByteArray(PEER_TOKEN_BYTES).also(random::nextBytes))
-                val record = PeerRegistryRecord(PeerRegistryFiles(setup.registryDirs), peer, self, socket, clock)
+                val filesForRegistry = PeerRegistryFiles(setup.registryDirs)
+                val record = PeerRegistryRecord(filesForRegistry, peer, self, socket, clock, listed)
                 val parts = HelperParts(bound.channel, socket, token, record, log, peer.owner)
                 publish(RunningHelper(config, parts, files, setup, lock), self)
             }

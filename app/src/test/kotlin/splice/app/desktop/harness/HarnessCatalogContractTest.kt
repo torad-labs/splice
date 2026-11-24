@@ -130,6 +130,8 @@ class HarnessCatalogContractTest {
     fun `boot lists every bad peer protocol and fallback setting without disclosing values`() {
         val source = listOf(
             badPeerDeclaration("bad-protocol", "unknown", """deliver_cmd = ["relative", "private-argument"]"""),
+            badPeerDeclaration("native-mode", "native-cc-socks"),
+            badPeerDeclaration("codex-mode", "codex-app-server"),
             badPeerDeclaration("no-command", "command"),
             badPeerDeclaration("no-url", "webhook"),
             badPeerDeclaration("remote-url", "webhook", """webhook_url = "http://private-url.invalid/collect""""),
@@ -140,6 +142,8 @@ class HarnessCatalogContractTest {
             setOf(
                 "harnesses.bad-protocol.peer.protocol",
                 "harnesses.bad-protocol.peer.deliver_cmd",
+                "harnesses.native-mode.peer.protocol",
+                "harnesses.codex-mode.peer.protocol",
                 "harnesses.no-command.peer.deliver_cmd",
                 "harnesses.no-url.peer.webhook_url",
                 "harnesses.remote-url.peer.webhook_url",

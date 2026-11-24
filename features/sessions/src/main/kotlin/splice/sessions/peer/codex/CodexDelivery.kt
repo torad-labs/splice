@@ -87,7 +87,7 @@ public class CodexDelivery(
                 finish(message, CodexOutcome.STARTED, start.turnId, null)
             }
             is TurnStart.Unknown -> {
-                returns.receipt(record, DeliveryStatus.DROPPED, "the Codex thread did not confirm the message")
+                returns.receipt(record, DeliveryStatus.UNCONFIRMED, "the Codex thread did not confirm the message")
                 finish(message, CodexOutcome.UNCONFIRMED, null, start.reason)
             }
             is TurnStart.Refused -> {

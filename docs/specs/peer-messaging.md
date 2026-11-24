@@ -32,10 +32,13 @@ released by owner retirement when the process exits. The ACP inbox is additional
 bound to the actual Desktop session ID. Catalog listing alone does not create an identity.
 
 - `acp` uses the translator inbox and reports delivery only after ACP prompt admission.
-- `native-cc-socks` uses the owning process's published socket. Socket submission
-  is `accepted`, not delivery.
+- `native-cc-socks` receives on the owning process's published socket. Splice CLI
+  and MCP sends advertise a journal-backed return address so returned receipts
+  are visible in peer status. The return socket is not listed as another session.
+  Socket submission is `accepted`, not delivery.
 - `codex-app-server` queues through the existing Codex peer journal. A started
-  thread turn produces `delivered`; a refusal or unconfirmed handoff is unavailable.
+  thread turn produces `delivered`, a refusal is unavailable, and a lost turn
+  reply is `unconfirmed`: the turn may already have started and is not retried.
 - `command` runs `deliver_cmd` as an absolute executable and argv, without a shell or
   inherited environment. It reads one framed message from stdin. Exit zero after
   accepting input acknowledges delivery.
@@ -170,8 +173,8 @@ output is shut down and the connection closed.
 
 The frame may also carry `"status_detail":"<at most 200 chars>"`. Claude Code writes `"drop_reason"` on a
 `dropped` receipt, and Splice reads either field as the detail. The status is one of `held`, `denied`,
-`expired`, `delivered`, `refused` or `dropped`. Splice sends `delivered`, `refused`, `denied` and `dropped`
-(see 4.3), and records whichever of the six it receives. From a Claude Code recipient, no receipt is
+`expired`, `delivered`, `refused`, `dropped` or Splice's `unconfirmed` for a lost Codex reply.
+Splice records whichever of these it receives. From a Claude Code recipient, no receipt is
 the normal case: it sends one only for `held`, `expired` or `dropped`. A peer send therefore reads as
 `submitted, no problem reported` until one of those arrives, and never claims `delivered` on its own.
 

@@ -25,14 +25,13 @@ import splice.daemonclient.PostReading
 import splice.sessions.peer.codex.NativeProcess
 import splice.sessions.peer.owner.PeerOwnerProcesses
 import splice.sessions.peer.store.PeerStore
-import java.io.IOException
-import java.nio.file.Files
 
 /** A stdio session picks its peer from kernel ancestry, never from tool arguments or an inherited key. */
 internal class PeerMcpStdio(private val env: EnvReader) {
     private val processes = PeerOwnerProcesses()
     private val protocol = InProcessMcpHost { _, _ -> UnboundPeerTools }
     private val endpoint = "http://127.0.0.1:${AdminSupport.controlPort(env)}$PEER_MCP_ENDPOINT"
+    private val settings = KeyStorePath.defaultPath(env).toAbsolutePath().parent
     private var binding: OwnedPeer? = null
 
     suspend fun run(args: List<String>): Int? {
@@ -43,7 +42,7 @@ internal class PeerMcpStdio(private val env: EnvReader) {
         return PeerExit.DONE
     }
 
-    private suspend fun answer(line: String): String? {
+    suspend fun answer(line: String): String? {
         val request = JsonScalars.objectOrNull(Json, line)
         if (JsonScalars.str(request, "method") != "tools/call") {
             return protocol.post(PEER_MCP_SERVER, null, line, null)?.body
@@ -53,8 +52,8 @@ internal class PeerMcpStdio(private val env: EnvReader) {
 
     private fun forward(line: String, id: JsonElement?): String? {
         val owned = binding ?: resolve()?.also { binding = it }
-        val result = owned?.takeIf { processes.live(it.owner) }
-            ?.let { ControlPlaneClient.post(endpoint, it.key, line, CALL_TIMEOUT_MS) }
+        val key = owned?.takeIf { processes.live(it.owner) }?.key()
+        val result = key?.let { ControlPlaneClient.post(endpoint, it, line, CALL_TIMEOUT_MS) }
         val reply = (result as? PostReading.Answered)?.reply
         if (reply != null && reply.status in ControlPlaneClient.OK_RANGE) return reply.body
         return unavailable(id, result)
@@ -76,27 +75,27 @@ internal class PeerMcpStdio(private val env: EnvReader) {
     }
 
     private fun resolve(): OwnedPeer? {
-        val settings = KeyStorePath.defaultPath(env).toAbsolutePath().parent
-        val store = PeerStore(settings)
-        val owners = store.nativeOwners
-        val candidates = store.list().filter { it.name in store.harnesses || it.name in store.codexThreads }
+        // Reopen the store so discovery can see registrations made after stdio was launched.
+        val current = PeerStore(settings)
+        val owners = current.nativeOwners
+        val candidates = current.list().filter { it.name in current.harnesses || it.name in current.codexThreads }
         val namedThread = env(CODEX_THREAD_ENV)
         val match = processes.ancestors().firstNotNullOfOrNull { owner ->
             val matching = candidates.filter { owners[it.name] == owner }
-            matching.singleOrNull() ?: matching.singleOrNull { store.codexThreads[it.name]?.thread == namedThread }
+            matching.singleOrNull() ?: matching.singleOrNull { current.codexThreads[it.name]?.thread == namedThread }
                 ?.takeIf { namedThread != null }
         } ?: return null
         val owner = owners[match.name] ?: return null
-        return try {
-            val key = Files.readString(store.keyFile(match.name)).trim()
-            if (store.principal("Bearer $key")?.name == match.name) OwnedPeer(key, owner) else null
-        } catch (_: IOException) {
-            null
-        }
+        return OwnedPeer(match.name, match.sessionId, owner, current)
     }
 
-    private data class OwnedPeer(val key: String, val owner: NativeProcess) {
-        override fun toString(): String = "OwnedPeer($owner)"
+    private data class OwnedPeer(
+        val name: String,
+        val sessionId: String,
+        val owner: NativeProcess,
+        val store: PeerStore,
+    ) {
+        fun key(): String? = store.ownedKeys.read(name, sessionId, owner)
     }
 }
 

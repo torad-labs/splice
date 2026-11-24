@@ -57,7 +57,7 @@ internal class McpHarnessRoutes(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val ops = McpHarnessRouteOps(paths, home, env, log, seams)
-    private val mutation = Mutex()
+    internal val mutation: Mutex = Mutex()
     private val io = ProcessDispatchers().io()
 
     suspend fun status(call: ApplicationCall) {

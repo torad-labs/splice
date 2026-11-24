@@ -83,7 +83,8 @@ public class ServerMode(
         ServerBookkeeping(folder, server, people, upstreamApi, BookRun(io, clock, waiter, log), audit)
 
     /** Each person's traffic, live (F6): what an admin scrapes from the listener and the operator's OTLP export sends. */
-    public val metrics: ServerMetrics = ServerMetrics(MetricPeople(keys, people, server.teams, limits), clock)
+    public val metrics: ServerMetrics =
+        ServerMetrics(MetricPeople(keys, people, server.teams, limits), clock, server.metricsPrefix)
 
     @Volatile
     private var listener: ServerListener? = null
@@ -105,7 +106,7 @@ public class ServerMode(
             .build(heads, reach, configDir, signinSecret)
         opened.start(address)
         listener = opened
-        books.exporting(reach.env)
+        books.start(reach.env, configDir)
         backup.open(reach.env)
     }
 

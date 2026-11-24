@@ -7,11 +7,10 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.app.McpGlobalRead
+import kotlinx.serialization.json.putJsonObject
 import splice.client.mcp.McpPlan
 import splice.client.mcp.McpServerInput
 import splice.client.mcp.McpSharing
-import splice.client.mcp.TempleMcpEntry
 import splice.core.config.StatePaths
 import splice.core.mcp.McpHarness
 import splice.core.mcp.McpUserRegistry
@@ -30,16 +29,21 @@ internal class McpHarnessSync(
     private val seams: McpHarnessSyncSeams = McpHarnessSyncSeams(),
 ) {
     private val discovery = McpHarnessDiscovery(home, env, seams.osName)
-    private val agyWriter = AgyMcpConfigWriter(paths)
+    private val staleEntries = seams.agyPortProbe?.let(::AgyMcpStaleEntries) ?: AgyMcpStaleEntries()
+    private val agyWriter = AgyMcpConfigWriter(paths, staleEntries, log)
     private val codexFallback = CodexMcpTomlWriter(paths)
     private val registry = McpUserRegistry(paths)
+    private val snapshotReader = McpStrictSyncSnapshot(home, paths, env, registry)
     private val sharingFactory = McpHarnessSharing(paths, env, log, seams)
+    private val urlAuth = McpUrlAuthNormalizer()
 
     /** Syncs all Splice MCP servers to each harness in [harnesses] and remembers connected harnesses. */
-    suspend fun sync(harnesses: Set<McpHarness>): McpSyncReport {
-        registry.readStrict()
+    suspend fun sync(harnesses: Set<McpHarness>): McpSyncReport =
+        syncInputs(harnesses, snapshotReader.read().inputs)
+
+    /** Syncs pre-read strict [inputs] (single snapshot without re-reading `~/.claude.json`) to [harnesses]. */
+    suspend fun syncInputs(harnesses: Set<McpHarness>, inputs: List<McpServerInput>): McpSyncReport {
         val endpointPrefix = sharingFactory.endpointPrefix()
-        val inputs = McpGlobalRead(home, log, TempleMcpEntry(home, env, paths), registry).inputs()
         val sharing = sharingFactory.planner(endpointPrefix)
         val basePlan = sharing.plan(inputs)
         val outcomes = harnesses.sortedBy { it.wire }.map { harness ->
@@ -141,11 +145,7 @@ internal class McpHarnessSync(
         val url = JsonScalars.str(canonical, "url")
         val command = JsonScalars.str(canonical, "command")
         return when {
-            !url.isNullOrBlank() -> buildJsonObject {
-                put("url", url)
-                val headers = canonical["headers"] as? JsonObject
-                if (headers != null && headers.isNotEmpty()) put("http_headers", headers)
-            }
+            !url.isNullOrBlank() -> encodeCodexHttp(url, canonical["headers"] as? JsonObject)
             !command.isNullOrBlank() -> buildJsonObject {
                 put("command", command)
                 (canonical["args"] as? JsonArray)?.takeIf { it.isNotEmpty() }?.let { put("args", it) }
@@ -153,6 +153,20 @@ internal class McpHarnessSync(
                 (canonical["env"] as? JsonObject)?.takeIf { it.isNotEmpty() }?.let { put("env", it) }
             }
             else -> null
+        }
+    }
+
+    private fun encodeCodexHttp(url: String, headers: JsonObject?): JsonObject {
+        val headerMap = LinkedHashMap<String, String>()
+        headers?.forEach { (k, v) -> JsonScalars.str(v)?.let { headerMap[k] = it } }
+        val normalized = urlAuth.normalize(url, headerMap)
+        return buildJsonObject {
+            put("url", normalized.url)
+            if (normalized.headers.isNotEmpty()) {
+                putJsonObject("http_headers") {
+                    normalized.headers.entries.sortedBy { it.key }.forEach { (k, v) -> put(k, v) }
+                }
+            }
         }
     }
 }

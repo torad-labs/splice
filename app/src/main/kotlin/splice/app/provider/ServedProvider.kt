@@ -15,6 +15,12 @@ internal interface ServedProvider {
     /** The provider's key in splice.toml: the name its selectors carry, `claude-<key>--<model>`. */
     val key: String
 
+    /** The key under which this provider's model roster and books are indexed (BooksKeys). */
+    val booksKey: String get() = key
+
+    /** The wire auth kind from splice.toml (e.g. `chatgpt-oauth`), or null for desktop-only/synthetic providers. */
+    val authKind: String? get() = null
+
     /** Its models under that prefix: the selectors, labels and windows, with the roster as the provider lists it now. */
     val catalog: ModelCatalog
 

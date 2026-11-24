@@ -25,6 +25,7 @@ import io.ktor.server.routing.RoutingNode
 import io.ktor.server.routing.RoutingRoot
 import io.ktor.server.routing.getAllRoutes
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
 import splice.app.control.api.ControlAudit
 import splice.app.control.api.ControlHealthReport
 import splice.app.control.api.HeadResolver
@@ -204,6 +205,9 @@ internal class ControlServer(
             log,
         )
     }
+
+    /** Shared lock serializing `/api/mcp/harnesses/{import,sync}` with daemon background harness auto-sync. */
+    internal val mcpHarnessSyncLock: Mutex? get() = mcp?.harnessSyncLock
     private val mounts: List<ControlMount> = listOf(
         ControlMount(fleet::register),
         ControlMount(lifecycle::register),

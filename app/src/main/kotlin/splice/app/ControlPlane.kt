@@ -254,7 +254,7 @@ internal class ControlPlane(
                 launchService = launch.service(home, sharing, controlPort, mcp.hubLive)
                     .also {
                         it.remotes = remoteCommands
-                        it.speeds = speeds.of(heads)
+                        it.speeds = speeds.of(heads, desktop?.servedProviders)
                         it.door = desktop?.claude
                         gatherers.attach(it, heads)
                     },
@@ -269,7 +269,11 @@ internal class ControlPlane(
         // Oct 19, 2026: the peer helpers and their journals, over the same store the guard admits peer keys from.
         parts.wirePeers(srv, guard, probeScope)
         parts.wireRestartSuccessor(srv, controlPort)
-        return if (ownership.bind(srv, controlPort, listen.handOn(guard))) srv.also { mcpServices.refresh() } else null
+        return if (ownership.bind(srv, controlPort, listen.handOn(guard))) {
+            srv.also { mcp.onControlBound(mcpServices, probeScope, home, it.listeningPort, it.mcpHarnessSyncLock) }
+        } else {
+            null
+        }
     }
 
     /** Every port [srv] takes after construction, extracted out of [start] (LongMethod — the same

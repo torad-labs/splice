@@ -12,14 +12,26 @@ public fun interface ChatGptHeads {
     public fun pinnedModel(headKey: String): String?
 }
 
+/** One ChatGPT-authenticated target served on the door: its catalog key and pinned model. */
+public data class DoorSpeedTarget(public val catalogKey: String, public val pinnedModel: String)
+
+/** All ChatGPT-authenticated targets currently served on the door. */
+public fun interface DoorSpeedTargets {
+    public fun targets(): List<DoorSpeedTarget>
+}
+
 public class LaunchSpeeds(
     public val sessions: SessionSpeeds,
     public val catalog: SpeedCatalog,
     private val chatGpt: ChatGptHeads,
+    private val door: DoorSpeedTargets = DoorSpeedTargets { emptyList() },
 ) {
     /** The tiers the pinned model of the head keyed [headKey] offers, as its catalog entry lists them (possibly none),
      *  when the head is signed in with ChatGPT; null for any other head, which keeps Claude Code's own /fast. Read at
      *  each launch, so a catalog refresh reaches the next one. */
     public fun offered(headKey: String): List<ServiceTier>? =
         chatGpt.pinnedModel(headKey)?.let { catalog.tiersOf(headKey, it) }
+
+    /** The ChatGPT-authenticated targets currently served on the door, in lineup order. */
+    public fun doorTargets(): List<DoorSpeedTarget> = door.targets()
 }

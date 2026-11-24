@@ -95,16 +95,38 @@ public object ControlPlaneClient {
     public fun post(url: String, bearer: String, json: String, readTimeoutMs: Int): PostReading =
         withBody(url, "POST", bearer, json, readTimeoutMs)
 
+    /** [post] with additional request headers (e.g. `X-Splice-Foreground-Owner` on door hook calls). */
+    public fun postWithHeaders(
+        url: String,
+        bearer: String,
+        json: String,
+        readTimeoutMs: Int,
+        extraHeaders: Map<String, String>,
+    ): PostReading = sendBody(BodyRequest(url, "POST", bearer, json, readTimeoutMs, extraHeaders))
+
     /** [post] with any [method] that carries a JSON body, such as PUT (`splice peer webhook set`, Oct 19, 2026). */
-    public fun withBody(url: String, method: String, bearer: String, json: String, readTimeoutMs: Int): PostReading {
-        val body = json.encodeToByteArray()
-        val connection = URI(url).toURL().openConnection() as HttpURLConnection
+    public fun withBody(url: String, method: String, bearer: String, json: String, readTimeoutMs: Int): PostReading =
+        sendBody(BodyRequest(url, method, bearer, json, readTimeoutMs, emptyMap()))
+
+    private data class BodyRequest(
+        val url: String,
+        val method: String,
+        val bearer: String,
+        val json: String,
+        val readTimeoutMs: Int,
+        val extraHeaders: Map<String, String>,
+    )
+
+    private fun sendBody(request: BodyRequest): PostReading {
+        val body = request.json.encodeToByteArray()
+        val connection = URI(request.url).toURL().openConnection() as HttpURLConnection
         try {
-            connection.requestMethod = method
-            connection.setRequestProperty("Authorization", "Bearer $bearer")
+            connection.requestMethod = request.method
+            connection.setRequestProperty("Authorization", "Bearer ${request.bearer}")
             connection.setRequestProperty("Content-Type", "application/json")
+            request.extraHeaders.forEach { (k, v) -> connection.setRequestProperty(k, v) }
             connection.connectTimeout = PROBE_TIMEOUT_MS
-            connection.readTimeout = readTimeoutMs
+            connection.readTimeout = request.readTimeoutMs
             connection.doOutput = true
             connection.setFixedLengthStreamingMode(body.size)
             val connected = try {

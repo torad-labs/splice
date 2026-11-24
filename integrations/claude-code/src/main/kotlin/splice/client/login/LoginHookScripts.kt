@@ -44,8 +44,8 @@ internal object LoginHookScripts {
         appendLine("#!/usr/bin/env bash")
         appendLine("# NEW (splice): api-key capture: a BARE ${oneLine(spec.providerLabel)} token pasted as the whole")
         appendLine("# message is stored to keys.toml (0600) via `splice key set --stdin` and BLOCKED before")
-        appendLine("# it reaches the model context, so it never travels upstream. The session transcript")
-        appendLine("# still records the paste; the fully masked path is `<head> login`.")
+        appendLine("# it reaches the model context, so it never travels upstream. Manage API keys on")
+        appendLine("# Splice Console's Accounts page (/login or `splice console`).")
         appendLine("input=\"$d(cat)\"")
         append("if [[ ${d}input =~ ")
         append("\\\"prompt\\\"[[:space:]]*:[[:space:]]*\\\"(${spec.tokenPattern})\\\" ]]; then")
@@ -58,11 +58,12 @@ internal object LoginHookScripts {
         // the key, and the `splice restart` this ran dropped every head's turns in flight for nothing.
         val stored = "${spec.providerLabel} key received and stored to ~/.config/splice/keys.toml (0600); " +
             "the next request uses it, no restart. It was NOT forwarded to the model. Note: this session " +
-            "log still contains the pasted line; the fully masked path is <head> login."
+            "log still contains the pasted line; manage API keys on Splice Console's Accounts page " +
+            "(/login or `splice console`)."
         appendLine("    printf '%s' ${shellSingleQuote(blockDecision(stored))}")
         appendLine("  else")
-        val failed = "${spec.providerLabel} key detected but storing it failed; " +
-            "run <head> login in a terminal instead."
+        val failed = "${spec.providerLabel} key detected and blocked before reaching the model, but storing it " +
+            "failed; add your key on Splice Console's Accounts page (/login or `splice console`) instead."
         appendLine("    printf '%s' ${shellSingleQuote(blockDecision(failed))}")
         appendLine("  fi")
         appendLine("fi")
@@ -71,13 +72,12 @@ internal object LoginHookScripts {
 
     // Installed only while the key is missing (the daemon re-materializes on every launch and
     // removes it once configured), so printing unconditionally is correct.
-    fun keySetupScript(spec: TokenCaptureSpec, loginCommand: String): String = buildString {
+    fun keySetupScript(spec: TokenCaptureSpec): String = buildString {
         appendLine("#!/usr/bin/env bash")
         appendLine("# NEW (splice): key-missing advertiser for ${spec.envVar}, installed only while unconfigured.")
-        val advert = "splice: ${spec.envVar} is not configured for this head. Tell the user ONCE, plainly: " +
-            "paste your ${spec.providerLabel} API key as your next message and splice will store it " +
-            "to keys.toml without it reaching the model, or run $loginCommand in a terminal for a " +
-            "fully masked prompt. Then wait."
+        val advert = "splice: ${spec.envVar} is not configured for ${spec.providerLabel}. Tell the user ONCE, " +
+            "plainly: open Splice Console's Accounts page with /login (or run `splice console` in a terminal) " +
+            "to add your ${spec.providerLabel} API key. Do not ask them to paste keys in chat. Then wait."
         appendLine("printf '%s' ${shellSingleQuote(advert)}")
         appendLine("exit 0")
     }

@@ -17,6 +17,7 @@
 // one slot. A refusal comes back as a log line, and the session starts either way.
 package splice.sessions.teams
 
+import splice.core.client.DOOR_HOOK_KEY
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.sessions.registry.SessionAvailability
@@ -45,20 +46,24 @@ public class TeamRuleBinding(private val store: TeamStore, private val sessions:
         }
     }
 
-    /** The first free rule slot on [head] whose team's repo holds [folder], with its team. */
+    /** The first free rule slot on [head] whose team's repo holds [folder], with its team. A door session
+     *  ([DOOR_HOOK_KEY]) can run any provider via `/model`, so when no slot explicitly names `"door"` it binds the
+     *  first free rule slot in that repo. */
     private fun taker(head: String, folder: Path): Pair<Team, TeamSlot>? {
         // read only when a rule slot on this head has a session to judge: most starts never touch the registry
         val running by lazy {
             sessions?.read()?.filter { it.availability != SessionAvailability.GONE }
                 ?.mapNotNull { it.sessionId }?.toSet()
         }
-        return store.teams().asSequence()
+        val eligible = store.teams().asSequence()
             .filter { !it.archived && it.repo.isNotBlank() && canonical(it.repo)?.let(folder::startsWith) == true }
             .flatMap { team -> team.slots.asSequence().map { team to it } }
-            .firstOrNull { (_, slot) ->
-                slot.bindByRule && slot.head == head &&
-                    slot.session.let { it == null || running?.contains(it) == false }
+            .filter { (_, slot) ->
+                slot.bindByRule && slot.session.let { it == null || running?.contains(it) == false }
             }
+            .toList()
+        return eligible.firstOrNull { (_, slot) -> slot.head == head }
+            ?: eligible.firstOrNull().takeIf { head == DOOR_HOOK_KEY }
     }
 
     /** [path] as the filesystem spells it, links resolved, so a repo and a folder reached through a link still match;

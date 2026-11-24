@@ -7,17 +7,18 @@ import splice.core.server.HistogramPoint
 import splice.core.server.MetricFamily
 import splice.core.server.MetricLabels
 import splice.core.server.MetricSnapshot
+import splice.core.topology.DEFAULT_SERVER_METRICS_PREFIX
 
-internal class PrometheusExposition {
-
+internal class PrometheusExposition(private val prefix: String) {
     fun render(snapshot: MetricSnapshot): String = buildString {
         for (family in snapshot.families) {
-            append("# HELP ").append(family.name).append(' ').append(help(family.help)).append('\n')
-            append("# TYPE ").append(family.name).append(' ').append(type(family)).append('\n')
+            val name = prefix + family.name.removePrefix(DEFAULT_SERVER_METRICS_PREFIX)
+            append("# HELP ").append(name).append(' ').append(help(family.help)).append('\n')
+            append("# TYPE ").append(name).append(' ').append(type(family)).append('\n')
             when (family) {
-                is MetricFamily.Counter -> family.points.forEach { sample(this, family.name, it.labels, it.value) }
-                is MetricFamily.Gauge -> family.points.forEach { sample(this, family.name, it.labels, it.value) }
-                is MetricFamily.Histogram -> family.points.forEach { histogram(this, family, it) }
+                is MetricFamily.Counter -> family.points.forEach { sample(this, name, it.labels, it.value) }
+                is MetricFamily.Gauge -> family.points.forEach { sample(this, name, it.labels, it.value) }
+                is MetricFamily.Histogram -> family.points.forEach { histogram(this, name, family.bounds, it) }
             }
         }
     }
@@ -28,15 +29,15 @@ internal class PrometheusExposition {
         is MetricFamily.Histogram -> "histogram"
     }
 
-    private fun histogram(out: StringBuilder, family: MetricFamily.Histogram, point: HistogramPoint) {
+    private fun histogram(out: StringBuilder, name: String, bounds: List<Double>, point: HistogramPoint) {
         var below = 0L
-        family.bounds.forEachIndexed { at, bound ->
+        bounds.forEachIndexed { at, bound ->
             below += point.buckets[at]
-            sample(out, "${family.name}_bucket", point.labels.plus(LE, number(bound)), below.toDouble())
+            sample(out, "${name}_bucket", point.labels.plus(LE, number(bound)), below.toDouble())
         }
-        sample(out, "${family.name}_bucket", point.labels.plus(LE, INF), point.count.toDouble())
-        sample(out, "${family.name}_sum", point.labels, point.sum)
-        sample(out, "${family.name}_count", point.labels, point.count.toDouble())
+        sample(out, "${name}_bucket", point.labels.plus(LE, INF), point.count.toDouble())
+        sample(out, "${name}_sum", point.labels, point.sum)
+        sample(out, "${name}_count", point.labels, point.count.toDouble())
     }
 
     private fun sample(out: StringBuilder, name: String, labels: MetricLabels, value: Double) {

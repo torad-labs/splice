@@ -35,6 +35,7 @@ internal class ServerTelemetryRelayTest {
     @TempDir lateinit var state: Path
 
     private val http = HttpClient.newHttpClient()
+    private val configJson = Json { ignoreUnknownKeys = true }
     private val rig = ServerRig()
     private val received = LinkedBlockingQueue<Pair<Map<String, List<String>>, ByteArray>>()
     private val collector = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
@@ -52,8 +53,16 @@ internal class ServerTelemetryRelayTest {
         collector.stop(0)
     }
 
-    private fun open(trustedProxies: List<String> = emptyList()): String {
-        val telemetry = ServerTelemetry("http://127.0.0.1:${collector.address.port}/")
+    private fun open(trustedProxies: List<String> = emptyList(), custom: Boolean = false): String {
+        val url = "http://127.0.0.1:${collector.address.port}/"
+        val telemetry = if (custom) {
+            configJson.decodeFromString<ServerTelemetry>(
+                """{"forward_to":"$url",
+                    "identity_attributes":{"person":"org.actor","email":"org.email","team":"org.team"}}""",
+            )
+        } else {
+            ServerTelemetry(url)
+        }
         val teams = ServerTeams(mapOf("team.example" to "core"))
         val server = rig.config.copy(telemetry = telemetry, teams = teams, trustedProxies = trustedProxies)
         rig.open(state, listOf(StandInHead(TestPorts.reserve())), server)
@@ -121,6 +130,43 @@ internal class ServerTelemetryRelayTest {
             val person = "ann@team.example"
             assertEquals(mapOf("splice.person" to person, "user.email" to person, "splice.team" to "core"), attributes)
         }
+    }
+
+    @Test
+    fun `renamed attributes replace client claims in JSON and protobuf`() {
+        val key = open(custom = true)
+        val body = """{"resourceSpans":[{"resource":{"attributes":[
+            {"key":"org.actor","value":{"stringValue":"claimed"}},
+            {"key":"splice.team","value":{"stringValue":"claimed"}},
+            {"key":"service.name","value":{"stringValue":"client"}}]}}]}"""
+        val expected = mapOf(
+            "org.actor" to "ann@team.example",
+            "org.email" to "ann@team.example",
+            "org.team" to "core",
+            "service.name" to "client",
+        )
+        assertEquals(200, post("traces", "application/json", body.encodeToByteArray(), key))
+        val entry = Json.parseToJsonElement(next().second.decodeToString()).jsonObject
+            .getValue("resourceSpans").jsonArray.single()
+        val attributes = entry.jsonObject.getValue("resource").jsonObject.getValue("attributes").jsonArray
+        val jsonStamp = attributes.associate {
+            it.jsonObject.getValue("key").jsonPrimitive.content to
+                it.jsonObject.getValue("value").jsonObject.getValue("stringValue").jsonPrimitive.content
+        }
+        assertEquals(expected, jsonStamp)
+
+        val protoResource = message(
+            1 to keyValue("org.actor", "claimed"),
+            1 to keyValue("splice.team", "claimed"),
+            1 to keyValue("service.name", "client"),
+        )
+        val proto = message(1 to message(1 to protoResource))
+        assertEquals(200, post("traces", "application/x-protobuf", proto.toByteArray(), key))
+        val stamped = UnknownFieldSet.parseFrom(next().second)
+        val resource = (1..2).fold(stamped) { value, _ ->
+            UnknownFieldSet.parseFrom(value.getField(1).lengthDelimitedList.single())
+        }
+        assertEquals(expected, resource.getField(1).lengthDelimitedList.map(::readKeyValue).toMap())
     }
 
     @Test

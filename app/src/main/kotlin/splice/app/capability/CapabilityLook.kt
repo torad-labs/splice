@@ -30,13 +30,21 @@ internal class CapabilityLook(
         Capabilities(desktop.read(topology), harness(), hub(topology), topology?.daemon?.autoUpdate)
 
     private fun harness(): HarnessFacts {
-        val discovery = Cancellables.runCatchingBestEffort { McpHarnessDiscovery(UserHome.dir(env), env, osName) }
+        val home = UserHome.dir(env)
+        val discovery = Cancellables.runCatchingBestEffort { McpHarnessDiscovery(home, env, osName) }
             .getOrNull()
         val synced = buildSet {
             if (discovery != null && pointsAtSplice(discovery.agyConfigFile())) add(McpHarness.AGY)
             if (discovery != null && pointsAtSplice(discovery.codexConfigFile())) add(McpHarness.CODEX)
         }
-        return HarnessFacts(onPath(AGY_BIN), onPath(CODEX_BIN), GeminiShim(env).current(), synced)
+        val codex = onPath(CODEX_BIN)
+        val codexHooks = codex?.let {
+            Cancellables.runCatchingBestEffort {
+                val hooks = CodexPeerHooks()
+                hooks.inspect(hooks.hooksFile(home, env))
+            }.getOrNull()
+        }
+        return HarnessFacts(onPath(AGY_BIN), codex, GeminiShim(env).current(), synced, codexHooks)
     }
 
     private fun hub(topology: Topology?): HubFacts {

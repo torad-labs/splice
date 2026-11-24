@@ -136,6 +136,54 @@ internal class DesktopSessionLifecycleTest {
         }
 
     @Test
+    fun `shutdown hook during normal teardown blocks until cleanup and SESSION_END finish`() = runBlocking {
+        val phases = Collections.synchronizedList(mutableListOf<ForegroundToolPhase>())
+        val insideTeardown = CountDownLatch(1)
+        val allowTeardownFinish = CountDownLatch(1)
+        val hookEntered = CountDownLatch(1)
+        val hookReturned = CountDownLatch(1)
+        val inbox = FakePeerInbox(
+            onClose = {
+                insideTeardown.countDown()
+                assertTrue(allowTeardownFinish.await(5, TimeUnit.SECONDS))
+            },
+        )
+        lateinit var session: DesktopSession
+        val hooks = AcpSessionHooks(
+            foreground = ForegroundToolActivity { call ->
+                phases += call.phase
+                // Re-entering closeRecord on the teardown thread itself must never self-deadlock.
+                if (call.phase == ForegroundToolPhase.SESSION_END) session.closeRecord()
+            },
+        )
+        session = buildSession(PartsFactory { id -> buildParts(id, inbox) }, hooks)
+        session.ensureOpen(emptyList())
+        assertTrue(Files.exists(recordPath()))
+
+        val normalClose = async(Dispatchers.IO) { session.closeRecord() }
+        assertTrue(insideTeardown.await(5, TimeUnit.SECONDS), "normal teardown must reach inbox cleanup")
+
+        val hookJob = async(Dispatchers.IO) {
+            hookEntered.countDown()
+            session.closeRecord()
+            hookReturned.countDown()
+        }
+        assertTrue(hookEntered.await(5, TimeUnit.SECONDS))
+        assertFalse(
+            hookReturned.await(150, TimeUnit.MILLISECONDS),
+            "shutdown hook must block while normal teardown is still in progress",
+        )
+
+        allowTeardownFinish.countDown()
+        assertTrue(hookReturned.await(5, TimeUnit.SECONDS), "shutdown hook must return once teardown settles")
+        assertEquals(listOf(ForegroundToolPhase.SESSION_START, ForegroundToolPhase.SESSION_END), phases)
+        assertFalse(Files.exists(recordPath()), "session record must already be removed before hook returns")
+        assertEquals(1, inbox.closedCount.get(), "peer inbox must already be closed before hook returns")
+        normalClose.await()
+        hookJob.await()
+    }
+
+    @Test
     fun `repeated closeRecord calls after open emit SESSION_END exactly once`() = runBlocking {
         val phases = Collections.synchronizedList(mutableListOf<ForegroundToolPhase>())
         val inbox = FakePeerInbox()
@@ -214,7 +262,7 @@ internal class DesktopSessionLifecycleTest {
 
     private fun env(): EnvReader = EnvReader { name -> if (name == "HOME") tmp.resolve("home").toString() else null }
 
-    private class FakePeerInbox : DesktopPeerInbox {
+    private class FakePeerInbox(private val onClose: () -> Unit = {}) : DesktopPeerInbox {
         private val channel = Channel<DesktopPeerMessage>(Channel.UNLIMITED)
         val closedCount = AtomicInteger(0)
 
@@ -224,6 +272,7 @@ internal class DesktopSessionLifecycleTest {
         override val incoming: ReceiveChannel<DesktopPeerMessage> = channel
 
         override fun close() {
+            onClose()
             closedCount.incrementAndGet()
             channel.close()
         }

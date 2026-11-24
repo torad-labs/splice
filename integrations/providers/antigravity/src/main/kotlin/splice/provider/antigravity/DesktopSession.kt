@@ -342,13 +342,13 @@ private const val SHUTDOWN_SETTLE_MS = 2_000L
 
 /** Coordinates session startup (`hooks.opened`), teardown (`hooks.ended`), and record/inbox cleanup in one atomic
  *  state machine so shutdown can never emit `SESSION_END` without `SESSION_START`, emit `END` before `START`, return
- *  from a JVM shutdown hook before an in-flight `Opening` finishes teardown, or fire `END` twice. */
+ *  from a JVM shutdown hook while startup or teardown cleanup is still in flight, or fire `END` twice. */
 private class SessionLifecycleGate(private val hooks: AcpSessionHooks) {
     private sealed class State {
         data object Pending : State()
-        class Opening(val parts: DesktopParts, val opener: Thread, val settled: CountDownLatch) : State()
+        class Opening(val parts: DesktopParts, val owner: Thread, val settled: CountDownLatch) : State()
         data class Opened(val parts: DesktopParts) : State()
-        class Closing(val parts: DesktopParts, val opener: Thread, val settled: CountDownLatch) : State()
+        class Closing(val parts: DesktopParts, val owner: Thread, val settled: CountDownLatch) : State()
         data object Closed : State()
     }
 
@@ -371,15 +371,14 @@ private class SessionLifecycleGate(private val hooks: AcpSessionHooks) {
         } finally {
             try {
                 if (!started) {
-                    state.set(State.Closed)
                     cleanup(built)
                 } else if (state.compareAndSet(opening, State.Opened(built))) {
                     stayedOpen = true
                 } else {
-                    state.set(State.Closed)
                     teardown(built)
                 }
             } finally {
+                if (!stayedOpen) state.set(State.Closed)
                 opening.settled.countDown()
             }
         }
@@ -392,27 +391,36 @@ private class SessionLifecycleGate(private val hooks: AcpSessionHooks) {
             when (val current = state.get()) {
                 State.Pending -> finished = state.compareAndSet(current, State.Closed)
                 is State.Opening -> {
-                    val closing = State.Closing(current.parts, current.opener, current.settled)
+                    val closing = State.Closing(current.parts, current.owner, current.settled)
                     if (state.compareAndSet(current, closing)) {
-                        awaitSettled(current.parts, current.opener, current.settled)
+                        awaitSettled(current.parts, current.owner, current.settled)
                         finished = true
                     }
                 }
                 is State.Closing -> {
-                    awaitSettled(current.parts, current.opener, current.settled)
+                    awaitSettled(current.parts, current.owner, current.settled)
                     finished = true
                 }
-                is State.Opened -> if (state.compareAndSet(current, State.Closed)) {
-                    teardown(current.parts)
-                    finished = true
-                }
+                is State.Opened -> finished = finishOpened(current)
                 State.Closed -> finished = true
             }
         }
     }
 
-    private fun awaitSettled(parts: DesktopParts, opener: Thread, settled: CountDownLatch) {
-        if (Thread.currentThread() === opener) return
+    private fun finishOpened(current: State.Opened): Boolean {
+        val closing = State.Closing(current.parts, Thread.currentThread(), CountDownLatch(1))
+        if (!state.compareAndSet(current, closing)) return false
+        try {
+            teardown(current.parts)
+        } finally {
+            state.set(State.Closed)
+            closing.settled.countDown()
+        }
+        return true
+    }
+
+    private fun awaitSettled(parts: DesktopParts, owner: Thread, settled: CountDownLatch) {
+        if (Thread.currentThread() === owner) return
         val done = try {
             settled.await(SHUTDOWN_SETTLE_MS, TimeUnit.MILLISECONDS)
         } catch (_: InterruptedException) {

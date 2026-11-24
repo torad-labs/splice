@@ -264,7 +264,12 @@ historyRetentionDays = "$HISTORY_DEFAULT_DAYS"
      *  stays deliberately non-hot-reloadable; this only makes the required restart visible. The
      *  one exception is the context windows (V4-162): TopologyWindows re-reads those, and /health
      *  then publishes the version the daemon RUNS, which a window-only edit moves. */
-    public data class LoadedTopology(val topology: Topology, val digest: String)
+    public data class LoadedTopology(
+        val topology: Topology,
+        val digest: String,
+        /** What boot says and serves past (ConfigRead.Ready.warnings); none outside [loadForBoot]. */
+        val warnings: List<TopologyFinding> = emptyList(),
+    )
 
     public fun loadOrMaterializeWithDigest(path: Path): LoadedTopology =
         loadOrMaterializeWithDigest(path, ExclusiveStarterWrite)
@@ -288,7 +293,7 @@ historyRetentionDays = "$HISTORY_DEFAULT_DAYS"
         val text = bytes.toString(Charsets.UTF_8)
         val read = ConfigFindings.read(text, stateBase, stateBase, runtimes, beside)
         return when (read) {
-            is ConfigRead.Ready -> LoadedTopology(read.topology, sha256Hex(bytes))
+            is ConfigRead.Ready -> LoadedTopology(read.topology, sha256Hex(bytes), read.warnings)
             is ConfigRead.Refused -> throw TopologyRefusal(read.findings)
         }
     }

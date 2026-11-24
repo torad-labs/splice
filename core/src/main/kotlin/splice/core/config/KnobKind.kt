@@ -81,7 +81,7 @@ internal val headLocalKnobs: Set<Knob> = setOf(
 
 /** The knobs a provider carries for the gateway and for every head on it (gateway-no-heads): each one a turn is served
  *  by, which is every knob but a head-only one, a daemon-wide one and a head's display or trace knobs. A head that alone
- *  sets one is a boot finding (GatewayMoveChecks), so a write of one goes to the provider's table (HeadOverrideWrite). */
+ *  sets one is a warning (GatewayMoveChecks), so a write of one goes to the provider's table (HeadOverrideWrite). */
 public val providerCarriedKnobs: Set<Knob> =
     Knob.entries.filterTo(LinkedHashSet()) { !it.headOnly && it !in daemonWideKnobs && it !in headLocalKnobs }
 

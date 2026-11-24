@@ -18,14 +18,17 @@
 package splice.core.topology
 
 import splice.core.config.PROVIDER_LAYER_PREFIX
+import splice.core.topology.gateway.HeadFallbacks
 
 public class TopologyKnobLayer(private val topology: Topology) {
     /** The per-layer knobs ConfigService holds beside the global ones: each head's own, and each provider's under
      *  [PROVIDER_LAYER_PREFIX] (its own, apart from every head key), with what each head takes from its provider
-     *  beneath its own, so a head and the gateway read one value written once on the provider. */
+     *  beneath its own, so a head and the gateway read one value written once on the provider. The provider's layer also
+     *  holds what the heads on it agree on and it does not say (HeadFallbacks), which only the gateway reads: a head
+     *  inherits the provider's own values, never a sibling head's. */
     public fun layers(): OverrideLayers = OverrideLayers(
         own = topology.heads.mapValues { (_, head) -> head.overrides } +
-            topology.providers.filterValues { it.overrides.isNotEmpty() }
+            HeadFallbacks(topology).providers().filterValues { it.overrides.isNotEmpty() }
                 .mapKeys { (key, _) -> "$PROVIDER_LAYER_PREFIX$key" }
                 .mapValues { (_, provider) -> provider.overrides },
         inherited = topology.heads.mapNotNull { (key, head) ->

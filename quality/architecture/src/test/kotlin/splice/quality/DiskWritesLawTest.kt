@@ -425,6 +425,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // Failure-handling slice 4: the fix session clears a retired knob saved in config.json, after its backup, in the
     // config.json README row.
     "core/src/main/kotlin/splice/core/config/SavedSettings.kt" to mapOf("writeAtomic0600(" to 1),
+    // upgrade-compat: the daemon's copy of a config.json before it clears a setting splice no longer reads, in the
+    // config-backups README row.
+    "integrations/topology/src/main/kotlin/splice/topology/SavedSettingsPrune.kt" to mapOf("writeAtomic0600(" to 1),
     // The splice.toml save lock documented in the splice.toml README row.
     "core/src/main/kotlin/splice/core/topology/TopologyWriter.kt" to mapOf(
         "FileChannel.open(" to 1,

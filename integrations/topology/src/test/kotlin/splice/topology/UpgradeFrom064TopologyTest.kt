@@ -1,0 +1,143 @@
+// upgrade-compat (Nov 23, 2026): a splice.toml written for 0.6.4, where a head was the only thing that served a provider
+// and so said its window, tiers, standing prompt, selector prefix and serving knobs, boots on 0.7.0 as it is, and the
+// 0.7.0 gateway serves the provider with what that head says. What should move to the provider is said as a warning
+// naming each key and never a value, `splice check-config` exits 0 over it, and what the gateway truly cannot serve
+// still refuses boot. Found on a real 0.6.4 laptop: its `[heads.realinfer]` refused every boot and every upgrade.
+package splice.topology
+
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.core.prompt.SystemPromptMode
+import splice.core.topology.TopologyFindings
+import splice.core.topology.gateway.HeadFallbacks
+import java.nio.file.Path
+
+/** The standing prompt the 0.6.4 head carries; a value, so no warning may repeat it. */
+private const val PROMPT = "Answer as the realinfer team's reviewer."
+
+private const val PROVIDER = """
+[providers.realinfer]
+dialect = "openai-chat"
+base_url = "https://api.realinfer.invalid/v1"
+auth = { kind = "api-key", env = "REALINFER_KEY" }
+
+[[providers.realinfer.models]]
+id = "glm-5.3"
+context_window = 491520
+
+[[providers.realinfer.models]]
+id = "glm-5.3-flash"
+context_window = 200000
+"""
+
+/** `[heads.realinfer]` as a 0.6.4 laptop has it. */
+private const val HEAD = """
+[heads.realinfer]
+provider = "realinfer"
+port = 3311
+discovery_prefix = "realinfer--"
+pinned_model = "glm-5.3"
+context_window = 400000
+model_slots = { opus = "glm-5.3", sonnet = "glm-5.3", haiku = "glm-5.3-flash" }
+system_prompt = "$PROMPT"
+system_prompt_mode = "append"
+
+[heads.realinfer.overrides]
+maxInflight = "3"
+
+[heads.realinfer.claude]
+command = "claude-realinfer"
+"""
+
+class UpgradeFrom064TopologyTest {
+    @TempDir
+    lateinit var dir: Path
+
+    private fun read(text: String): ConfigRead = ConfigFindings.read(text, dir)
+
+    @Test
+    fun `a 0 6 4 head that holds its provider's values boots, and each value to move is a warning`() {
+        val read = read(PROVIDER + HEAD)
+        assertTrue(read is ConfigRead.Ready, "a 0.6.4 file boots on 0.7.0: $read")
+        val warnings = (read as ConfigRead.Ready).warnings
+        val paths = warnings.map { it.path }.toSet()
+        assertEquals(
+            setOf(
+                "heads.realinfer.discovery_prefix",
+                "heads.realinfer.context_window",
+                "heads.realinfer.model_slots",
+                "heads.realinfer.system_prompt",
+                "heads.realinfer.system_prompt_mode",
+                "heads.realinfer.overrides.maxInflight",
+            ),
+            paths,
+        )
+        assertTrue(warnings.all { it.line != null }, "each says its line: $warnings")
+        assertTrue(warnings.all { it.move != null }, "each offers its move: $warnings")
+        assertTrue(warnings.none { PROMPT in it.text() || "400000" in it.text() }, "no value is said: $warnings")
+        val served = warnings.filter { it.path != "heads.realinfer.discovery_prefix" }
+        assertTrue(served.all { "the gateway serves the provider with it" in it.message }, "$served")
+    }
+
+    @Test
+    fun `the gateway serves the provider with what its head says, and a silent sibling head gets none of it`() {
+        val quiet = "\n[heads.quiet]\nprovider = \"realinfer\"\nport = 3313\n" +
+            "discovery_prefix = \"claude-realinfer--\"\npinned_model = \"glm-5.3-flash\"\n"
+        val topology = TopologyLoader.parse(PROVIDER + HEAD + quiet)
+        val provider = HeadFallbacks(topology).providers().getValue("realinfer")
+        assertEquals(400_000L, provider.contextWindow)
+        assertEquals(
+            mapOf("opus" to "glm-5.3", "sonnet" to "glm-5.3", "haiku" to "glm-5.3-flash"),
+            provider.tierModels,
+        )
+        assertEquals(PROMPT, provider.systemPrompt)
+        assertEquals(SystemPromptMode.APPEND, provider.systemPromptMode)
+        assertEquals(mapOf("maxInflight" to "3"), provider.overrides)
+        val layers = splice.core.topology.TopologyKnobLayer(topology).layers()
+        assertEquals(mapOf("maxInflight" to "3"), layers.own["providers.realinfer"], "the gateway's layer has it")
+        // A head reads its own and its provider's own values, never another head's through the gateway's fallback.
+        assertNull(layers.inherited["quiet"], "the quiet head inherits no sibling's knob")
+        val served = topology.heads.getValue("quiet").servedOn(topology.providers.getValue("realinfer"))
+        assertNull(served.contextWindow)
+        assertNull(served.systemPrompt)
+        assertEquals(emptyMap<String, String>(), served.tierModels())
+    }
+
+    @Test
+    fun `a provider's own value wins, and heads that disagree leave the gateway the provider's own`() {
+        val own = PROVIDER.replace(
+            "auth = { kind = \"api-key\", env = \"REALINFER_KEY\" }",
+            "auth = { kind = \"api-key\", env = \"REALINFER_KEY\" }\ncontext_window = 300000",
+        )
+        val twin = HEAD.replace("[heads.realinfer", "[heads.twin").replace("port = 3311", "port = 3312")
+            .replace("claude-realinfer", "claude-twin").replace("realinfer--", "twin--")
+            .replace("haiku = \"glm-5.3-flash\"", "haiku = \"glm-5.3\"")
+        val topology = TopologyLoader.parse(own + HEAD + twin)
+        val provider = HeadFallbacks(topology).providers().getValue("realinfer")
+        assertEquals(300_000L, provider.contextWindow, "the provider's own window stands")
+        assertEquals(emptyMap<String, String>(), provider.tierModels, "two heads with two tier maps give none")
+        assertEquals(PROMPT, provider.systemPrompt, "where they agree, the gateway has it")
+
+        val warnings = TopologyFindings.warnings(topology)
+        val slots = warnings.single { it.path == "heads.realinfer.model_slots" }
+        assertTrue("say different values" in slots.message, slots.message)
+        val window = warnings.single { it.path == "heads.realinfer.context_window" }
+        assertTrue("says another, which the gateway serves" in window.message, window.message)
+        assertNull(window.move, "a value the provider already says is the person's choice, never moved over it")
+    }
+
+    @Test
+    fun `a provider value the gateway cannot serve still refuses boot`() {
+        val broken = PROVIDER.replace(
+            "auth = { kind = \"api-key\", env = \"REALINFER_KEY\" }",
+            "auth = { kind = \"api-key\", env = \"REALINFER_KEY\" }\ncontext_window = 0",
+        )
+        val read = read(broken + HEAD)
+        assertTrue(read is ConfigRead.Refused, "$read")
+        val paths = (read as ConfigRead.Refused).findings.map { it.path }
+        assertEquals(listOf("providers.realinfer.context_window"), paths)
+    }
+}

@@ -39,8 +39,10 @@ class DaemonTimingBootTest {
         assertTrue(findings.all { "daemon-wide" in it.message && "remove the line" in it.message })
     }
 
+    /** upgrade-compat: a saved head value splice no longer reads is splice's own file, so it is a warning and the daemon
+     *  clears it at its start after a copy; it never refuses boot. */
     @Test
-    fun `boot reports timing settings saved for one head and the global settings remain valid`() {
+    fun `timing settings saved for one head are warned of and cleared after a copy, and boot goes on`() {
         val paths = StatePaths(baseOverride = dir)
         val saved = paths.headsDir.resolve("test").resolve(paths.configFile.fileName)
         Files.createDirectories(saved.parent)
@@ -49,11 +51,19 @@ class DaemonTimingBootTest {
         val defaults = timing.joinToString("\n") { "$it = \"60000\"" }
         val beside = BootSettings(retired = RetiredSettings(env))
         val read = ConfigFindings.read("[defaults]\n$defaults\n$topology", dir, beside = beside)
-        assertTrue(read is ConfigRead.Refused)
-        val findings = (read as ConfigRead.Refused).findings
-        assertEquals(timing.map { "heads.test.overrides.$it" }.toSet(), findings.map { it.path }.toSet())
-        assertTrue(findings.all { it.origin is splice.core.topology.TopologyFinding.Origin.Saved })
-        Files.delete(saved)
-        assertTrue(ConfigFindings.read("[defaults]\n$defaults\n$topology", dir) is ConfigRead.Ready)
+        assertTrue(read is ConfigRead.Ready, "a saved setting never refuses boot: $read")
+        val warnings = (read as ConfigRead.Ready).warnings
+        assertEquals(timing.map { "heads.test.overrides.$it" }.toSet(), warnings.map { it.path }.toSet())
+        assertTrue(warnings.all { it.origin is splice.core.topology.TopologyFinding.Origin.Saved })
+        assertTrue(warnings.none { "60000" in it.text() }, "no value is said")
+
+        val backups = dir.resolve("backups")
+        val said = SavedSettingsPrune(backups).prune(warnings)
+        assertEquals(timing.size, said.count { "cleared" in it }, "one line per cleared key: $said")
+        assertEquals("{}", Files.readString(saved).trim(), "every daemon-wide key is cleared")
+        val copy = Files.list(backups).use { it.toList() }.single()
+        assertTrue(timing.all { it in Files.readString(copy) }, "the copy holds what was cleared")
+        val again = ConfigFindings.read("[defaults]\n$defaults\n$topology", dir, beside = beside)
+        assertEquals(emptyList<Any>(), (again as ConfigRead.Ready).warnings)
     }
 }

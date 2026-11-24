@@ -50,18 +50,46 @@ internal class ConfigFixOffer(
         if (!interactive) return false
         val file = TopologyLoader.configPath(env)
         output.line("splice: a fix session can repair this now; your file is backed up before its first change.")
-        val session = ConfigFixSession(
+        return session(file, advisory = false).run()
+    }
+
+    /** `splice check-config --fix` (upgrade-compat, Nov 23, 2026): on a terminal, the fix session over every finding,
+     *  then over every warning boot serves past (a value a 0.6.4 file left on a head, which moves to its provider), each
+     *  move announced and the file backed up first; then the check itself, whose exit it answers. Off a terminal it
+     *  says so and only checks. */
+    fun fixAll(): Int {
+        val check = ConfigPreflight(env, output)
+        if (!interactive) {
+            output.line("splice: the fix session needs a terminal; run `splice check-config --fix` in one")
+            return check.check()
+        }
+        val file = TopologyLoader.configPath(env)
+        if (!Files.exists(file)) return check.check()
+        val read = { ConfigFindings.read(Files.readString(file), backups, configDir(), runtimes, beside) }
+        val fixed = read() !is ConfigRead.Refused || offer()
+        val left = (read() as? ConfigRead.Ready)?.warnings.orEmpty()
+        if (fixed && left.isNotEmpty()) {
+            output.line("splice: what splice boots past can be fixed too; nothing moves without your answer.")
+            session(file, advisory = true).run()
+        }
+        return check.check()
+    }
+
+    /** The fix session on [file] over each read's findings, and with [advisory] over its warnings once it has none. */
+    private fun session(file: Path, advisory: Boolean): ConfigFixSession =
+        ConfigFixSession(
             file,
             output,
             prompter,
             { text ->
-                val read = ConfigFindings.read(text, backups, configDir(), runtimes, beside)
-                (read as? ConfigRead.Refused)?.findings.orEmpty()
+                when (val read = ConfigFindings.read(text, backups, configDir(), runtimes, beside)) {
+                    is ConfigRead.Refused -> read.findings
+                    is ConfigRead.Ready -> if (advisory) read.warnings else emptyList()
+                }
             },
             { source -> backup(source) },
+            advisory,
         )
-        return session.run()
-    }
 
     /** The topology's directory, where a head's relative system_prompt_file is read, as boot reads it. */
     private fun configDir(): Path = TopologyLoader.configPath(env).toAbsolutePath().let { it.parent ?: it }

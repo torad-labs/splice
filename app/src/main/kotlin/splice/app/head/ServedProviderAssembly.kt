@@ -13,6 +13,7 @@ import splice.core.config.PROVIDER_LAYER_PREFIX
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.gateway.GatewayProviderRoute
+import splice.core.topology.gateway.HeadFallbacks
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -30,9 +31,12 @@ internal class ServedProviderAssembly(
     private val served = CopyOnWriteArrayList<ServedProvider>()
     private val runtimes = CopyOnWriteArrayList<ProviderRuntime>()
 
+    /** Each provider as the gateway serves it: a 0.6.4 file's head still says what its provider does not (HeadFallbacks). */
+    private val providers = HeadFallbacks(topology).providers()
+
     /** The model rosters the gateway needs beside the heads': one per provider, under the key its books are kept under, so
      *  a head of the same identity and the gateway read one roster and the endpoint is asked once. */
-    fun rosterProviders(): Map<String, ProviderConfig> = topology.providers.entries.associate { (provider, config) ->
+    fun rosterProviders(): Map<String, ProviderConfig> = providers.entries.associate { (provider, config) ->
         val key = keys.forProvider(provider)
         key to buildInputs.effectiveProvider(key, config, legacyKnobsGovern = false)
     }
@@ -40,7 +44,7 @@ internal class ServedProviderAssembly(
     /** Assembles and starts one runtime per provider. After the heads are assembled, since a head of the same identity
      *  builds the books first and the gateway's route is a second route over them. */
     fun open() {
-        topology.providers.forEach { (provider, config) ->
+        providers.forEach { (provider, config) ->
             Cancellables.runCatchingCancellable { serve(provider, config) }.onFailure { failure ->
                 log("[$provider] not served by the gateway: ${SafeFailureText.render(failure)}\n")
             }

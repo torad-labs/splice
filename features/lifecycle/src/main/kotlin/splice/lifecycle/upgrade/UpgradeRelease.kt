@@ -52,7 +52,11 @@ internal class UpgradeRelease(
     private val process: UpgradeProcess,
     private val java: String,
     private val platform: PlatformJarName = PlatformJarName(),
+    /** A person at a terminal, who can answer the release's fix session (CandidateConfigFix). */
+    terminal: Boolean = false,
 ) {
+    private val fix = CandidateConfigFix(output, process, java, terminal)
+
     /** The line of the published launch shim that names its release; the workflow tags the release from the same line. */
     private val launchVersion = Regex("SPLICE_GATEWAY_VERSION=\"(\\d+\\.\\d+\\.\\d+[-+.0-9A-Za-z]*)\"")
 
@@ -64,8 +68,9 @@ internal class UpgradeRelease(
 
     /** Fetch, verify and validate the release into [staging]. [attest] false is the daemon updater (UpgradeAuto): a beta
      *  built while Actions is locked has no attestation, so that run checks every asset against the release sums alone,
-     *  whether or not gh is signed in, and says so per asset. */
-    fun stage(base: String, staging: Path, attest: Boolean = true): Upgraded<Staged> {
+     *  whether or not gh is signed in, and says so per asset. [repair] false is a run no person answers (the updater):
+     *  a splice.toml the release would refuse is offered its own fix session only with it (CandidateConfigFix). */
+    fun stage(base: String, staging: Path, attest: Boolean = true, repair: Boolean = false): Upgraded<Staged> {
         val remote = !base.startsWith("file:")
         val gap = if (remote && attest) attestationGap() else null
         return fetched(base, SUMS_ASSET).then { sums ->
@@ -74,7 +79,7 @@ internal class UpgradeRelease(
             stageAssets(fetching).then {
                 listOf(SHIM_ASSET, HUB_HOLDER, HUB_FRONT).map(staging::resolve).filter { Files.exists(it) }
                     .forEach { Files.setPosixFilePermissions(it, PosixFilePermissions.fromString(SHIM_MODE)) }
-                validate(staging.resolve(JAR_ASSET)).then { version -> Upgraded.Ok(Staged(version, gap)) }
+                validate(staging.resolve(JAR_ASSET), repair).then { version -> Upgraded.Ok(Staged(version, gap)) }
             }
         }
     }
@@ -212,7 +217,7 @@ internal class UpgradeRelease(
      *  than 0.4.0 has no `--json`: its verb table ignored the flag and ran the full text doctor —
      *  write probes and daemon calls against the live install — only to be refused for not printing
      *  JSON (review 2026-09-14). Such a candidate skips the preflight, and says so. */
-    private fun validate(jar: Path): Upgraded<String> {
+    private fun validate(jar: Path, repair: Boolean): Upgraded<String> {
         val version = process(listOf(java, "-jar", jar.toString(), "version"), false)
         val line = version.stdout.trim()
         if (version.code != 0 || !line.startsWith("splice ")) {
@@ -223,7 +228,7 @@ internal class UpgradeRelease(
             output.line("  ${"doctor".padEnd(UPGRADE_PAD)} $candidate predates doctor --json; preflight skipped")
             null
         } else {
-            doctorRefusal(jar) ?: configRefusal(jar, candidate)
+            doctorRefusal(jar) ?: configRefusal(jar, candidate, repair)
         }
         return refusal ?: Upgraded.Ok(candidate)
     }
@@ -243,8 +248,9 @@ internal class UpgradeRelease(
      *  the daemon that is serving is worth more than an unchecked swap. A release that predates the config
      *  findings has no such verb at all. A candidate that old never gets here (validate skips its preflight with a
      *  line); a rollback to one does, and is told its config is unchecked, then goes on: rollback is the emergency
-     *  door. */
-    fun configRefusal(jar: Path, version: String): Upgraded.Refused? {
+     *  door. upgrade-compat (Nov 23, 2026): with [repair] and a person at a terminal, a refusal is not the end: the
+     *  release's own `check-config --fix` runs on the terminal, and its check is asked again (CandidateConfigFix). */
+    fun configRefusal(jar: Path, version: String, repair: Boolean = false): Upgraded.Refused? {
         if (predatesJsonDoctor(version)) {
             val label = "config".padEnd(UPGRADE_PAD)
             output.line("  $YELLOW!$RESET $label $version has no check-config, so it can't check this splice.toml;")
@@ -254,10 +260,7 @@ internal class UpgradeRelease(
         val check = process(listOf(java, "-jar", jar.toString(), "check-config"), false)
         return when (check.code) {
             0 -> null
-            CANDIDATE_CONFIG_REFUSAL_EXIT -> Upgraded.Refused(
-                "$version would refuse to boot on your splice.toml, so the running daemon was not touched:\n" +
-                    check.stdout.trim(),
-            )
+            CANDIDATE_CONFIG_REFUSAL_EXIT -> fix.refusal(jar, version, check.stdout, repair)
             else -> Upgraded.Refused(
                 "$version could not check your splice.toml (exit ${check.code}: " +
                     "${check.stdout.trim().ifEmpty { NO_ANSWER }}), so the running daemon was not touched; " +

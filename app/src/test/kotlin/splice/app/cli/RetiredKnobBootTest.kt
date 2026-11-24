@@ -1,8 +1,8 @@
-// Failure-handling slice 4: the retry and fold knobs left the schema, so a setting that still names one refuses boot
-// wherever it is written: a splice.toml key, an environment alias or a value saved in the state folder's config.json.
-// The environment and the saved settings win over splice.toml, so either would otherwise be ignored in silence. Every
-// place is listed at once, each with its fix, and the fix session a CLI verb offers removes the lines, clears the saved
-// settings and names each variable to unset. The boot is the real one (a splice.toml on disk, DaemonProcess.prepare).
+// Failure-handling slice 4: the retry and fold knobs left the schema, so a splice.toml key that still names one refuses
+// boot, every one listed at once with its fix, and the fix session a CLI verb offers removes the lines. upgrade-compat
+// (Nov 23, 2026): an environment alias or a value saved in the state folder's config.json is a warning, never a refusal,
+// since splice reads neither: the variable is named to unset where it is set, and the daemon clears the saved value at
+// its start after a copy. The boot is the real one (a splice.toml on disk, DaemonProcess.prepare).
 package splice.app.cli
 
 import kotlinx.serialization.json.Json
@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.app.DaemonProcess
+import splice.app.daemon.BootWarnings
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.util.TopologyRefusal
@@ -62,15 +63,15 @@ private const val SAVED = """{"foldMarkerText":"planted saved marker","maxQueued
 /** Every value written above; none of them is ever repeated, since a setting can hold a secret. */
 private val PLANTED = listOf("5917", "20917", "9173", "7351", "8429", "planted saved marker")
 
-/** Where each retired setting is, as the refusal names it: a key path and its line, a variable, a saved key. */
+/** Where each retired setting in splice.toml is, as the refusal names it: a key path and its line. */
 private val PLACES = listOf(
     "daemon.fold_max_tier (line 2)",
     "defaults.retryBackoffCapMs (line 5)",
     "heads.one.overrides.upstreamRetries (line 24)",
-    "CLAUDEX_UPSTREAM_RETRIES",
-    "CLAUDEX_FOLD_MAX_CONTINUE",
-    "foldMarkerText",
 )
+
+/** Where each retired setting splice reads past is, as the warnings name it: a variable, a saved key. */
+private val WARNED = listOf("CLAUDEX_UPSTREAM_RETRIES", "CLAUDEX_FOLD_MAX_CONTINUE", "foldMarkerText")
 
 // why: a session that offers the same finding over and over would hang the test; real sessions here ask six times.
 private const val MAX_ASKS = 20
@@ -92,12 +93,12 @@ class RetiredKnobBootTest {
     }
 
     /**
-     * The slice's tests-first entry: "a splice.toml that sets upstreamRetries, a retry backoff key or a fold key, or an
-     * environment alias or state override of one, refuses to boot, lists every finding at once and offers the fix
-     * session".
+     * The slice's tests-first entry: "a splice.toml that sets upstreamRetries, a retry backoff key or a fold key refuses
+     * to boot, lists every finding at once and offers the fix session"; since upgrade-compat, an environment alias or a
+     * state override of one is warned of, and the saved one cleared at the daemon's start.
      */
     @Test
-    fun `a retired knob set in splice toml, the environment or saved settings refuses boot and offers the fix`() {
+    fun `a retired knob in splice toml refuses boot with its fix, and one set elsewhere is warned of and cleared`() {
         Files.writeString(config, CONFIG)
         Files.createDirectories(state)
         Files.writeString(state.resolve("config.json"), SAVED)
@@ -122,41 +123,58 @@ class RetiredKnobBootTest {
         )
         val fixed = offer.offer()
 
-        assertFalse(fixed, "the aliases are still set where this command runs, so splice still cannot start: $said")
+        assertTrue(fixed, "the file's lines were all it took; what is set elsewhere never refuses boot: $said")
         assertTrue(said.any { "a fix session can repair this now" in it }, "the session is offered: $said")
-        ALIASES.keys.forEach { name -> assertTrue(said.any { "unset $name" in it }, "it names $name to unset: $said") }
         val toml = Files.readString(config)
         listOf("fold_max_tier", "retryBackoffCapMs", "upstreamRetries").forEach { key ->
             assertFalse(key in toml, "the line setting $key is removed: $toml")
         }
         assertTrue("maxInflight = \"6\"" in toml && "maxInflight = \"4\"" in toml, "live settings stay: $toml")
-        val kept = Json.parseToJsonElement(Files.readString(state.resolve("config.json"))).jsonObject
-        assertEquals(setOf("maxQueued"), kept.keys, "the retired saved setting is cleared and the live one kept")
-        val backups = Files.list(tmp.resolve("backups")).use { it.toList() }
-            .filter { it.fileName.toString().startsWith("config.json.bak-") }
-        assertEquals(1, backups.size, "the saved settings are backed up once before the clear: $backups")
-        assertTrue("foldMarkerText" in Files.readString(backups.single()), "the backup holds what was cleared")
-
-        val started = DaemonProcess().prepare(env(emptyMap()))
-        assertEquals(setOf("one"), started.loaded.topology.heads.keys, "with the aliases unset, splice starts")
+        startsWarnedAndCleared()
     }
 
-    /** Audit, Nov 9, 2026: the two sign-in file variables no head reads any more refuse boot together, each pointing to
-     *  the provider's auth.file, instead of being ignored in silence. */
+    /** With the aliases still set, splice starts, says each place it reads past without a value, and clears the saved
+     *  setting after one copy, so the next start has nothing left to say. */
+    private fun startsWarnedAndCleared() {
+        val started = DaemonProcess().prepare(env(ALIASES))
+        assertEquals(setOf("one"), started.loaded.topology.heads.keys, "with the aliases still set, splice starts")
+        val warned = started.loaded.warnings
+        WARNED.forEach { place -> assertEquals(1, warned.count { place in it.text() }, "$place: $warned") }
+        ALIASES.keys.forEach { name ->
+            assertTrue(warned.single { name in it.text() }.message.contains("unset it"), "it says to unset $name")
+        }
+        val logged = mutableListOf<String>()
+        BootWarnings { logged += it }.say(warned, started.statePaths)
+        val shown = logged.joinToString("").replace(tmp.toString(), "<tmp>")
+        PLANTED.forEach { value -> assertFalse(value in shown, "no value reaches the log: $value in $shown") }
+        assertTrue(WARNED.all { it in shown }, "each one is said: $shown")
+        val kept = Json.parseToJsonElement(Files.readString(state.resolve("config.json"))).jsonObject
+        assertEquals(setOf("maxQueued"), kept.keys, "the retired saved setting is cleared and the live one kept")
+        val backups = Files.list(started.statePaths.configBackupsDir).use { it.toList() }
+            .filter { it.fileName.toString().startsWith("config.json.bak-") }
+        assertEquals(1, backups.size, "the saved settings are copied once before the clear: $backups")
+        assertTrue("foldMarkerText" in Files.readString(backups.single()), "the copy holds what was cleared")
+        val next = DaemonProcess().prepare(env(emptyMap()))
+        assertEquals(emptyList<Any>(), next.loaded.warnings, "nothing is left to say once it is cleared")
+    }
+
+    /** Audit, Nov 9, 2026: the two sign-in file variables no head reads any more are said together, each pointing to the
+     *  provider's auth.file, instead of being ignored in silence; since upgrade-compat they are warnings and splice
+     *  starts, since a variable a service unit sets cannot be unset from a daemon that does not run. */
     @Test
-    fun `a retired sign-in file variable refuses boot and names the provider's auth file`() {
+    fun `a retired sign-in file variable is warned of, names the provider's auth file, and splice starts`() {
         val live = CONFIG.removePrefix("[daemon]\nfold_max_tier = 5917\n\n").lines()
             .filterNot { "retryBackoffCapMs" in it || "upstreamRetries" in it }
         Files.writeString(config, live.joinToString("\n"))
         val set = mapOf("CODEX_AUTH_PATH" to "/planted/codex.json", "GROK_AUTH_PATH" to "/planted/grok.json")
 
-        val refusal = assertThrows<TopologyRefusal> { DaemonProcess().prepare(env(set)) }
+        val warned = DaemonProcess().prepare(env(set)).loaded.warnings
 
-        val shown = refusal.message.orEmpty()
-        assertEquals(2, refusal.findings.size, "one finding for each variable, listed at once: $shown")
-        set.keys.forEach { name -> assertEquals(1, refusal.findings.count { name in it.text() }, "$name: $shown") }
-        refusal.findings.forEach { assertTrue("auth.file" in it.message, "it names auth.file: ${it.text()}") }
-        set.values.forEach { value -> assertFalse(value in shown, "no value reaches the refusal: $value in $shown") }
+        val shown = warned.joinToString("\n") { it.text() }
+        assertEquals(2, warned.size, "one warning for each variable, listed at once: $shown")
+        set.keys.forEach { name -> assertEquals(1, warned.count { name in it.text() }, "$name: $shown") }
+        warned.forEach { assertTrue("auth.file" in it.message, "it names auth.file: ${it.text()}") }
+        set.values.forEach { value -> assertFalse(value in shown, "no value reaches the warning: $value in $shown") }
     }
 
     /** A file the decode accepts reaches the knob check, which names a retired key in the same words and line. */

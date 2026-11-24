@@ -94,9 +94,11 @@ public sealed class Command {
         override suspend fun run(): Int = splice.app.cli.share.RemoteCommand().run(args)
     }
 
-    /** The boot findings pass of this build against the person's splice.toml (ConfigPreflight). */
-    public data object CheckConfig : Command() {
-        override suspend fun run(): Int = ConfigPreflight(EnvReader(System::getenv)).check()
+    /** The boot findings pass of this build against the person's splice.toml (ConfigPreflight); with [fix], the fix
+     *  session over its findings and warnings first, on a terminal (ConfigFixOffer.fixAll). */
+    public data class CheckConfig(val fix: Boolean) : Command() {
+        override suspend fun run(): Int =
+            if (fix) ConfigFixOffer().fixAll() else ConfigPreflight(EnvReader(System::getenv)).check()
     }
 
     /** The ports this build would listen on, for a socket manager to hold (ListenerInventory). */

@@ -11,6 +11,7 @@
 package splice.core.util
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -78,4 +79,23 @@ public object JsonScalars {
     } catch (_: IllegalArgumentException) {
         null
     }
+
+    /** [text] parsed by [json] as an object only when it is JSON as written. kotlinx's tree parser takes an unquoted
+     *  token as a value even when strict (`{"a":invalid}` reads "invalid"), which `JSON.parse` and every other
+     *  reader of the same file refuse; such text reads null here, as text that is no JSON at all does. */
+    public fun strictObjectOrNull(json: Json, text: String): JsonObject? = objectOrNull(json, text)?.takeIf(::written)
+
+    /** Whether every value in [element], at any depth, is one JSON spells: a string, `true`, `false`, `null` or a
+     *  number in JSON's own grammar. */
+    private fun written(element: JsonElement): Boolean = when (element) {
+        is JsonObject -> element.values.all(::written)
+        is JsonArray -> element.all(::written)
+        is JsonPrimitive ->
+            element.isString || element is JsonNull || element.content in jsonBooleans ||
+                jsonNumber.matches(element.content)
+    }
+
+    private val jsonNumber = Regex("""-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?""")
+
+    private val jsonBooleans = setOf("true", "false")
 }

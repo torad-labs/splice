@@ -172,6 +172,35 @@ internal class ServerAliasClientTest {
         assertEquals(200, rig.ask("/v1/chat/completions", key, CHAT).statusCode(), "no refused check-in was kept")
     }
 
+    // #791: a check-in is the one-key object `{"version": "..."}` written as strict JSON; anything else is refused 400 and
+    // replaces nothing, though kotlinx alone would read an unquoted word beside the version as a value.
+    @Test
+    fun `a check-in with a malformed, extra or mistyped field is refused 400 and keeps the version already held`() {
+        val rig = serve { it.copy(client = ServerClient(MINIMUM, checkin = true, outdatedStatus = 400)) }
+        val key = rig.keyFor("ola@example.com")
+        assertEquals(200, rig.ask("/server/client/checkin", key, """{"version":"$MINIMUM"}""").statusCode())
+        val refused = listOf(
+            """{"version":"0.9.3","extra":invalid}""",
+            """{"version":"0.9.3","extra":[tru]}""",
+            """{"version":"0.9.3","extra":01}""",
+            """{"version":"0.9.3","extra":"x"}""",
+            """{"version":"0.9.3"} trailing""",
+            """{"version":"0.9.3",}""",
+            """{"version":null}""",
+            """{"version":["0.9.3"]}""",
+            """{"version":""}""",
+            """["0.9.3"]""",
+            "\"0.9.3\"",
+            "",
+        )
+        for (body in refused) {
+            val answer = rig.ask("/server/client/checkin", key, body)
+            assertEquals(400, answer.statusCode(), "$body: ${answer.body()}")
+        }
+        val turn = rig.ask("/v1/chat/completions", key, CHAT)
+        assertEquals(200, turn.statusCode(), "the version checked in first still stands: ${turn.body()}")
+    }
+
     // The operator's words reach the head in a header, which carries visible ASCII alone; the notice is encoded on the
     // way and the head reads it back as written.
     @Test

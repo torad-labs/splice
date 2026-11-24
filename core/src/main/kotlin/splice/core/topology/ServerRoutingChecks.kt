@@ -1,8 +1,10 @@
 // NEW: #791 (server mode, routing and clients). What the decode accepts in `[server.client]` and `[server.aliases]` but
 // the listener could not act on: a version header that is no HTTP header name, an outdated status other than the three
-// an older laptop can be answered with, and an alias that is no single path segment after a `/`, that is written twice
-// once its quotes and spaces are gone, that shadows one of the listener's own routes or a name a served head answers to
-// (its head key or its command), or that stands for nothing a head here serves. A provider served with no head is
+// an older laptop can be answered with, and an alias that is no single path segment after a `/` (`.` and `..` are none:
+// a URL drops them before the listener sees them), that is written twice once its quotes and spaces are gone (the
+// same key spelled twice exactly is refused before the decode, which would keep only the last), that shadows one of
+// the listener's own routes or a name a served head answers to (its head key or its command), or that stands for
+// nothing a head here serves. A provider served with no head is
 // served at the team's door alone, so an alias reaches it as "door". Each is a boot finding beside every other, naming
 // its key. No alias stands for one of the listener's own routes either, even where a head's command is so named: the
 // listener answers that segment itself and never reaches the head.
@@ -63,6 +65,9 @@ internal class ServerRoutingChecks(private val topology: Topology) {
     private fun taken(prefix: String, name: String): String? = when {
         !prefix.startsWith("/") || !segment.matches(name) ->
             "'$prefix' must be one path segment after a '/', as in \"/v1\""
+        name in DOT_SEGMENTS ->
+            "'$prefix' is a dot segment, which a client's URL drops before it reaches the listener; name a path, " +
+                "as in \"/v1\""
         name in RESERVED -> "'$prefix' is one of the listener's own routes and cannot be an alias"
         name in server.commands || name in headNames || name == DOOR_SEGMENT ->
             "'$prefix' is already a path this server answers and cannot be an alias"
@@ -82,6 +87,9 @@ internal class ServerRoutingChecks(private val topology: Topology) {
             "'$prefix' must stand for \"$DOOR_SEGMENT\" or a command [server] commands lists, not '$target'"
     }
 }
+
+// RFC 3986's dot segments, which every URL resolver removes, so no request ever arrives at one.
+private val DOT_SEGMENTS = setOf(".", "..")
 
 // The listener's own first segments, which no alias may take or stand for.
 private val RESERVED = setOf("server", "health")

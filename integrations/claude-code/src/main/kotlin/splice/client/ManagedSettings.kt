@@ -7,18 +7,20 @@
 // `remote-settings.json` when it sets anything, the platform's files otherwise, merged as Claude Code merges them (a
 // later drop-in's value replacing or, with `null`, clearing an earlier one's). Where that source sets telemetry of its
 // own (a `null` or blank value sets nothing), a launch adds none of splice's: the organisation's collector stays the
-// one the session reports to (#791 widened that read from `remote-settings.json` alone). A file that is absent or
-// can't be read sets nothing, as Claude Code itself reads it. A macOS configuration profile (`com.anthropic.claudecode`)
-// or a Windows registry policy (`HKLM\SOFTWARE\Policies\ClaudeCode`) is not read here.
+// one the session reports to (#791 widened that read from `remote-settings.json` alone). A file that is absent, can't
+// be read, or is no JSON object as written (an unquoted word among its values included) sets nothing, as Claude Code
+// itself reads it: a `remote-settings.json` so broken leaves the platform's files the source. A macOS configuration
+// profile (`com.anthropic.claudecode`) or a Windows registry policy (`HKLM\SOFTWARE\Policies\ClaudeCode`) is not read
+// here.
 package splice.client
 
-import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.core.util.JsonScalars
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -104,10 +106,8 @@ public class ManagedSettings(
         value !is JsonNull && (value !is JsonPrimitive || value.content.isNotBlank())
 
     private fun read(file: Path): JsonObject? = try {
-        Json.parseToJsonElement(Files.readString(file)) as? JsonObject
+        JsonScalars.strictObjectOrNull(Json, Files.readString(file))
     } catch (_: IOException) {
-        null
-    } catch (_: SerializationException) {
         null
     }
 }

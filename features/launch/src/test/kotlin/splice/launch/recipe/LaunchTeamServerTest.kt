@@ -210,6 +210,32 @@ class LaunchTeamServerTest(@param:TempDir private val tmp: Path) {
         assertEquals(OTEL_HELPER, settings()["otelHeadersHelper"]?.jsonPrimitive?.content)
     }
 
+    // #791: Claude Code cannot read a remote-settings.json that is no JSON object, so the platform's files stay its one
+    // managed source and their helper still stands; kotlinx alone would read an unquoted word as a value.
+    @Test
+    fun `a malformed or non-object remote settings file leaves the platform's managed settings the source`() {
+        val relayed = spec(TeamServerLaunch(LaunchTelemetry(RELAY, OTEL_HELPER)))
+        val dropIns = platform().resolve("managed-settings.d")
+        Files.createDirectories(dropIns)
+        Files.writeString(dropIns.resolve("10-otel.json"), """{"otelHeadersHelper":"corp-helper"}""")
+        Files.createDirectories(tree())
+        val remote = tree().resolve("remote-settings.json")
+        val broken = listOf(
+            """{"permissions":invalid}""",
+            """{"permissions":{"deny":[tru]}}""",
+            """{"permissions":01}""",
+            """{"permissions":{"deny":[]}""",
+            """["permissions"]""",
+            "\"permissions\"",
+        )
+        for (text in broken) {
+            Files.writeString(remote, text)
+            assertNull(launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "$text leaves the platform's helper")
+        }
+        Files.writeString(remote, """{"permissions":{"deny":[]},"cleanupPeriodDays":30,"x":null,"y":-1.5e3}""")
+        assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "valid remote settings replace it")
+    }
+
     private fun platform(): Path = tmp.resolve("platform")
 
     private fun launch(spec: LaunchSpec): LaunchRecipe =

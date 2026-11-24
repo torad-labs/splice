@@ -3,8 +3,8 @@
 // the version it runs once, `{"version": "0.10.0"}`, under the person's key. The server keeps each person's latest
 // report in memory, so the minimum client judges their turns by it while a turn names no version itself; a restart
 // forgets every report until the next check-in. The answer says what was kept and whether that version is served. A
-// body past 4 KiB is refused 413 before more of it is held, and a version is read only in its bounded shape
-// (ClientVersionParser).
+// body past 4 KiB is refused 413 before more of it is held, a body that is anything but that one-key object, written as
+// strict JSON, is refused 400 and keeps nothing, and a version is read only in its bounded shape (ClientVersionParser).
 package splice.server.client
 
 import io.ktor.http.ContentType
@@ -42,10 +42,12 @@ internal class ClientCheckins(private val client: ServerClient, private val voic
     fun of(person: String): ClientVersion? = latest[person]
 
     /** Keeps the version [call]'s body reports for [key]'s person, or refuses a body that names none: 413 for one past
-     *  [CHECKIN_BODY_BYTES], 400 for one that is no strict JSON `{"version"}` whose string names a version. */
+     *  [CHECKIN_BODY_BYTES], 400 for one that is no strict JSON `{"version"}` with no other key, whose string names a
+     *  version. */
     suspend fun answer(call: ApplicationCall, key: ServerKey) {
         val sent = bodies.read(call, CHECKIN_BODY_BYTES, CHECKIN_READ_MS) ?: return
-        val named = JsonScalars.objectOrNull(Json, sent.decodeToString())?.get(VERSION_FIELD)
+        val named = JsonScalars.strictObjectOrNull(Json, sent.decodeToString())
+            ?.takeIf { it.keys == setOf(VERSION_FIELD) }?.get(VERSION_FIELD)
         // why: the version is a JSON string; `{"version":0.9.3}` is a number literal whose text would read as one.
         val version = versions.parse(JsonScalars.strIfString(named))
             ?: return voice.refuse(call, HttpStatus.BAD_REQUEST, "a check-in is {\"version\": \"0.10.0\"}")

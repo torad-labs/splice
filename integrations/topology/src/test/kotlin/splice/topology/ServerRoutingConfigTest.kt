@@ -126,6 +126,35 @@ class ServerRoutingConfigTest {
         assertTrue("'/v1' is written more than once" in twice.single().message, twice.toString())
     }
 
+    // #791: the decode keeps only the last of one key written twice, so an exact repeat never reaches the alias checks
+    // and must be refused before it; boot names the table and the key.
+    @Test
+    fun `an alias key written twice exactly, in either quotes, is refused rather than the last one kept`() {
+        for (again in listOf("\"/v1\"", "'/v1'")) {
+            val toml = server("[server.aliases]\n\"/v1\" = \"claude-team\"\n$again = \"door\"") + head()
+            val read = ConfigFindings.read(toml, directory, configDir = directory)
+            val found = assertInstanceOf(ConfigRead.Refused::class.java, read, "$again: $read").findings
+            val twice = found.single { "duplicate key /v1" in it.message }
+            assertTrue("[server.aliases]" in twice.message, twice.message)
+        }
+    }
+
+    // #791: a client's URL resolves `.` and `..` away before it is sent, so such an alias would never be asked for;
+    // an empty, nested, encoded or spaced segment is no single segment either.
+    @Test
+    fun `a dot segment or any alias that is no single plain segment is refused by name`() {
+        val aliases = listOf("/.", "/..", "/v1/.", "/v1/..", "/", "/v1/", "/%2e", "/v 1")
+        for (alias in aliases) {
+            val found = refused(server("[server.aliases]\n\"$alias\" = \"claude-team\"") + head())
+            assertEquals(1, found.size, "$alias: $found")
+            assertTrue("'$alias'" in found.single().message, found.toString())
+        }
+        for (dots in listOf("/.", "/..")) {
+            val found = refused(server("[server.aliases]\n\"$dots\" = \"claude-team\"") + head()).single()
+            assertTrue("dot segment" in found.message, found.message)
+        }
+    }
+
     // #791: the listener answers `/server/...` and `/health` itself, so an alias standing for a head whose command or key
     // is so named would never reach that head.
     @Test

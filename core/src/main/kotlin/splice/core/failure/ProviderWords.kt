@@ -73,6 +73,7 @@ public object ProviderWordsFilter {
 
     private val SPACE_BEFORE_MARK = Regex("""\s+([,.;:!?])""")
     private val EMPTY_PARENS = Regex("""\(\s*\)""")
+    private val LEADING_CLAUSE_MARK = Regex("""^(?:[,;:-]\s+)+""")
 
     /** The words a person may read out of [raw], or null when none are left. */
     public fun of(raw: String?): ProviderWords? {
@@ -115,9 +116,8 @@ public object ProviderWordsFilter {
         val dropped = DROP.fold(sentence) { text, rule -> rule.replace(text, " ") }
         if (DUMP.containsMatchIn(dropped)) return null
         val tidy = SPACE_BEFORE_MARK.replace(EMPTY_PARENS.replace(SPACES.replace(dropped, " "), ""), "$1").trim()
-        val trimmed = tidy.trimStart(',', ';', ':', '-', ' ').trimEnd(':', ' ')
-        val body = COLON_CLAUSE.replace(trimmed, ", ")
-            .trimStart(',', ';', ':', '-', ' ')
+        val trimmed = LEADING_CLAUSE_MARK.replace(tidy, "").trimEnd(':', ' ')
+        val body = LEADING_CLAUSE_MARK.replace(COLON_CLAUSE.replace(trimmed, ", "), "")
             .trimEnd('.', '!', '?', ',', ';', ':', '-', ' ')
         return body.takeIf { it.any(Char::isLetter) }
     }

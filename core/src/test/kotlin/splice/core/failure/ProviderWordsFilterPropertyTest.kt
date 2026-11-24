@@ -274,6 +274,18 @@ class ProviderWordsFilterPropertyTest {
             "Invalid prompt.",
             words("(request_id: 49d5cc56-b2b7-42ed-8485-ac06076e79d4): Invalid prompt"),
         )
+        assertEquals(
+            "-1 is not a valid max_tokens value.",
+            words("-1 is not a valid max_tokens value"),
+        )
+        assertEquals(
+            "--verbose is not supported.",
+            words("--verbose is not supported"),
+        )
+        assertEquals(
+            ":) nothing.",
+            words(":) nothing"),
+        )
     }
 
     @Test

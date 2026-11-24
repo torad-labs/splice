@@ -187,7 +187,8 @@ class AgyMcpAutoSyncAndPruneTest {
 
         val paths = StatePaths(baseOverride = state, homeDir = home)
         val env = EnvReader { key -> if (key == "SPLICE_STATE_DIR") state.toString() else null }
-        val autoSync = McpHarnessAutoSync(home, paths, env, {}, testSeams(), waiter = Waiter {})
+        val timing = McpAutoSyncTiming(waiter = Waiter {})
+        val autoSync = McpHarnessAutoSync(home, paths, env, {}, testSeams(), timing = timing)
 
         assertFalse(autoSync.syncOnStartup())
         assertEquals(initialAgy, Files.readString(agyFile))
@@ -239,7 +240,7 @@ class AgyMcpAutoSyncAndPruneTest {
                 Files.setLastModifiedTime(fixture.claudeJson, FileTime.from(Instant.now().plusSeconds(30)))
                 driveTick(ticks)
                 assertEquals(setOf("eli-brain", "user-only"), readServers(fixture.agyFile).keys)
-                assertTrue(logs.any { "unreadable or malformed" in it })
+                assertTrue(logs.any { "startup" in it || "change skipped" in it })
 
                 fixture.writeClaude(4, "", 40)
                 driveTick(ticks)
@@ -352,8 +353,7 @@ class AgyMcpAutoSyncAndPruneTest {
                 env = env,
                 log = { logs += it },
                 seams = seams,
-                ticker = ticker,
-                waiter = Waiter { ms -> waits += ms },
+                timing = McpAutoSyncTiming(ticker = ticker, waiter = Waiter { ms -> waits += ms }),
             )
         }
     }

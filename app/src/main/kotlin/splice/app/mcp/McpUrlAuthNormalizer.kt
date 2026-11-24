@@ -4,14 +4,23 @@
 package splice.app.mcp
 
 import splice.core.wire.HTTPS_SCHEME
+import java.io.ByteArrayOutputStream
 import java.net.URI
 import java.net.URISyntaxException
-import java.net.URLDecoder
 
 private const val EXA_MCP_HOST = "mcp.exa.ai"
 private const val EXA_API_KEY_PARAM = "exaApiKey"
 private const val EXA_API_KEY_HEADER = "x-api-key"
 private const val AUTH_HEADER = "Authorization"
+
+// why: RFC 3986 percent-encoding consumes `%` plus 2 hexadecimal digits (3 characters total).
+private const val PERCENT_ESCAPE_WIDTH = 3
+
+// why: high hex nibble shifts left by 4 bits to combine with the low hex nibble into one byte.
+private const val HEX_NIBBLE_SHIFT = 4
+
+// why: hexadecimal digits use base 16.
+private const val URL_HEX_RADIX = 16
 
 /** Normalized remote HTTP MCP endpoint with query-string credentials promoted to headers where supported. */
 internal data class NormalizedHttpEndpoint(
@@ -47,7 +56,7 @@ internal class McpUrlAuthNormalizer {
             val key = part.substringBefore('=')
             val value = part.substringAfter('=', "")
             if (key == targetKey && value.isNotEmpty()) {
-                foundValue = decodeQueryValue(value)
+                foundValue = percentDecodeRfc3986(value)
             } else {
                 kept += part
             }
@@ -56,10 +65,29 @@ internal class McpUrlAuthNormalizer {
         return ExtractedQueryParam(decoded, kept.joinToString("&").ifEmpty { null })
     }
 
-    private fun decodeQueryValue(raw: String): String? = try {
-        URLDecoder.decode(raw, Charsets.UTF_8)
-    } catch (_: IllegalArgumentException) {
-        null
+    /** RFC 3986 percent-decoding: decodes `%XX` UTF-8 escapes while preserving literal `+` characters. */
+    private fun percentDecodeRfc3986(raw: String): String? {
+        val bytes = ByteArrayOutputStream(raw.length)
+        var i = 0
+        while (i < raw.length) {
+            val ch = raw[i]
+            if (ch == '%') {
+                val decodedByte = decodeHexPair(raw, i) ?: return null
+                bytes.write(decodedByte)
+                i += PERCENT_ESCAPE_WIDTH
+            } else {
+                bytes.write(ch.toString().toByteArray(Charsets.UTF_8))
+                i += 1
+            }
+        }
+        return bytes.toString(Charsets.UTF_8)
+    }
+
+    private fun decodeHexPair(raw: String, percentIndex: Int): Int? {
+        if (percentIndex + 2 >= raw.length) return null
+        val hi = raw[percentIndex + 1].digitToIntOrNull(URL_HEX_RADIX)
+        val lo = raw[percentIndex + 2].digitToIntOrNull(URL_HEX_RADIX)
+        return if (hi != null && lo != null) (hi shl HEX_NIBBLE_SHIFT) or lo else null
     }
 
     private fun rebuildUrl(uri: URI, remainingRawQuery: String?): String = buildString {

@@ -270,7 +270,7 @@ internal class ControlPlane(
         parts.wirePeers(srv, guard, probeScope)
         parts.wireRestartSuccessor(srv, controlPort)
         return if (ownership.bind(srv, controlPort, listen.handOn(guard))) {
-            srv.also { mcp.onControlBound(mcpServices, probeScope, home, it.listeningPort) }
+            srv.also { mcp.onControlBound(mcpServices, probeScope, home, it.listeningPort, it.mcpHarnessSyncLock) }
         } else {
             null
         }

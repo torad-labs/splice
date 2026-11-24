@@ -4,6 +4,7 @@
 package splice.app
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.sync.Mutex
 import splice.app.control.McpServiceRefresh
 import splice.app.control.api.McpHubVerdict
 import splice.app.mcp.McpHarnessAutoSync
@@ -126,11 +127,19 @@ internal class ControlMcpWiring(
         scope: CoroutineScope,
         home: Path,
         controlPort: Int,
+        syncLock: Mutex? = null,
     ) {
         services.refresh()
         val syncHome = if (statePaths.origin == StateDirOrigin.OVERRIDE) home else UserHome.dir(statePaths.envReader)
         val seams = McpHarnessSyncSeams(controlPortOverride = controlPort.takeIf { it > 0 })
-        McpHarnessAutoSync(syncHome, statePaths, statePaths.envReader, log, seams).watch(scope)
+        McpHarnessAutoSync(
+            home = syncHome,
+            paths = statePaths,
+            env = statePaths.envReader,
+            log = log,
+            seams = seams,
+            syncLock = syncLock ?: Mutex(),
+        ).watch(scope)
     }
 
     /** V4-110: the shared MCP host's four lifecycle values, each a READER over the knob layer (daemon-global)

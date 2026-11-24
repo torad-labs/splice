@@ -47,7 +47,7 @@ internal class ServerListenerWiring(
         signinSecret: String?,
     ): ServerListener {
         val speaker = RelaySpeaker(RefusalVoice(SERVER_ERROR_PREFIX), SERVER_LOG_TAG)
-        val served = ServedHeads(heads, server.commands)
+        val served = ServedHeads(heads, server)
         stores.metrics.serving(served)
         val parts = ServerParts(
             keys = stores.keys,

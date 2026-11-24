@@ -118,13 +118,15 @@ public object ConfigFindings {
         return refused(checks + OperatorTelemetryFindings.of(topology) + local + elsewhere, ready, warnings)
     }
 
-    /** The first path segments the server's listener serves its commands at: each `[server] commands` entry, and for
-     *  one a head runs, that head's key and command, either of which reaches it there; null without a topology. */
+    /** The first path segments the server's listener serves its commands at: each `[server] commands` entry, and the
+     *  key and the command of every head the listener serves by the same rule (ServerConfig.serves), either of which
+     *  reaches that head there; null without a topology. */
     private fun served(topology: Topology?): Set<String>? = topology?.let { read ->
-        read.server.commands.flatMap { command ->
-            val keys = read.resolveHeadKeys(command)
-            listOf(command) + keys + keys.mapNotNull { read.heads[it]?.claude?.command }
-        }.toSet()
+        val heads = read.heads.flatMap { (key, head) ->
+            val command = head.claude.command ?: key
+            if (read.server.serves(key, command)) listOf(key, command) else emptyList()
+        }
+        (read.server.commands + heads).toSet()
     }
 
     /** A knob finding keeps boot's own reason as written (the console writer pins its exact text); the boot

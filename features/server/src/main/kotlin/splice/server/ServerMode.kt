@@ -25,10 +25,10 @@ import java.nio.file.Path
 import java.time.Clock
 
 /** Of the heads this machine can offer, the ones `[server] commands` names, by command or by head key. */
-internal class ServedHeads(private val all: SharedHeads, private val commands: List<String>) : SharedHeads {
+internal class ServedHeads(private val all: SharedHeads, private val server: ServerConfig) : SharedHeads {
     override val machine: String get() = all.machine
 
-    override fun offered(): List<SharedHead> = all.offered().filter { it.command in commands || it.key in commands }
+    override fun offered(): List<SharedHead> = all.offered().filter { server.serves(it.key, it.command) }
 }
 
 /** How the listener reaches this machine's heads: the turn key they admit, and the board they say on how each turn the

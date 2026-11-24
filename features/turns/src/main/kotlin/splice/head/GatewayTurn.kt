@@ -23,7 +23,12 @@ import splice.head.wire.NATIVE_CLIENT_PING_MS
  *  provider's `forward_headers` may name them, and they must never ride upstream with a key in them.
  *
  *  [asked] is the model Claude Code named, which [body] no longer says once it asks for the provider's own id; the live
- *  route's turn names it (reply-stream). Null where the gateway was not told. */
+ *  route's turn names it (reply-stream). Null where the gateway was not told.
+ *
+ *  [requestWindow] is the window the gateway read off THIS request — Claude Desktop's app mode, where the door has
+ *  already weighed the request's beta and model against the windows splice.toml's `[desktop]` states. It outranks
+ *  what the request's beta alone would say (ClientWindowWitness), which is the client's own million, not this
+ *  install's; null where the gateway read none, which is every other door. */
 public class GatewayTurn(
     public val body: ByteArray,
     public val door: String,
@@ -31,6 +36,7 @@ public class GatewayTurn(
     public val listener: ListenerSays = ListenerSays(),
     public val withheldHeaders: Set<String> = emptySet(),
     public val asked: String? = null,
+    public val requestWindow: Long? = null,
 ) {
     /** [body] as a bounded read of it, the same answer a head's own read of a call's body gives: the body, or the cap
      *  it exceeded. */

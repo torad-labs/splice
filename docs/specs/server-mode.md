@@ -331,6 +331,17 @@ What is the server's holds on that *selected provider*, never on the selector th
 `[server] commands` serves a provider by its key too (no head needed), except a provider that signs with one person's
 plan login. The `/<command>/...` routes of the heads that exist keep working beside the door, unchanged.
 
+## The Desktop window on a served machine
+
+A splice that also serves Claude Desktop states the windows Desktop gives its Code tab in splice.toml's
+`[desktop]`: `code_window` (200,000 shipped) and `code_window_1m` (1,000,000 shipped, never below `code_window`).
+Desktop sets those windows itself in its Code tab's Claude Code and honors there the `max_input_tokens` discovery
+advertises, which stays each provider's real ceiling; splice authors the counts a Code-tab turn reports, so the
+door scales them by the configured window over the model's own and compaction agrees with the terminal setup even
+where the two windows differ. A model is advertised with a 1M variant when its real window reaches
+`code_window_1m`. The daemon reads the table at start (a restart, and Desktop's next launch), and the same reading
+serves the team door's model list.
+
 ## P3
 
 - **F13 forward_auth** for the team's dashboards on the same sign-in, with an email allowlist and admins; a

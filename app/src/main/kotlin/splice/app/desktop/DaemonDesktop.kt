@@ -151,7 +151,7 @@ internal class DaemonDesktop(
         val (lane, terminal) = claude.open(lineups, door, controlPort = controlPort)
         headLane.open(lineups)
         val callers = listOf(DesktopCaller(key, records, log), terminal)
-        val doorway = DesktopDoor(callers, lineups, sessionSpeeds = sessionSpeeds)
+        val doorway = DesktopDoor(callers, lineups, sessionSpeeds = sessionSpeeds, desktop = topology.desktop)
         team.open(lineups, topology)
         network.open(doorway, NetworkCaller(lane, machine), lane, PickerRows(claude::rows), machine)
         opened = DesktopService(doorway, switch, lane, lineups, records)
@@ -214,7 +214,7 @@ internal class DaemonDesktop(
     /** The model list and splice's policy given to every Claude Desktop whose applied configuration points at [door]:
      *  the person's own, and each one run beside it on a config folder of its own. */
     private suspend fun publish(door: String, lineup: DesktopLineup) {
-        val models = DoorCatalog(lineup).inferenceModels(records.get().defaultModel)
+        val models = DoorCatalog(lineup, topology.desktop).inferenceModels(records.get().defaultModel)
         withContext(io) {
             (listOf(library) + library.beside()).forEach { desktop ->
                 Cancellables.runCatchingCancellable { desktop.publish(door, models) }

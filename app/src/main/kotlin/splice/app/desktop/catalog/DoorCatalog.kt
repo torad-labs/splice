@@ -22,6 +22,7 @@ import splice.client.desktop.DoorPickerRow
 import splice.client.models.AnthropicTiers
 import splice.core.model.CLAUDE_CODE_ONE_MILLION
 import splice.core.model.ModelTierSuffix
+import splice.core.topology.DesktopConfig
 import splice.core.usage.QuotaFullWindow
 
 /** One catalog model as the door serves it now: its provider's facts ([fact]), the provider a turn on it runs on
@@ -32,6 +33,9 @@ internal data class ServedModel(
     val provider: ServedProvider,
     val rows: List<DoorModel>,
     val claude: String?,
+    /** The big Code-tab window of splice.toml's `[desktop]`, which [supports1m] is read against: the window a
+     *  1M variant promises the model can fill. Claude Code's own million where no desktop table speaks. */
+    val millionWindow: Long = CLAUDE_CODE_ONE_MILLION,
 ) {
     /** The id the gateway lists it under: Claude's own id for Claude's models, else the provider's selector. */
     val gatewayId: String get() = claude ?: provider.catalog.wrap(fact.id)
@@ -39,8 +43,8 @@ internal data class ServedModel(
     /** The selector Desktop receives for this model. */
     val desktopId: String get() = claude ?: provider.catalog.names.nameOf(fact.id)
 
-    /** Whether it has a 1M variant: a row of it carries the `[1m]` hint, or its provider serves a million tokens. */
-    val supports1m: Boolean get() = rows.any(::millionRow) || fact.contextWindow >= CLAUDE_CODE_ONE_MILLION
+    /** Whether it has a 1M variant: a row of it carries the `[1m]` hint, or its provider serves the big window. */
+    val supports1m: Boolean get() = rows.any(::millionRow) || fact.contextWindow >= millionWindow
 
     /** Whether the 1M variant is its only one: every row of it carries the hint. */
     val prefer1m: Boolean get() = rows.all(::millionRow)
@@ -59,7 +63,12 @@ internal enum class ModelDiscovery {
     }
 }
 
-internal class DoorCatalog(private val lineup: DesktopLineup) {
+internal class DoorCatalog(
+    private val lineup: DesktopLineup,
+    /** splice.toml's `[desktop]`, whose big window is the bar for a served model's 1M variant; Desktop's
+     *  shipped pair for a list no desktop table speaks to (the terminal's own, a launch's). */
+    private val codeWindows: DesktopConfig = DesktopConfig(),
+) {
     private val tiers = AnthropicTiers()
     private val digits = Regex("\\d+")
 
@@ -157,7 +166,7 @@ internal class DoorCatalog(private val lineup: DesktopLineup) {
             .filter { it.provider == fact.provider && ModelTierSuffix.strip(it.upstream) == id }
         lineup.desktopOnly.firstOrNull { it.key == fact.provider }
             ?.takeIf { rows.isNotEmpty() }
-            ?.let { ServedModel(fact, it, rows, null) }
+            ?.let { ServedModel(fact, it, rows, null, codeWindows.codeWindow1m) }
     }
 
     private fun served(fact: CatalogModel): ServedModel? {
@@ -166,7 +175,8 @@ internal class DoorCatalog(private val lineup: DesktopLineup) {
         val provider = lineup.providers.firstOrNull { provider ->
             provider.key == fact.provider && picker.any { it.provider == provider.key }
         } ?: return null
-        return ServedModel(fact, provider, picker.filter { it.provider == provider.key }, tiers.modelOf(id))
+        val rows = picker.filter { it.provider == provider.key }
+        return ServedModel(fact, provider, rows, tiers.modelOf(id), codeWindows.codeWindow1m)
     }
 
     /** [row]'s name: its provider's name for the model, with the window its hint names when the model has a row

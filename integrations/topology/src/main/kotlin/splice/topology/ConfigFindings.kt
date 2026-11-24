@@ -14,6 +14,7 @@ import splice.core.config.retiredKnobsByKey
 import splice.core.mode.FoundModes
 import splice.core.mode.ModeSettingsReader
 import splice.core.model.HeadDiscoveredModels
+import splice.core.topology.DesktopToml
 import splice.core.topology.Dialect
 import splice.core.topology.Topology
 import splice.core.topology.TopologyExtensions
@@ -75,7 +76,10 @@ public object ConfigFindings {
         // `[modes.<name>]` tables are read apart the same way (modes/README.md).
         val split = CapabilityToml.split(source)
         val modeTables = ModeTables.split(split.rest)
-        val text = modeTables.rest
+        // The `[desktop]` table is read apart the same way (DesktopConfig), so each wrong window is its own
+        // finding beside the schema's.
+        val desktopTable = DesktopToml.split(modeTables.rest)
+        val text = desktopTable.rest
         val declared = { topology: Topology? ->
             val messages = topology?.headsSpeaking(Dialect.ANTHROPIC_PASSTHROUGH)
             CapabilityDeclarations(topology?.heads?.keys, messages = messages).read(split.tables)
@@ -87,7 +91,8 @@ public object ConfigFindings {
         // decoder into the loop the preflight exists to prevent, so the decoder never sees such a file.
         val structural = TomlStructurePreflight.failures(text).map { finding(it) }
         val elsewhere = { topology: Topology? ->
-            declared(topology).findings + modes(topology).findings + beside.modes?.findings.orEmpty()
+            declared(topology).findings + modes(topology).findings + desktopTable.read.findings +
+                beside.modes?.findings.orEmpty()
         }
         if (structural.isNotEmpty()) return refused(structural + TopologyTypeMismatch.all(text) + elsewhere(null))
         val decoded = decode(text)
@@ -104,7 +109,8 @@ public object ConfigFindings {
             .map { it.copy(message = withFix(it), line = lineOf(text, it.path), move = it.move ?: moves.of(it)) }
         val local = runtimes.of(topology).distinct()
             .map { it.copy(line = rows.of(text, it.path) ?: lineOf(text, it.path)) }
-        val extensions = TopologyExtensions(declared(topology).capabilities, modes(topology).settings)
+        val extensions =
+            TopologyExtensions(declared(topology).capabilities, modes(topology).settings, desktopTable.read.config)
         val ready = topology.copy(extensions = extensions)
         val warnings = TopologyFindings.warnings(topology)
             .map { it.copy(line = lineOf(text, it.path)) } + beside.retired?.warnings(topology).orEmpty()

@@ -17,11 +17,12 @@ import splice.core.mode.ModeSetting
 import splice.core.model.ReadableIds
 import splice.core.prompt.SystemPromptMode
 
-/** Operator-defined capability and mode tables. The loader parses them separately from the canonical TOML tree
- *  that the console edits and attaches them together once well-formed. */
+/** Operator-defined capability and mode tables, and the `[desktop]` table. The loader parses them separately
+ *  from the canonical TOML tree that the console edits and attaches them together once well-formed. */
 public data class TopologyExtensions(
     val capabilities: List<Capability> = emptyList(),
     val modes: Map<String, ModeSetting> = emptyMap(),
+    val desktop: DesktopConfig = DesktopConfig(),
 )
 
 /** V4-124: a `[projects."ROOT"]` table — standing instructions for every session whose working

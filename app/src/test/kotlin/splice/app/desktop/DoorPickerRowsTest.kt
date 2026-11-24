@@ -34,6 +34,7 @@ import splice.client.models.AnthropicTiers
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.topology.ChatEffortVocabularyConfig
+import splice.core.topology.DesktopConfig
 import splice.core.usage.QuotaFull
 import splice.head.GatewayTurn
 import splice.usage.quota.HeadUsageSource
@@ -217,6 +218,28 @@ internal class DoorPickerRowsTest {
         val discovered = DoorCatalog(catalogued(lineup)).discovery().getValue("data").jsonArray.single().jsonObject
         assertEquals("1000000", discovered.getValue("max_input_tokens").jsonPrimitive.content)
         assertEquals("true", discovered.getValue("supports_1m").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `a configured 1M window is the bar for a model's 1M variant in Desktop's rows`() {
+        val row = ModelEntry("team-wide", "Team Wide", contextWindow = 600_000)
+        val lineup = catalogued(lineupOf(provider("work", rows = listOf(row)) to listOf(model("work", "team-wide"))))
+
+        // Desktop's shipped million: a 600,000 window has no 1M variant to advertise.
+        val shipped = DoorCatalog(lineup)
+        val plain = shipped.discovery(surface = ModelDiscovery.DESKTOP).getValue("data").jsonArray.single().jsonObject
+        assertEquals("false", plain.getValue("supports_1m").jsonPrimitive.content)
+        assertNull(shipped.inferenceModels(null).single().jsonObject["supports1m"])
+
+        // This install's big window at 500,000: the same model fills it, so both of Desktop's lists say so,
+        // while the advertised ceiling stays the provider's own 600,000, never a configured window.
+        val configured = DoorCatalog(lineup, DesktopConfig(codeWindow1m = 500_000))
+        val wide = configured.discovery(surface = ModelDiscovery.DESKTOP)
+            .getValue("data").jsonArray.single().jsonObject
+        assertEquals("true", wide.getValue("supports_1m").jsonPrimitive.content)
+        assertEquals("600000", wide.getValue("max_input_tokens").jsonPrimitive.content)
+        val settings = configured.inferenceModels(null).single().jsonObject
+        assertEquals("true", settings.getValue("supports1m").jsonPrimitive.content)
     }
 
     @Test

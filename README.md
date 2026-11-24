@@ -414,6 +414,22 @@ settings and sessions are shared, and splice changes nothing in `~/.claude/setti
 environment. A model you pick runs on its head, with that head's logins, cooldowns and failures. Desktop reads its
 model list only at launch, so a sign-in or a head added while it is open shows at its next launch.
 
+Desktop gives its Code tab's Claude Code its own context windows (200,000 tokens, and 1,000,000 for a model picked
+as its 1M variant), and its Claude Code compacts at a share of the one it holds. splice scales the counts each
+Desktop turn reports to that window, so a model compacts at its own real window whatever splice serves it at; the
+window a model advertises in the picker stays its provider's real ceiling, which Desktop honors as the model's
+limit. Where this install's Desktop is given other windows (a managed policy, a newer Desktop), state them in
+splice.toml and splice scales to them instead, and a model is offered a 1M variant when its real window reaches
+`code_window_1m`:
+
+```toml
+[desktop]
+code_window = 200000
+code_window_1m = 1000000
+```
+
+The daemon reads the table when it starts, so an edit takes a daemon restart and Desktop's next launch.
+
 The configuration also carries splice's policy for Desktop, so Desktop starts out matching your Claude Code with nothing
 to set up again in its own configuration window. splice takes the default policy its build ships
 (`claude-code-desktop-policy/ccd-policy.json`: Chat and Cowork, the built-in browser, extensions, projects, scheduled

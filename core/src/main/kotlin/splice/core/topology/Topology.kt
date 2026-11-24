@@ -78,6 +78,9 @@ public data class Topology(
 
     public val modes: Map<String, ModeSetting> get() = extensions.modes
 
+    /** `[desktop]`: the Code-tab windows splice scales Claude Desktop's app-mode counts to (DesktopConfig). */
+    public val desktop: DesktopConfig get() = extensions.desktop
+
     /** Resolve a user-supplied head name — the topology key or the installed wrapper command
      *  (starter: head `openrouter`, command `claude-openrouter`) — to matching topology keys. A topology-KEY
      *  match is exact and wins as the sole result; otherwise ALL heads whose wrapper command equals

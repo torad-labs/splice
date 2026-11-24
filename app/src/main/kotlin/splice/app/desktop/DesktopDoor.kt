@@ -27,6 +27,7 @@ import splice.client.desktop.DesktopAppWindow
 import splice.client.desktop.GatewayDiscovery
 import splice.core.client.SESSION_HEADER
 import splice.core.speed.SessionSpeeds
+import splice.core.topology.DesktopConfig
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.util.WallClock
@@ -60,6 +61,8 @@ internal class DesktopDoor(
     private val providers: DesktopProviders,
     clock: WallClock = WallClock(System::currentTimeMillis),
     sessionSpeeds: SessionSpeeds? = null,
+    /** splice.toml's `[desktop]`: the Code-tab windows app-mode counts are scaled to and the catalog's 1M bar. */
+    private val desktop: DesktopConfig = DesktopConfig(),
 ) {
     /** The door's own voice, for a key it holds for no caller: it can't tell whose session that is, so its words name
      *  splice alone and say where each caller's key comes from. */
@@ -67,7 +70,7 @@ internal class DesktopDoor(
     private val json = Json { ignoreUnknownKeys = true }
     private val routing = DoorRouting()
     private val toProvider = DoorRelay(clock, sessionSpeeds)
-    private val windows = DesktopAppWindow()
+    private val windows = DesktopAppWindow(desktop)
     private val discovery = GatewayDiscovery()
     private val gatewayModels = GatewayModels()
 
@@ -83,7 +86,7 @@ internal class DesktopDoor(
     suspend fun models(call: ApplicationCall) {
         val caller = admitted(call) ?: return
         val lineup = providers.lineup()
-        val catalog = DoorCatalog(lineup)
+        val catalog = DoorCatalog(lineup, desktop)
         val default = caller.default(lineup)
         if (caller is DesktopCaller) {
             caller.discovered(catalog.desktopRead(default))

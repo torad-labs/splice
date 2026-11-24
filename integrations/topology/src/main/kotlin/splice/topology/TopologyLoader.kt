@@ -20,6 +20,7 @@ import splice.core.config.RetiredKnob
 import splice.core.config.UserHome
 import splice.core.config.retiredKnobsByKey
 import splice.core.perf.HISTORY_DEFAULT_DAYS
+import splice.core.topology.DesktopToml
 import splice.core.topology.Dialect
 import splice.core.topology.Topology
 import splice.core.topology.TopologyFinding
@@ -345,8 +346,13 @@ historyRetentionDays = "$HISTORY_DEFAULT_DAYS"
         // The `[modes.<name>]` tables are read apart the same way (modes/README.md).
         val split = CapabilityToml.split(text)
         val modes = ModeTables.split(split.rest)
-        TomlStructurePreflight.check(modes.rest)
-        val topology = ModeTables.attached(decode(modes.rest), modes.tables)
+        // The `[desktop]` table is read apart the same way (DesktopConfig); a wrong one is boot's to refuse.
+        val desktop = DesktopToml.split(modes.rest)
+        TomlStructurePreflight.check(desktop.rest)
+        var topology = ModeTables.attached(decode(desktop.rest), modes.tables)
+        if (desktop.read.findings.isEmpty()) {
+            topology = topology.copy(extensions = topology.extensions.copy(desktop = desktop.read.config))
+        }
         if (split.tables.isEmpty()) return topology
         val messages = topology.headsSpeaking(Dialect.ANTHROPIC_PASSTHROUGH)
         val read = CapabilityDeclarations(topology.heads.keys, messages = messages).read(split.tables)

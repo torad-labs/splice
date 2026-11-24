@@ -31,7 +31,8 @@
     ".campaign/checks/reply-stream/tsconfig.json",
     ".campaign/checks/reply-view/tsconfig.json",
     ".campaign/checks/signin-e2e/tsconfig.json",
-    ".campaign/checks/gateway-no-heads/tsconfig.json"
+    ".campaign/checks/gateway-no-heads/tsconfig.json",
+    ".campaign/checks/wiki-docs/tsconfig.json"
   ],
   "excused": {},
   "baseline": {}

@@ -43,7 +43,7 @@ internal class DesktopAcpCommand(private val env: EnvReader, private val err: Te
         log: LogSink,
     ): DesktopPeerWiring {
         val childEnv = DesktopPeerIdentity(env, log).childEnv(args, cwd)
-        val peerName = childEnv[PEER_NAME_ENV] ?: env(PEER_NAME_ENV)?.takeIf(String::isNotBlank)
+        val peerName = childEnv[PEER_NAME_ENV]
         val receiptStore = DesktopPeerReceiptStore(
             stateDir = TopologyStatePaths(env).current().stateDir,
             settingsDir = KeyStorePath.defaultPath(env).toAbsolutePath().parent,

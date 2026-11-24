@@ -18,7 +18,7 @@ import splice.provider.antigravity.peer.DesktopPeerMessage
 import splice.provider.antigravity.peer.DesktopPeerOutcome
 import splice.provider.antigravity.skills.LocalSkillCatalog
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /** Builds [DesktopParts] once the session id is known (either from Desktop's flags or agy's `session/new`). */
 internal fun interface PartsFactory {
@@ -49,7 +49,7 @@ internal class DesktopSession(
     private val lists = DesktopLists()
     private val controls = DesktopControl(this, coordinator, mcpState, lists)
     private val prompts = HashSet<Long>()
-    private val closed = AtomicBoolean(false)
+    private val lifecycle = SessionLifecycleGate(hooks)
 
     @Volatile
     private var parts: DesktopParts? = null
@@ -88,11 +88,7 @@ internal class DesktopSession(
 
     /** Removes the session record file and closes the peer UDS inbox (key file + socket) when the session ends. */
     fun closeRecord() {
-        closed.set(true)
-        val current = parts ?: return
-        hooks.ended(current.frames.sessionId)
-        current.record.remove()
-        current.peerInbox?.close()
+        lifecycle.close()
     }
 
     /** One line Desktop wrote. */
@@ -174,13 +170,7 @@ internal class DesktopSession(
             skills = built.localSkills.skillNames,
             mcpServers = mcpState.initServers(),
         )
-        if (closed.get()) {
-            built.record.remove()
-            built.peerInbox?.close()
-            return built
-        }
-        built.record.write(busy = false)
-        hooks.opened(resolvedId, built.look.cwd, fresh = claude.resume == null)
+        if (!lifecycle.open(built, resolvedId, fresh = claude.resume == null)) return built
         if (claude.resume != null) pendingHandoff = LiveHandoff().of(built.transcript.file, res.resumed)
         return built
     }
@@ -344,3 +334,71 @@ private const val STOP_CANCELLED = "cancelled"
 private const val STOP_MAX_TURN_REQUESTS = "max_turn_requests"
 private const val AGY_ENDED = "agy has ended"
 private const val PEER_SESSION_CLOSED = "session closed"
+
+/** Coordinates session startup (`hooks.opened`), teardown (`hooks.ended`), and record/inbox cleanup in one atomic
+ *  state machine so shutdown can never emit `SESSION_END` without `SESSION_START`, emit `END` before `START`, or fire
+ *  `END` twice (normal teardown + JVM shutdown hook). */
+private class SessionLifecycleGate(private val hooks: AcpSessionHooks) {
+    private sealed class State {
+        data object Pending : State()
+        data class Opening(val parts: DesktopParts) : State()
+        data class Opened(val parts: DesktopParts) : State()
+        data class Closing(val parts: DesktopParts) : State()
+        data object Closed : State()
+    }
+
+    private val state = AtomicReference<State>(State.Pending)
+
+    fun open(built: DesktopParts, resolvedId: String, fresh: Boolean): Boolean {
+        val opening = State.Opening(built)
+        if (!state.compareAndSet(State.Pending, opening)) {
+            cleanup(built)
+            return false
+        }
+        var started = false
+        var stayedOpen = false
+        try {
+            built.record.write(busy = false)
+            if (state.get() === opening) {
+                hooks.opened(resolvedId, built.look.cwd, fresh = fresh)
+                started = true
+            }
+        } finally {
+            if (!started) {
+                state.set(State.Closed)
+                cleanup(built)
+            } else if (state.compareAndSet(opening, State.Opened(built))) {
+                stayedOpen = true
+            } else {
+                state.set(State.Closed)
+                teardown(built)
+            }
+        }
+        return stayedOpen
+    }
+
+    fun close() {
+        var finished = false
+        while (!finished) {
+            when (val current = state.get()) {
+                State.Pending -> finished = state.compareAndSet(current, State.Closed)
+                is State.Opening -> finished = state.compareAndSet(current, State.Closing(current.parts))
+                is State.Opened -> if (state.compareAndSet(current, State.Closed)) {
+                    teardown(current.parts)
+                    finished = true
+                }
+                is State.Closing, State.Closed -> finished = true
+            }
+        }
+    }
+
+    private fun cleanup(current: DesktopParts) {
+        current.record.remove()
+        current.peerInbox?.close()
+    }
+
+    private fun teardown(current: DesktopParts) {
+        cleanup(current)
+        hooks.ended(current.frames.sessionId)
+    }
+}

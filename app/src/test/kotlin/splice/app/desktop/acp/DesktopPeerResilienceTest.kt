@@ -103,8 +103,15 @@ class DesktopPeerResilienceTest {
         val settingsDir = Files.createDirectories(tmp.resolve("settings-rcpt"))
         val configDir = home.resolve(".claude")
         val clock = WallClock { 1_795_300_000_000L }
+        val pid = ProcessHandle.current().pid()
+        val self = checkNotNull(PeerOwnerProcesses().capture(pid))
         val peerName = "agy-rcpt-peer"
-        val mailbox = PeerMailbox(PeerStore(settingsDir), stateDir, LogSink {}, clock)
+        val store = PeerStore(settingsDir)
+        val reg = runBlocking {
+            store.register(PeerRequest(peerName, tmp.toString(), listOf("*"), self, nativeInbox = true), emptySet())
+        }
+        assertTrue(reg is PeerRegistration.Registered)
+        val mailbox = PeerMailbox(store, stateDir, LogSink {}, clock)
         seedSentRecords(mailbox, peerName, listOf("m-ok", "m-bad", "m-spoof"))
         val factory = DesktopPeerSocketFactory(
             env = envOf(home, runtime),
@@ -115,7 +122,7 @@ class DesktopPeerResilienceTest {
         )
         runBlocking {
             withTimeout(10_000L) {
-                val inbox = checkNotNull(factory.open(configDir, ProcessHandle.current().pid(), "s-agy-1", this))
+                val inbox = checkNotNull(factory.open(configDir, pid, "s-agy-1", this))
                 try {
                     val socket = Path.of(checkNotNull(inbox.socketPath))
                     sendRaw(socket, receiptLine("m-ok", "delivered", null, "uds:/tmp/target.sock"))

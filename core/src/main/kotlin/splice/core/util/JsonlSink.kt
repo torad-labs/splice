@@ -8,6 +8,7 @@ import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
@@ -226,6 +227,7 @@ public object JsonlSink {
             StandardOpenOption.CREATE,
             StandardOpenOption.WRITE,
             StandardOpenOption.APPEND,
+            LinkOption.NOFOLLOW_LINKS,
         ).use { channel ->
             val buffer = ByteBuffer.wrap(bytes)
             while (buffer.hasRemaining()) channel.write(buffer)
@@ -234,7 +236,7 @@ public object JsonlSink {
     }
 
     private fun lastByte(file: Path): Byte =
-        FileChannel.open(file, StandardOpenOption.READ).use { ch ->
+        FileChannel.open(file, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use { ch ->
             val size = ch.size()
             if (size <= 0L) return@use NEWLINE_BYTE
             val buf = ByteBuffer.allocate(1)

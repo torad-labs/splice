@@ -30,7 +30,7 @@ internal class PeerCommand(
         val verb = args.firstOrNull().orEmpty()
         val rest = args.drop(1)
         val code = when (verb) {
-            "register", "list", "revoke", "rotate", "webhook" -> manage(verb, rest)
+            "register", "attach", "list", "revoke", "rotate", "webhook" -> manage(verb, rest)
             "send", "inbox", "status" -> asPeer(verb, rest)
             "codex" -> PeerCodexCommand(call, out, env, hooks).run(rest)
             "limit" -> PeerLimitCommand(call, out).run(rest)
@@ -42,7 +42,8 @@ internal class PeerCommand(
 
     /** The verbs that present the management key. */
     private fun manage(verb: String, rest: List<String>): Int? = when (verb) {
-        "register" -> PeerRegisterVerb(call, out, err).run(rest)
+        "register" -> PeerRegisterVerb(call, out, err, env).run(rest)
+        "attach" -> PeerAttachVerb(call, out, err, env, hooks).run(rest)
         "list" -> list(rest)
         "revoke" -> revoke(rest)
         "rotate" -> rotate(rest)

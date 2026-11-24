@@ -60,10 +60,12 @@ internal class AcpConnection(
     private val errors: File,
     scope: CoroutineScope,
     io: CoroutineDispatcher,
+    extraEnv: Map<String, String> = emptyMap(),
 ) : AutoCloseable {
     private val process: Process = ProcessBuilder(command)
         .directory(workDir.toFile())
         .redirectError(errors)
+        .apply { if (extraEnv.isNotEmpty()) environment().putAll(extraEnv) }
         .start()
     private val input: OutputStream = process.outputStream
     private val pending = ConcurrentHashMap<Long, CompletableDeferred<AcpAnswer>>()

@@ -2,13 +2,21 @@
 // what each line Desktop writes does on agy, and what each message agy writes shows in Desktop.
 package splice.provider.antigravity
 
+import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
+import splice.provider.antigravity.peer.DesktopPeerInbox
+import splice.provider.antigravity.peer.DesktopPeerMessage
+import splice.provider.antigravity.peer.DesktopPeerOutcome
 import splice.provider.antigravity.skills.LocalSkillCatalog
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Builds [DesktopParts] once the session id is known (either from Desktop's flags or agy's `session/new`). */
 internal fun interface PartsFactory {
@@ -23,6 +31,7 @@ internal data class DesktopParts(
     val record: ClaudeSessionRecord,
     val look: SessionLook,
     val localSkills: LocalSkillCatalog = LocalSkillCatalog(emptyList(), emptyList()),
+    val peerInbox: DesktopPeerInbox? = null,
 )
 
 /** Desktop session driven on agy via [coordinator] and [mcpState]; [clock] times turns. */
@@ -37,6 +46,9 @@ internal class DesktopSession(
     private val lists = DesktopLists()
     private val controls = DesktopControl(this, coordinator, mcpState, lists)
     private val prompts = HashSet<Long>()
+    private val closed = AtomicBoolean(false)
+
+    @Volatile
     private var parts: DesktopParts? = null
     private var turn: AgyTurn? = null
     private var questions: AgyQuestions? = null
@@ -50,6 +62,7 @@ internal class DesktopSession(
     private var window = AGY_WINDOW
     private var used = 0L
     private var pendingHandoff: String? = null
+    private var peersClosed = false
 
     private var agyCommands: List<AgyCommand> = emptyList()
 
@@ -67,9 +80,15 @@ internal class DesktopSession(
     /** agy's messages, or null while there is no agy to hear from. */
     val fromAgy get() = session?.incoming
 
-    /** Removes the session record file when the session ends. */
+    /** Authenticated peer UDS messages, or null while no inbox is open. */
+    val fromPeers: ReceiveChannel<DesktopPeerMessage>? get() = if (peersClosed) null else parts?.peerInbox?.incoming
+
+    /** Removes the session record file and closes the peer UDS inbox (key file + socket) when the session ends. */
     fun closeRecord() {
-        parts?.record?.remove()
+        closed.set(true)
+        val current = parts ?: return
+        current.record.remove()
+        current.peerInbox?.close()
     }
 
     /** One line Desktop wrote. */
@@ -144,7 +163,12 @@ internal class DesktopSession(
             skills = built.localSkills.skillNames,
             mcpServers = mcpState.initServers(),
         )
-        built.record.write(busy = false)
+        if (closed.get()) {
+            built.record.remove()
+            built.peerInbox?.close()
+        } else {
+            built.record.write(busy = false)
+        }
         if (claude.resume != null) pendingHandoff = LiveHandoff().of(built.transcript.file, res.resumed)
         return built
     }
@@ -167,24 +191,70 @@ internal class DesktopSession(
         }
     }
 
+    /** One cross-session peer message (or null once the inbox closed): replays into Desktop + transcript and steers
+     *  agy's prompt directly, bypassing [user] so slash-command hooks (e.g. `/login`) never intercept peer frames. */
+    suspend fun peerMessage(message: DesktopPeerMessage?) {
+        if (message == null) {
+            peersClosed = true
+            return
+        }
+        if (message.isExpired) return
+        try {
+            val outcome = Cancellables.runCatchingCancellable {
+                val p = if (switchingOut) null else ensureOpen(emptyList())
+                if (!message.claimForDelivery()) {
+                    null
+                } else {
+                    val uuid = UUID.randomUUID().toString()
+                    val content = JsonPrimitive(message.content)
+                    val delivered = p != null && session != null &&
+                        submitUser(p, message.userFrame(uuid, content), uuid, content, message)
+                    message.outcomeFor(delivered, switchingOut, unusable ?: AGY_ENDED)
+                }
+            }.getOrElse { failure ->
+                DesktopPeerOutcome.Dropped("delivery failed: ${SafeFailureText.render(failure)}")
+            }
+            outcome?.let(message.outcome::complete)
+        } finally {
+            message.abortIfUnsettled(PEER_SESSION_CLOSED)
+        }
+    }
+
     private suspend fun user(line: JsonObject) {
         val p = ensureOpen(emptyList())
         val uuid = JsonScalars.str(line, "uuid") ?: UUID.randomUUID().toString()
         val content = (line["message"] as? JsonObject)?.get("content") ?: JsonPrimitive("")
+        submitUser(p, line, uuid, content)
+    }
+
+    private fun submitUser(
+        p: DesktopParts,
+        line: JsonObject,
+        uuid: String,
+        content: JsonElement,
+        peer: DesktopPeerMessage? = null,
+    ): Boolean {
         p.out(p.frames.replay(line, uuid))
         p.transcript.user(uuid, content)
         if (prompts.isEmpty()) begin(p)
+        if (peer?.beginSubmit() == false) {
+            if (prompts.isEmpty()) p.record.write(busy = false)
+            return false
+        }
         val handoff = pendingHandoff
         pendingHandoff = null
         val prompt = session?.prompt(content, handoff)
-        if (prompt != null) {
+        return if (prompt != null) {
             prompts += prompt
-            return
+            true
+        } else {
+            if (prompts.isEmpty()) {
+                val reason = unusable ?: AGY_ENDED
+                turn?.say(reason)
+                finish(reason)
+            }
+            false
         }
-        if (prompts.isNotEmpty()) return
-        val reason = unusable ?: AGY_ENDED
-        turn?.say(reason)
-        finish(reason)
     }
 
     private fun begin(p: DesktopParts) {
@@ -250,3 +320,4 @@ internal class DesktopSession(
 private const val STOP_CANCELLED = "cancelled"
 private const val STOP_MAX_TURN_REQUESTS = "max_turn_requests"
 private const val AGY_ENDED = "agy has ended"
+private const val PEER_SESSION_CLOSED = "session closed"

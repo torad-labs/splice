@@ -98,7 +98,8 @@ internal class DeclineSentences(private val spoken: Spoken) {
             is Decline.Preflight -> preflight(why, head)
             is Decline.UnknownModel -> Said("$head does not serve ${spoken.model(why.model)}")
             is Decline.Untranslatable -> Said(untranslatable(why.what, head))
-            Decline.HeapBusy, Decline.ReadTimeout -> Said(busy(why), next = Next.Resend(SEND_AGAIN))
+            Decline.HeapBusy, Decline.ReadTimeout, is Decline.UpstreamsFull ->
+                Said(busy(why), next = Next.Resend(SEND_AGAIN))
             is Decline.BadBody, is Decline.Unfit, Decline.ForeignHost, Decline.BadLocalKey, is Decline.SpliceKeyAsLogin,
             Decline.LivenessProbe, Decline.NoSharedLogin, Decline.NotLaunched,
             -> local(why, facts)
@@ -106,8 +107,12 @@ internal class DeclineSentences(private val spoken: Spoken) {
         }
     }
 
-    /** The two refusals splice makes when it cannot take the request right now; the client sends it again. */
-    private fun busy(why: Decline): String = if (why == Decline.HeapBusy) {
+    /** The refusals splice makes when it cannot take the request right now; the client sends it again. A provider
+     *  whose servers each hold all server mode lets them (#791) names them and the cap. */
+    private fun busy(why: Decline): String = if (why is Decline.UpstreamsFull) {
+        "Every upstream of ${why.provider} already holds ${spoken.count(why.each.toLong(), "turn")}, the most " +
+            "each takes at once (inflight_per_upstream = ${why.each})"
+    } else if (why == Decline.HeapBusy) {
         "splice is short of memory right now"
     } else {
         "This request took too long to reach splice"
@@ -124,7 +129,8 @@ internal class DeclineSentences(private val spoken: Spoken) {
         is Decline.ModeRefused ->
             Said("mode ${why.name} refused this turn: ${why.reason.trimEnd().removeSuffix(".")}")
         is Decline.TooLarge, is Decline.Budget, is Decline.Preflight, is Decline.UnknownModel,
-        is Decline.Untranslatable, Decline.HeapBusy, Decline.ReadTimeout, is Decline.BadBody, is Decline.Unfit,
+        is Decline.Untranslatable, Decline.HeapBusy, is Decline.UpstreamsFull, Decline.ReadTimeout, is Decline.BadBody,
+        is Decline.Unfit,
         Decline.ForeignHost, Decline.BadLocalKey, is Decline.SpliceKeyAsLogin, Decline.LivenessProbe,
         Decline.NoSharedLogin, Decline.NotLaunched,
         -> said(why, facts)
@@ -155,7 +161,8 @@ internal class DeclineSentences(private val spoken: Spoken) {
                 "so the turn was not sent",
         )
         is Decline.TooLarge, is Decline.Budget, is Decline.Preflight, is Decline.UnknownModel,
-        is Decline.Untranslatable, Decline.HeapBusy, Decline.ReadTimeout, is Decline.CapabilityRefused,
+        is Decline.Untranslatable, Decline.HeapBusy, is Decline.UpstreamsFull, Decline.ReadTimeout,
+        is Decline.CapabilityRefused,
         is Decline.CapabilityFailed, is Decline.ModeRefused,
         -> said(why, facts)
     }

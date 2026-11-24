@@ -13,14 +13,17 @@ import kotlin.time.Duration
 
 /** One request for a server that is no head of this machine, whichever server takes it: its [body], the headers it
  *  carries, what reads the events of a streamed answer on their way back ([edit]; null: byte for byte), what reads an
- *  answer that is no stream ([whole]; null: it goes back as it is), and how often its client is sent a [keepalive]
- *  while a streamed answer is silent (null: never, and the client waits on the server). */
+ *  answer that is no stream ([whole]; null: it goes back as it is), how often its client is sent a [keepalive]
+ *  while a streamed answer is silent (null: never, and the client waits on the server), and how long a streamed
+ *  answer may fall silent after its first word before it is ended with an error event ([streamIdleMs]; 0: however
+ *  long). */
 public data class OutwardAsk(
     val body: ByteArray,
     val headers: OutwardHeaders,
     val edit: StreamEdit? = null,
     val whole: WholeEdit? = null,
     val keepalive: Duration? = null,
+    val streamIdleMs: Long = 0L,
 )
 
 /** What a request to a server that is no head of this machine carries: of the caller's own headers the ones named

@@ -77,7 +77,10 @@ public class OpenAiChatProvider(
      *  that is healthy (F11), else its person's preferred one while that is healthy, else the healthy one with the least
      *  in flight (server mode, F4). Null for a provider that is one server. */
     override fun route(meta: TurnMeta): VendorRoute? =
-        pool?.let { PoolRoute(it, meta.route.relay.preferredUpstream, meta.scope.sessionId, CHAT_PATH) }
+        pool?.let {
+            val relay = meta.route.relay
+            PoolRoute(it, relay.preferredUpstream, meta.scope.sessionId, CHAT_PATH, relay.servedTurn)
+        }
 
     /** An unknown vendor error code before any content is sent once more (retry totality); nothing else re-anchors. */
     override fun reanchorPolicy(meta: TurnMeta): ReanchorPolicy = ChatResendOnce

@@ -52,6 +52,11 @@ internal class DaemonServer(
     /** The pools of the providers that list upstreams (F4), as the heads' providers hold them. */
     private val pools: UpstreamPools,
 ) : ServerModeSource, HeadUpstreams {
+    init {
+        // The pools hold server mode's per-upstream cap from their first turn, whoever sends it (#791).
+        pools.capEach(topology.server.limits.inflightPerUpstream)
+    }
+
     @Volatile
     private var running: ServerMode? = null
 

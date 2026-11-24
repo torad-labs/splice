@@ -6,7 +6,6 @@
 // on MASKED text (strings and comments blanked) so quoted content cannot fake or hide structure.
 package splice.topology
 
-import splice.core.util.TopologySlotsFailure
 import splice.core.util.TopologyStructureFailure
 
 internal object TomlStructurePreflight {
@@ -15,9 +14,11 @@ internal object TomlStructurePreflight {
     // text/comments first; '?' keeps a real quoted array element visible to this pre-decode guard.
     private val MODEL_ARRAY_ASSIGNMENT = Regex("(?<![A-Za-z0-9_-])models[ \\t]*=[ \\t]*\\[")
 
-    // DR-44b twin: LINE-START assignments only — an inline-table `x = { models = [...] }` or a
-    // dotted `provider.models` is a DIFFERENT key and must not count toward the duplicate scan.
-    private val MODELS_LINE_ASSIGNMENT = Regex("(?m)^[ \\t]*models[ \\t]*=")
+    // LINE-START assignments only, read on the masked text: a key of bare characters or a quoted key (which the
+    // masker leaves as '?' and blanks, so an '=' inside it never ends the key), dotted parts allowed. An inline-table
+    // `x = { models = [...] }` is a key of its own table and never counts toward the duplicate scan.
+    private val KEY_ASSIGNMENT =
+        Regex("(?m)^[ \\t]*((?:[A-Za-z0-9_-]+|\\?[ ]*)(?:[ \\t]*\\.[ \\t]*(?:[A-Za-z0-9_-]+|\\?[ ]*))*)[ \\t]*=")
     private val TABLE_HEADER = Regex("(?m)^[ \\t]*\\[")
 
     fun check(text: String) {
@@ -28,13 +29,16 @@ internal object TomlStructurePreflight {
      *  table and line it concerns and never a value, so a refusal can list them all at once. */
     fun failures(text: String): List<IllegalArgumentException> {
         val structure = TomlStructureMasker(text).mask()
-        return inlineModelArrayFailures(structure) + duplicateKeyFailures(structure) + duplicateSlotFailures(structure)
+        return inlineModelArrayFailures(structure) + duplicateKeyFailures(text, structure) +
+            inlineTableFailures(text, structure)
     }
 
     /** DR-44b: TOML forbids a duplicated key, but ktoml accepts it silently (proven by the red
      *  arm: a second `models = [...]` line parsed with nothing thrown) — so a stale roster line
-     *  kept retired models exposed in the picker with nothing red anywhere. Counted per table
-     *  section over the masked text, so strings and comments cannot fake or hide a line.
+     *  kept retired models exposed in the picker with nothing red anywhere, and a second
+     *  `"/v1" = ...` under `[server.aliases]` replaced the first. Every key is counted per table
+     *  section: its place is found on the masked text, so strings and comments cannot fake or hide
+     *  a line, and its spelling is read from [text] at the same offsets, one layer of quotes off.
      *
      *  DR-44 redo (codex bypass): the per-section count alone let a REOPENED table smuggle the
      *  same union — `[heads.claude-grok]` twice, one models line each, is one line per section
@@ -43,7 +47,7 @@ internal object TomlStructurePreflight {
      *  quoted (`[heads."claude-grok"]`) and whitespace (`[ heads . claude-grok ]`) variants
      *  already fail loudly inside ktoml before any union (probed), and array-of-tables
      *  (`[[providers.xai.models]]`) legitimately repeats and stays out of the check. */
-    private fun duplicateKeyFailures(structure: String): List<IllegalArgumentException> {
+    private fun duplicateKeyFailures(text: String, structure: String): List<IllegalArgumentException> {
         val found = mutableListOf<IllegalArgumentException>()
         val bounds = TABLE_HEADER.findAll(structure).map { it.range.first }.toList() + structure.length
         val seenHeaders = HashSet<String>()
@@ -69,11 +73,15 @@ internal object TomlStructurePreflight {
                     )
                 }
             }
-            if (MODELS_LINE_ASSIGNMENT.findAll(section).count() > 1) {
+            val written = KEY_ASSIGNMENT.findAll(section).map { assignment ->
+                val key = requireNotNull(assignment.groups[1]).range
+                unquoted(text.substring(sectionStart + key.first, sectionStart + assignment.range.last).trim())
+            }
+            for (key in written.groupingBy { it }.eachCount().filterValues { it > 1 }.keys) {
                 found += TopologyStructureFailure(
-                    "duplicate models key in ${tableName(header)} (line ${lineOf(structure, sectionStart)}): " +
-                        "TOML forbids it " +
-                        "and ktoml silently merges; keep exactly one models = [...] line per head",
+                    "duplicate key $key in ${tableName(header)} (line ${lineOf(structure, sectionStart)}): " +
+                        "TOML forbids writing a key twice in one table and ktoml silently keeps or merges them; " +
+                        "keep exactly one $key line",
                 )
             }
             sectionStart = end
@@ -91,39 +99,54 @@ internal object TomlStructurePreflight {
         return if (close < 0) "the preamble" else header.substring(0, minOf(header.length, close + brackets))
     }
 
+    /** [key] with one layer of TOML quotes off, so `"/v1"` and `'/v1'` count as the one key they are. */
+    private fun unquoted(key: String): String {
+        val quoted = key.length > 1 && key.first() in "\"'" && key.last() == key.first()
+        return if (quoted) key.substring(1, key.length - 1) else key
+    }
+
     /** The 1-based line of [offset] in the masked text, which keeps every newline of the file. */
     private fun lineOf(structure: String, offset: Int): Int = structure.take(offset).count { it == '\n' } + 1
 
-    /** ktoml collapses repeated map keys before HeadConfig can see them. Read only masked keys. */
-    private fun duplicateSlotFailures(structure: String): List<IllegalArgumentException> {
+    /** ktoml keeps the last of a key written twice inside one inline table (`aliases = { "/v1" = "a", "/v1" = "b" }`,
+     *  a `model_slots` map) as it does in a table section. Each `{ ... }` is walked on the masked text, so a brace,
+     *  comma or '=' inside a string or comment is none, and its own keys, one per comma-separated pair with nested
+     *  tables and arrays apart, are read from [text] at the same offsets, one layer of quotes off. */
+    private fun inlineTableFailures(text: String, structure: String): List<IllegalArgumentException> {
         val found = mutableListOf<IllegalArgumentException>()
-        val map = Regex("(?<![A-Za-z0-9_-])model_slots[ \\t]*=[ \\t]*\\{([^}]*)}")
-        val keys = Regex("(?m)(?:^|[,\\n])[ \\t]*([A-Za-z0-9_-]+)[ \\t]*=")
-        val assignments = Regex("(?m)^[ \\t]*model_slots[ \\t]*=")
-        val bounds = TABLE_HEADER.findAll(structure).map { it.range.first }.toList() + structure.length
-        var start = 0
-        for (end in bounds) {
-            val section = structure.substring(start, end)
-            val header = section.lineSequence().firstOrNull().orEmpty().trim()
-            val nested = Regex("\\[heads\\.[^.]+\\.model_slots]").matches(header)
-            val bodies = if (nested) {
-                listOf(section.substringAfter('\n'))
-            } else {
-                map.findAll(section).map { it.groupValues[1] }.toList()
+        val open = ArrayDeque<InlineLevel>()
+        structure.forEachIndexed { at, char ->
+            val table = open.lastOrNull()?.takeIf { it.table }
+            when (char) {
+                '{', '[' -> open.addLast(InlineLevel(at, table = char == '{'))
+                '}', ']' -> open.removeLastOrNull()?.let { closed -> found += repeatedIn(closed, structure) }
+                ',' -> table?.pairStart = at + 1
+                '=' -> table?.takeIf { it.pairStart >= 0 }?.let { level ->
+                    level.keys += unquoted(text.substring(level.pairStart, at).trim())
+                    level.pairStart = -1
+                }
             }
-            val repeated = assignments.findAll(section).count() > 1 || bodies.any { body ->
-                val names = keys.findAll(body).map { it.groupValues[1].lowercase() }.toList()
-                names.distinct().size != names.size
-            }
-            if (repeated) {
-                found += TopologyStructureFailure(
-                    "model_slots in ${tableName(header)} (line ${lineOf(structure, start)}) " +
-                        "${TopologySlotsFailure.Problem.DUPLICATE.detail}",
-                )
-            }
-            start = end
         }
         return found
+    }
+
+    /** A finding for each key the inline table [closed] names more than once. */
+    private fun repeatedIn(closed: InlineLevel, structure: String): List<IllegalArgumentException> =
+        closed.repeated().map { key ->
+            TopologyStructureFailure(
+                "duplicate key $key in an inline table (line ${lineOf(structure, closed.open)}): TOML forbids " +
+                    "writing a key twice in one table and ktoml silently keeps the last; keep exactly one $key",
+            )
+        }
+
+    /** One open `{` (a [table]) or `[` at offset [open]: the keys a table has named so far, and where its pair being
+     *  read began, or -1 once that pair's '=' is past. */
+    private class InlineLevel(val open: Int, val table: Boolean) {
+        val keys = mutableListOf<String>()
+        var pairStart = open + 1
+
+        /** Every key this table named more than once. */
+        fun repeated(): Set<String> = keys.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
     }
 
     private fun inlineModelArrayFailures(structure: String): List<IllegalArgumentException> =

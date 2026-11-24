@@ -16,6 +16,15 @@ import splice.core.util.WallClock
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
+
+/** Peer inbox facts advertised in `<config>/sessions/<pid>.json` when the in-process UDS inbox is open. */
+internal data class SessionPeerFacts(
+    val messagingSocketPath: String? = null,
+    val pidDomain: String? = null,
+    val procStart: String? = null,
+    val peerProtocol: Int? = null,
+)
 
 /** What the record says of the session and its process. */
 internal data class SessionFacts(
@@ -25,6 +34,7 @@ internal data class SessionFacts(
     val version: String,
     val entrypoint: String,
     val hostSessionId: String?,
+    val peer: SessionPeerFacts = SessionPeerFacts(),
 )
 
 /** The record of [facts] under Claude's [config] folder; what could not be written goes to [log]. */
@@ -36,35 +46,48 @@ internal class ClaudeSessionRecord(
 ) {
     val file: Path = config.resolve(RECORDS_FOLDER).resolve("${facts.pid}.json")
     private val startedAt = clock()
-    private val procStart: String? = procStart()
+    private val procStart: String? = facts.peer.procStart ?: procStart()
+    private val closed = AtomicBoolean(false)
 
-    /** Writes the record, saying whether a turn is [busy]. */
+    /** Writes the record, saying whether a turn is [busy]; ignored once [remove] has closed the record. Re-checks
+     *  [closed] after the atomic write so a concurrent shutdown hook can never leave a freshly written file behind. */
     fun write(busy: Boolean) {
-        val now = clock()
-        val record = buildJsonObject {
-            put("pid", facts.pid)
-            put("sessionId", facts.sessionId)
-            put("cwd", facts.cwd)
-            put("startedAt", startedAt)
-            if (procStart != null) put("procStart", procStart)
-            put("version", facts.version)
-            put("kind", "interactive")
-            put("entrypoint", facts.entrypoint)
-            if (facts.hostSessionId != null) put("hostSessionId", facts.hostSessionId)
-            put("status", if (busy) "busy" else "idle")
-            put("updatedAt", now)
-            put("statusUpdatedAt", now)
-        }
+        if (closed.get()) return
         try {
             // CREDENTIAL-WRITE-EXEMPT[2026-11-21]: this process's session record, written whole as Claude Code does
-            SecureFile.writeAtomic0600(file, JsonWire.string(record))
+            SecureFile.writeAtomic0600(file, JsonWire.string(buildRecord(busy)))
         } catch (unwritten: IOException) {
             log("[antigravity] $file was not written (${SafeFailureText.render(unwritten)})\n")
         }
+        if (closed.get()) deleteFile()
     }
 
-    /** Removes the record, as Claude Code does when its session ends. */
+    private fun buildRecord(busy: Boolean) = buildJsonObject {
+        val now = clock()
+        put("pid", facts.pid)
+        put("sessionId", facts.sessionId)
+        put("cwd", facts.cwd)
+        put("startedAt", startedAt)
+        procStart?.let { put("procStart", it) }
+        facts.peer.pidDomain?.let { put("pidDomain", it) }
+        put("version", facts.version)
+        facts.peer.peerProtocol?.let { put("peerProtocol", it) }
+        facts.peer.messagingSocketPath?.let { put("messagingSocketPath", it) }
+        put("kind", "interactive")
+        put("entrypoint", facts.entrypoint)
+        facts.hostSessionId?.let { put("hostSessionId", it) }
+        put("status", if (busy) "busy" else "idle")
+        put("updatedAt", now)
+        put("statusUpdatedAt", now)
+    }
+
+    /** Removes the record, as Claude Code does when its session ends, and prevents any later [write] from keeping it. */
     fun remove() {
+        closed.set(true)
+        deleteFile()
+    }
+
+    private fun deleteFile() {
         try {
             Files.deleteIfExists(file)
         } catch (kept: IOException) {

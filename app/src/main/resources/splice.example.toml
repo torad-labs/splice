@@ -87,6 +87,18 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # [remote.claude]
 # url = "http://devbox.lan:3097/door"
 
+# ── server mode: the minimum client and path aliases (docs/specs/server-mode.md, F9 and #791) ──
+# Under a [server] table (README, "Server mode"), a team's own launcher can report its version, and a client fixed on
+# a plain base path can reach a command through an alias.
+# [server.client]
+# minimum = "0.10.0"
+# version_header = "x-team-launcher"   # read the version here instead of x-splice-client ("team-launcher/0.10.2" reads as 0.10.2)
+# outdated_status = 426                 # 200 (default) tells an older laptop in the conversation; 400 or 426 refuses its turn
+# outdated_message = "Run team-update: {version} is older than {minimum}."
+# checkin = true                        # POST /server/client/checkin {"version": "0.10.2"}, kept per person in memory
+# [server.aliases]
+# "/v1" = "claude-team"                 # /v1/chat/completions, /v1/models, /v1/messages are claude-team's; or = "door"
+
 # ── compaction instructions: your text after Claude Code's own summarizer prompt ──
 # Most specific scope wins and REPLACES the others (project+model > project > model > global);
 # absent inherits; instructions = "" opts out. Text inline or file = "~/path". Compaction requests
@@ -846,6 +858,27 @@ discovery_prefix = "claude--"
 # ~/.claude: one login, and splice writes nothing there; it hands Claude Code this head's settings on the
 # command line.
 
+# ── SERVER MODE: one splice as a team's gateway (docs/specs/server-mode.md) ──────
+# Commented out: a [server] table makes this daemon answer key holders on the address it names. The keys below are
+# the ones for a small fixed pool of model servers; README "Serve a team from one machine" has the rest.
+# [server]
+# listen = "0.0.0.0:3443"
+# commands = ["claude-team"]
+# keepalive_seconds = 10       # SSE keepalive through a long prefill; 0 sends none
+# stream_idle_seconds = 0      # end a streamed turn whose answer falls silent this long after its first word, with
+#                              # an error event Claude Code retries; 0 (the default) waits however long, since a model
+#                              # may think in silence
+# drain_seconds = 0            # at stop, refuse new turns (503 + Retry-After, /health 503 "draining") and give the
+#                              # ones in flight this long to finish; 0 gives them the listener's one second; at most 45
+# [server.limits]
+# inflight_per_person = 3      # 0, or no line, is no cap
+# inflight_total = 0           # the whole server's turns in flight at once, everyone's together
+# inflight_per_upstream = 0    # each server of a provider with [[providers.<p>.upstreams]]; full when every
+#                              # healthy one holds this many
+# busy_status = 429            # what a turn past inflight_total or inflight_per_upstream gets: 429 or 503
+# busy_retry_after = 5         # the seconds its Retry-After names
+# busy_message = ""            # said in place of splice's own sentence; blank says splice's
+
 # ── KNOB REFERENCE: every key the config layers accept ──────────────────────────
 # Set a serving knob in `[defaults]` (all routes), or in `[providers.<key>.overrides]` for its provider.
 # Precedence, lowest to highest: built-in defaults, `[defaults]`, state config.json, env, a runtime PATCH,
@@ -1093,6 +1126,10 @@ discovery_prefix = "claude--"
 #   SPLICE_PEER_KEY_FILE    the peer key file `splice peer send|inbox|status` presents, in place of
 #                           <settings dir>/peers/<--as>/peer.key; a path, never the key itself, so the
 #                           key stays out of argv and the environment's own dumps
+#   SPLICE_PEER_NAME        the peer name `splice peer send|inbox|status` defaults to when `--as` and
+#                           SPLICE_PEER_KEY_FILE are unset; exported by `splice desktop acp` and `splice peer attach --env`
+#   SPLICE_PEER_HARNESS_PROGRAMS  comma-separated extra harness executable names recognized as peer owners
+#                           by `splice peer register` and `splice peer attach` alongside `claude`, `codex` and `agy`
 #   CODEX_THREAD_ID / CODEX_SESSION_ID  optional. Codex does not set either in a hook's environment (codex-cli 0.159):
 #                           the hook's stdin is one JSON object, and `splice peer codex attach|detach` reads its
 #                           session_id as the thread and its cwd, when present, as the working directory. An

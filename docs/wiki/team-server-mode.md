@@ -44,6 +44,7 @@ keepalive_seconds = 10                       # keeps a streamed turn's connectio
 inflight_per_person = 3                      # 0, or no line, is no cap
 rpm_per_person = 30
 tpm_per_person = 200000                       # tokens of a person's turns that ended in the last minute
+inflight_total = 8                           # the whole server's turns in flight at once
 
 [server.client]
 minimum = "0.6.0"                            # an older splice is told, in the conversation, to run `splice upgrade`
@@ -100,9 +101,32 @@ ANTHROPIC_BASE_URL=https://gateway.team.example:3443/claude-team ANTHROPIC_API_K
 | A revoke | Holds from the key's next request |
 | Past a cap | 429 with `Retry-After` naming the cap; everyone else is still served |
 | A command the person may not use | 403 naming it. Someone neither a team nor their own setting names may use every command |
-| A splice older than `[server.client] minimum` | Answered in the conversation with the version it runs, the minimum and `splice upgrade`; reaches no model |
+| A splice older than `[server.client] minimum` | Answered in the conversation with the version it runs, the minimum and `splice upgrade`; reaches no model. A chat completion and a turn at the door meet the same minimum |
 
 The server keeps each key only as its SHA-256, bound to the person's email (see [Disk and privacy](disk-and-privacy.md#credentials-and-keys)). An admin's key also manages keys over the listener at `/server/api/keys`.
+
+A team whose own launcher wraps Claude Code can point the minimum at that launcher instead:
+
+```toml
+[server.client]
+minimum = "0.10.0"
+version_header = "x-team-launcher"     # read the version from this header ("team-launcher/0.10.2" reads as 0.10.2); x-splice-client when left out
+outdated_status = 426                   # 200 (the default) tells it in the conversation; 400 or 426 (Upgrade Required) refuses the turn
+outdated_message = "Run team-update: {version} is older than {minimum}."   # splice's own words when left out
+checkin = true                          # take POST /server/client/checkin {"version": "0.10.2"} under a person's key
+```
+
+With `checkin`, a launcher that sends no version on each turn reports it once at `POST /server/client/checkin`; the server keeps each person's latest report in memory (a restart forgets it) and judges their turns by it while a turn names no version itself. The answer says the version kept, the minimum and whether it is served. A request that names no version and has no check-in is served, as a script's always was.
+
+A client that cannot change its base path, such as an OpenAI tool fixed on `/v1`, reaches a command through a path alias:
+
+```toml
+[server.aliases]
+"/v1" = "claude-team"   # /v1/chat/completions, /v1/models, /v1/messages and /v1/messages/count_tokens are claude-team's
+# "/v1" = "door"        # or the team's door, /door/v1/...
+```
+
+The path is read as the one it stands for before anything judges it, so the key, the caps, the allowlist and the minimum client hold at `/v1/...` exactly as at `/claude-team/v1/...`. An alias is one path segment after a `/`, names a command `[server] commands` lists or `door`, and cannot be `/server`, `/health`, `/door` or a served command's own name; boot refuses any other.
 
 A person is a lowercased email. Their team comes from `[server.teams] by_domain` unless `splice server person set <email> --team <team>` sets one. `person set` with an empty `--upstream ""` takes the upstream preference back.
 
@@ -279,6 +303,14 @@ url = "http://10.0.0.22:8080/v1"
 - With none up, a turn is refused within seconds in words that name them: a 503 once a health check or an earlier turn has found them down, and an overloaded error from the turn that finds them down itself.
 - `GET /api/server/upstreams` on the control plane lists each server's provider, name, address, health and turns in flight.
 
+### Pool limits, draining and stalled streams
+
+A small fixed pool of model servers takes only so many turns at once, whoever sends them. `[server.limits] inflight_total` caps the whole server's turns in flight, and `inflight_per_upstream` caps each server of a provider that lists `[[providers.<p>.upstreams]]`: a turn on such a provider is refused while every healthy server holds that many. A turn past either is refused at once, never queued, with `busy_status` (429, the default, which Claude Code and the OpenAI SDKs back off and retry on, or 503), `Retry-After: busy_retry_after` (5 seconds when left out) and `busy_message` or splice's own sentence naming the cap; it holds no slot of its person's and spends none of their turns a minute. With `inflight_per_upstream` a session's own server, or a person's preferred one, that is full hands the turn to a healthy server with room. A client that hangs up gives its place back at once, as it does its person's.
+
+`[server] drain_seconds` makes a stop gentle. From the moment the daemon starts to stop, every request a key makes, turns on every route included, is a 503 with `Retry-After`, `GET /health` answers 503 `{"status":"draining"}` so a load balancer sends the server no more, and the turns in flight get up to that many seconds (45 at most) to finish before the listener closes. Without it, or at 0, the listener gives them its one second, as before.
+
+`[server] stream_idle_seconds` ends a streamed answer whose model server goes silent partway through and stays silent: once that many seconds pass after the answer's last word, the model server is hung up on and the stream ends with an error event, which Claude Code retries, never with a quiet end. It holds on the team's door too. The wait for the first word is a prefill and is never timed, and a keepalive, a `ping`, splice's own wait notice or an OpenAI chunk that only names the role is no word. It is off by default, at 0, because a model may think in silence: set it above the longest silence your models keep mid-answer.
+
 ### Keepalive through a long prefill
 
 A model server prefilling a long prompt can say nothing for minutes, and a proxy in front of the server closes a connection that carries nothing for that long.
@@ -378,7 +410,7 @@ The relay is new in 0.7.0: a 0.6.4 server had no `[server.telemetry]` table. On 
 - Prompts are never logged: splice sets no `OTEL_LOG_USER_PROMPTS` and clears one the shell sets, along with `OTEL_EXPORTER_OTLP_HEADERS` and any per-signal OTLP endpoint, protocol or headers, which would send the key elsewhere.
 - The server takes JSON or protobuf, gzipped or not, on `POST /server/otlp/v1/{logs,metrics,traces}`; stamps the person, email and team on every resource over whatever the client claimed (a person on no team gets no team attribute); keeps everything else; and posts it to `forward_to` under the same signal's path in the same encoding, without the person's key.
 - A collector that fails or can't be reached is a 502, 503 or 504, which Claude Code's exporter retries.
-- Where a command's organisation-managed settings (`remote-settings.json` in its config folder) set telemetry of their own, splice adds none.
+- Where the organisation's managed settings set telemetry of their own, splice adds none: the machine's `managed-settings.json` (`/etc/claude-code` on Linux, `/Library/Application Support/ClaudeCode` on macOS, `C:\Program Files\ClaudeCode` on Windows), each `*.json` in the `managed-settings.d` folder beside it, and the `remote-settings.json` in the command's config folder. A file that is malformed or can't be read sets nothing, as Claude Code reads it.
 - The relay is followed at `splice remote add` and `refresh`, and each says in one line where the commands' telemetry goes when it starts or changes. A server that stops relaying stops getting telemetry from the next launch after a refresh.
 - Behind a proxy that speaks TLS, list it in `trusted_proxies` so its `X-Forwarded-Proto` and `X-Forwarded-Host` name the relay at the address laptops reach.
 

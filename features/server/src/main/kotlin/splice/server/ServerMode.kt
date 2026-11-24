@@ -14,6 +14,7 @@ import splice.core.util.LogSink
 import splice.server.audit.ServerAudit
 import splice.server.backup.BackupRun
 import splice.server.backup.ServerBackupStore
+import splice.server.load.ServerLoad
 import splice.server.metrics.MetricPeople
 import splice.server.metrics.ServerMetrics
 import splice.share.SharedHead
@@ -60,7 +61,6 @@ public class ServerMode(
 
     private val keys = ServerKeys(folder.resolve(KEYS_FILE), io, clock, keyPrefix = server.keyPrefix)
     private val people = ServerPeople(folder.resolve(PEOPLE_FILE), io)
-    private val limits = PersonLimits(server.limits, people, server.teams, clock)
 
     /** Every administrative action taken on this server (F16), persisted under `<state>/server/audit.jsonl`. */
     public val audit: ServerAudit = ServerAudit(folder.resolve(AUDIT_FILE), io, clock)
@@ -70,6 +70,10 @@ public class ServerMode(
 
     /** The upstreams as they read now, as the control plane lists them. */
     public val upstreamApi: UpstreamApi = UpstreamApi(upstreams)
+
+    // Each person's caps, and the server's own beside them with its drain at stop (#791).
+    private val limits =
+        PersonLimits(server.limits, people, server.teams, clock, ServerLoad(server.limits, upstreamApi))
 
     /** Each person's settings, as the CLI and the control plane set them. */
     public val personApi: PersonApi = PersonApi(people, log, upstreamApi, server.commands, audit)

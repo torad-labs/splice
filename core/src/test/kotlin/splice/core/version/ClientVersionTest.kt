@@ -32,6 +32,16 @@ class ClientVersionTest {
         assertEquals(parser.parse("2.1.0"), parser.parse("2.1.0.0"))
     }
 
+    // #791: a team server reads a version from whatever a key holder sends, so only a bounded one is a version.
+    @Test
+    fun `a version too long, with too large a number or too many parts is none`() {
+        assertEquals("999999999999999999.0", parser.parse("999999999999999999.0")?.wire)
+        assertNull(parser.parse("1.${"9".repeat(19)}"))
+        assertNull(parser.parse(List(17) { "1" }.joinToString(".")))
+        assertEquals(16, parser.parse(List(16) { "1" }.joinToString("."))?.wire?.split('.')?.size)
+        assertNull(parser.parse("1." + "0".repeat(200)))
+    }
+
     @Test
     fun `equal older malformed and sessionless observations stay silent`() {
         val versions = ClientVersionTracker(testedVersion = "2.1.257")

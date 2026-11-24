@@ -361,6 +361,9 @@ instructions = "Keep failing test names and their error messages."
 | `admins` | string array | empty | Admin email identities. |
 | `admin_cidrs` | string array | empty (unrestricted) | Address/CIDR restriction on admin privilege. |
 | `keepalive_seconds` | integer | 0 | Server streamed-turn SSE keepalive interval; 0 sends none. |
+| `drain_seconds` | integer | 0 | At stop, refuse keyed requests with 503, answer `/health` `draining`, and give turns in flight up to this many seconds (45 at most). |
+| `stream_idle_seconds` | integer | 0 | End a streamed answer silent this long after its last word with an error event; 0 never times it. |
+| `aliases` | map of strings | empty | `[server.aliases]`: a one-segment path (`"/v1"`) read as a served command or `door`. |
 | `key_prefix` | string | `spk_` | Prefix for newly minted keys only. |
 | `metrics_prefix` | string | `splice_server_` | Literal prefix of all server Prometheus series. |
 | `limits`, `reference`, `teams`, `export`, `budgets`, `client`, `signin`, `telemetry`, `forward_auth`, `backup` | table | as below | Server controls. |
@@ -371,11 +374,17 @@ instructions = "Keep failing test names and their error messages."
 | `[server.limits]` | `inflight_per_person` | integer / 0 | Concurrent turns per person. |
 | `[server.limits]` | `rpm_per_person` | integer / 0 | New turns per minute per person. |
 | `[server.limits]` | `tpm_per_person` | integer / 0 | Last minute's completed input + output tokens after which the next turn waits. |
+| `[server.limits]` | `inflight_total` | integer / 0 | Whole server's turns in flight at once. |
+| `[server.limits]` | `inflight_per_upstream` | integer / 0 | Turns in flight per server of a pooled provider. |
+| `[server.limits]` | `busy_status`, `busy_retry_after`, `busy_message` | 429 or 503 / 429; seconds / 5; string / unset | The answer to a turn past either cap. |
 | `[server.reference]` | `input_usd_per_mtok`, `cached_usd_per_mtok`, `output_usd_per_mtok` | numbers / unset each | Reference price per million tokens, for comparison in reports. |
 | `[server.teams]` | `by_domain` | map of strings / empty | Quoted email domain to team assignment, used if no explicit team. |
 | `[server.budgets]` | `person_daily_usd` | number / unset | Default daily USD budget per person, unless individually set. |
 | `[server.budgets]` | `action` | string / `block` | Refuse next turn on budget or `warn` and serve. |
 | `[server.client]` | `minimum` | string / unset | Oldest permitted client splice version; absent accepts any. |
+| `[server.client]` | `version_header` | string / `x-splice-client` | Header the client version is read from. |
+| `[server.client]` | `outdated_status`, `outdated_message` | 200, 400 or 426 / 200; string / unset | How an outdated client is answered. |
+| `[server.client]` | `checkin` | boolean / false | Accept `POST /server/client/checkin` version reports. |
 | `[server.client]` | `download_url` | string / unset | HTTP(S) base URL advertised to install/update clients. |
 | `[server.signin]` | `issuer` | string / `""` | OIDC issuer URL (must be configured to enable sign-in). |
 | `[server.signin]` | `client_id` | string / `""` | OIDC app ID. |

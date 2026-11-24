@@ -26,6 +26,11 @@
 // head's own turn moves on (ProviderWay). Every refusal here is in OpenAI's error shape, the 401 of a missing key
 // included: that is the shape the asking client reads.
 //
+// A completion from a client older than `[server.client] minimum` (#791) meets the minimum as a turn on the Messages
+// route does (ClientMinimum): told in the conversation, as one OpenAI answer (OpenAiNotice), or refused with the
+// configured status, and it takes no slot and reaches no provider. An OpenAI client at `/v1/*` behind a
+// `[server.aliases]` entry is no way around it.
+//
 // With `[server] keepalive_seconds` a streamed completion is kept alive through a long prefill as a streamed turn is
 // (F4, openai-keepalive): when the provider's server has not started its answer within a second, the stream is opened
 // to the client then and carries an SSE comment, which OpenAI's SDKs skip, at least that often until the answer comes
@@ -47,8 +52,11 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import splice.core.util.LogSink
 import splice.core.wire.ANTHROPIC_VERSION_HEADER
+import splice.server.client.ClientMinimum
+import splice.server.client.OpenAiNotice
 import splice.server.ledger.LedgerTurn
 import splice.server.ledger.ROUTE_CHAT
+import splice.server.path.RequestPaths
 import splice.share.HEAD_API_ROOT
 import splice.share.OutwardAsk
 import splice.share.RefusalShape
@@ -64,6 +72,10 @@ internal class OpenAiRoute(
     log: LogSink,
     /** How often a streamed completion's client is sent a keepalive while its answer is silent; null sends none. */
     private val keepalive: Duration?,
+    /** The oldest client this server serves (F9), which a chat completion meets as a turn on the Messages route does. */
+    private val minimum: ClientMinimum,
+    /** How long a streamed completion may fall silent after its first chunk before it is ended; 0: however long. */
+    private val streamIdleMs: Long = 0L,
 ) {
     /** How this route refuses, the 401 of a request that names it included. */
     val voice = RefusalVoice(SERVER_ERROR_PREFIX, RefusalShape.OPENAI)
@@ -75,6 +87,7 @@ internal class OpenAiRoute(
     private val paths = RequestPaths()
     private val chatPath = listOf(HEAD_API_ROOT, "chat", "completions")
     private val modelsPath = listOf(HEAD_API_ROOT, "models")
+    private val notice = OpenAiNotice()
 
     /** One request on this route: whose it is, the command it names, and that command's provider. */
     private data class Asked(val key: ServerKey, val head: SharedHead, val server: ChatServer)
@@ -96,9 +109,12 @@ internal class OpenAiRoute(
         return server != null
     }
 
-    /** [asked] for the provider's [api]: a completion as the turn it is, the models as they are asked. */
+    /** [asked] for the provider's [api]: a completion as the turn it is, an older client's answered for it (F9), the
+     *  models as they are asked. */
     private suspend fun answer(call: ApplicationCall, asked: Asked, api: Api) {
+        val told = if (api.path == CHAT_API) minimum.told(call, asked.key.person) else null
         when {
+            told != null -> outdated(call, asked, told)
             api.path == CHAT_API ->
                 admission.served(call, asked.key, HeadCommand(asked.head), ROUTE_CHAT) { turn ->
                     relayed(call, asked, api, turn)
@@ -106,6 +122,15 @@ internal class OpenAiRoute(
             !asked.head.running() -> catalog.notRunning(call, asked.head)
             else -> watched.turn(call, slot = null) { relayed(call, asked, api) }
         }
+    }
+
+    /** [asked]'s completion from a client older than the minimum (#791), answered with what it is [told]: refused with
+     *  the configured status, or told in the conversation as an OpenAI answer. It takes no slot and reaches no
+     *  provider. */
+    private suspend fun outdated(call: ApplicationCall, asked: Asked, told: String) {
+        if (minimum.refused(call, voice, told)) return
+        val sent = relay.sent(call, asked.head) ?: return
+        notice.answer(call, sent, told)
     }
 
     /** What [path] asks of a provider's API, or null when it is nothing this route answers. */
@@ -134,10 +159,11 @@ internal class OpenAiRoute(
         val lookup = api.model?.let { ModelLookup(it, asked.head.command) }
         // Only an answer asked for as a stream is kept alive: a comment has no place in any other body.
         val whole = lookup ?: chat.whole
-        val ask = OutwardAsk(chat.body, headers, chat.stream, whole, keepalive?.takeIf { chat.stream != null })
+        val every = keepalive?.takeIf { chat.stream != null }
+        val ask = OutwardAsk(chat.body, headers, chat.stream, whole, every, streamIdleMs)
         val path = api.path + bound.query(paths.query(call))
         val preferred = parts.people.of(asked.key.person).preferred
-        val way = ProviderWay(asked.head, path, asked.server.base, parts.upstreams, preferred)
+        val way = ProviderWay(asked.head, path, asked.server.base, parts.upstreams, preferred, turn?.id)
         turn?.chat = chat
         turn?.way = way
         try {

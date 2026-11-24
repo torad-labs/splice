@@ -1,7 +1,9 @@
 package splice.sessions.peer.owner
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -41,5 +43,39 @@ class PeerOwnerProcessesTest {
     fun `a versions folder that is not Claude Code's names no owner`(@TempDir proc: Path) {
         val processes = procWithParentExe(proc, "/opt/node/versions/2.1.312")
         assertNull(processes.ancestor(setOf("codex", "claude")))
+    }
+
+    @Test
+    fun `agy and configured extra harness binaries are recognized as owners`(@TempDir proc: Path) {
+        val agy = procWithParentExe(proc, "/home/someone/.local/bin/agy")
+        val matched = agy.harnessAncestor()
+        assertEquals("agy", matched?.program)
+        assertEquals(parent, matched?.process?.pid)
+
+        val extraDir = Files.createDirectories(proc.resolve("custom"))
+        val customProc = procWithParentExe(extraDir, "/usr/local/bin/opencode")
+        assertNull(customProc.harnessAncestor())
+        val custom = customProc.harnessAncestor(setOf("opencode"))
+        assertEquals("opencode", custom?.program)
+        assertEquals(parent, custom?.process?.pid)
+    }
+
+    @Test
+    fun `ancestors returns live kernel identities starting with the parent process`() {
+        val ancestors = PeerOwnerProcesses().ancestors()
+        assertEquals(parent, ancestors.firstOrNull()?.pid)
+    }
+
+    @Test
+    fun `plain shells are rejected as harness programs`(@TempDir proc: Path) {
+        val bashProc = procWithParentExe(proc, "/usr/bin/bash")
+        for (shell in listOf("sh", "bash", "zsh", "fish", "dash", "/bin/bash", "-zsh")) {
+            assertTrue(bashProc.isPlainShell(shell), "expected $shell to be treated as a plain shell")
+        }
+        assertFalse(bashProc.isPlainShell("agy"))
+        assertFalse(bashProc.isPlainShell("opencode"))
+        assertNull(bashProc.harnessAncestor(setOf("bash", "sh")))
+        assertFalse("bash" in bashProc.harnessPrograms(setOf("bash", "opencode")))
+        assertTrue("opencode" in bashProc.harnessPrograms(setOf("bash", "opencode")))
     }
 }

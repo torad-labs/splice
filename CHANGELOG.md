@@ -94,6 +94,14 @@
   15 pages under `docs/wiki/`, starting at `docs/wiki/README.md`, with a guide for upgrading to 0.7.0
   (`docs/wiki/upgrading-to-0.7.0.md`). The list of every file splice writes is `docs/wiki/disk-and-privacy.md`, and
   the build check on that list reads it there.
+- **A team server holds its pool's limits, ends a stalled stream, and drains at stop** (#791). `[server.limits]
+  inflight_total` caps the whole server's turns in flight and `inflight_per_upstream` each server of a pooled provider;
+  a turn past either is refused at once with `busy_status` (429 or 503), `Retry-After: busy_retry_after` and
+  `busy_message`, spending none of its person's turns a minute, and a full sticky or preferred server hands its turn to
+  one with room. `[server] drain_seconds` refuses every keyed request with a 503 and `Retry-After`, answers `/health` 503 `{"status":"draining"}`
+  and lets the turns in flight finish before the listener closes. `[server] stream_idle_seconds` ends a streamed answer
+  that falls silent that long after its first word with an error event Claude Code retries (504 in the ledger), on a
+  command's routes and the team's door alike. All three are off by default.
 - **A session's reply can be followed while it is being written.** `GET /api/sessions/{id}/live` on the control
   plane streams a session's reply as splice writes it to Claude Code, on every head: each turn, its text and thinking
   as they come, each tool call as it starts, and how the turn ended. Joining in the middle of a reply shows all of it.

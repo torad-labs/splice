@@ -1,7 +1,8 @@
 // NEW: server mode (docs/specs/server-mode.md, F5, ledger-rows). How a request ended, as its ledger row says it, and
 // the status the row stands for. The row is honest where the wire is not: a stream that opened as a 200 and then broke
-// is an upstream error, a 502, not a 200; a client that left is a 499, apart from every error; a refusal keeps its own
-// 4xx; an OpenAI-style stream the server closed without `[DONE]` is cut off; and a failure of splice's own is a 500.
+// is an upstream error, a 502, not a 200; one the relay ended for its silence is a 504; a client that left is a 499,
+// apart from every error; a refusal keeps its own 4xx; an OpenAI-style stream the server closed without `[DONE]` is cut
+// off; and a failure of splice's own is a 500.
 //
 // A turn on the Messages route is read from its head's own outcome when the head told one (ServedTurn); an
 // OpenAI-style client's turn from what the dialect read of the answer (AnswerReading); and a request either never
@@ -35,6 +36,10 @@ internal object RowOutcome {
 
     /** A request splice itself failed (a ledger it cannot write, a head of its own not running), as a 500. */
     val own: RowEnd = RowEnd(Outcome.SPLICE_ERROR, HttpStatus.INTERNAL_SERVER_ERROR)
+
+    /** A request answered as a gateway timeout: a stream ended for falling silent past `stream_idle_seconds` (#791), by
+     *  the relay whatever its head said of the hang-up, or on the team's door by its head's own watchdog. */
+    val timedOut: RowEnd = RowEnd(Outcome.UPSTREAM_ERROR, HttpStatus.GATEWAY_TIMEOUT)
 
     private val success = HttpStatus.OK..HttpStatus.MAX_SUCCESS
     private val clientError = HttpStatus.BAD_REQUEST..CLIENT_GONE_STATUS

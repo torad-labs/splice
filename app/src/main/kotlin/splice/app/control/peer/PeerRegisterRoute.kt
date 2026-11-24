@@ -7,6 +7,7 @@ import io.ktor.server.application.ApplicationCall
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.config.UserHome
@@ -39,30 +40,49 @@ internal class PeerRegisterRoute(private val parts: PeerParts) {
         answer.send(call)
     }
 
-    private suspend fun registered(body: JsonObject?, owner: NativeProcess?): PeerAnswer {
-        val name = PeerReplies.string(body, "name")
-        val cwd = if (body?.containsKey("cwd") == true) PeerReplies.string(body, "cwd") else UserHome.dir().toString()
-        val sendTo = sendTo(body)
-        if (name == null) return PeerReplies.refuse(HttpStatusCode.BadRequest, "body must be {\"name\": \"<name>\"}")
-        if (cwd == null || sendTo == null) {
-            return PeerReplies.refuse(HttpStatusCode.BadRequest, "cwd is a path and sendTo a list of names")
+    private suspend fun registered(body: JsonObject?, owner: NativeProcess?): PeerAnswer =
+        when (val parsed = parseRequest(body, owner)) {
+            is ParsedRequest.Bad -> PeerReplies.refuse(HttpStatusCode.BadRequest, parsed.reason)
+            is ParsedRequest.Valid -> registerValid(parsed.request, owner)
         }
+
+    private suspend fun registerValid(request: PeerRequest, owner: NativeProcess?): PeerAnswer {
         val live = parts.registry.read().filter { it.availability != SessionAvailability.GONE }
         val liveNames = live.mapNotNull { it.name }.toSet()
-        return when (val outcome = store.register(PeerRequest(name, cwd, sendTo, owner), liveNames)) {
+        return when (val outcome = store.register(request, liveNames)) {
             is PeerRegistration.Refused -> PeerReplies.refuse(
                 if (outcome.why == PeerRefusal.INVALID) HttpStatusCode.BadRequest else HttpStatusCode.Conflict,
                 outcome.reason,
             )
-            is PeerRegistration.Registered -> answered(name, outcome)
+            is PeerRegistration.Registered -> answered(request.name, outcome, owner)
+        }
+    }
+
+    private fun parseRequest(body: JsonObject?, owner: NativeProcess?): ParsedRequest {
+        val name = PeerReplies.string(body, "name")
+        val cwd = if (body?.containsKey("cwd") == true) PeerReplies.string(body, "cwd") else UserHome.dir().toString()
+        val sendTo = sendTo(body)
+        val nativeInbox = nativeInbox(body)
+        return when {
+            name == null -> ParsedRequest.Bad("body must be {\"name\": \"<name>\"}")
+            cwd == null || sendTo == null -> ParsedRequest.Bad("cwd is a path and sendTo a list of names")
+            nativeInbox == null -> ParsedRequest.Bad("nativeInbox must be a boolean")
+            nativeInbox && owner == null -> ParsedRequest.Bad("nativeInbox requires a live owner")
+            else -> ParsedRequest.Valid(PeerRequest(name, cwd, sendTo, owner, nativeInbox))
         }
     }
 
     /** The answer to a register that went through: 201 for a new peer, 200 for one already there. */
-    private suspend fun answered(name: String, outcome: PeerRegistration.Registered): PeerAnswer {
-        // A register that changed a peer already there restarts its helper on the new cwd, scope and owner.
+    private suspend fun answered(
+        name: String,
+        outcome: PeerRegistration.Registered,
+        owner: NativeProcess?,
+    ): PeerAnswer {
+        // A register that changed a peer already there stops its old helper (if any) before applying the new mode.
         if (outcome.outcome == RegisterOutcome.UPDATED) parts.helpers?.stop(name)
-        val pid = parts.helpers?.start(name)
+        val nativeInbox = name in store.nativeInboxes
+        val pid = if (nativeInbox) owner?.pid else parts.helpers?.start(name)
+        val socket = if (nativeInbox) ownerSocket(owner) else parts.helpers?.running(name)?.socket
         val created = outcome.outcome == RegisterOutcome.CREATED
         if (created) {
             parts.log("[peers] registered ${LogSafe.str(name)}\n")
@@ -75,10 +95,22 @@ internal class PeerRegisterRoute(private val parts: PeerParts) {
                 put("name", name)
                 put("sessionId", outcome.config.sessionId)
                 put("keyFile", outcome.keyFile.toString())
-                put("socket", parts.helpers?.running(name)?.socket)
+                put("socket", socket)
                 put("pid", pid)
             },
         )
+    }
+
+    private fun nativeInbox(body: JsonObject?): Boolean? {
+        if (body == null || !body.containsKey("nativeInbox")) return false
+        return (body["nativeInbox"] as? JsonPrimitive)?.takeUnless { it.isString }?.booleanOrNull
+    }
+
+    private fun ownerSocket(owner: NativeProcess?): String? {
+        val pid = owner?.pid ?: return null
+        return parts.registry.read().firstOrNull {
+            it.availability != SessionAvailability.GONE && it.process.pid == pid
+        }?.process?.messagingSocketPath
     }
 
     /** `sendTo` as given, or `["*"]` when absent; null when it is there but not a list of strings. */
@@ -87,4 +119,10 @@ internal class PeerRegisterRoute(private val parts: PeerParts) {
         val items = (raw as? JsonArray)?.map { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
         return items?.takeIf { list -> list.none { it == null } }?.filterNotNull()
     }
+}
+
+private sealed class ParsedRequest {
+    data class Valid(val request: PeerRequest) : ParsedRequest()
+
+    data class Bad(val reason: String) : ParsedRequest()
 }

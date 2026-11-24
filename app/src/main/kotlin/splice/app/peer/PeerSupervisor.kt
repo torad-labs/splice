@@ -107,7 +107,7 @@ internal class PeerSupervisor(
      *  is still starting. A peer registered again is no longer held. */
     override suspend fun start(name: String): Long? {
         held.remove(name)
-        if (owners.retired(name)) return null
+        if (owners.retired(name) || name in store.nativeInboxes) return null
         store.get(name)?.let { sessions[name] = it.sessionId }
         if (running(name) == null) launch(name, failures = 0)
         val deadline = clock() + REGISTER_WAIT_MS
@@ -158,7 +158,7 @@ internal class PeerSupervisor(
     private suspend fun adopt() {
         val current = build.current()
         for (peer in store.list()) {
-            if (owners.retired(peer.name)) continue
+            if (owners.retired(peer.name) || peer.name in store.nativeInboxes) continue
             adopt(peer.name, peer.sessionId, current)
         }
     }
@@ -182,7 +182,8 @@ internal class PeerSupervisor(
         held.retainAll { store.get(it) != null }
         for (peer in store.list()) {
             sessions[peer.name] = peer.sessionId
-            if (peer.name !in held && !owners.retired(peer.name)) reconcile(peer.name, peer.sessionId)
+            if (peer.name in held || owners.retired(peer.name)) continue
+            if (peer.name !in store.nativeInboxes) reconcile(peer.name, peer.sessionId)
         }
     }
 

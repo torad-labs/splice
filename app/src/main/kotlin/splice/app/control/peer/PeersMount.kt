@@ -27,8 +27,10 @@ import splice.core.util.LogSink
 import splice.http.JsonReply
 import splice.sessions.peer.PeerConfig
 import splice.sessions.peer.PeerOutbox
+import splice.sessions.peer.owner.PeerOwnerProcesses
 import splice.sessions.peer.store.PeerLimits
 import splice.sessions.peer.store.PeerStore
+import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionSource
 
 internal const val PEER_NAME_PARAM = "name"
@@ -104,6 +106,7 @@ internal class PeerManagementRoutes(
     private val limits: PeerLimits,
 ) {
     private val store = parts.store
+    private val ownerProcesses = PeerOwnerProcesses()
 
     /** GET /api/peers: every peer, whether its helper runs, its scope, webhook and inbox counts. */
     suspend fun list(call: ApplicationCall) {
@@ -162,15 +165,15 @@ internal class PeerManagementRoutes(
     }
 
     private fun describe(config: PeerConfig): JsonObject {
-        val helper = parts.helpers?.running(config.name)
         val counts = parts.mail?.counts(config.name)
         val webhook = config.webhook
+        val (pid, alive, socket) = runtimeOf(config.name)
         return buildJsonObject {
             put("name", config.name)
             put("sessionId", config.sessionId)
-            put("pid", helper?.pid)
-            put("alive", helper != null)
-            put("socket", helper?.socket)
+            put("pid", pid)
+            put("alive", alive)
+            put("socket", socket)
             putJsonArray("sendTo") { config.sendTo.forEach { add(JsonPrimitive(it)) } }
             val limit = limits.of(config.name)
             putJsonObject("limit") {
@@ -191,5 +194,20 @@ internal class PeerManagementRoutes(
                 put("unread", counts?.unread ?: 0L)
             }
         }
+    }
+
+    private fun runtimeOf(name: String): Triple<Long?, Boolean, String?> {
+        if (name !in store.nativeInboxes) {
+            val helper = parts.helpers?.running(name)
+            return Triple(helper?.pid, helper != null, helper?.socket)
+        }
+        val owner = store.nativeOwners[name]
+        val record = owner?.let { o ->
+            parts.registry.read().firstOrNull {
+                it.availability != SessionAvailability.GONE && it.process.pid == o.pid
+            }
+        }
+        val alive = record != null || (owner != null && ownerProcesses.live(owner))
+        return Triple(owner?.pid, alive, record?.process?.messagingSocketPath)
     }
 }

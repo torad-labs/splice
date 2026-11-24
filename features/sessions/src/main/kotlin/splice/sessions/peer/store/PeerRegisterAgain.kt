@@ -28,7 +28,12 @@ internal class PeerRegisterAgain(private val processes: PeerOwnerProcesses = Pee
             val why = "a peer named '${request.name}' already exists and $whose"
             return RegisterAgain.Refused(PeerRegistration.Refused(PeerRefusal.TAKEN, why))
         }
-        val updated = existing.copy(cwd = request.cwd, scope = PeerFileScope(request.sendTo), owner = asked)
+        val updated = existing.copy(
+            cwd = request.cwd,
+            scope = PeerFileScope(request.sendTo),
+            owner = asked,
+            nativeInbox = request.nativeInbox,
+        )
         return RegisterAgain.Keep(updated, if (updated == existing) RegisterOutcome.SAME else RegisterOutcome.UPDATED)
     }
 

@@ -17,9 +17,11 @@ import splice.server.ServerKey
 import splice.server.ServerKeys
 import splice.server.ServerPeople
 import splice.server.caller.AdminAccess
+import splice.server.load.DrainGate
 import splice.share.RefusalVoice
 
-/** Reverse-proxy check for keys and, when enabled, signed dashboard sessions. */
+/** Reverse-proxy check for keys and, when enabled, signed dashboard sessions. While the server drains at stop, an
+ *  admitted key or session is a 503 with `Retry-After`, as every keyed request is then (DrainGate, #791). */
 internal class ForwardAuthRoute(
     private val server: ServerConfig,
     private val keys: ServerKeys,
@@ -27,6 +29,7 @@ internal class ForwardAuthRoute(
     private val access: AdminAccess,
     private val browser: BrowserForwardAuth?,
     private val voice: RefusalVoice,
+    private val drain: DrainGate,
 ) {
     fun asks(call: ApplicationCall, path: List<String>): Boolean =
         browser?.asks(path) == true || (path == forwardAuthPath && call.request.httpMethod in checkMethods)
@@ -45,6 +48,8 @@ internal class ForwardAuthRoute(
     }
 
     private suspend fun respondAdmitted(call: ApplicationCall, policy: ServerForwardAuth, key: ServerKey) {
+        // A key admitted while the server drains is answered as every keyed request then is (#791).
+        if (drain.refused(call, voice)) return
         val admin = access.allows(call, key.person)
         if (!policy.admits(key.person, admin)) {
             voice.refuse(call, HttpStatus.FORBIDDEN, "${key.person} is not allowed to open dashboards here")

@@ -8,6 +8,7 @@
 package splice.core.config
 
 import splice.core.util.EnvReader
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import java.nio.file.Paths
 
@@ -44,6 +45,18 @@ public object UserHome {
     /** `~/rest` against [dir]; any other path as written. */
     public fun expand(raw: String, env: EnvReader = EnvReader(System::getenv)): String =
         if (raw.startsWith("~/")) dir(env).toString() + raw.substring(1) else raw
+
+    /** A folder splice.toml names ([raw]): a bare `~` or a leading `~/` read as [home], anything else as written; null
+     *  for text no path can spell. `[daemon] state_dir` reads this way, and so does the launch profiles' root in it. */
+    public fun declared(raw: String, home: Path): Path? = try {
+        when {
+            raw == "~" -> home
+            raw.startsWith("~/") -> home.resolve(raw.removePrefix("~/"))
+            else -> Paths.get(raw)
+        }
+    } catch (_: InvalidPathException) {
+        null
+    }
 
     /** The test seam: [block] runs with [home] as the home of every resolution in this process, then the
      *  environment answers again. Process-wide on purpose: a CLI verb builds its paths deep inside, on

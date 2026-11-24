@@ -618,6 +618,19 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "integrations/claude-code/src/main/kotlin/splice/client/login/LoginOutcomeFile.kt" to mapOf(
         "writeAtomic0600(" to 1,
     ),
+    // Terminal launch profiles (issue #791): a profile's own Claude folder, rebuilt before each `--profile` launch: its
+    // mark, settings files, CLAUDE.md, .claude.json and plugin records, and links into ~/.claude, never written there.
+    "integrations/claude-code/src/main/kotlin/splice/client/profile/LaunchProfileBuild.kt" to
+        mapOf("writeAtomic0600(" to 2),
+    "integrations/claude-code/src/main/kotlin/splice/client/profile/ProfileFolder.kt" to mapOf("writeAtomic0600(" to 1),
+    "integrations/claude-code/src/main/kotlin/splice/client/profile/ProfileGlobalConfig.kt" to
+        mapOf("writeAtomic0600(" to 1),
+    "integrations/claude-code/src/main/kotlin/splice/client/profile/ProfileLinks.kt" to
+        mapOf("Files.createSymbolicLink(" to 2),
+    "integrations/claude-code/src/main/kotlin/splice/client/profile/ProfilePluginCache.kt" to
+        mapOf("Files.createSymbolicLink(" to 2, "Files.move(" to 2, "writeAtomic0600(" to 1),
+    "integrations/claude-code/src/main/kotlin/splice/client/profile/ProfilePlugins.kt" to
+        mapOf("writeAtomic0600(" to 1),
     "integrations/claude-code/src/main/kotlin/splice/client/resume/ResumeAcrossHeads.kt" to mapOf(
         "Files.copy(" to 3,
         "Files.move(" to 3,

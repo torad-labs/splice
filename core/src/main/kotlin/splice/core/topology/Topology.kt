@@ -66,6 +66,8 @@ public data class Topology(
     val server: ServerConfig = ServerConfig(),
     /** custom-provider (issue #680): the door's own settings, today its named commands. */
     val door: DoorConfig = DoorConfig(),
+    /** Terminal launch profiles (issue #791): the Claude folders `splice launch claude --profile <name>` runs in. */
+    val launch: LaunchConfig = LaunchConfig(),
     /** Local additions to the shipped harness catalog. The topology editor preserves these as written. */
     val harnesses: Map<String, HarnessConfig> = emptyMap(),
     @Transient val extensions: TopologyExtensions = TopologyExtensions(),

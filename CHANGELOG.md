@@ -69,8 +69,11 @@
 ### Upgrading
 - **Head-only provider settings warn but do not block startup.** Splice names a head's window, tier models,
   standing prompt, older selector prefix or override when its provider does not say the same thing. The gateway
-  serves the provider without those head-only settings. `splice check-config --fix` offers to move them to the
-  provider's table; nothing is moved silently. A head's pin and its display and trace settings stay with the head.
+  serves the provider with the value the heads on it agree on, and without one when they disagree.
+  `splice check-config --fix` offers to move a value to the provider's table when every head on that provider would
+  be served the same after the move; nothing is moved silently. When sibling heads on one provider hold different
+  values, the warning stays with no move offered and each head keeps being served its own: write the value the gateway
+  should serve in the provider's table yourself. A head's pin and its display and trace settings stay with the head.
 - **A setting changed for one command on the console is written where splice reads it.** A setting a turn is served
   by (how many requests at once, the retry and reasoning settings) is its provider's, so every command on that
   provider runs with it, and the answer names them. A display or trace setting stays the command's own.

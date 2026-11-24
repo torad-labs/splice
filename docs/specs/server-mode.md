@@ -409,14 +409,16 @@ server_admin_only = true   # and only the people `[server] admins` names
   gets the method, the path after `/server/mod/<name>`, the query (the first value of each name) and the body.
 - **Gates.** A mode that is not carried, or whose `server_routes` is not true, is a 404 `not_found_error`: a key holder
   cannot tell it from a name no mode has. With `server_admin_only`, a caller must be listed in `[server] admins`
-  and satisfy `admin_cidrs` if set; others get a 403 `permission_error`. The switches are read per request, so a
-  console switch applies to the next one,
-  and turning a mode on or off from the console keeps them.
+  and satisfy `admin_cidrs` if set; others get a 403 `permission_error` that says which of the two failed. The
+  switches are read per request, so a console switch applies to the next one. A console switch, `PUT /api/modes` or
+  `splice setup` changes only `on` and `heads`, against the table as splice.toml holds it then: `server_routes`,
+  `server_admin_only` and any other key stay exactly as written, an edit made since the daemon started included.
 - **Limits.** A body is read up to 1 MiB (past that, 413 `request_too_large`) and for at most 30 seconds (408). A mode
   that throws is a 500 naming its exception's class and nothing it held; a path it has no answer for is a 404.
 - **Names.** A mode with `server_routes = true` may not be named `server`, `door` or `health`, nor a name
-  `[server] commands` serves at (a command, or its head's key or command): boot and `splice check-config` refuse it at
-  `modes.<name>.server_routes`, so a mode's name never reads as a path the listener answers itself.
+  `[server] commands` serves at (each entry, and the key and the command of every head an entry names by either):
+  boot and `splice check-config` refuse it at `modes.<name>.server_routes`, so a mode's name never reads as a path
+  the listener answers itself.
 
 A mode answers with `Mode.serve(request)`: its status, content type and body, or null for a path it does not have. Its
 code from built-in and external modes runs in the daemon.

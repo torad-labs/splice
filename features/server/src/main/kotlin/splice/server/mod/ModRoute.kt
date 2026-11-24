@@ -50,14 +50,19 @@ internal class ModRoute(
     private suspend fun said(call: ApplicationCall, name: String, person: String, answer: ModAnswer) {
         when (answer) {
             ModAnswer.NoSuchMod -> noSuchMod(call, name)
-            ModAnswer.AdminsOnly -> {
-                val why = "mode $name on this server is for its admins, and $person is not one of them"
-                voice.refuse(call, HttpStatus.FORBIDDEN, why)
-            }
+            ModAnswer.AdminsOnly -> voice.refuse(call, HttpStatus.FORBIDDEN, adminsOnly(name, person))
             is ModAnswer.Failed -> voice.refuse(call, HttpStatus.INTERNAL_SERVER_ERROR, answer.said)
             is ModAnswer.Answered -> answer.response?.let { respond(call, it) }
                 ?: voice.refuse(call, HttpStatus.NOT_FOUND, "mode $name has no such path")
         }
+    }
+
+    /** Why mode [name], which serves only admins, refused [person]: `[server] admins` does not name them, or it does
+     *  and the request came from outside `[server] admin_cidrs`. */
+    private fun adminsOnly(name: String, person: String): String = if (adminAccess.names(person)) {
+        "mode $name on this server is for its admins, and admin routes are not allowed from this address"
+    } else {
+        "mode $name on this server is for its admins, and $person is not one of them"
     }
 
     /** What a mode is handed of [call] for [person], [path] after its name; null once a body too large or too slow

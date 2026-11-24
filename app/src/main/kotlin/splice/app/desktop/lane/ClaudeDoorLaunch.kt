@@ -58,13 +58,17 @@ internal class ClaudeDoorLaunch(
     }
 
     /** The Splice gateway a session of [provider]'s head is pointed at, as `claude`'s is: its address, the terminal's
-     *  key and the window the gateway reports every count as a share of, and the provider's pinned selector
-     *  (DesktopLineup.pinnedOf: its pin, or its first model when its pin is not in the gateway) as the gateway lists
-     *  it; null for the model while the provider is not in the gateway. */
-    suspend fun gateway(provider: String): GatewayAt {
+     *  key and the window the gateway reports every count as a share of, and the head's own [pinned] model as the
+     *  gateway lists it. Upgrade (Nov 24, 2026): two heads on one provider each start on their own pin, as on 0.6.4;
+     *  the provider's pinned selector (DesktopLineup.pinnedOf: its pin, or its first model when its pin is not in the
+     *  gateway) stands only for a head with no pin, or one the gateway does not serve. Null for the model while the
+     *  provider is not in the gateway. */
+    suspend fun gateway(provider: String, pinned: String? = null): GatewayAt {
         val lineup = lane.lineup()
         val served = lineup.providers.firstOrNull { it.key == provider }
-        val model = served?.let(lineup::pinnedOf)?.takeIf { it.isNotEmpty() }?.let { ids.idFor(lineup, it) }
+        val own = served?.let { p -> pinned?.takeIf { it.isNotBlank() }?.let { p.catalog.wrap(it) } }
+            ?.takeIf { lineup.find(it) != null }
+        val model = (own ?: served?.let(lineup::pinnedOf))?.takeIf { it.isNotEmpty() }?.let { ids.idFor(lineup, it) }
         return GatewayAt(lane.door, lane.key.get(), lane.window(lineup), model)
     }
 

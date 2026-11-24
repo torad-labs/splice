@@ -13,6 +13,7 @@ const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
 /** What a person or an agent reads about sharing: none of it may offer an address per command. */
 const READ = [
   "README.md",
+  "docs/wiki/door-and-launchers.md",
   "app/src/main/resources/manager-home/.claude/skills/splice/reference/cli.md",
   "app/src/main/resources/manager-home/.claude/skills/splice/reference/toml-reference.md",
   "app/src/main/resources/splice.example.toml",
@@ -34,7 +35,7 @@ describe("docs-door-only", () => {
   });
 
   test("the pages that teach sharing teach the door's one add", () => {
-    for (const path of ["README.md", "app/src/main/resources/manager-home/.claude/skills/splice/reference/cli.md"]) {
+    for (const path of ["docs/wiki/door-and-launchers.md", "app/src/main/resources/manager-home/.claude/skills/splice/reference/cli.md"]) {
       expect([path, /splice remote add http:\/\/[\w.<>-]+(:\d+)?(?=[\s`'"]|$)/m.test(read(path))]).toEqual([path, true]);
     }
   });

@@ -91,7 +91,7 @@ describe("a pushed diff scopes the gate to what it touches", () => {
   });
 
   test("prose a law reads still runs the law suites and checks no module", () => {
-    for (const path of ["README.md", "docs/PROVENANCE.md"]) {
+    for (const path of ["README.md", "docs/PROVENANCE.md", "docs/wiki/disk-and-privacy.md", "docs/wiki/team-server-mode.md"]) {
       const s = scope([path]);
       expect(s.gradle, path).toEqual([LAW_SUITES_TASK]);
       expect(checks(s.gradle), path).toEqual([]);

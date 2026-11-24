@@ -3,9 +3,9 @@
 //
 //   /health        topologyDigest moves to the edited bytes and topologyStale stays false, so
 //                  `splice doctor` finds nothing to restart for; a port edit still reads stale;
-//   POST /launch   keeps planting the gateway's ONE window as CLAUDE_CODE_MAX_CONTEXT_TOKENS: head-catalog made
-//                  every session on the gateway hold the same window, fixed at the door's first open, so a
-//                  provider's context_window edit does not move it;
+//   POST /launch   plants the head's own window as CLAUDE_CODE_MAX_CONTEXT_TOKENS, the one its turns already
+//                  name to the gateway (x-splice-client-window), so the edit reaches the next launch, as it did on
+//                  0.6.4 (upgrade, Nov 24, 2026: head-catalog had planted the door's one window there instead);
 //   /api/models    the console's models page shows the edited window.
 //
 // Each of those has a unit test beside it; this one fails if Daemon stops ATTACHING the watcher to
@@ -76,7 +76,7 @@ class LiveWindowsDaemonTest {
     """.trimIndent()
 
     @Test
-    fun `a context_window edit reaches health and the models page, and the one window stays`() = runBlocking {
+    fun `a context_window edit reaches health, the models page and the head's next launch`() = runBlocking {
         Files.writeString(tmp.resolve("key.json"), """{"api_key":"chat-key"}""")
         val file = tmp.resolve("splice.toml")
         val boot = toml(131_072)
@@ -120,8 +120,8 @@ class LiveWindowsDaemonTest {
             val editedDigest = TopologyLoader.sha256Hex(edited.toByteArray())
             assertEquals(editedDigest, health()["topologyDigest"]!!.jsonPrimitive.content)
             assertFalse(health()["topologyStale"]!!.jsonPrimitive.boolean)
-            // The gateway's one window was fixed when the door opened, and every later session holds it.
-            assertEquals(131_072, launched())
+            // The head's next session holds the edited window, the one its turns name to the gateway.
+            assertEquals(245_760, launched())
             assertEquals(245_760, modelsPage())
 
             Files.writeString(file, toml(245_760, port = headPort + 1))

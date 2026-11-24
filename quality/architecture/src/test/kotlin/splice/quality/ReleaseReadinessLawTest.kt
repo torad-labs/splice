@@ -111,6 +111,7 @@ private val DISCLAIMERS = listOf(
     "what a pattern removes is the operator's to own",
 )
 private val DISCLAIMER_FILES = listOf(README, CHANGELOG, EXAMPLE_TOML, INSTALL)
+private val WIKI_PAGE = Regex("docs/wiki/[^/]+\\.md")
 
 /** "[rel]:[line] carries '[phrase]'" for the first line holding one of [DISCLAIMERS], ignoring case. */
 private fun disclaimerIn(rel: String, text: String): String? =
@@ -123,6 +124,8 @@ private fun disclaimerIn(rel: String, text: String): String? =
 /** What the rules read: the checkout root, git's index, and every Kotlin file of the mapped modules. */
 internal class ReleaseRepo(val root: File, val tracked: List<String>, val kotlinFiles: List<File>) {
     private fun text(rel: String): String? = File(root, rel).takeIf { it.isFile }?.readText()
+
+    val wikiPages: List<String> = tracked.filter(WIKI_PAGE::matches)
 
     private fun missing(rel: String) = "$rel is missing"
 
@@ -322,7 +325,7 @@ internal object ReleaseReadiness {
         // The files people read and every main source set (what the CLI and daemon print).
         // Tests stay out: a test that proves a line is gone has to name it.
         Rule("no-disclaimer") { repo ->
-            DISCLAIMER_FILES.firstNotNullOfOrNull { repo.carriesNoDisclaimer(it) }
+            (DISCLAIMER_FILES + repo.wikiPages).firstNotNullOfOrNull { repo.carriesNoDisclaimer(it) }
                 ?: repo.eachKotlin { rel, text -> if (MAIN_SOURCE in rel) disclaimerIn(rel, text) else null }
         },
         Rule("example-no-encrypted-cot") { repo -> repo.lacks(EXAMPLE_TOML, ENCRYPTED_COT, ignoreCase = true) },
@@ -581,6 +584,9 @@ private fun readmeMutations(): List<Mutation> = listOf(
     // Upper-cased, so the match is proven case-insensitive.
     Mutation("README carrying a disclaimer", "no-disclaimer", "$README:2 carries 'own risk'") {
         append(README, "USE IT AT YOUR OWN RISK.\n")
+    },
+    Mutation("wiki carrying a disclaimer", "no-disclaimer", "docs/wiki/guide.md:1 carries 'own risk'") {
+        file("docs/wiki/guide.md", "USE IT AT YOUR OWN RISK.\n")
     },
 )
 

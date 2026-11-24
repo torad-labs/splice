@@ -89,9 +89,12 @@ internal class TerminalDoor(
     /** Whether `claude` is on the door: read from the lane record, so it holds before [open] too. */
     override fun onDoor(): Boolean = records.lane(claudeHead) == DOOR_LANE
 
-    /** The Splice gateway [head]'s command points its session at, on either lane; null before [open]. */
-    override suspend fun gateway(head: String): GatewayAt? =
-        launched?.gateway(topology.heads[head]?.provider ?: head)
+    /** The Splice gateway [head]'s command points its session at, on either lane, on the head's own pinned model;
+     *  null before [open]. */
+    override suspend fun gateway(head: String): GatewayAt? {
+        val config = topology.heads[head]
+        return launched?.gateway(config?.provider ?: head, config?.pinnedModel)
+    }
 
     override fun headHere(): Boolean = claudeHead()
 

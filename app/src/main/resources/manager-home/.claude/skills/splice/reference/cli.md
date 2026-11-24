@@ -226,7 +226,7 @@ Anything else, or `--with-logs`/`--out` without `--json`, prints usage and write
 
 Source: `features/diagnostics/.../doctor/DoctorCommand.kt` (`collect` lists the seven sections; flags, verdict),
 `.../report/DoctorReportOptions.kt` (strict flag grammar, `DOCTOR_USAGE`), `.../report/DoctorJsonReport.kt:1-8`
-(allowlist, nothing uploaded). `--live` scope: `DoctorCommand.kt` header comment and README "Local models".
+(allowlist, nothing uploaded). `--live` scope: `DoctorCommand.kt` header comment and docs/wiki/providers-and-accounts.md "Local models".
 
 ### check-config
 
@@ -323,7 +323,7 @@ Needs a restart: any provider or head change in `splice.toml`, tier mappings, po
 `context_window`, `extra_windows`, `window_rules`, `default_context_window`, a head's `context_window`, a key
 saved with `splice key set`, and budgets (a budget edit applies within a second). Doctor says when `splice.toml` is stale.
 
-Source: `features/lifecycle/.../restart/RestartCommand.kt:46-130`, `README.md` "Long-session reliability" and
+Source: `features/lifecycle/.../restart/RestartCommand.kt:46-130`, `docs/wiki/architecture-and-troubleshooting.md` "Long-session reliability" and
 "Troubleshooting". Retry behaviour after a restart is in reliability-mcp-install.md.
 
 ### login
@@ -350,7 +350,7 @@ one. The flow depends on the provider's auth kind:
 head while any of its sessions runs.
 
 Source: `app/.../cli/auth/LoginCommand.kt:38-176`, `ClaudeLoginLabel.kt:30-45`, `CommandParser.kt` (login grammar),
-`README.md` "More than one Claude login". Accounts and pools: accounts-sessions-console.md.
+`docs/wiki/providers-and-accounts.md#more-than-one-claude-login-on-claude`. Accounts and pools: accounts-sessions-console.md.
 
 ### key set | list | unset
 
@@ -367,7 +367,7 @@ the next request, no restart. An environment variable of the same name in the da
 store. `list` prints variable names only, never values. You do not run any `key` form: you give the person the
 command and the variable name from `splice.toml` (`auth.env`, or `<KEY>_API_KEY` by default).
 
-Source: `app/.../cli/auth/KeyCommand.kt:60-170`, `README.md` "API-key starter".
+Source: `app/.../cli/auth/KeyCommand.kt:60-170`, `docs/wiki/getting-started.md#api-key-starter-openrouter`.
 
 ### rotate-key
 
@@ -412,7 +412,8 @@ This verb is the quickest route for any head a profile covers. For an endpoint w
 heads-and-backends.md. It changes `splice.toml`, so it is the person's, not yours.
 
 Source: `features/configuration/.../add/AddArgs.kt`, `AddProfileCatalog.kt` (profile names), `AddCommand.kt:1-60`,
-`README.md` "Subscription setup" and "A second head on the same provider".
+`docs/wiki/getting-started.md#subscription-setup-chatgpt-grok-kimi-or-muse` and
+`docs/wiki/providers-and-accounts.md#a-second-head-on-the-same-provider`.
 
 ### install and uninstall
 
@@ -462,7 +463,7 @@ A second upgrade while one runs is refused. Config and credentials are never tou
 (it is accepted; see `UpgradeArgs.kt:32`). Install and rollback detail: reliability-mcp-install.md.
 
 Source: `features/lifecycle/.../upgrade/UpgradeCommand.kt:1-110`, `UpgradeArgs.kt`, `UpgradeCheckLine.kt`,
-`README.md` "Install a release".
+`docs/wiki/getting-started.md` "Install a release".
 
 ### console
 

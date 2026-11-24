@@ -88,7 +88,7 @@ PRE04_STATE="$HOME/.claude-codex/state"
 
 jar_version() { java -jar "$1" version 2>/dev/null | sed -n 's/^splice //p' | head -1; }
 FROM_VERSION="$(jar_version "$FROM/splice.jar")"
-CANDIDATE_VERSION="$(jar_version "$ARTIFACTS/splice.jar")"
+CANDIDATE_VERSION="$(jar_version "$CANDIDATE_JAR")"
 in_dir() { cd "$1" && shift && "$@"; }
 daemon_pid() { pgrep -u "$(id -un)" -f 'splice.jar daemon' | head -1; }
 health_version() { curl -sf -m 3 "http://127.0.0.1:$CONTROL_PORT/health" | bun "$LIB_TS" field - version; }
@@ -510,7 +510,7 @@ handover() {
     target="$(readlink "$fd" 2>/dev/null)"
     case "$target" in */splice.jar*) jar_sha="$(sha256sum < "$fd" | cut -d' ' -f1)"; echo "fd $fd -> $target"; break ;; esac
   done
-  want="$(sha256sum < "$ARTIFACTS/splice.jar" | cut -d' ' -f1)"
+  want="$(sha256sum < "$CANDIDATE_JAR" | cut -d' ' -f1)"
   version="$(health_version)"
   echo "daemon pid $pid (was $old); /health version $version; open jar ${jar_sha:0:16}…, candidate ${want:0:16}…"
   ! kill -0 "$old" 2>/dev/null || { echo "the $FROM_TAG daemon (pid $old) is still alive"; return 1; }

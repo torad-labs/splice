@@ -17,6 +17,7 @@ tasks.named<Test>("lawTest") {
     inputs.files(
         rootProject.file("README.md"),
         rootProject.file("CHANGELOG.md"),
+        rootProject.layout.projectDirectory.dir("docs/wiki").asFileTree.matching { include("*.md") },
         rootProject.file("app/src/main/resources/splice.example.toml"),
     )
     jvmArgumentProviders.add(

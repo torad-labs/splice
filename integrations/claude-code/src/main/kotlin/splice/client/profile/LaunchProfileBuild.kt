@@ -53,7 +53,11 @@ public class LaunchProfileBuild(
         val folder = folderOf(name, profile)
         return try {
             val source = ProfileStateSource(home, defaultRoot, headDirs, folder)
-            val state = source.of(profile, inheritedConfigDir) ?: return source.refusal(profile)
+            val state = when (val read = source.read(profile, inheritedConfigDir)) {
+                SettingsRead.Absent -> null
+                is SettingsRead.Held -> read.file
+                is SettingsRead.Unreadable -> return ProfileBuilt.Refused(read.why)
+            }
             ProfileFolder(home).prepare(folder, name, profile)?.let { return ProfileBuilt.Refused(it) }
             ProfileBuilt.Ready(folder, fill(folder, profile, doorOwned, state))
         } catch (failure: IOException) {
@@ -69,7 +73,12 @@ public class LaunchProfileBuild(
     /** Everything the profile carries written into [folder], its `.claude.json` seeded from [state]; what the person
      *  should know of it. The settings files are read first and written last: a hook event either names is an event in
      *  both, and a plugin is enabled only once its install is in the profile. */
-    private fun fill(folder: Path, profile: LaunchProfileConfig, doorOwned: Set<String>, state: Path): List<String> {
+    private fun fill(
+        folder: Path,
+        profile: LaunchProfileConfig,
+        doorOwned: Set<String>,
+        state: JsonObject?,
+    ): List<String> {
         val sources = ClaudeModelLists.settingsFiles.associateWith { settingsOf(it) }
         val settings = ProfileSettings(profile, doorOwned, sources.values.filterNotNull())
         val wanted = sources.values.filterNotNull().flatMap(settings::keptPlugins).toSet()

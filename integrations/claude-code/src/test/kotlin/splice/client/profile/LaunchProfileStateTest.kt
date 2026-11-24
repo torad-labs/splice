@@ -128,6 +128,49 @@ class LaunchProfileStateTest {
     }
 
     @Test
+    fun `claude_json refuses Claude credentials without copying them or quoting their values`() {
+        val credentials = listOf(
+            "renamed.json" to """{"claudeAiOauth":{"accessToken":"fixture-value"}}""",
+            ".credentials.json" to "{}",
+        )
+        for ((file, content) in credentials) {
+            home.resolve(file).writeText(content)
+            val result = build(null, LaunchProfileConfig(claudeJson = "~/$file"))
+            val refused = assertInstanceOf(ProfileBuilt.Refused::class.java, result)
+            assertTrue("claude_json" in refused.reason && "credential" in refused.reason, refused.reason)
+            assertFalse("fixture-value" in refused.reason)
+            assertFalse(Files.exists(folder))
+        }
+    }
+
+    @Test
+    fun `a malformed claude_json leaves new and existing profiles untouched`() {
+        val profile = LaunchProfileConfig(claudeJson = "~/selected.json")
+        home.resolve("selected.json").writeText("{not json")
+        val refusal = assertInstanceOf(ProfileBuilt.Refused::class.java, build(null, profile))
+        assertTrue("claude_json" in refusal.reason && "valid JSON" in refusal.reason, refusal.reason)
+        assertFalse(Files.exists(folder))
+
+        Files.createDirectories(claude)
+        claude.resolve("settings.json").writeText("""{"cleanupPeriodDays":5}""")
+        claude.resolve("CLAUDE.md").writeText("Before")
+        assertInstanceOf(ProfileBuilt.Ready::class.java, build(null))
+        val before = snapshot(folder)
+        claude.resolve("settings.json").writeText("""{"cleanupPeriodDays":10}""")
+        claude.resolve("CLAUDE.md").writeText("After")
+        assertInstanceOf(ProfileBuilt.Refused::class.java, build(null, profile))
+        assertEquals(before, snapshot(folder))
+    }
+
+    @Test
+    fun `a missing explicit claude_json still seeds from the registry without switching sources`() {
+        state(home.resolve(".claude.json"), "home")
+        val profile = LaunchProfileConfig(claudeJson = "~/missing.json")
+        assertInstanceOf(ProfileBuilt.Ready::class.java, build(null, profile))
+        assertEquals(setOf("registered"), servers())
+    }
+
+    @Test
     fun `claude_json through a dangling link to the output refuses before creating the profile`() {
         val output = folder.resolve(".claude.json")
         val link = Files.createSymbolicLink(home.resolve("source.json"), home.relativize(output))

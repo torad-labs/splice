@@ -9,8 +9,12 @@ package splice.core.topology
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import splice.core.config.HeadConfigDirs
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
+import splice.core.topology.profile.GEMINI_FOLDER
+import splice.core.topology.profile.PROFILE_STATE_PATH_RULE
+import splice.core.topology.profile.ProfileStatePaths
 import splice.core.util.PathProbe
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -99,8 +103,7 @@ internal class LaunchProfileChecks(
         val each = profiles.flatMap { (name, profile) ->
             listOfNotNull(name(name), dir(name, profile), keepHooks(name, profile)) + entries(name, profile)
         }
-        val sources = profiles.mapNotNull { (name, profile) -> claudeJson(name, profile) }
-        return each + sources + shared(profiles)
+        return each + sourceFindings(profiles) + shared(profiles)
     }
 
     private fun name(name: String): TopologyFinding? =
@@ -114,34 +117,17 @@ internal class LaunchProfileChecks(
         return why?.let { TopologyFinding("launch.profiles.$name.dir", "$it; name a folder of the profile's own") }
     }
 
-    /** A `claude_json` that is blank or relative, or sits in the profile's own folder (whose `.claude.json` is rebuilt
-     *  from it, so the person's servers would be gone after one launch) or in `~/.gemini`. */
-    private fun claudeJson(name: String, profile: LaunchProfileConfig): TopologyFinding? {
-        val raw = profile.claudeJson ?: return null
-        val paths = sourceFile(raw)
-        val folder = PathProbe.real(profile.folder(name, home, defaultRoot))
-        val why = when {
-            raw.isBlank() -> "is blank"
-            paths == null -> SOURCE_RULE
-            paths.any { it.startsWith(folder) } ->
-                "is inside the profile's own folder, whose .claude.json is rebuilt from it"
-            inGemini(paths) -> "is inside ~/$GEMINI_FOLDER"
-            else -> null
+    private fun sourceFindings(profiles: Map<String, LaunchProfileConfig>): List<TopologyFinding> {
+        val named = profiles.filterValues { it.claudeJson != null }
+        if (named.isEmpty()) return emptyList()
+        val headDirs = topology.heads.map { (key, head) -> HeadConfigDirs.of(key, head.claude.configDir, home) }
+        return named.mapNotNull { (name, profile) ->
+            val folder = PathProbe.real(profile.folder(name, home, defaultRoot))
+            val paths = ProfileStatePaths(home, defaultRoot, headDirs, folder)
+            TopologyFinding("launch.profiles.$name.claude_json", "$PROFILE_STATE_PATH_RULE; $SOURCE_HINT")
+                .takeIf { paths.named(requireNotNull(profile.claudeJson)) == null }
         }
-        return why?.let { TopologyFinding("launch.profiles.$name.claude_json", "$it; $SOURCE_HINT") }
     }
-
-    private fun inGemini(paths: List<Path>): Boolean {
-        val gemini = home.resolve(GEMINI_FOLDER)
-        val roots = listOfNotNull(gemini, PathProbe.throughLinks(gemini))
-        return paths.any { path -> roots.any(path::startsWith) }
-    }
-
-    /** Both the entry [raw] names and where it leads; null unless it is absolute or starts with `~/`. */
-    private fun sourceFile(raw: String): List<Path>? =
-        UserHome.declared(raw, home)?.takeIf { raw != HOME_MARK && it.isAbsolute }?.let { file ->
-            listOfNotNull(file.normalize(), PathProbe.realEntry(file), PathProbe.throughLinks(file))
-        }
 
     private fun keepHooks(name: String, profile: LaunchProfileConfig): TopologyFinding? =
         TopologyFinding(
@@ -190,12 +176,7 @@ private const val PREFIX_RULE = "each prefix is the start of a name, so it holds
 
 private const val RELATIVE_RULE = "must be an absolute folder or start with ~/"
 
-private const val SOURCE_RULE = "must be an absolute file or start with ~/"
-
 private const val SOURCE_HINT = "name the .claude.json your MCP servers and projects are read from, or remove it"
-
-// Google's tools' own folder under the home.
-private const val GEMINI_FOLDER = ".gemini"
 
 // The folders under the home a profile is never in, nor holds: Claude Code's own, and Google's tools'.
 private val KEPT_OUT = listOf(UserHome.CLAUDE_DIR, GEMINI_FOLDER)

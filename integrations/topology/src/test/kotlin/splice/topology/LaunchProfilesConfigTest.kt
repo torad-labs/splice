@@ -135,6 +135,45 @@ class LaunchProfilesConfigTest {
     }
 
     @Test
+    fun `boot refuses claude_json from a declared head or another folder under the profile root`() {
+        val head = """
+            [providers.fixture]
+            dialect = "anthropic-passthrough"
+            base_url = "http://127.0.0.1:1/v1"
+            auth = { kind = "api-key", env = "FIXTURE_KEY" }
+
+            [[providers.fixture.models]]
+            id = "fixture-model"
+            label = "Fixture"
+            context_window = 131072
+
+            [heads.fixture]
+            provider = "fixture"
+            port = 3199
+            discovery_prefix = "claude-fixture--"
+            pinned_model = "fixture-model"
+
+            [heads.fixture.claude]
+            config_dir = "~/declared-head"
+        """.trimIndent()
+        val profile = "$head\n[launch.profiles.work]\ndir = \"~/work\"\n"
+        assertInstanceOf(ConfigRead.Ready::class.java, read(profile))
+        val alias = Files.createSymbolicLink(
+            home.resolve("head-state.json"),
+            home.resolve("declared-head/.claude.json"),
+        )
+        val blocked = listOf(
+            "~/declared-head/.claude.json",
+            alias.toString(),
+            "~/.splice/launch-profiles/other/.claude.json",
+        )
+        for (file in blocked) {
+            val toml = "${profile}claude_json = \"$file\"\n"
+            assertEquals(listOf("launch.profiles.work.claude_json"), refusedAt(toml), file)
+        }
+    }
+
+    @Test
     fun `a claude_json that is absolute or starts with ~- is accepted, ~-claude's own included`() {
         val absolute = home.resolve("state/.claude.json").toString()
         for (file in listOf(absolute, "~/.claude/.claude.json", "~/.claude.json")) {

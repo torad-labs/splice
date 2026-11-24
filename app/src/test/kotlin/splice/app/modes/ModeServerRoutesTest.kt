@@ -134,6 +134,28 @@ class ModeServerRoutesTest {
         assertEquals(ModeSetting(serverRoutes = true, serverAdminOnly = true), cleared)
         assertTrue("server_admin_only = true" in Files.readString(file))
     }
+
+    @Test
+    fun `a switch keeps what the operator wrote in splice toml since the daemon read it, and follows it`() {
+        val held = held()
+        val routes = ModeServerRoutes(held)
+        val file = state.resolve("splice.toml")
+        Files.writeString(file, BASE + "\n[modes.harbor]\nserver_routes = true\n")
+        val writer = TopologyWriter(file, state.resolve("backups"), TopologyParse(TopologyLoader::parse))
+        assertInstanceOf(ModAnswer.Answered::class.java, routes.answer("harbor", request("tide")))
+
+        // The operator turns the route off by hand, and the daemon has not read the file again.
+        Files.writeString(file, BASE + "\n[modes.harbor]\nserver_routes = false\nserver_admin_only = true\n")
+        val switched = ModeSwitch(held).put("harbor", buildJsonObject { put("on", true) }, writer)
+        assertInstanceOf(Switched.Done::class.java, switched)
+
+        val text = Files.readString(file)
+        assertTrue("server_routes = false" in text, text)
+        assertTrue("server_routes = true" !in text, text)
+        val written = TopologyLoader.parse(text).modes.getValue("harbor")
+        assertEquals(ModeSetting(on = true, serverRoutes = false, serverAdminOnly = true), written)
+        assertEquals(ModAnswer.NoSuchMod, routes.answer("harbor", request("tide")))
+    }
 }
 
 private const val BASE = """

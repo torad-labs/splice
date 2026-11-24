@@ -10,15 +10,19 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import splice.core.capability.CapabilityToml
 import splice.core.mode.MODE_HEADS
 import splice.core.mode.MODE_ON
-import splice.core.mode.ModeSetting
+import splice.core.mode.MODE_TABLES
+import splice.core.mode.ModeSettingsReader
+import splice.core.mode.ModeTableEdit
 import splice.core.mode.ModeTableWrite
 import splice.core.topology.TopologyWriteResult
 import splice.core.topology.TopologyWriter
 import splice.core.wire.HttpStatus
 import splice.modes.api.FoundMode
 import splice.modes.api.ModeFrom
+import java.nio.file.Files
 
 /** What a switch came to: the mode as it is after the write, or a refusal with its status and what is wrong. */
 internal sealed class Switched {
@@ -39,16 +43,22 @@ internal class ModeSwitch(private val modes: DaemonModes) {
 
     private fun written(mode: FoundMode, change: Change.Set, writer: TopologyWriter?): Switched {
         if (writer == null) return Switched.Refused(HttpStatus.SERVICE_UNAVAILABLE, "splice.toml cannot be written now")
-        val wanted = change.applied(modes.settings[mode.name] ?: ModeSetting())
-        return when (val written = ModeTableWrite(writer).write(mode.name, wanted)) {
+        return when (val written = ModeTableWrite(writer).write(mode.name, change.edit())) {
             is TopologyWriteResult.Written -> {
-                val empty = wanted == ModeSetting()
-                modes.follow(if (empty) modes.settings - mode.name else modes.settings + (mode.name to wanted))
+                follow(mode.name, writer)
                 Switched.Done(mode)
             }
             is TopologyWriteResult.Refused ->
                 Switched.Refused(HttpStatus.CONFLICT, written.findings.joinToString("; ") { it.text() })
         }
+    }
+
+    /** The daemon follows mode [name]'s table as splice.toml holds it after the write, every key in it, an operator's
+     *  edit since boot included; a table boot would refuse is followed as none, so it opens no route. */
+    private fun follow(name: String, writer: TopologyWriter) {
+        val tables = CapabilityToml.split(Files.readString(writer.path), MODE_TABLES).tables.filter { it.name == name }
+        val now = ModeSettingsReader(modes.heads.toSet(), null).read(tables).settings[name]
+        modes.follow(if (now == null) modes.settings - name else modes.settings + (name to now))
     }
 
     private fun parse(mode: FoundMode, body: JsonObject): Change {
@@ -105,13 +115,8 @@ internal class ModeSwitch(private val modes: DaemonModes) {
         data class Bad(val why: String) : Change()
 
         data class Set(val on: Tri?, val onGiven: Boolean, val heads: Map<String, Tri>) : Change() {
-            fun applied(current: ModeSetting): ModeSetting {
-                val everyHead = if (onGiven) on?.value else current.on
-                val perHead = heads.entries.fold(current.heads) { acc, (head, tri) ->
-                    tri.value?.let { acc + (head to it) } ?: (acc - head)
-                }
-                return current.copy(on = everyHead, heads = perHead)
-            }
+            /** What this switch changes in the table splice.toml holds now, and nothing else. */
+            fun edit(): ModeTableEdit = ModeTableEdit(onGiven, on?.value, heads.mapValues { it.value.value })
         }
     }
 }

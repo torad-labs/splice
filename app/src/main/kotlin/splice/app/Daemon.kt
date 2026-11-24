@@ -20,6 +20,7 @@ import splice.app.control.HandOver
 import splice.app.control.ManagedHead
 import splice.app.daemon.BootedTopology
 import splice.app.daemon.HeadCatalogs
+import splice.app.daemon.LaunchTopology
 import splice.app.daemon.TopologyWindows
 import splice.app.desktop.DaemonDesktop
 import splice.app.desktop.setup.DesktopAppLibrary
@@ -188,7 +189,7 @@ public class Daemon(
             running = topologyWindows,
             alertCommand = topology.daemon.alertCommand.orEmpty(),
             reservedPeerNames = topology.daemon.reservedPeerNames.orEmpty().toSet(),
-            remote = topology.remote,
+            launches = LaunchTopology(topology.remote, topology.harnessCatalog),
         ),
         refreshCall,
         mcpHosting = McpHostingSettings(share = McpShareChoice { topologyWindows.mcpShare }).with(topology.daemon),

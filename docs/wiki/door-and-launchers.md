@@ -76,13 +76,16 @@ splice launch claude --profile work
 | Key | Default | What it controls |
 | --- | --- | --- |
 | `dir` | `~/.splice/launch-profiles/<name>` | Destination Claude folder. An explicit path must be absolute after expanding `~/`; it cannot be the same as, contain, or live inside the usual Claude or Gemini directory, or resolve to another profile's folder. |
+| `claude_json` | Shell's `$CLAUDE_CONFIG_DIR/.claude.json` if eligible; otherwise `~/.claude.json` | Read-only source for the profile's `.claude.json` state, including MCP servers and project metadata. See the [configuration reference](configuration-reference.md#door-launch-profiles-local-harnesses-and-lan-sharing) for allowed paths. |
 | `keep_hooks` | `"own"` | `"own"` keeps your settings hooks, `"all"` also permits kept plugins' hooks, and `"none"` keeps neither. |
 | `drop_hooks` | `[]` | Exact hook event names, or substrings in hook commands. |
 | `keep_plugins` | `[]` | Keep installed plugins by name or `name@marketplace`. |
-| `drop_blocks` | `[]` | Remove named blocks from the copied CLAUDE.md, marked by `<!-- name -->` / `<!-- /name -->` or `# BEGIN name` / `# END name`. |
+| `drop_blocks` | `[]` | Remove named blocks from the copied `CLAUDE.md`; see marker syntax below. |
 | `drop_names` | `[]` | Omit skills, agents and commands whose names start with one of these prefixes. |
 
-Splice removes one `--profile <name>` or `--profile=<name>` before handing arguments to Claude Code; a `--` ends splice option parsing. A missing name, duplicate flag or unknown profile is an error. Before each launch splice rebuilds its owned profile folder from your settings, strips login and model-picker state, and sets `CLAUDE_CONFIG_DIR` to the result. It includes your MCP configuration and splice's registry, and links the project and session trees so resume still works. Your source configuration isn't rewritten. Splice will not take over a nonempty folder that it doesn't own.
+Put each `drop_blocks` marker on its own line. For `drop_blocks = ["team-notes"]`, use `<!-- team-notes -->`, `<!-- BEGIN team-notes -->`, or `# BEGIN team-notes` to open a block, and `<!-- /team-notes -->`, `<!-- END team-notes -->`, or `# END team-notes` to close it. XML blocks can open with attributes, such as `<team-notes audience="internal">`, and close only with `</team-notes>`. Matching XML tags can nest; a self-closing tag such as `<team-notes />` removes only its line. Splice keeps an unclosed block and reports it at launch.
+
+Splice removes one `--profile <name>` or `--profile=<name>` before handing arguments to Claude Code; a `--` ends splice option parsing. A missing name, duplicate flag or unknown profile is an error. Before each launch, splice rebuilds its owned profile folder and sets `CLAUDE_CONFIG_DIR` to that folder for the child process. The source override applies only to `.claude.json`: settings and tools still come from `~/.claude`, and the project and session folders still link there so resume works. Splice strips Claude login and model-picker state and rebuilds MCP configuration from the selected source and its registry. It does not rewrite the source or take over a nonempty folder that it doesn't own.
 
 ## Retire custom heads
 

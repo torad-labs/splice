@@ -2,6 +2,7 @@
 // writes them, its handler's answers as tool results, and no server at all where the mode is off or was never offered.
 package splice.app.modes
 
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
@@ -113,7 +114,7 @@ class ModeMcpTest {
     }
 
     @Test
-    fun `a call is the handler's answer, its error an error result, and what it throws is named, never quoted`() {
+    fun `call results include errors but never quote thrown exceptions`() = runBlocking {
         val server = checkNotNull(modes().server("harbor", "acme"))
         val shown = server.call("show_tide", JsonObject(emptyMap()), "mcp-session-7")
         assertEquals("High at 04:10 on acme for mcp-session-7.", text(shown))

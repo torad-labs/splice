@@ -238,7 +238,7 @@ internal class ControlPlane(
         val mcpServices = mcp.services(mcpHost, home)
         // One session source serves the sessions routes and the heads route's client pids. A session launched on a
         // door (this machine's, on this control port, or a `[remote.*]` one) is placed on it (door-sessions).
-        val doors = LaunchDoors(topology.remote, controlPort)
+        val doors = LaunchDoors(topology.launches.remote, controlPort)
         val sessions = sessionWiring.source(home, heads, doors, console, foregroundTools)
         val signals = health.signals(heads, sessions, probes, home)
         val guard = parts.guard()

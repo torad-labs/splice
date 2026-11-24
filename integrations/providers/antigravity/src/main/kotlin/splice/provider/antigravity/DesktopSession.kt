@@ -39,7 +39,12 @@ internal data class DesktopParts(
     val record: ClaudeSessionRecord,
     val look: SessionLook,
     val peerInbox: DesktopPeerInbox? = null,
-)
+) {
+    fun replayUser(line: JsonObject, uuid: String, fallbackContent: JsonElement) {
+        out(frames.replay(line, uuid))
+        transcript.user(uuid, (line["message"] as? JsonObject)?.get("content") ?: fallbackContent)
+    }
+}
 
 /** Desktop session driven on agy via [coordinator] and [mcpState]; [clock] times turns. */
 internal class DesktopSession(
@@ -218,6 +223,10 @@ internal class DesktopSession(
             return
         }
         if (message.isExpired) return
+        if (prompts.isNotEmpty()) {
+            message.abortIfUnsettled("the ACP session is busy")
+            return
+        }
         try {
             val outcome = Cancellables.runCatchingCancellable {
                 val p = if (switchingOut) null else ensureOpen(emptyList())
@@ -254,8 +263,7 @@ internal class DesktopSession(
             return
         }
         // Desktop's `/login` is answered locally with Console Accounts, never sent to agy.
-        p.out(p.frames.replay(line, uuid))
-        p.transcript.user(uuid, content)
+        p.replayUser(line, uuid, content)
         if (prompts.isNotEmpty()) return
         val reply = hooks.login.open()
         begin(p)
@@ -272,15 +280,14 @@ internal class DesktopSession(
         prompt: JsonElement,
         peer: DesktopPeerMessage? = null,
     ): Boolean {
-        p.out(p.frames.replay(line, uuid))
-        p.transcript.user(uuid, (line["message"] as? JsonObject)?.get("content") ?: prompt)
+        p.replayUser(line, uuid, prompt)
         if (prompts.isEmpty()) begin(p)
         if (peer?.beginSubmit() == false) {
             if (prompts.isEmpty()) p.record.write(busy = false)
             return false
         }
-        val handoff = pendingHandoff
-        pendingHandoff = null
+        // Only the user's own turn may receive or consume the handoff.
+        val handoff = if (peer == null) pendingHandoff.also { pendingHandoff = null } else null
         val sent = session?.prompt(prompt, handoff)
         return if (sent != null) {
             prompts += sent

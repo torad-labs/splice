@@ -41,7 +41,10 @@ public sealed class SocketBind {
 
 /** The sockets of this user's peer helpers: [runtimeDir] is $XDG_RUNTIME_DIR, [uid] names the /tmp fallback. */
 public class PeerSockets(runtimeDir: Path?, private val uid: Long?, private val user: String) {
-    private val clientFolder: Path? = runtimeDir?.resolve(CLIENT_FOLDER)
+    private val clientFolder: Path? = (runtimeDir ?: macRuntime())?.resolve(CLIENT_FOLDER)
+
+    // Claude Code on macOS uses /tmp/cc-socks when there is no XDG runtime directory.
+    private fun macRuntime(): Path? = Path.of("/tmp").takeIf { System.getProperty("os.name") == "Mac OS X" }
 
     /** The socket a helper with [pid] listens on. */
     public fun pathFor(pid: Long): Path {

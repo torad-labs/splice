@@ -19,6 +19,7 @@ import splice.app.desktop.pipe.ClaudeLineReader
 import splice.app.desktop.pipe.DesktopPipe
 import splice.app.desktop.pipe.LegEnvironment
 import splice.app.desktop.pipe.NOT_STARTED_EXIT
+import splice.app.desktop.pipe.NativePeerLeg
 import splice.app.desktop.pipe.PipeLegs
 import splice.app.desktop.setup.SpliceSelf
 import splice.core.terminal.TerminalOutput
@@ -56,16 +57,18 @@ internal class DesktopLaunch(
      *  can change its program, and one on an Antigravity model runs on `splice desktop acp` from the start. */
     private suspend fun here(command: List<String>, session: DesktopLaunchEnv): Int {
         val line = ClaudeLineReader().of(command)
-        if (!line.streamJson && !line.antigravity) return direct(command, session.programs)
-        return DesktopPipe(PipeLegs(acp, session.programs, session.sessions()), io, err).run(line, input)
+        val peers = session.nativePeerLeg()
+        if (!line.streamJson && !line.antigravity) return direct(command, session.programs, peers)
+        return DesktopPipe(PipeLegs(acp, session.programs, session.sessions(), peers), io, err).run(line, input)
     }
 
     /** [command] run with Desktop's own streams, as it came; its exit code. */
-    private fun direct(command: List<String>, environment: LegEnvironment): Int {
-        val process = ProcessBuilder(command).inheritIO()
+    private fun direct(command: List<String>, environment: LegEnvironment, peers: NativePeerLeg?): Int {
+        val process = ProcessBuilder(peers?.args(command) ?: command).inheritIO()
         environment.apply(process.environment(), claudeCode = true)
         return try {
             val child = process.start()
+            peers?.registered(child)
             // Desktop stopping the wrapper stops the session it started, rather than leaving it running alone.
             val stop = Executors.defaultThreadFactory().newThread { child.destroy() }
             Runtime.getRuntime().addShutdownHook(stop)

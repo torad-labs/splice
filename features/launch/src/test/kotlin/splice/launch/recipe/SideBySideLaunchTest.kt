@@ -29,18 +29,21 @@ class SideBySideLaunchTest {
     private val door = object : ClaudeDoor {
         override suspend fun launch(): DoorLaunchSpec = side
 
-        override suspend fun launchProfile(name: String, side: DoorLaunchSpec): ProfileLaunch =
-            if (name != "work") {
-                ProfileLaunch.Refused("splice: no launch profile named '$name'")
-            } else {
-                ProfileLaunch.Ready(side.copy(env = side.env + ("CLAUDE_CONFIG_DIR" to "/profiles/work")))
-            }
+        override suspend fun launchProfile(
+            name: String,
+            side: DoorLaunchSpec,
+            inheritedConfigDir: String?,
+        ): ProfileLaunch = if (name != "work") {
+            ProfileLaunch.Refused("splice: no launch profile named '$name'")
+        } else {
+            ProfileLaunch.Ready(side.copy(env = side.env + ("CLAUDE_CONFIG_DIR" to "/profiles/work")))
+        }
 
         override fun onDoor(): Boolean = true
     }
 
     private fun start(vararg args: String, plain: DoorLaunchSpec = side) =
-        runBlocking { SideBySideLaunch(door).start(plain, args.toList()) }
+        runBlocking { SideBySideLaunch(door).start(plain, args.toList(), null) }
 
     @Test
     fun `--profile and --profile= name the profile, and Claude Code gets the rest in order`() {

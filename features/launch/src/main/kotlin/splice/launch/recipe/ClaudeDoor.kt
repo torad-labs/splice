@@ -38,9 +38,14 @@ public interface ClaudeDoor {
 
     /** Terminal launch profiles (issue #791): [side], the side-by-side launch as this launch carries it (its walls,
      *  timers and window included), moved over `[launch.profiles.<name>]`'s own Claude folder, rebuilt from the
-     *  person's `~/.claude` before it starts; or why it does not start. */
-    public suspend fun launchProfile(name: String, side: DoorLaunchSpec): ProfileLaunch =
-        ProfileLaunch.Refused("splice: launch profiles are not available on this door")
+     *  person's `~/.claude` before it starts, its `.claude.json` from [inheritedConfigDir] (the launching shell's
+     *  CLAUDE_CONFIG_DIR, null while it held none) when that is a Claude folder of the person's own; or why it does not
+     *  start. */
+    public suspend fun launchProfile(
+        name: String,
+        side: DoorLaunchSpec,
+        inheritedConfigDir: String? = null,
+    ): ProfileLaunch = ProfileLaunch.Refused("splice: launch profiles are not available on this door")
 
     /** custom-provider (cp-command): a launch of the door command [name] (`[door.commands.<name>]`), on the door
      *  whatever lane `claude` is on; null when [name] is no door command. */

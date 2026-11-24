@@ -56,6 +56,7 @@ internal class AgyMcpCoordinator(
     private val io: CoordinatorIo,
     private val mcpState: McpState,
     private val bridge: McpBridge,
+    private val builtIns: List<AgyMcpSpec> = emptyList(),
 ) {
     private val encoder = AcpMcpEncoder()
     private val reader = AgyMcpReader(target.log)
@@ -99,7 +100,7 @@ internal class AgyMcpCoordinator(
         request: JsonObject,
         onAgy: AgyMessageSink,
     ): JsonObject {
-        val diff = mcpState.diffForSet(readSetSpecs(request))
+        val diff = mcpState.diffForSet(mergeSpecs(readSetSpecs(request), emptyList()))
         if (diff.added.isEmpty()) {
             return mcpState.setServersResponse(emptyList(), diff.dropped, addError = null)
         }
@@ -120,6 +121,7 @@ internal class AgyMcpCoordinator(
         val merged = LinkedHashMap<String, AgyMcpSpec>()
         fileSpecs.forEach { merged[it.name] = it }
         desktopSpecs.forEach { merged[it.name] = it }
+        builtIns.forEach { merged[it.name] = it }
         return merged.values.toList()
     }
 

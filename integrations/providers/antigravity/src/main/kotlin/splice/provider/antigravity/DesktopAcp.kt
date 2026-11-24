@@ -56,9 +56,9 @@ public class DesktopAcp(
         val lines = Channel<String>(Channel.UNLIMITED)
         val reader = startInputReader(input, lines)
         val claude = ClaudeArgsReader().of(args)
-        val started = AgyLaunch(agy, cwd, io, peer.childEnv).start(claude, this)
+        val started = AgyLaunch(agy, cwd, io, peer.childEnv).start(claude, this, peer.forwardLaunchOptions)
         try {
-            serve(ServeTarget(claude, started, hooks, peer.inbox), lines, output)
+            serve(ServeTarget(claude, started, hooks, peer), lines, output)
         } finally {
             reader.shutdownNow()
             started.close(log)
@@ -93,7 +93,7 @@ public class DesktopAcp(
         val claude: ClaudeArgs,
         val started: StartedAgy,
         val hooks: AcpSessionHooks,
-        val peerInbox: DesktopPeerInboxFactory?,
+        val peer: DesktopPeerWiring,
     )
 
     private suspend fun serve(
@@ -115,13 +115,14 @@ public class DesktopAcp(
         McpBridge(out, connected).use { bridge ->
             val envTarget = CoordinatorEnv(claude, STRICT_MCP_CONFIG in args, cwd, env, log, skills)
             val chan = CoordinatorIo(started, hello, helloFailure, lines, deferredLines, this)
-            val coordinator = AgyMcpCoordinator(envTarget, chan, mcpState, bridge)
+            val builtIns = AgyMcpReader(log).fromConfigMap(target.peer.mcpServers)
+            val coordinator = AgyMcpCoordinator(envTarget, chan, mcpState, bridge, builtIns)
             val scope = this
             val factory = object : PartsFactory {
                 override val skills = skills
                 override val out = out
 
-                override fun build(sessionId: String) = parts(sessionId, claude, target.peerInbox, out, scope)
+                override fun build(sessionId: String) = parts(sessionId, claude, target.peer.inbox, out, scope)
             }
             val session = DesktopSession(claude, factory, coordinator, mcpState, bridge, clock, target.hooks)
             val stop = Executors.defaultThreadFactory().newThread { session.lifecycle.close() }

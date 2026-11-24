@@ -33,6 +33,7 @@ internal class PeerRegisterAgain(private val processes: PeerOwnerProcesses = Pee
             scope = PeerFileScope(request.sendTo),
             owner = asked,
             nativeInbox = request.nativeInbox,
+            harness = request.harness,
         )
         return RegisterAgain.Keep(updated, if (updated == existing) RegisterOutcome.SAME else RegisterOutcome.UPDATED)
     }

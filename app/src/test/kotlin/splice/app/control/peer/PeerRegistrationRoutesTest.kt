@@ -46,6 +46,7 @@ import splice.sessions.peer.DeliveryStatus
 import splice.sessions.peer.PeerOutbox
 import splice.sessions.peer.PeerSender
 import splice.sessions.peer.SendOutcome
+import splice.sessions.peer.owner.PeerOwnerProcesses
 import splice.sessions.peer.store.PeerRequest
 import splice.sessions.peer.store.PeerStore
 import splice.sessions.registry.RouteOfPid
@@ -57,9 +58,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 private const val THREAD = "019a2f6c-4b1e-7c3d-9e8f-0a1b2c3d4e5f"
-
-// why: the stat field after the command name that holds a process's kernel start (field 22 of /proc/<pid>/stat).
-private const val START_FIELD = 19
 
 class PeerRegistrationRoutesTest {
     private val log = LogSink { }
@@ -225,14 +223,11 @@ class PeerRegistrationRoutesTest {
     /** The Gradle worker's parent stands for the Codex process that hosts the thread: a live process of this user. */
     private fun owner(): JsonObject {
         val pid = ProcessHandle.current().parent().orElseThrow().pid()
-        val stat = Files.readString(Path.of("/proc/$pid/stat"))
-        val start = stat.substringAfterLast(')').trim().split(' ')[START_FIELD]
-        val machine = Files.readString(Path.of("/etc/machine-id")).trim()
-        val namespace = Files.readSymbolicLink(Path.of("/proc/self/ns/pid")).toString()
+        val process = checkNotNull(PeerOwnerProcesses().capture(pid))
         return buildJsonObject {
-            put("pid", pid)
-            put("procStart", start)
-            put("pidDomain", "linux:$machine:$namespace")
+            put("pid", process.pid)
+            put("procStart", process.procStart)
+            put("pidDomain", process.pidDomain)
         }
     }
 

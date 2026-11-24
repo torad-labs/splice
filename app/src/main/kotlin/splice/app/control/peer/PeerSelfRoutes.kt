@@ -69,15 +69,17 @@ internal class PeerSelfRoutes(private val parts: PeerParts) {
     /** GET /api/peers/self/sent/{msgId}: the send's outcome and the receipt that came back for it, if one did. A
      *  caller's id is the msg_id its send carried, so the same call looks a send up by it. */
     suspend fun sent(call: ApplicationCall, principal: PeerPrincipal) {
-        val msgId = call.parameters["msgId"].orEmpty()
+        status(principal, call.parameters["msgId"].orEmpty()).send(call)
+    }
+
+    fun status(principal: PeerPrincipal, msgId: String): PeerAnswer {
         val mail = parts.mail
         val record = mail?.sent(principal.name, msgId)
-        val answer = when {
+        return when {
             mail == null -> PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, PEER_MAIL_UNWIRED)
             record == null -> PeerReplies.refuse(HttpStatusCode.NotFound, "this peer sent no message with that id")
             else -> PeerReplies.ok(HttpStatusCode.OK, record)
         }
-        answer.send(call)
     }
 
     private fun inboxQuery(call: ApplicationCall): InboxQuery? {

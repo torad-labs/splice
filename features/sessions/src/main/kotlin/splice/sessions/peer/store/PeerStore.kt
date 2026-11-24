@@ -17,21 +17,10 @@ import splice.sessions.peer.codex.CodexRequest
 import splice.sessions.peer.codex.NativeProcess
 import java.nio.file.Files
 import java.nio.file.Path
-import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.Clock
-import java.util.Base64
-import java.util.HexFormat
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-
-// why: 32 random bytes for the peer key (2.1), base64url without padding, which is 43 characters.
-private const val PEER_KEY_BYTES = 32
-
-// why: 32 random bytes as hex for the webhook HMAC secret (3.2).
-private const val SECRET_BYTES = 32
-
-private const val KEY_PREFIX = "splp_"
 
 private const val PEERS_DIR = "peers"
 internal const val PEER_JSON = "peer.json"
@@ -47,6 +36,7 @@ public data class PeerRequest(
     val sendTo: List<String>,
     val owner: NativeProcess? = null,
     val nativeInbox: Boolean = false,
+    val harness: String? = null,
 )
 
 /** Why a register was refused: a request that can never succeed, or a name that is reserved or taken (400 and 409). */
@@ -87,6 +77,8 @@ public class PeerStore(
 ) {
     private val folder = PeerFolder(settingsDir.resolve(PEERS_DIR))
     private val keys = PeerKeys(random)
+    public val ownedKeys: PeerOwnedKeys = PeerOwnedKeys(folder, keys)
+    public val inboxRouting: PeerInboxRouting = PeerInboxRouting(this)
     private val rules = PeerRules(reservedNames)
     private val codexPeers = CodexPeers()
     private val reregister = PeerRegisterAgain()
@@ -117,6 +109,11 @@ public class PeerStore(
         booted.mapNotNull { file -> file.name.takeIf { file.nativeInbox } }.toSet()
 
     @Volatile
+    private var harnessIds: Map<String, String> = booted.mapNotNull { file ->
+        file.harness?.let { file.name to it }
+    }.toMap()
+
+    @Volatile
     private var byKeyHash: Map<String, String> = peers.values.associate { it.keySha256 to it.name }
 
     /** When each codex peer last attached since this store loaded: a thread's end before it does not revoke it. */
@@ -143,8 +140,11 @@ public class PeerStore(
     public val nativeOwners: Map<String, NativeProcess>
         get() = codexes.mapNotNull { (name, binding) -> binding.owner?.let { name to it } }.toMap() + owners
 
-    /** Registered peers whose owner process serves its own peer UDS inbox, so no `peer-host` helper is started. */
+    /** Registered peers whose owner process serves its own inbound UDS socket. */
     public val nativeInboxes: Set<String> get() = nativeInboxNames
+
+    /** The configured harness, when this peer was registered by a launch. */
+    public val harnesses: Map<String, String> get() = harnessIds
 
     /**
      * Registers [request]'s thread as the codex peer `codex-<thread>`, or brings the one there up to date: peer.key
@@ -220,6 +220,7 @@ public class PeerStore(
                 scope = PeerFileScope(request.sendTo),
                 owner = request.owner?.let { PeerFileOwner(it.pid, it.procStart, it.pidDomain) },
                 nativeInbox = request.nativeInbox,
+                harness = request.harness,
             )
             folder.create(file, key)
             PeerRegistration.Registered(publish(file), folder.keyFile(request.name))
@@ -243,6 +244,7 @@ public class PeerStore(
         codexes = codexes - name
         owners = owners - name
         nativeInboxNames = nativeInboxNames - name
+        harnessIds = harnessIds - name
         attachedAt.remove(name)
         byKeyHash = byKeyHash.filterValues { it != name }
         folder.deleteTree(folder.dir(name))
@@ -299,6 +301,7 @@ public class PeerStore(
         owners = file.owner?.let { owners + (file.name to NativeProcess(it.pid, it.procStart, it.pidDomain)) }
             ?: (owners - file.name)
         nativeInboxNames = if (file.nativeInbox) nativeInboxNames + file.name else nativeInboxNames - file.name
+        harnessIds = file.harness?.let { harnessIds + (file.name to it) } ?: (harnessIds - file.name)
         byKeyHash = byKeyHash.filterValues { it != file.name } + (config.keySha256 to file.name)
         return config
     }
@@ -399,18 +402,4 @@ internal class PeerFolder(val root: Path) {
         val open = SecureFile.ownerOnlyDirectory(dir)
         check(open == null) { "peer folder $dir is not owner-only: $open" }
     }
-}
-
-/** Peer keys and webhook secrets: minted from [random], and a key known to the daemon only by its sha256. */
-internal class PeerKeys(private val random: SecureRandom) {
-    fun mint(): String = KEY_PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(bytes(PEER_KEY_BYTES))
-
-    fun secret(): String = HexFormat.of().formatHex(bytes(SECRET_BYTES))
-
-    fun hash(key: String): String =
-        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(key.toByteArray(Charsets.UTF_8)))
-
-    fun nextId(current: String): String = "k${(current.removePrefix("k").toIntOrNull() ?: 0) + 1}"
-
-    private fun bytes(count: Int): ByteArray = ByteArray(count).also { random.nextBytes(it) }
 }

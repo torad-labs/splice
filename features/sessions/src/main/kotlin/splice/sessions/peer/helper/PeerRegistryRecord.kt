@@ -94,6 +94,7 @@ public class PeerRegistryRecord(
     private val identity: HelperIdentity,
     private val socket: Path,
     private val clock: WallClock,
+    private val listed: Boolean = true,
 ) {
     /** Whether the record says the peer is `busy`, as a codex peer's is while its thread runs a turn; else `idle`. */
     @Volatile
@@ -125,12 +126,13 @@ public class PeerRegistryRecord(
     public fun publish(token: String): String? = Cancellables.runCatchingCancellable {
         for (dir in files.directories) {
             files.writeKey(dir, identity, socket, token)
-            writeRecord(dir, clock())
+            if (listed) writeRecord(dir, clock())
         }
     }.exceptionOrNull()?.let { "the registry record cannot be written: ${SafeFailureText.render(it)}" }
 
     /** Rewrites `updatedAt` and `statusUpdatedAt` in every record, so no reader takes the peer for a stale session. */
     public fun heartbeat(): String? {
+        if (!listed) return null
         val now = clock()
         return Cancellables.runCatchingCancellable { files.directories.forEach { writeRecord(it, now) } }
             .exceptionOrNull()?.let { "the heartbeat cannot be written: ${SafeFailureText.render(it)}" }

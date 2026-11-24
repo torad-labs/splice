@@ -117,4 +117,6 @@ public fun interface DesktopPeerInboxFactory {
 public data class DesktopPeerWiring(
     public val inbox: DesktopPeerInboxFactory? = null,
     public val childEnv: Map<String, String> = emptyMap(),
+    val mcpServers: JsonObject = JsonObject(emptyMap()),
+    val forwardLaunchOptions: Boolean = true,
 )

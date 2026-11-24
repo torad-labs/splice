@@ -44,7 +44,7 @@ public class VirtualTime(
     private data class Alarm(val dueMs: Long, val action: () -> Unit)
 
     /** One parked wait: woken with true when the clock reaches its due time, with false when the clock closes. */
-    private class Sleeper(val dueMs: Long) {
+    private class Sleeper(val dueMs: Long, val paces: Boolean) {
         private val woken = CompletableDeferred<Boolean>()
 
         fun isDue(nowMs: Long): Boolean = dueMs <= nowMs
@@ -66,7 +66,7 @@ public class VirtualTime(
     public val waiter: Waiter = Waiter { ms -> spendUntil(nowMs + ms.coerceAtLeast(0L)) }
 
     /** A loop's pace on this clock; false once the clock is closed, so the loop ends. */
-    public val ticker: Ticker = Ticker { ms -> park(nowMs + ms.coerceAtLeast(0L)) }
+    public val ticker: Ticker = Ticker { ms -> park(nowMs + ms.coerceAtLeast(0L), paces = true) }
 
     /** How far the clock has moved since it was made. */
     public fun passed(): Duration = nowMs.milliseconds
@@ -99,9 +99,11 @@ public class VirtualTime(
     public suspend fun sleepUntil(passed: Duration): Boolean = spendUntil(passed.inWholeMilliseconds)
 
     /** When the earliest parked wait or pending [at] action falls due, as time passed since the clock was made; null
-     *  when nothing waits. A test that steps the clock from one due time to the next never overshoots a deadline. */
-    public fun nextDue(): Duration? = synchronized(lock) {
-        (sleepers.map { it.dueMs } + alarms.map { it.dueMs }).minOrNull()?.milliseconds
+     *  when nothing waits. A test that steps the clock from one due time to the next never overshoots a deadline.
+     *  With [pacing] false a [Ticker]'s next tick is not a due time: a turn's keepalive pinger ticks every two seconds
+     *  whatever the turn waits for, so a test that is not about ticks does not stop at each one. */
+    public fun nextDue(pacing: Boolean = true): Duration? = synchronized(lock) {
+        (sleepers.filter { pacing || !it.paces }.map { it.dueMs } + alarms.map { it.dueMs }).minOrNull()?.milliseconds
     }
 
     /** How many waits are parked on this clock now. */
@@ -139,8 +141,8 @@ public class VirtualTime(
 
     /** Parks until the clock reads [dueMs]: true when time got there, false when the clock closed first. A wait
      *  that is already due, or a closed clock, still yields once, so a loop polling on it lets others run. */
-    private suspend fun park(dueMs: Long): Boolean {
-        val sleeper = Sleeper(dueMs)
+    private suspend fun park(dueMs: Long, paces: Boolean = false): Boolean {
+        val sleeper = Sleeper(dueMs, paces)
         val settled = synchronized(lock) {
             when {
                 closed -> false

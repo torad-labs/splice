@@ -11,6 +11,7 @@ import splice.app.cli.AdminSupport
 import splice.app.desktop.DESKTOP_PATH
 import splice.app.desktop.DOOR_PATH
 import splice.app.desktop.pipe.LegEnvironment
+import splice.app.desktop.pipe.NativePeerLeg
 import splice.app.desktop.record.DesktopKey
 import splice.app.desktop.setup.CLAUDE_SPLICE_DESKTOP_ENV
 import splice.core.config.STATE_DIR_ENV
@@ -20,6 +21,7 @@ import splice.core.terminal.TerminalOutput
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.LogSink
 import splice.core.util.PathProbe
 import splice.core.util.SafeFailureText
 import splice.topology.TopologyLoader
@@ -34,7 +36,7 @@ internal class DesktopLaunchEnv(
     private val env: EnvReader,
     private val err: TerminalOutput,
     private val inheritedEnv: Map<String, String>,
-    state: String?,
+    private val state: String?,
 ) {
     private val sideBySide = env(CLAUDE_SPLICE_DESKTOP_ENV) == "1"
 
@@ -48,6 +50,7 @@ internal class DesktopLaunchEnv(
     val programs: LegEnvironment = LegEnvironment { vars, claudeCode ->
         if (inheritedEnv.isNotEmpty()) vars.putAll(inheritedEnv)
         if (sideBySide) SIDE_BY_SIDE_ENV.forEach(vars::remove)
+        state?.let { vars[STATE_DIR_ENV] = it }
         if (claudeCode) keyed()?.let { name -> vars[name] = key() }
     }
 
@@ -57,6 +60,8 @@ internal class DesktopLaunchEnv(
             ?: UserHome.claudeDir(here)
         return config.resolve(SESSIONS_DIR)
     }
+
+    fun nativePeerLeg(): NativePeerLeg? = state?.let { NativePeerLeg(here, LogSink { err.line(it.trimEnd()) }) }
 
     /** The variable the desktop key goes in for this launch, or null when it is not on this splice's door. */
     private fun keyed(): String? {

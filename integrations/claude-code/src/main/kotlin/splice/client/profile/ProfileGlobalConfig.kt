@@ -19,8 +19,8 @@ import java.io.IOException
 import java.nio.file.Path
 
 internal class ProfileGlobalConfig(
-    /** The person's own `~/.claude.json`. */
-    private val personal: Path,
+    /** The person's Claude state, already read and validated. */
+    private val personal: JsonObject?,
     /** Splice's MCP user registry, server name to entry. */
     private val registry: JsonObject,
 ) {
@@ -30,7 +30,7 @@ internal class ProfileGlobalConfig(
     fun build(folder: Path): Set<String> {
         val file = folder.resolve(Keys.CLAUDE_JSON)
         val own = read(file).orEmpty()
-        val yours = read(personal).orEmpty().filterKeys { it !in NEVER_CARRIED }
+        val yours = personal.orEmpty().filterKeys { it !in NEVER_CARRIED }
         val seeded = (yours.filterKeys { it !in own } + own).filterKeys { it != ClaudeModelLists.STATE_CACHE }
         val projects = JsonObject(objectAt(yours, Keys.PROJECTS) + objectAt(own, Keys.PROJECTS))
         val servers = JsonObject(registry + objectAt(yours, Keys.MCP_SERVERS))
@@ -42,9 +42,7 @@ internal class ProfileGlobalConfig(
     private fun objectAt(config: Map<String, JsonElement>, key: String): Map<String, JsonElement> =
         (config[key] as? JsonObject).orEmpty()
 
-    /** [file] as Claude Code holds it; null while it is not there. One that is there and can't be read stops the
-     *  launch: a profile without the person's servers and folder trust, or a profile copy written over, is never the
-     *  quiet answer. */
+    /** The profile's own state as Claude Code left it. Never replace a copy that can't be read. */
     private fun read(file: Path): JsonObject? = when (val read = DesktopSettingsRead(file).read()) {
         SettingsRead.Absent -> null
         is SettingsRead.Held -> read.file

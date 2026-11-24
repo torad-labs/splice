@@ -27,19 +27,21 @@ class LaunchProfilesConfigTest {
         val toml = """
             [launch.profiles.work]
             dir = "~/.claude-work"
+            claude_json = "~/.claude/.claude.json"
             keep_hooks = "all"
             drop_hooks = ["SessionStart", "notify.sh"]
             keep_plugins = ["code-review@official"]
-            drop_blocks = ["team-notes"]
+            drop_blocks = ["some-managed-instructions", "org:block", "my notes", "a_b.c"]
             drop_names = ["team-"]
         """.trimIndent()
         val ready = assertInstanceOf(ConfigRead.Ready::class.java, read(toml))
         val expected = LaunchProfileConfig(
             dir = "~/.claude-work",
+            claudeJson = "~/.claude/.claude.json",
             keepHooks = KEEP_HOOKS_ALL,
             dropHooks = listOf("SessionStart", "notify.sh"),
             keepPlugins = listOf("code-review@official"),
-            dropBlocks = listOf("team-notes"),
+            dropBlocks = listOf("some-managed-instructions", "org:block", "my notes", "a_b.c"),
             dropNames = listOf("team-"),
         )
         assertEquals(mapOf("work" to expected), ready.topology.launch.profiles)
@@ -94,6 +96,90 @@ class LaunchProfilesConfigTest {
             "launch.profiles.work.keep_plugins",
         )
         assertEquals(expected, refusedAt(toml).distinct())
+    }
+
+    @Test
+    fun `angle brackets and newlines in a block marker refuse boot at drop_blocks`() {
+        for (marker in listOf("<tag", "tag>", "line\\nbreak")) {
+            val toml = "[launch.profiles.work]\ndrop_blocks = [\"$marker\"]\n"
+            assertEquals(listOf("launch.profiles.work.drop_blocks"), refusedAt(toml), marker)
+        }
+    }
+
+    @Test
+    fun `a claude_json that is blank, relative, in the profile's own folder or in ~-gemini refuses boot`() {
+        val blankOrRelative = listOf("", " ", "~", "state.json", "./x/.claude.json")
+        val kept = listOf("~/.claude-work/.claude.json", "~/.claude-work/sub/x.json", "~/.gemini/.claude.json")
+        val refused = blankOrRelative + kept
+        for (file in refused) {
+            val toml = "[launch.profiles.work]\ndir = \"~/.claude-work\"\nclaude_json = \"$file\"\n"
+            assertEquals(listOf("launch.profiles.work.claude_json"), refusedAt(toml), "claude_json = \"$file\"")
+        }
+        val atRoot = "[launch.profiles.lean]\nclaude_json = \"~/.splice/launch-profiles/lean/.claude.json\"\n"
+        assertEquals(listOf("launch.profiles.lean.claude_json"), refusedAt(atRoot))
+    }
+
+    @Test
+    fun `boot refuses claude_json links into the profile or Gemini, including a parent step before a missing leaf`() {
+        for (protectedDir in listOf(".claude-work", ".gemini")) {
+            val dir = home.resolve(protectedDir)
+            val sub = Files.createDirectories(dir.resolve("sub"))
+            val file = Files.writeString(dir.resolve(".claude.json"), "{}")
+            val alias = Files.createSymbolicLink(home.resolve("$protectedDir-state"), file)
+            val subAlias = Files.createSymbolicLink(home.resolve("$protectedDir-sub"), sub)
+            for (source in listOf(alias.toString(), "$subAlias/../.claude.json", "$subAlias/../missing.json")) {
+                val toml = "[launch.profiles.work]\ndir = \"~/.claude-work\"\nclaude_json = \"$source\"\n"
+                assertEquals(listOf("launch.profiles.work.claude_json"), refusedAt(toml), source)
+            }
+        }
+    }
+
+    @Test
+    fun `boot refuses claude_json from a declared head or another folder under the profile root`() {
+        val head = """
+            [providers.fixture]
+            dialect = "anthropic-passthrough"
+            base_url = "http://127.0.0.1:1/v1"
+            auth = { kind = "api-key", env = "FIXTURE_KEY" }
+
+            [[providers.fixture.models]]
+            id = "fixture-model"
+            label = "Fixture"
+            context_window = 131072
+
+            [heads.fixture]
+            provider = "fixture"
+            port = 3199
+            discovery_prefix = "claude-fixture--"
+            pinned_model = "fixture-model"
+
+            [heads.fixture.claude]
+            config_dir = "~/declared-head"
+        """.trimIndent()
+        val profile = "$head\n[launch.profiles.work]\ndir = \"~/work\"\n"
+        assertInstanceOf(ConfigRead.Ready::class.java, read(profile))
+        val alias = Files.createSymbolicLink(
+            home.resolve("head-state.json"),
+            home.resolve("declared-head/.claude.json"),
+        )
+        val blocked = listOf(
+            "~/declared-head/.claude.json",
+            alias.toString(),
+            "~/.splice/launch-profiles/other/.claude.json",
+        )
+        for (file in blocked) {
+            val toml = "${profile}claude_json = \"$file\"\n"
+            assertEquals(listOf("launch.profiles.work.claude_json"), refusedAt(toml), file)
+        }
+    }
+
+    @Test
+    fun `a claude_json that is absolute or starts with ~- is accepted, ~-claude's own included`() {
+        val absolute = home.resolve("state/.claude.json").toString()
+        for (file in listOf(absolute, "~/.claude/.claude.json", "~/.claude.json")) {
+            val toml = "[launch.profiles.work]\nclaude_json = \"$file\"\n"
+            assertInstanceOf(ConfigRead.Ready::class.java, read(toml), file)
+        }
     }
 
     @Test

@@ -73,7 +73,7 @@ splice check-config          # read-only: exit 0 (clean or warnings), exit 3 (th
 splice check-config --fix    # interactive: findings first, then warnings; nothing moves without your answer
 ```
 
-A 0.6.4 head can hold values the gateway now reads from its provider. In 0.7.0 these are warnings: `check-config` prints them and exits 0, `splice doctor` shows them as WARN, and `daemon.log` names them with `[config] warning:` lines. Until you move them, the gateway uses a head's value when every head on that provider agrees. If they disagree, the provider is served without the value and the warning says so.
+A 0.6.4 head can hold values the gateway now reads from its provider. In 0.7.0 these are warnings: `check-config` prints them and exits 0, `splice doctor` shows them as WARN, and `daemon.log` names them with `[config] warning:` lines. Until you move them, the gateway serves the provider with a head's value when every head on it that says that value says the same one. If they disagree, the provider is served without the value and the warning says so.
 
 | A 0.6.4 head holds | The move offered |
 | --- | --- |
@@ -82,6 +82,8 @@ A 0.6.4 head can hold values the gateway now reads from its provider. In 0.7.0 t
 | `system_prompt`, `system_prompt_file`, `system_prompt_mode` | To `[providers.<key>]`, all three together in one move |
 | An `overrides` knob a turn is served by (for example `maxInflight`) | To `[providers.<key>.overrides]` |
 | A custom `discovery_prefix` | To `[door.selector_aliases]`; the head keeps its prefix |
+
+The table is what `--fix` offers when the move is safe. A window, tier map, prompt or `overrides` knob moves only when the provider says none of it and every head on that provider would be served exactly what it is served now once the value is on the provider. When two heads on one provider hold different values, or another head says nothing and would start reading the moved value, the warning stays and no `[m]` is offered: moving either value would change how the other head is served. Nothing is written for such a warning unless you pick `[d]`, `[v]` or `[e]`, and each head keeps being served its own value meanwhile. To clear it, write the value the gateway should serve in `[providers.<key>]` yourself (`[e]` opens the file). A head that says the same value then stops warning. A head that says another keeps a warning ("says another, which the gateway serves; the head keeps its own") and keeps its own value until you remove its line, which serves it the provider's, or set it to the same value.
 
 A head's `pinned_model` and its display and trace settings stay on the head. `model_slots` is not a new key: it existed on heads in 0.6.4. What's new is that a provider carries it and the door serves every mapped tier.
 
@@ -97,7 +99,7 @@ A head's `pinned_model` and its display and trace settings stay on the head. `mo
 | `[s]` | Skip this one for now |
 | `[q]` | Quit |
 
-The fix session checks a move before offering it. It offers `[m]` only when the result passes the same strict check boot uses. A standing prompt moves as one unit, and only if the provider has no prompt of its own and every head on that provider is served the same prompt, so one head's `append` never becomes another's `replace`. When a move isn't safe, the warning says why and no `[m]` is offered. Multi-line strings move whole with their comments, and Windows line endings are kept.
+The fix session checks a move before offering it. It offers `[m]` only when the result passes the same strict check boot uses. A standing prompt moves as one unit, and only if the provider has no prompt of its own and every head on that provider is served the same prompt, so one head's `append` never becomes another's `replace`. When a move isn't safe, including when sibling heads disagree, the warning says why and no `[m]` is offered. A key that isn't on offer, or a bare Enter, is answered with the keys that are, and the warning is not repeated. Multi-line strings move whole with their comments, and Windows line endings are kept.
 
 Boot still refuses a provider `context_window` of zero or less, and a provider that sets both `system_prompt` and `system_prompt_file`. A retired knob saved in splice's state is cleared at daemon start after a copy to `config-backups/`. A retired knob set in your environment must be unset where you export it (a shell profile or a systemd unit).
 
@@ -387,7 +389,7 @@ None of these needs any action. See [Architecture and troubleshooting](architect
 ## After the upgrade
 
 - [ ] `splice version` prints `splice 0.7.0`.
-- [ ] `splice check-config` exits 0. Warnings are fine; `--fix` moves them when you're ready.
+- [ ] `splice check-config` exits 0. Warnings are fine; `--fix` moves the ones that are safe to move when you're ready. A value that sibling heads on one provider disagree on is not moved: set the value you want in the provider's table yourself, or leave the warning.
 - [ ] `splice doctor` is green, and its tools rows read as you expect.
 - [ ] `claude`, then `/model`, lists every signed-in provider's models.
 - [ ] Each head you still use prints its replacement selector, and `splice claude check` reports what still starts past the gateway.

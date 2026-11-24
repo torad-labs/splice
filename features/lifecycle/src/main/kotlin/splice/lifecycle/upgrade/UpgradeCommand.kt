@@ -23,6 +23,9 @@ import splice.daemonclient.DaemonProbe
 import splice.daemonclient.DaemonSettings
 import splice.lifecycle.units.UpgradeDaemonUnit
 import splice.lifecycle.units.UpgradeUnits
+import splice.lifecycle.upgrade.aftercare.AFTERCARE_AUTO_FLAG
+import splice.lifecycle.upgrade.aftercare.AFTERCARE_FLAG
+import splice.lifecycle.upgrade.aftercare.UpgradeAftercare
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -44,9 +47,20 @@ public class UpgradeVerb(
     private val units: UpgradeUnits = UpgradeUnits(),
     /** splice.toml's update channel, which `--check` follows. */
     private val channel: AutoUpdateSettings = AutoUpdateSettings { null },
+    /** What the NEW jar does once its upgrade passed (`splice upgrade --aftercare`): the executable's maintenance and
+     *  its list of what is not set up yet. */
+    private val aftercare: UpgradeAftercare = UpgradeAftercare(output),
 ) {
     public fun upgrade(args: List<String>): Boolean {
         if (args == listOf("--check")) return UpgradeCheckLine(output, env, channel).answer()
+        // Run by the upgrade that just activated this jar, never by hand: `--auto` keeps it to the maintenance alone.
+        // Exactly `--aftercare` or `--aftercare --auto`: any other word after it is a command line nothing wrote.
+        val aftercareAuto = when (args) {
+            listOf(AFTERCARE_FLAG) -> false
+            listOf(AFTERCARE_FLAG, AFTERCARE_AUTO_FLAG) -> true
+            else -> null
+        }
+        if (aftercareAuto != null) return aftercare.run(auto = aftercareAuto)
         val settings = DaemonSettings(errors)
         val daemon = UpgradeDaemon(
             output,
@@ -154,7 +168,10 @@ internal class UpgradeCommand(
             layout.prunable().forEach(layout::discard)
             daemonUnit.refresh(layout.liveJar)
             when (val verdict = finish(version, installed, a.now, a.wait)) {
-                is Finished.Passed -> Upgraded.Ok(true).also { layout.rejected.forgive(version) }
+                is Finished.Passed -> Upgraded.Ok(true).also {
+                    layout.rejected.forgive(version)
+                    daemon.aftercare(java, layout.liveJar, a.auto)
+                }
                 is Finished.Failed -> putBack(version, installed, verdict)
             }
         }

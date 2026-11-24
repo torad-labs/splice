@@ -137,6 +137,14 @@ class CommandParserTest {
     // verb dropped from the table fails by name instead of vanishing from both sides. `daemon` and
     // `start` never reach the parser (Main dispatches them). A new verb is additive and joins this list.
     @Test
+    fun `setup takes --update and no other word`() {
+        assertEquals(Command.Setup(), parser.parse(arrayOf("setup")))
+        assertEquals(Command.Setup(update = true), parser.parse(arrayOf("setup", "--update")))
+        assertEquals(null, parser.parse(arrayOf("setup", "--update", "x")))
+        assertEquals(null, parser.parse(arrayOf("setup", "--upgrade")))
+    }
+
+    @Test
     fun `every verb 0_4_0 ships still parses`() {
         val shipped = listOf(
             "setup", "add", "add-model", "models", "upgrade", "status", "sessions", "perf", "wire", "trace",

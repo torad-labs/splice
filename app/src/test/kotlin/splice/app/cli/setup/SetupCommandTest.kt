@@ -40,7 +40,7 @@ class SetupCommandTest {
             runBlocking {
                 SetupCommand(
                     loginHead = NO_REAL_LOGIN,
-                    effects = SetupEffects(EnvReader(System::getenv)),
+                    effects = SetupEffects(EnvReader(System::getenv), add = NOTHING_TICKED),
                 ).setup()
             }
             Files.readString(home.resolve(".config").resolve("splice").resolve("splice.toml"))
@@ -76,15 +76,27 @@ class SetupCommandTest {
         assertFalse(Files.exists(path), "declined confirm must write nothing")
     }
 
+    // Nov 23, 2026: a setup that connects no plan is a whole setup, since `claude` runs on splice's door with nothing
+    // signed in. It used to close on "Not set up yet." and skip the doctor; this test pinned that and was rewritten.
     @Test
     fun `the closing block still names every affordance, by command`(@TempDir home: Path) {
+        var checkups = 0
         val log = captureStdout {
             withHome(home) {
                 seedShim(home)
                 runBlocking {
                     SetupCommand(
                         loginHead = NO_REAL_LOGIN,
-                        effects = SetupEffects(EnvReader(System::getenv)),
+                        effects = SetupEffects(
+                            EnvReader(System::getenv),
+                            add = object : ProfileAdd {
+                                override suspend fun invoke(name: String): Boolean = error("nothing is ticked")
+
+                                override fun checkup(env: EnvReader) {
+                                    checkups++
+                                }
+                            },
+                        ),
                     ).setup()
                 }
             }
@@ -94,28 +106,41 @@ class SetupCommandTest {
         // on the wording while the real regression it should catch is an AFFORDANCE going missing.
         assertTrue("splice status" in log, log)
         assertTrue("splice doctor" in log, log)
+        assertTrue("splice setup --update" in log, log)
         assertFalse("splice dashboard" in log, "the console was removed on Oct 7, 2026: $log")
         assertTrue("anything wrong prints its fix" in log)
-        // ONCE. The 2026-09-22 redesign gave this block its own "Setup complete." heading while
-        // SetupCommand still ended on the frame's outro, so the last screen announced completion
-        // twice — the old "You're set." heading had the same duplicate against "Toolkit ready!".
-        // The frame owns the announcement; this block owns what to type.
-        assertEquals(
-            1,
-            Regex("Not set up yet\\.").findAll(log).count(),
-            "a planless setup must not claim completion: $log",
-        )
-        assertTrue("splice setup" in log, "the planless close names the command to connect a plan: $log")
-        assertFalse("You're set." in log, "no head is ready until a plan is chosen: $log")
+        val hero = log.lines().first { it.startsWith("      ") && it.isNotBlank() }.trim()
+        assertEquals("splice launch claude", hero, "with no plan, the next thing to type is claude on the door: $log")
+        assertFalse("Not set up yet." in log, "a planless setup on the door is set up: $log")
+        assertEquals(1, checkups, "the doctor runs once with no plan connected too")
     }
 
+    // "splice launch claude-desktop" is 28 characters; the fixed 18-wide column ran it into its own description.
+    @Test
+    fun `every command in the closing block lines up its description`() {
+        val log = captureStdout {
+            SetupSignIn(NO_REAL_LOGIN, EnvReader { null }, CliPalette(ColorDepth.NONE)).printNextSteps(Topology())
+        }
+        val rows = listOf(
+            "splice launch claude-desktop" to "Claude Desktop side-by-side on Splice",
+            "splice console" to "accounts, models and usage, in a browser",
+            "splice doctor" to "anything wrong prints its fix",
+        )
+        val columns = rows.map { (command, purpose) ->
+            val line = log.lines().single { it.trim().startsWith(command) && purpose in it }
+            assertTrue(line.indexOf(purpose) > line.indexOf(command) + command.length, "no gap after $command: $line")
+            line.indexOf(purpose)
+        }
+        assertEquals(1, columns.toSet().size, "the descriptions start in one column: $log")
+    }
+
+    // Nov 23, 2026: setup retires each plan's command (custom head commands are deprecated), so the hero is the launch
+    // command and each ready plan is named by what to type in `claude`; this test asserted a head's command as the
+    // hero and `<command> login` as the fix, and was rewritten with the change.
     @Test
     fun `the close never calls a head ready that has no credential`(@TempDir tmp: Path) {
-        // The redesign's hero is "a READY head where there is one", but readiness was OAuth-only:
-        // an api-key head with no key counted as ready, so on a topology that lists it first the
-        // wizard's largest word was a command that fails on launch. Readiness is now the predicate
-        // `splice status` uses, and the fix for any head missing a credential is `<command> login`,
-        // which the launch shim routes to LoginCommand for every kind, the api-key prompt included.
+        // Readiness is the predicate `splice status` uses: an api-key head with no key is not ready, and the fix for
+        // any head missing a credential is `splice login <key>`, which runs LoginCommand for every kind.
         val tokens = Files.writeString(tmp.resolve("kimi-auth.json"), "{}")
         val topology = Topology(
             providers = mapOf(
@@ -140,9 +165,11 @@ class SetupCommandTest {
             SetupSignIn(NO_REAL_LOGIN, EnvReader { null }, CliPalette(ColorDepth.NONE)).printNextSteps(topology)
         }
         val hero = log.lines().first { it.startsWith("      ") && it.isNotBlank() }.trim()
-        assertEquals("claude-kimi", hero, "the hero must be a head that can launch: $log")
-        assertTrue("claude-or login" in log, "the keyless head must name the command that fixes it: $log")
-        assertFalse(log.lines().any { "also ready" in it && "claude-or" in it }, "a keyless head is not ready: $log")
+        assertEquals("splice launch claude", hero, "the hero is the command that runs claude on splice: $log")
+        val inClaude = log.lines().single { "in claude" in it }
+        assertTrue("/model test--test-model" in inClaude, "a ready plan is named by its selector: $log")
+        assertTrue("splice login openrouter" in log, "the keyless head must name the command that fixes it: $log")
+        assertEquals(1, Regex("/model ").findAll(inClaude).count(), "a keyless head is not ready: $log")
     }
 
     private fun closeHead(provider: String, command: String) = HeadConfig(
@@ -166,7 +193,7 @@ class SetupCommandTest {
                             spinner = Spinner(tty = false),
                         ),
                         loginHead = { true },
-                        effects = SetupEffects(EnvReader(System::getenv)),
+                        effects = SetupEffects(EnvReader(System::getenv), add = NOTHING_TICKED),
                     ).setup()
                 }
             }
@@ -395,6 +422,36 @@ class SetupCommandTest {
                 }
             }
             assertEquals(listOf("codex", "grok", "kimi"), added)
+        }
+
+        // A plan's own command is a deprecated custom head, which doctor warned about right after setup made it.
+        @Test
+        fun `setup retires the command of each plan it connected, and only those`(@TempDir home: Path) {
+            val retired = mutableListOf<String>()
+            withHome(home) {
+                seedShim(home)
+                runBlocking {
+                    SetupCommand(
+                        prompts = SetupPrompts(
+                            pickHeads = HeadPicker { _, _ -> MultiSelectOutcome.Chosen(listOf("codex", "kimi")) },
+                        ),
+                        loginHead = NO_REAL_LOGIN,
+                        detect = { emptyFacts() },
+                        effects = SetupEffects(
+                            EnvReader(System::getenv),
+                            add = object : ProfileAdd {
+                                override suspend fun invoke(name: String): Boolean = name == "codex"
+
+                                override fun retire(keys: List<String>, env: EnvReader) {
+                                    retired += keys
+                                }
+                            },
+                            restart = DaemonRestart { true },
+                        ),
+                    ).setup()
+                }
+            }
+            assertEquals(listOf(AddProfiles().find("codex")?.head?.key), retired, "only the plan that landed")
         }
 
         @Test
@@ -650,6 +707,9 @@ class SetupCommandTest {
  *  sign-in. Every construction here passes this instead, and LoginIo's wall now fails any test that
  *  forgets. */
 private val NO_REAL_LOGIN = HeadSignIn { true }
+
+/** An add that refuses to run: for a setup where nothing is ticked, so nothing real is added, retired or checked. */
+private val NOTHING_TICKED = ProfileAdd { error("nothing is ticked") }
 
 /** An env var no machine sets, so the close's readiness check cannot find a key for it. */
 private const val CLOSE_KEY = "TEST_SETUP_CLOSE_KEY"

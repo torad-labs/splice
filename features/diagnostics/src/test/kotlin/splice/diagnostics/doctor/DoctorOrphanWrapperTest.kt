@@ -12,6 +12,8 @@ import org.junit.jupiter.api.io.TempDir
 import splice.client.wrap.WrapStateStore
 import splice.client.wrap.WrappedHead
 import splice.core.config.InstallPaths
+import splice.core.retired.CommandRetirement
+import splice.core.retired.CommandRetirements
 import splice.core.util.EnvReader
 import splice.topology.TopologyLoader
 import java.nio.file.Files
@@ -55,6 +57,38 @@ class DoctorOrphanWrapperTest {
         assertEquals("rm ${bin.resolve("claudeor")}", row.fix, "one line safe to paste, no trailing note")
         assertEquals(FixKind.COMMAND, row.fixKind)
         assertTrue(row.detail.contains("or give that command a head again in the topology"), row.detail)
+    }
+
+    // `splice setup` links `claude-splice` (the side-by-side launcher) onto the shim. No head names it, and
+    // doctor told the operator to rm it right after setup installed it.
+    @Test
+    fun `the claude-splice launcher setup installs is never an orphan`(@TempDir tmp: Path) {
+        install(tmp, "claude-splice", "claude-openrouter", "splice")
+        assertEquals(emptyList<DoctorCheck>(), orphans(tmp, parsed(command = "claude-openrouter")))
+    }
+
+    // A retired command has no link on purpose (`splice claude retire`, and every plan `splice setup` connects): its
+    // head serves `claude` through the gateway. Doctor failed it as "not linked" and sent the person to relink it.
+    @Test
+    fun `a retired command is said as retired, never failed as unlinked`(@TempDir tmp: Path) {
+        install(tmp, "splice")
+        val state = Files.createDirectories(tmp.resolve("state"))
+        CommandRetirements(state).retire(
+            CommandRetirement("openrouter", "claude-openrouter", "claude-openrouter--m1", backup = "b"),
+        )
+        val env = EnvReader { name ->
+            mapOf(
+                "SPLICE_SHARE_DIR" to tmp.resolve("share").toString(),
+                "SPLICE_BIN_DIR" to tmp.resolve("bin").toString(),
+                "SPLICE_STATE_DIR" to state.toString(),
+            )[name]
+        }
+        val rows = DoctorInstallProbes(DoctorTestPorts.probes(), DoctorTestPorts.noJar)
+            .installationChecks(parsed(command = "claude-openrouter"), env)
+            .filter { it.notes.command == "claude-openrouter" }
+        val row = rows.single()
+        assertEquals(CheckStatus.INFO, row.status, row.detail)
+        assertTrue("retired" in row.detail && "/model claude-openrouter--m1" in row.detail, row.detail)
     }
 
     @Test

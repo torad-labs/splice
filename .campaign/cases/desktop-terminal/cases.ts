@@ -212,15 +212,13 @@ check("with Desktop off splice leaves the settings file alone when its heads cha
   must(settingsText(s) === before, `the file was ${show(before)} after off and is ${show(settingsText(s))} after a head was added`);
 });
 
-// ---------- the README ----------
+// ---------- the disk page ----------
 
 check("the README says that splice desktop writes the claude command's settings file", () => {
-  const blocks = readFileSync(join(ROOT, "README.md"), "utf8")
-    .split(/\n\s*\n/)
-    .flatMap((block) => (block.trimStart().startsWith("|") ? block.split("\n") : [block]));
+  const wiki = readFileSync(join(ROOT, "docs/wiki/disk-and-privacy.md"), "utf8");
   must(
-    blocks.some((b) => b.includes("splice desktop") && b.includes("settings.json")),
-    "no paragraph or table row of README.md names both splice desktop and settings.json",
+    /^`splice desktop on` or `splice desktop off` writes `~\/\.claude\/settings\.json` only when removing settings left\s+by an older Splice Desktop setup\./m.test(wiki),
+    "the disk page does not say when splice desktop writes ~/.claude/settings.json",
   );
 });
 

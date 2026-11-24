@@ -66,7 +66,8 @@ internal class AcpSkillsTest {
         )
         writeCommand(project.resolve(".claude/commands/deploy.md"), "---\ndescription: Deploy app\n---\nBody\n")
 
-        val catalog = ClaudeSkillCatalog(project, claudeDir, LogSink {}).load()
+        val env = mapOf("CLAUDE_CONFIG_DIR" to claudeDir.toString(), "HOME" to tmp.toString())
+        val catalog = ClaudeSkillCatalog(project, EnvReader(env::get), LogSink {}).load()
         val byName = catalog.commands.associateBy { it.name }
 
         assertEquals("Project version", byName["shared"]?.description)
@@ -76,12 +77,9 @@ internal class AcpSkillsTest {
         assertEquals("Repo agent skill", byName["repo-agent"]?.description)
         assertEquals("Talk to Eli", byName["eli"]?.description)
         assertEquals("Deploy app", byName["deploy"]?.description)
-        assertFalse("internal-only" in byName)
-        assertTrue("shared" in catalog.skillNames)
-        assertTrue("repo-agent" in catalog.skillNames)
-        assertTrue("linked-skill" in catalog.skillNames)
-        assertFalse("eli" in catalog.skillNames)
-        assertFalse("deploy" in catalog.skillNames)
+        assertFalse("internal-only" in catalog.typed.map { it.name }, "user-invocable: false is off the slash menu")
+        assertTrue("internal-only" in byName, "the model may still choose it")
+        assertEquals(setOf("shared", "repo-agent", "linked-skill", "user-only"), catalog.skillNames.toSet())
     }
 
     @Test

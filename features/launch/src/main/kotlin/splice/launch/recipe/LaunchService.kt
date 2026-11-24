@@ -156,8 +156,9 @@ public class LaunchService(
         val claude = (chosen as? ClaudeToRun.Wrapped)?.path ?: claudeBinary
         val wrapped = caller.wrapped
         val captured = if (keyPresentNow) withoutTokenCapture(spec) else spec
-        // head-catalog: a session on the gateway holds the gateway's key alone, as `claude` does: no helper of the head's
-        // own turn key beside it (Claude Code 2.1.329 warns "Both ANTHROPIC_AUTH_TOKEN and apiKeyHelper set")
+        // head-catalog: a session on the gateway holds the gateway's key alone, as `claude` does: the head folder's
+        // helper of its own turn key, kept there for the sessions launched before (GatewayLaunch.folderHelpers), is set
+        // aside by the session's overlay (Claude Code 2.1.329 warns "Both ANTHROPIC_AUTH_TOKEN and apiKeyHelper set")
         val keyed = onGateway.keyed(captured, caller.gateway)
         val tree = wrapped?.let { keyed.copy(trees = keyed.trees.copy(own = it.configDir)) } ?: keyed
         // Telemetry the command's managed settings set is theirs, and splice then sends none (server mode, F8).
@@ -185,7 +186,7 @@ public class LaunchService(
             ?.let { TrustedLaunch(it, effective.trees.siblings, resume.movingFolder(extraArgs)) }
         // V4-445: a wrapped launch materializes NOTHING: it runs over the operator's own ~/.claude and ~/.claude.json,
         // which stay as they are, and carries the head's settings as a --settings overlay below.
-        val speed = materializeLaunch(materialize, trust, effective.helpers, wrapped)
+        val speed = materializeLaunch(materialize, trust, onGateway.folderHelpers(effective, captured), wrapped)
         // V4-276: a launch never writes a head's .credentials.json. V4-129 copied the selected stored
         // login over it here, and Claude Code's refresh tokens rotate, so every launch put back a
         // superseded token and upstream revoked the login (V4-237, V4-250). The live login is
@@ -213,7 +214,8 @@ public class LaunchService(
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             // a launch on macOS carries splice's mark in its --settings, the one sign of it a hardened claude's
             // arguments keep there (LaunchMarker); elsewhere the arguments are as they were
-            addAll(LaunchMarker.settingsArgs(overlayOf(caller, held, keyed)))
+            val overlay = overlayOf(caller, held, keyed) ?: onGateway.overlay(captured, caller.gateway)
+            addAll(LaunchMarker.settingsArgs(overlay))
             addAll(hub.args + effort.args(held)) // the effort after the hub's: a relaunch reads it as its own
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.

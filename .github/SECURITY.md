@@ -65,5 +65,5 @@ conversation. Sending reasoning back through Claude Code's own transcript is a s
 
 Code mode is separate from this cache: its records keep the model's reasoning summaries in
 plaintext on disk until 24 hours after the record's last use, checked every 5 minutes whether or not
-the head is used again. [What splice keeps on your disk](../README.md#what-splice-keeps-on-your-disk)
+the head is used again. [What splice keeps on your disk](../docs/wiki/disk-and-privacy.md#what-splice-keeps-on-your-disk)
 lists the files splice writes, what each holds and how long it stays.

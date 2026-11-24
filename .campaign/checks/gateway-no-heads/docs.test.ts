@@ -23,7 +23,7 @@ function section(doc: string, heading: RegExp): string {
 
 const doorDefault = read("docs/specs/door-default.md");
 const decision = section(doorDefault, /gateway serves every provider/i);
-const readme = section(read("README.md"), /^## Provider support/);
+const readme = section(read("docs/wiki/providers-and-accounts.md"), /^## Provider support/);
 const referenceDir = "app/src/main/resources/manager-home/.claude/skills/splice/reference";
 const reference = readdirSync(join(ROOT, referenceDir))
   .map((f) => read(join(referenceDir, f)))

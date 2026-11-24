@@ -13,6 +13,7 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.provider.antigravity.skills.SkillShelf
 import java.nio.file.Path
 
 /** Callback for agy messages drained while an ACP open or resume request is awaiting its reply. */
@@ -20,13 +21,15 @@ internal interface AgyMessageSink {
     fun accept(message: JsonObject)
 }
 
-/** Static launch inputs for MCP discovery and agy session setup. */
+/** Static launch inputs for MCP discovery and agy session setup; [skills] gives a new session the index it appends to
+ *  agy's system prompt when agy offers that, read when the session opens so a reload before then counts. */
 internal data class CoordinatorEnv(
     val claude: ClaudeArgs,
     val strictMcp: Boolean,
     val cwd: Path,
     val env: EnvReader,
     val log: LogSink,
+    val skills: SkillShelf,
 )
 
 /** Active agy process handshake and channels pumped while an ACP open/resume call runs. */
@@ -75,7 +78,8 @@ internal class AgyMcpCoordinator(
         registerSdk(merged)
         val encoded = encoder.encode(merged, bridge)
         val names = merged.map(AgyMcpSpec::name)
-        val opener = AgyOpener(conn, target.cwd.toString())
+        val index = if (hello.append) target.skills.index() else null
+        val opener = AgyOpener(conn, target.cwd.toString(), append = index)
         val openJob = io.scope.async {
             opener.openSession(target.claude.resume, hello, encoded, names, target.log)
         }

@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -30,6 +31,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.locks.LockSupport
 
 internal class ServerLoadTest {
@@ -50,7 +52,7 @@ internal class ServerLoadTest {
                 held.release()
                 release.await()
             }
-            val answer = """{"type":"message","content":[{"type":"text","text":"from the box"}]}""".toByteArray()
+            val answer = answerTo(asked).toByteArray()
             exchange.responseHeaders.add("Content-Type", "application/json")
             exchange.sendResponseHeaders(200, answer.size.toLong())
             exchange.responseBody.use { it.write(answer) }
@@ -311,10 +313,60 @@ internal class ServerLoadTest {
         assertEquals(200, inFlight.get(10, TimeUnit.SECONDS).statusCode(), "the turn in flight was cut by the drain")
         stopping.get(10, TimeUnit.SECONDS)
     }
+
+    @Test
+    fun `a drain waits for a long answer to reach its client whole, after the turn has ended at the head`() {
+        serve(rig.config.copy(drainSeconds = 20))
+        val ada = rig.keyFor("ada@team.example")
+        Socket().use { client ->
+            // A client slower than its answer: it takes in little, and reads nothing until the stop is under way.
+            client.receiveBufferSize = SLOW_CLIENT_BUFFER
+            client.connect(InetSocketAddress("127.0.0.1", rig.port))
+            val wire = "POST $TURN_PATH HTTP/1.1\r\nHost: 127.0.0.1:${rig.port}\r\nx-api-key: $ada\r\n" +
+                "Content-Type: application/json\r\nContent-Length: ${LONG_TURN.length}\r\n\r\n$LONG_TURN"
+            client.getOutputStream().apply {
+                write(wire.toByteArray())
+                flush()
+            }
+            awaitHeld(turns = 1)
+            val stopping = CompletableFuture.runAsync({ rig.close() }, workers)
+            awaitUntil("health says the server is draining") { health().statusCode() == 503 }
+
+            release.countDown()
+            assertThrows(TimeoutException::class.java, { stopping.get(2, TimeUnit.SECONDS) }) {
+                "the stop closed the listener while it was still writing the answer"
+            }
+            // Read to the end: the stop closes the connection once the whole answer is written.
+            val answered = client.getInputStream().readBytes().decodeToString()
+            assertTrue(answered.startsWith("HTTP/1.1 200"), answered.take(200))
+            val body = answered.substringAfter("\r\n\r\n")
+            val whole = answerTo(LONG_TURN)
+            assertEquals(whole.length, body.length, "the answer was cut short")
+            assertTrue(body == whole, "the answer is not the head's")
+            stopping.get(10, TimeUnit.SECONDS)
+        }
+    }
+
+    /** What the head answers a turn that asked [asked]. */
+    private fun answerTo(asked: String): String {
+        val text = if (LONG in asked) LONG_CHAR.toString().repeat(LONG_ANSWER_CHARS) else "from the box"
+        return """{"type":"message","content":[{"type":"text","text":"$text"}]}"""
+    }
 }
 
 private const val TURN_PATH = "/claude-team/v1/messages"
 private const val HOLD = "hold this turn"
+private const val LONG = "and answer it at length"
+private const val LONG_TURN =
+    """{"model":"team-model","max_tokens":8,"messages":[{"role":"user","content":"$HOLD $LONG"}]}"""
+
+// Far more than the sockets between the listener and a client hold while the client reads nothing, so the listener is
+// still writing this answer when its turn has ended.
+private const val LONG_ANSWER_CHARS = 16 * 1024 * 1024
+private const val LONG_CHAR = 'x'
+
+// The little a slow client takes in before it reads.
+private const val SLOW_CLIENT_BUFFER = 64 * 1024
 private const val TURN = """{"model":"team-model","max_tokens":8,"messages":[{"role":"user","content":"hi"}]}"""
 private const val HELD_TURN =
     """{"model":"team-model","max_tokens":8,"messages":[{"role":"user","content":"$HOLD"}]}"""

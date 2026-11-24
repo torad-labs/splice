@@ -61,8 +61,9 @@
 //
 // A stop drains first (#791, `[server] drain_seconds`): from its first moment every keyed request, a turn on any route
 // or anything else a key asks, is a 503 with `Retry-After` in its client's shape, and `/health` says draining; the stop
-// waits, up to the drain's length, for the turns in flight to end before it closes the listener. With no drain the
-// listener gives them its one second of grace, as before.
+// waits, up to the drain's length, for every answer the listener has begun, a turn's included, to be written to its
+// client's connection before it closes the listener (AnswersInFlight). With no drain the listener gives them its one
+// second of grace, as before.
 //
 // With `[server] stream_idle_seconds` a streamed turn whose answer falls silent that long after its first word is
 // ended with an error event, which Claude Code retries, instead of hanging: on a command's routes by the relay
@@ -103,6 +104,7 @@ import splice.server.caller.ClientAddresses
 import splice.server.caller.KeyAdmission
 import splice.server.client.ClientCheckins
 import splice.server.client.ClientMinimum
+import splice.server.load.AnswersInFlight
 import splice.server.load.DrainGate
 import splice.server.mod.ModRoute
 import splice.server.path.PathAliases
@@ -153,6 +155,9 @@ internal class ServerListener(
         )
     }
     private val drain = DrainGate(parts.limits.load)
+
+    /** What a stop's drain waits for: the answers begun on the listener's connections and not yet written. */
+    private val answers = AnswersInFlight()
     private val forwardAuth = ForwardAuthRoute(server, parts.keys, parts.people, adminAccess, browser, voice, drain)
     private val publicRoutes = ServerPublicRoutes(server, addresses, tls != null, voice, forwardAuth)
     private val keyAdmission = KeyAdmission(parts.keys, addresses, log)
@@ -203,6 +208,7 @@ internal class ServerListener(
                 }
             }
             shutdownGracePeriod = SERVER_STOP_GRACE_MS
+            channelPipelineConfig = { pipeline -> answers.watch(pipeline) }
         }
         server.start(wait = false)
         engine = server
@@ -211,14 +217,17 @@ internal class ServerListener(
         log("[server] serving $commands to key holders on $scheme://${address.host}:${address.port}\n")
     }
 
-    /** Drains, then closes the listener: new turns are refused and `/health` says draining from now, and the turns in
-     *  flight are given up to `[server] drain_seconds` to end before the listener closes (#791). */
+    /** Drains, then closes the listener: new turns are refused and `/health` says draining from now, and the answers
+     *  in flight, the turns' among them, are given up to `[server] drain_seconds` to reach their clients before the
+     *  listener closes (#791). */
     suspend fun stop() {
         val engine = engine ?: return
         val drainMs = TimeUnit.SECONDS.toMillis(server.drainSeconds.toLong())
-        if (!parts.limits.load.drain(drainMs) && drainMs > 0) {
-            val left = parts.limits.load.inflight()
-            log("[server] stop: $left turn(s) still in flight after the drain; they are cut\n")
+        parts.limits.load.refuseNew()
+        if (!answers.written(maxOf(drainMs, SERVER_STOP_GRACE_MS)) && drainMs > 0) {
+            val left = answers.unwritten()
+            val turns = parts.limits.load.inflight()
+            log("[server] stop: $left answer(s) still unwritten after the drain, $turns of them turns; they are cut\n")
         }
         engine.stop(SERVER_STOP_GRACE_MS, SERVER_STOP_TIMEOUT_MS)
         this.engine = null
@@ -302,7 +311,9 @@ private const val HEALTH_BODY = """{"status":"ok"}"""
 private const val DRAINING_BODY = """{"status":"draining"}"""
 
 // why: a stop lets requests already in the listener finish for a second before it closes; a relayed turn still
-// streaming is cut, and its client's Claude Code retries it as it retries any cut turn.
+// streaming is cut, and its client's Claude Code retries it as it retries any cut turn. The listener waits that second
+// itself (AnswersInFlight): the engine's own grace keeps no connection open, since an event loop that shuts down closes
+// its connections before it runs the writes queued on it.
 private const val SERVER_STOP_GRACE_MS = 1_000L
 
 // why: the most a daemon stop waits on this listener in all, so a relay stuck on a head cannot hold up a restart.

@@ -184,6 +184,44 @@ internal class DesktopSessionLifecycleTest {
     }
 
     @Test
+    fun `shutdown hook returns after bounded wait without re-invoking hung teardown cleanup`() = runBlocking {
+        val phases = Collections.synchronizedList(mutableListOf<ForegroundToolPhase>())
+        val teardownEntered = CountDownLatch(1)
+        val allowHungTeardownExit = CountDownLatch(1)
+        val hookReturned = CountDownLatch(1)
+        val cleanupEntries = AtomicInteger(0)
+        val inbox = FakePeerInbox(
+            onClose = {
+                cleanupEntries.incrementAndGet()
+                teardownEntered.countDown()
+                assertTrue(allowHungTeardownExit.await(5, TimeUnit.SECONDS))
+            },
+        )
+        val hooks = AcpSessionHooks(foreground = ForegroundToolActivity { phases += it.phase })
+        val gate = SessionLifecycleGate(hooks, settleMs = 80L)
+        assertTrue(gate.open(buildParts("s-hung", inbox), "s-hung", fresh = true))
+
+        val normalClose = async(Dispatchers.IO) { gate.close() }
+        assertTrue(teardownEntered.await(5, TimeUnit.SECONDS), "normal teardown must enter cleanup")
+
+        val hookJob = async(Dispatchers.IO) {
+            gate.close()
+            hookReturned.countDown()
+        }
+        assertTrue(
+            hookReturned.await(1, TimeUnit.SECONDS),
+            "shutdown hook must return cleanly after bounded settle timeout while teardown is hung",
+        )
+        assertEquals(1, cleanupEntries.get(), "shutdown hook must not re-invoke hung cleanup after timeout")
+
+        allowHungTeardownExit.countDown()
+        normalClose.await()
+        hookJob.await()
+        assertEquals(1, cleanupEntries.get())
+        assertEquals(listOf(ForegroundToolPhase.SESSION_START, ForegroundToolPhase.SESSION_END), phases)
+    }
+
+    @Test
     fun `repeated closeRecord calls after open emit SESSION_END exactly once`() = runBlocking {
         val phases = Collections.synchronizedList(mutableListOf<ForegroundToolPhase>())
         val inbox = FakePeerInbox()

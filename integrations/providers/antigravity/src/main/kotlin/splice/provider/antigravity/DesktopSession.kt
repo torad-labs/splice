@@ -337,25 +337,29 @@ private const val STOP_MAX_TURN_REQUESTS = "max_turn_requests"
 private const val AGY_ENDED = "agy has ended"
 private const val PEER_SESSION_CLOSED = "session closed"
 
-// why: bounds JVM shutdown hook waiting for an in-flight open() teardown so a wedged opener cannot hang exit forever.
+// why: bounds JVM shutdown hook waiting for an in-flight open/teardown so a wedged cleanup cannot hang exit forever.
 private const val SHUTDOWN_SETTLE_MS = 2_000L
 
 /** Coordinates session startup (`hooks.opened`), teardown (`hooks.ended`), and record/inbox cleanup in one atomic
  *  state machine so shutdown can never emit `SESSION_END` without `SESSION_START`, emit `END` before `START`, return
- *  from a JVM shutdown hook while startup or teardown cleanup is still in flight, or fire `END` twice. */
-private class SessionLifecycleGate(private val hooks: AcpSessionHooks) {
+ *  from a JVM shutdown hook while startup or teardown cleanup is still in flight (up to [settleMs]), or fire `END`
+ *  twice. */
+internal class SessionLifecycleGate(
+    private val hooks: AcpSessionHooks,
+    private val settleMs: Long = SHUTDOWN_SETTLE_MS,
+) {
     private sealed class State {
         data object Pending : State()
-        class Opening(val parts: DesktopParts, val owner: Thread, val settled: CountDownLatch) : State()
+        class Opening(val owner: Thread, val settled: CountDownLatch) : State()
         data class Opened(val parts: DesktopParts) : State()
-        class Closing(val parts: DesktopParts, val owner: Thread, val settled: CountDownLatch) : State()
+        class Closing(val owner: Thread, val settled: CountDownLatch) : State()
         data object Closed : State()
     }
 
     private val state = AtomicReference<State>(State.Pending)
 
     fun open(built: DesktopParts, resolvedId: String, fresh: Boolean): Boolean {
-        val opening = State.Opening(built, Thread.currentThread(), CountDownLatch(1))
+        val opening = State.Opening(Thread.currentThread(), CountDownLatch(1))
         if (!state.compareAndSet(State.Pending, opening)) {
             cleanup(built)
             return false
@@ -391,14 +395,14 @@ private class SessionLifecycleGate(private val hooks: AcpSessionHooks) {
             when (val current = state.get()) {
                 State.Pending -> finished = state.compareAndSet(current, State.Closed)
                 is State.Opening -> {
-                    val closing = State.Closing(current.parts, current.owner, current.settled)
+                    val closing = State.Closing(current.owner, current.settled)
                     if (state.compareAndSet(current, closing)) {
-                        awaitSettled(current.parts, current.owner, current.settled)
+                        awaitSettled(current.owner, current.settled)
                         finished = true
                     }
                 }
                 is State.Closing -> {
-                    awaitSettled(current.parts, current.owner, current.settled)
+                    awaitSettled(current.owner, current.settled)
                     finished = true
                 }
                 is State.Opened -> finished = finishOpened(current)
@@ -408,7 +412,7 @@ private class SessionLifecycleGate(private val hooks: AcpSessionHooks) {
     }
 
     private fun finishOpened(current: State.Opened): Boolean {
-        val closing = State.Closing(current.parts, Thread.currentThread(), CountDownLatch(1))
+        val closing = State.Closing(Thread.currentThread(), CountDownLatch(1))
         if (!state.compareAndSet(current, closing)) return false
         try {
             teardown(current.parts)
@@ -419,15 +423,13 @@ private class SessionLifecycleGate(private val hooks: AcpSessionHooks) {
         return true
     }
 
-    private fun awaitSettled(parts: DesktopParts, owner: Thread, settled: CountDownLatch) {
+    private fun awaitSettled(owner: Thread, settled: CountDownLatch) {
         if (Thread.currentThread() === owner) return
-        val done = try {
-            settled.await(SHUTDOWN_SETTLE_MS, TimeUnit.MILLISECONDS)
+        try {
+            settled.await(settleMs, TimeUnit.MILLISECONDS)
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
-            false
         }
-        if (!done) cleanup(parts)
     }
 
     private fun cleanup(current: DesktopParts) {

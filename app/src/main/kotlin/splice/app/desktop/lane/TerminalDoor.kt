@@ -13,6 +13,7 @@ import splice.client.login.DoorLogin
 import splice.client.resume.AuthHeaderFile
 import splice.client.resume.ResumeHookTarget
 import splice.core.config.FileHeldKey
+import splice.core.config.HeadConfigDirs
 import splice.core.config.StatePaths
 import splice.core.config.TurnKey
 import splice.core.config.UserHome
@@ -47,6 +48,7 @@ internal class TerminalDoor(
         statePaths.launchProfilesDir,
         McpUserRegistry(statePaths),
         ProcessDispatchers().io(),
+        topology.heads.map { (key, head) -> HeadConfigDirs.of(key, head.claude.configDir) },
     )
     private val doorHooks = DoorHooks(statePaths.doorLoginDir, log)
 
@@ -76,8 +78,9 @@ internal class TerminalDoor(
     override suspend fun launchSideBySide(): DoorLaunchSpec? = launched?.launchSideBySide()
 
     /** `splice launch claude --profile <name>`: [side], the side-by-side launch as the route extended it, over the
-     *  profile's folder, rebuilt first. */
-    override suspend fun launchProfile(name: String, side: DoorLaunchSpec): ProfileLaunch = profiles.launch(name, side)
+     *  profile's folder, rebuilt first from the Claude folder [inheritedConfigDir] names when it is the person's. */
+    override suspend fun launchProfile(name: String, side: DoorLaunchSpec, inheritedConfigDir: String?): ProfileLaunch =
+        profiles.launch(name, side, inheritedConfigDir)
 
     /** A launch of `[door.commands.<name>]` on the door; null for a name splice.toml gives no door command, and before
      *  [open]. */

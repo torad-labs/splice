@@ -16,7 +16,7 @@ public interface InProcessMcpServer {
 
     /** `tools/call`'s result for [tool] called with [arguments]: `{content, isError}`. [session] is the client's MCP
      *  session id, the only name the transport has for who is calling. */
-    public fun call(tool: String, arguments: JsonObject, session: String?): JsonObject
+    public suspend fun call(tool: String, arguments: JsonObject, session: String?): JsonObject
 
     /** `resources/list`'s `resources`: each `{uri, name, mimeType}`, with its `_meta` when it has one. */
     public fun resources(): JsonArray

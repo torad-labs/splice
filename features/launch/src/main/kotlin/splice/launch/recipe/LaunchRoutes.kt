@@ -123,7 +123,7 @@ public class LaunchRoutes(
                 LaunchOutcome.Ready(launchResponse.withAuthWarning(target, launched, launch.recipe))
             is LaunchOutcome.Refused -> launch
         }
-        answer(call, key, outcome)
+        answer(call, key, outcome, caller)
     }
 
     /** `claude` on the door (docs/specs/door-default.md, decision 2): the recipe [plain] carries, over the person's own
@@ -134,7 +134,7 @@ public class LaunchRoutes(
         // terminal launch profiles (issue #791): `splice launch claude [--profile <name>]` takes its own words out of
         // what Claude Code is given, and runs in the profile's folder when it names one
         val side = service.door?.takeIf { key == CLAUDE_SPLICE_COMMAND }?.let(::SideBySideLaunch)
-        val ready = when (val started = side?.start(plain, received.extraArgs)) {
+        val ready = when (val started = side?.start(plain, received.extraArgs, received.inheritedConfigDir)) {
             is SideBySideLaunch.Started.Refused -> return refuse(call, key, started.reason, HttpStatusCode.BadRequest)
             is SideBySideLaunch.Started.Ready -> started
             null -> SideBySideLaunch.Started.Ready(plain, received.extraArgs)
@@ -146,7 +146,7 @@ public class LaunchRoutes(
         val skip = request.dangerouslySkipPermissions
         val notices = listOfNotNull(door.notice, inHeadFolder(request.inheritedConfigDir, service))
         val told = door.copy(notice = notices.takeIf { it.isNotEmpty() }?.joinToString("\n"))
-        answer(call, key, service.onDoor.outcome(told, request.extraArgs, skip, caller, headDirs))
+        answer(call, key, service.onDoor.outcome(told, request.extraArgs, skip, caller, headDirs), caller)
     }
 
     /** head-catalog: a `claude` started in a head's own Claude folder ([inherited], the CLAUDE_CONFIG_DIR its shell
@@ -177,7 +177,7 @@ public class LaunchRoutes(
         val caller = request.caller(wrapped)
         val skip = request.dangerouslySkipPermissions
         val outcome = service.launchOutcome(spec, request.extraArgs, skip, caller = caller)
-        answer(call, key, outcome)
+        answer(call, key, outcome, caller)
     }
 
     /** A launch splice does not give, answered [status] in the words the shim prints. It is written to the log too:
@@ -188,11 +188,11 @@ public class LaunchRoutes(
     }
 
     /** [outcome] as the shim reads it: a refusal in words, or its recipe, audited. */
-    private suspend fun answer(call: ApplicationCall, key: String, outcome: LaunchOutcome) {
+    private suspend fun answer(call: ApplicationCall, key: String, outcome: LaunchOutcome, caller: LaunchCaller) {
         when (outcome) {
             is LaunchOutcome.Refused -> refuse(call, key, outcome.reason, HttpStatusCode.Conflict)
             is LaunchOutcome.Ready -> {
-                val recipe = outcome.recipe
+                val recipe = launchService?.peerLaunch?.attach(caller, outcome.recipe) ?: outcome.recipe
                 audit.launched(key, recipe.argv)
                 recipe.warning?.let(audit::warned)
                 // A shim that names the line form in Accept is answered in it; everything else keeps the JSON body.

@@ -1,8 +1,4 @@
-// NEW: desktop-antigravity automatic outbound peer identity (docs/specs/desktop-antigravity.md). When `splice desktop
-// acp` launches `agy acp`, it best-effort registers an owner-bound peer pointing at this live `splice desktop acp`
-// process so the peer auto-retires on exit, and injects `SPLICE_PEER_NAME` and `SPLICE_PEER_KEY_FILE` into `agy`'s
-// environment so `agy` can call `splice peer send <target> "..."` directly without `--as`. When the daemon is not
-// running or no management key exists, the session still starts normally with its in-process UDS inbox.
+// PID-bound peer registration for Desktop-launched harnesses. The key stays in its owner-only file.
 package splice.app.desktop.acp
 
 import splice.app.cli.AdminSupport
@@ -12,6 +8,7 @@ import splice.app.cli.peer.PeerAnswer
 import splice.app.cli.peer.PeerAttachNames
 import splice.app.cli.peer.PeerCall
 import splice.app.cli.peer.PeerRegistrationBody
+import splice.core.mcp.McpHarness
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
@@ -25,6 +22,9 @@ import java.nio.file.Path
 private const val ACP_PEER_REGISTER_TIMEOUT_MS = 1_500
 private const val ACP_PEER_PREFIX = "agy"
 
+// why: leave space for the PID as well as the harness name in the 32-character peer name.
+private const val ACP_HARNESS_NAME_CHARS = 16
+
 // why: 8 lowercase characters from the session id distinguish concurrent agy sessions cleanly inside 32 chars.
 private const val ACP_SESSION_SEED_CHARS = 8
 
@@ -33,10 +33,10 @@ internal class DesktopPeerIdentity(
     private val env: EnvReader,
     private val log: LogSink,
     private val processes: PeerOwnerProcesses = PeerOwnerProcesses(),
+    private val harness: String = McpHarness.AGY.definition.wire,
 ) {
     /** Best-effort child env variables (`SPLICE_PEER_NAME`, `SPLICE_PEER_KEY_FILE`) for the spawned `agy acp` process. */
     fun childEnv(args: List<String>, cwd: Path, pid: Long = ProcessHandle.current().pid()): Map<String, String> {
-        if (!env(PEER_KEY_FILE_ENV).isNullOrBlank()) return emptyMap()
         val mgmtKey = (AdminSupport.readMgmtKey(env) as? MgmtKeyRead.Present)?.key
         val owner = if (mgmtKey != null) processes.capture(pid) else null
         return if (mgmtKey != null && owner != null) register(mgmtKey, peerName(args, pid), cwd, owner) else emptyMap()
@@ -48,7 +48,14 @@ internal class DesktopPeerIdentity(
         cwd: Path,
         owner: splice.sessions.peer.codex.NativeProcess,
     ): Map<String, String> {
-        val body = PeerRegistrationBody.buildOwned(name, mapOf("--cwd" to cwd.toString()), owner, nativeInbox = true)
+        val native = harness == McpHarness.AGY.definition.wire || harness == McpHarness.CLAUDE.definition.wire
+        val body = PeerRegistrationBody.buildOwned(
+            name,
+            mapOf("--cwd" to cwd.toString()),
+            owner,
+            nativeInbox = native,
+            harness = harness,
+        )
         val call = PeerCall(env, TerminalOutput { log("[antigravity] $it\n") }, ownerProcesses = processes)
         val reply = (call.call("POST", "/api/peers", mgmtKey, body, ACP_PEER_REGISTER_TIMEOUT_MS) as? PeerAnswer.Ok)
             ?.body
@@ -62,13 +69,20 @@ internal class DesktopPeerIdentity(
     }
 
     private fun peerName(args: List<String>, pid: Long): String {
+        if (harness == McpHarness.CLAUDE.definition.wire) return "cc-$pid"
         val explicit = env(PEER_NAME_ENV)?.takeIf(String::isNotBlank)
+            ?.takeIf { env(PEER_KEY_FILE_ENV).isNullOrBlank() }
         if (explicit != null) return explicit
         val seed = flagValue(args, "--session-id")
             ?: flagValue(args, "--resume")
         val suffix = seed?.let(PeerAttachNames::sanitize)?.take(ACP_SESSION_SEED_CHARS)?.takeIf(String::isNotEmpty)
             ?: pid.toString()
-        return PeerAttachNames.build(ACP_PEER_PREFIX, suffix)
+        val prefix = if (harness == McpHarness.AGY.definition.wire) {
+            ACP_PEER_PREFIX
+        } else {
+            harness.take(ACP_HARNESS_NAME_CHARS)
+        }
+        return PeerAttachNames.build(prefix, suffix)
     }
 
     private fun flagValue(args: List<String>, flag: String): String? {

@@ -23,6 +23,7 @@
 // lambda over what was declared, which is the same contract the three fields had.
 package splice.app.daemon
 
+import splice.core.harness.HarnessCatalog
 import splice.core.topology.RemoteConfig
 import splice.models.roster.DeclaredHeads
 import java.nio.file.Path
@@ -46,9 +47,14 @@ internal data class BootedTopology(
     /** `[daemon] reserved_peer_names` as booted: the names no peer may register on this install, beyond the built-in
      *  ones. Empty when none is set. */
     val reservedPeerNames: Set<String> = emptySet(),
+    val launches: LaunchTopology = LaunchTopology(),
+)
+
+internal data class LaunchTopology(
     /** `[remote.*]` as booted, the commands this machine runs on another machine: the ones whose address is that
      *  machine's door place a session launched on it (LaunchDoors, door-sessions). */
     val remote: Map<String, RemoteConfig> = emptyMap(),
+    val harnesses: HarnessCatalog = HarnessCatalog(),
 )
 
 /** V4-162: which splice.toml version the daemon runs, and whether the file has moved past it in a way

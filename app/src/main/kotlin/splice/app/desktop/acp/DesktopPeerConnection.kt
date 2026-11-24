@@ -155,14 +155,18 @@ internal class DesktopPeerConnection(
     }
 
     private suspend fun deliver(frame: InboundFrame.Message) {
-        if (auth == AcpConnectionAuth.BAD) {
-            sendReceipt(frame, DeliveryStatus.DENIED, ACP_PEER_DENIED_DETAIL)
-            return
+        val target = frame.sessionId
+        when {
+            auth == AcpConnectionAuth.BAD -> sendReceipt(frame, DeliveryStatus.DENIED, ACP_PEER_DENIED_DETAIL)
+            target != null && target != context.sender.name ->
+                sendReceipt(frame, DeliveryStatus.DROPPED, "the ACP session no longer owns this inbox")
+            frame.text.toByteArray(Charsets.UTF_8).size > PEER_MAX_TEXT_BYTES ->
+                sendReceipt(frame, DeliveryStatus.REFUSED, ACP_PEER_TOO_LARGE_DETAIL)
+            else -> handOff(frame)
         }
-        if (frame.text.toByteArray(Charsets.UTF_8).size > PEER_MAX_TEXT_BYTES) {
-            sendReceipt(frame, DeliveryStatus.REFUSED, ACP_PEER_TOO_LARGE_DETAIL)
-            return
-        }
+    }
+
+    private suspend fun handOff(frame: InboundFrame.Message) {
         val outcome = CompletableDeferred<DesktopPeerOutcome>()
         val message = DesktopPeerMessage(wrapEnvelope(frame), outcome)
         val queued = context.messages.trySend(message)
@@ -183,7 +187,7 @@ internal class DesktopPeerConnection(
     }
 
     private fun wrapEnvelope(frame: InboundFrame.Message): String {
-        val address = frame.claimedAddress?.takeIf(PeerWire::attributeSafe)
+        val address = frame.replyAddress?.takeIf(PeerWire::attributeSafe)
         val name = frame.claimedName?.takeIf(PeerWire::attributeSafe) ?: ACP_PEER_DEFAULT_SENDER
         return PeerWire.envelope(frame.text, address, name)
     }

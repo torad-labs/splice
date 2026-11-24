@@ -184,7 +184,7 @@ public class PeerInboxServer(
             inbox.onDenied(frame)
             return
         }
-        val answered = handler.onMessage(frame, targets.byAddress(frame.claimedAddress, frame.claimedName))
+        val answered = handler.onMessage(frame, targets.ofMessage(frame))
         log.count("message ${answered?.wire ?: "unanswered"}")
     }
 

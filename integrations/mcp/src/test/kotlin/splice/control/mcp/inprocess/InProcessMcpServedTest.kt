@@ -44,7 +44,7 @@ class InProcessMcpServedTest {
             ),
         )
 
-        override fun call(tool: String, arguments: JsonObject, session: String?): JsonObject {
+        override suspend fun call(tool: String, arguments: JsonObject, session: String?): JsonObject {
             calls += "$tool ${arguments["port"]?.jsonPrimitive?.content} for $session"
             return buildJsonObject {
                 put(

@@ -173,6 +173,8 @@ tasks.test {
     // their home, so forks sharing one would race on those files. The wrapper java gives every JVM
     // a fresh `fork-<pid>` home under build/fork-homes, and the doFirst below clears the previous run's.
     maxParallelForks = 4
+    // JUnit owns each temporary tree. On macOS the system temp path alone eats most of the Unix socket limit.
+    if (providers.systemProperty("os.name").get().startsWith("Mac")) systemProperty("java.io.tmpdir", "/tmp")
     val forkHomes = layout.buildDirectory.dir("fork-homes").get().asFile
     val forkJava = rootProject.layout.projectDirectory.file("gradle/fork-home/bin/java").asFile
     executable = forkJava.absolutePath

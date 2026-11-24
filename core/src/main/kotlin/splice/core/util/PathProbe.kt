@@ -32,6 +32,40 @@ public object PathProbe {
         return absolute
     }
 
+    /** Where [path] is or would land, following even dangling links before interpreting `..`.
+     *  Null when link expansion does not terminate. */
+    public fun throughLinks(path: Path): Path? = resolved(path) ?: walkLinks(path.toAbsolutePath())
+
+    /** The entry named by [path], with its parent resolved but the final link left alone. */
+    public fun realEntry(path: Path): Path? {
+        val absolute = path.toAbsolutePath()
+        val parent = absolute.parent ?: return absolute
+        return throughLinks(parent)?.resolve(absolute.fileName)
+    }
+
+    private fun walkLinks(absolute: Path): Path? {
+        val pending = ArrayDeque(absolute.toList())
+        var at = checkNotNull(absolute.root)
+        var links = 0
+        while (pending.isNotEmpty()) {
+            val part = pending.removeFirst()
+            val next = at.resolve(part)
+            val target = if (part.toString() == "." || part.toString() == "..") null else linkTarget(next)
+            if (target == null) {
+                // Only this step is normalized; links in preceding components have already been followed.
+                at = next.normalize()
+            } else {
+                if (++links > MAX_PATH_LINKS) return null
+                at = target.root ?: at
+                target.toList().asReversed().forEach(pending::addFirst)
+            }
+        }
+        return at
+    }
+
+    // why: match the Linux path lookup limit so an unresolved link loop cannot hang a profile launch.
+    private const val MAX_PATH_LINKS = 40
+
     /** [raw] as a path; null for text the filesystem cannot spell (a NUL byte). */
     public fun spelled(raw: String): Path? = try {
         Path.of(raw)

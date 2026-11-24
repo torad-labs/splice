@@ -177,6 +177,20 @@ class LaunchProfileBuildTest {
     }
 
     @Test
+    fun `the profile drops XML marked instructions from the person's CLAUDE-md`() {
+        person()
+        val marker = "some-managed-instructions"
+        val source = claude.resolve("CLAUDE.md")
+        val text = "# Mine\n<$marker version=\"2026.09.21\">\nmanaged instructions\n</$marker>\nkeep me\n"
+        write(source, text)
+
+        build(LaunchProfileConfig(dropBlocks = listOf(marker)))
+
+        assertEquals("# Mine\nkeep me\n", folder.resolve("CLAUDE.md").readText())
+        assertEquals(text, source.readText())
+    }
+
+    @Test
     fun `an unclosed block is kept whole and said`() {
         person()
         write(claude.resolve("CLAUDE.md"), "a\n<!-- open -->\nb\n")

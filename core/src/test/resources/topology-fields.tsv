@@ -49,6 +49,11 @@ harnesses
 harnesses.*.argv	
 harnesses.*.description	
 harnesses.*.name	
+harnesses.*.peer	
+harnesses.*.peer.auto_subscribe	
+harnesses.*.peer.deliver_cmd	
+harnesses.*.peer.protocol	
+harnesses.*.peer.webhook_url	
 harnesses.*.protocol	
 heads	
 heads.*.claude	
@@ -96,6 +101,7 @@ heads.*.system_prompt_file
 heads.*.system_prompt_mode	append,replace,strip
 launch	
 launch.profiles	
+launch.profiles.*.claude_json	
 launch.profiles.*.dir	
 launch.profiles.*.drop_blocks	
 launch.profiles.*.drop_hooks	

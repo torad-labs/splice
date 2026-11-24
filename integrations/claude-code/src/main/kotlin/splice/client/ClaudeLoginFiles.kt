@@ -23,7 +23,8 @@ import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 
 private const val SELECTED_FILE = "selected"
-private const val CREDENTIALS_FILE = ".credentials.json"
+internal const val CREDENTIALS_FILE = ".credentials.json"
+internal const val CLAUDE_AI_OAUTH = "claudeAiOauth"
 private const val ACCOUNT_FILE = ".account.json"
 private const val OAUTH_ACCOUNT = "oauthAccount"
 private const val ACCOUNT_UUID = "accountUuid"
@@ -131,7 +132,7 @@ internal class LoginStore(private val dir: Path) {
     fun credentialKey(label: String): String? =
         // An unreadable copy proves no live display name or edit target.
         PathProbe.text(credential(label))?.let { text ->
-            val oauth = JsonScalars.objectOrNull(json, text)?.get("claudeAiOauth") as? JsonObject
+            val oauth = JsonScalars.objectOrNull(json, text)?.get(CLAUDE_AI_OAUTH) as? JsonObject
             val token = oauth?.get("accessToken")?.let(JsonScalars::strIfString)?.takeIf(String::isNotBlank)
             token?.let { CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $it")) }
         }

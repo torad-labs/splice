@@ -41,6 +41,7 @@ import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.util.EnvReader
 import splice.launch.LaunchOutcome
+import splice.launch.LaunchRecipe
 import splice.launch.LaunchSpec
 import splice.launch.RemoteCommands
 import splice.sessions.registry.LaunchMarker
@@ -92,6 +93,13 @@ public class LaunchService(
     /** The MCP servers the daemon answers itself (a mode whose kind is mcp), added to every launch whatever the hub
      *  carries of the person's own. Assigned by the daemon before routes serve requests; null adds none. */
     public var ownMcp: OwnMcpLaunch? = null
+
+    /** The control plane binds a successful local recipe to the shim PID that execs the harness. */
+    public fun interface PeerLaunch {
+        public suspend fun attach(caller: LaunchCaller, recipe: LaunchRecipe): LaunchRecipe
+    }
+
+    public var peerLaunch: PeerLaunch? = null
 
     /** LAN share: the commands another machine serves, launched when a name no head here carries is asked for.
      *  Assigned by the daemon before routes serve requests; null launches heads only. */

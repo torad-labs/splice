@@ -11,9 +11,13 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.config.UserHome
+import splice.core.harness.HarnessPeerConfig
+import splice.core.harness.HarnessPeerProtocol
+import splice.core.mcp.McpHarness
 import splice.core.util.LogSafe
 import splice.http.JsonBody
 import splice.sessions.peer.codex.NativeProcess
+import splice.sessions.peer.owner.PeerOwnerProcesses
 import splice.sessions.peer.store.PeerRefusal
 import splice.sessions.peer.store.PeerRegistration
 import splice.sessions.peer.store.PeerRequest
@@ -25,6 +29,7 @@ internal class PeerRegisterRoute(private val parts: PeerParts) {
     private val store = parts.store
     private val jsonBody = JsonBody()
     private val owners = PeerOwnerInputs()
+    private val processes = PeerOwnerProcesses()
 
     /** POST /api/peers: writes peer.json and peer.key, starts the helper, and answers once its record is on disk. */
     suspend fun register(call: ApplicationCall) {
@@ -38,6 +43,14 @@ internal class PeerRegisterRoute(private val parts: PeerParts) {
             )
         }
         answer.send(call)
+    }
+
+    suspend fun subscribeClaude(pid: Long, cwd: String): Boolean {
+        val harness = McpHarness.CLAUDE.definition
+        if (harness.peer?.autoSubscribe != true) return false
+        val owner = processes.capture(pid) ?: return false
+        val registered = registerValid(PeerRequest("cc-$pid", cwd, listOf("*"), owner, true, harness.wire), owner)
+        return registered.status == HttpStatusCode.Created || registered.status == HttpStatusCode.OK
     }
 
     private suspend fun registered(body: JsonObject?, owner: NativeProcess?): PeerAnswer =
@@ -60,16 +73,30 @@ internal class PeerRegisterRoute(private val parts: PeerParts) {
 
     private fun parseRequest(body: JsonObject?, owner: NativeProcess?): ParsedRequest {
         val name = PeerReplies.string(body, "name")
+            ?: return ParsedRequest.Bad("""body must be {"name": "<name>"}""")
         val cwd = if (body?.containsKey("cwd") == true) PeerReplies.string(body, "cwd") else UserHome.dir().toString()
         val sendTo = sendTo(body)
-        val nativeInbox = nativeInbox(body)
+        if (cwd == null || sendTo == null) return ParsedRequest.Bad("cwd is a path and sendTo a list of names")
+        return bind(body, PeerRequest(name, cwd, sendTo, owner))
+    }
+
+    private fun bind(body: JsonObject?, request: PeerRequest): ParsedRequest {
+        val harness = PeerReplies.string(body, "harness")
+        val peer = parts.harnesses.entries.find { it.wire == harness }?.peer
+        val driver = peer?.driver
+        val nativeInbox = nativeInbox(body, driver)
         return when {
-            name == null -> ParsedRequest.Bad("body must be {\"name\": \"<name>\"}")
-            cwd == null || sendTo == null -> ParsedRequest.Bad("cwd is a path and sendTo a list of names")
+            body?.containsKey("harness") == true && !autoSubscription(request.owner, peer) ->
+                ParsedRequest.Bad("harness requires a live owner and an enabled auto-subscribe peer protocol")
             nativeInbox == null -> ParsedRequest.Bad("nativeInbox must be a boolean")
-            nativeInbox && owner == null -> ParsedRequest.Bad("nativeInbox requires a live owner")
-            else -> ParsedRequest.Valid(PeerRequest(name, cwd, sendTo, owner, nativeInbox))
+            nativeInbox && request.owner == null -> ParsedRequest.Bad("nativeInbox requires a live owner")
+            else -> ParsedRequest.Valid(request.copy(nativeInbox = nativeInbox, harness = harness))
         }
+    }
+
+    private fun autoSubscription(owner: NativeProcess?, peer: HarnessPeerConfig?): Boolean {
+        if (owner == null || peer?.autoSubscribe != true) return false
+        return peer.driver != HarnessPeerProtocol.CODEX
     }
 
     /** The answer to a register that went through: 201 for a new peer, 200 for one already there. */
@@ -101,7 +128,13 @@ internal class PeerRegisterRoute(private val parts: PeerParts) {
         )
     }
 
-    private fun nativeInbox(body: JsonObject?): Boolean? {
+    private fun nativeInbox(body: JsonObject?, driver: HarnessPeerProtocol?): Boolean? = when (driver) {
+        HarnessPeerProtocol.NATIVE, HarnessPeerProtocol.ACP -> true
+        HarnessPeerProtocol.COMMAND, HarnessPeerProtocol.WEBHOOK -> false
+        HarnessPeerProtocol.CODEX, null -> legacyNativeInbox(body)
+    }
+
+    private fun legacyNativeInbox(body: JsonObject?): Boolean? {
         if (body == null || !body.containsKey("nativeInbox")) return false
         return (body["nativeInbox"] as? JsonPrimitive)?.takeUnless { it.isString }?.booleanOrNull
     }

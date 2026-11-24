@@ -16,6 +16,11 @@ public sealed class Decline {
     /** The heap is busy with other bodies; this one fits once they are done. */
     public data object HeapBusy : Decline()
 
+    /** Every server of the provider [provider] that can take a turn already holds [each], the most server mode's
+     *  `inflight_per_upstream` lets each hold at once (#791): the turn is sent nowhere rather than past the cap, and
+     *  fits once one of theirs ends. */
+    public data class UpstreamsFull(val provider: String, val each: Int) : Decline()
+
     /** The head's daily spend budget is reached and its action is block, until the budget's day ends at [resetsAt],
      *  the machine's own midnight. [limit] is the operator's own figure as splice spells an amount: V4-240 keeps every
      *  dollar figure in one place (splice.usage.ApiCostText.limit), which core cannot reach, so the amount arrives

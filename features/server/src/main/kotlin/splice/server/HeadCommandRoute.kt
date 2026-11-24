@@ -26,7 +26,9 @@ import splice.share.SharedHead
 import kotlin.time.Duration
 
 /** What a command's routes are served with: the listener's [voice] and [catalog] of heads, its [admission] of turns
- *  and their [watched] relay, the [minimum] client, and the [keepalive] a streamed turn is kept alive at. */
+ *  and their [watched] relay, the [minimum] client, the [keepalive] a streamed turn is kept alive at, and how long a
+ *  streamed answer may fall silent after its first word before the relay ends it ([streamIdleMs], `[server]
+ *  stream_idle_seconds`, #791; 0: however long). */
 internal data class HeadRouting(
     val voice: RefusalVoice,
     val catalog: ShareCatalog,
@@ -34,6 +36,7 @@ internal data class HeadRouting(
     val watched: WatchedRelay,
     val minimum: ClientMinimum,
     val keepalive: Duration?,
+    val streamIdleMs: Long = 0L,
 )
 
 internal class HeadCommandRoute(private val parts: ServerParts, private val routing: HeadRouting, log: LogSink) {
@@ -87,6 +90,6 @@ internal class HeadCommandRoute(private val parts: ServerParts, private val rout
         // The head sends its provider the headers `forward_headers` names, and knows none of this server's keys.
         val held = bound.keyed(call, parts.upstreams.forwarded(head.key))
         val spelled = paths.spell(path) + bound.query(paths.query(call))
-        return HeadTurn(head, spelled, chosen + named, routing.keepalive, held)
+        return HeadTurn(head, spelled, chosen + named, routing.keepalive, held, routing.streamIdleMs)
     }
 }

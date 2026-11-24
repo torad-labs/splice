@@ -67,6 +67,10 @@ internal class ScriptedBox(private val name: String) {
      *  from a generator answers 200 at once, and prefills after that. */
     @Volatile var afterHeaders: CountDownLatch? = null
 
+    /** What a streamed completion waits for after its first event and before the rest: a server that names the role
+     *  at once and then prefills behind it. */
+    @Volatile var afterFirst: CountDownLatch? = null
+
     /** The status a completion is refused with; null answers it. */
     @Volatile var refuses: Int? = null
 
@@ -95,6 +99,7 @@ internal class ScriptedBox(private val name: String) {
         gate?.countDown()
         prefill?.countDown()
         afterHeaders?.countDown()
+        afterFirst?.countDown()
         server.stop(0)
     }
 
@@ -143,6 +148,7 @@ internal class ScriptedBox(private val name: String) {
         exchange.sendResponseHeaders(200, if (cut == null) 0 else CUT_STREAM_LENGTH)
         afterHeaders?.await(GATE_SECONDS, TimeUnit.SECONDS)
         events.take(cut ?: events.size).forEachIndexed { at, event ->
+            if (at == 1) afterFirst?.await(GATE_SECONDS, TimeUnit.SECONDS)
             if (at > 0) LockSupport.parkNanos(gapMs * NANOS_PER_MS)
             exchange.responseBody.write("$event\n\n".toByteArray())
             exchange.responseBody.flush()
@@ -345,6 +351,7 @@ private const val OWN_ERROR = """{"error":{"message":"%s says %d"}}"""
 private const val BOX_USAGE = """"usage":{"prompt_tokens":7}"""
 
 internal const val WORD_EVENT = """data: {"choices":[{"index":0,"delta":{"content":"hi"}}]}"""
+internal const val ROLE_EVENT = """data: {"choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}"""
 internal const val USAGE_EVENT = """data: {"choices":[],"usage":{"prompt_tokens":7}}"""
 internal const val DONE_EVENT = "data: [DONE]"
 

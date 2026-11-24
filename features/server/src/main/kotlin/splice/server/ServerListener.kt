@@ -3,7 +3,8 @@
 // the wall kt-embedded-server-loopback exempts this file, by that spec's decision. LAN share answers anyone on the
 // person's own network and holds no identity; this listener answers only keys, each one a person's, from anywhere:
 //
-//   GET  /health                   open: the listener is up.
+//   GET  /health                   open: the listener is up (200 {"status":"ok"}), or draining at stop
+//                                  (503 {"status":"draining"}), so a load balancer sends it no more turns.
 //   GET  /server/signin, POST /server/signin/token
 //                                  open: how a team member signs in and gets a key (F2, SigninRoute). Nothing else is
 //                                  answered without a key.
@@ -56,12 +57,23 @@
 // (RequestPaths): what a head serves as a turn is what the caps counted, however the client spelled it. A command's
 // own routes, its turns and its launch, are HeadCommandRoute's.
 //
+// A stop drains first (#791, `[server] drain_seconds`): from its first moment every keyed request, a turn on any route
+// or anything else a key asks, is a 503 with `Retry-After` in its client's shape, and `/health` says draining; the stop
+// waits, up to the drain's length, for the turns in flight to end before it closes the listener. With no drain the
+// listener gives them its one second of grace, as before.
+//
+// With `[server] stream_idle_seconds` a streamed turn whose answer falls silent that long after its first word is
+// ended with an error event, which Claude Code retries, instead of hanging: on a command's routes by the relay
+// (HeadAnswers), and on the team's door by the turn's own watchdog (TeamDoorRoute). Without it, or at 0, a silence is
+// waited out however long: a model may think in silence.
+//
 // HTTP/2 is off: Claude Code speaks HTTP/1.1, and a turn's client leaving is read off its connection (WatchedRelay),
 // which is one request's on HTTP/1.1.
 package splice.server
 
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.call
@@ -86,6 +98,7 @@ import splice.server.caller.ClientAddresses
 import splice.server.caller.KeyAdmission
 import splice.server.client.ClientCheckins
 import splice.server.client.ClientMinimum
+import splice.server.load.DrainGate
 import splice.server.path.PathAliases
 import splice.server.path.RequestPaths
 import splice.server.signin.SigninAttempts
@@ -98,6 +111,7 @@ import splice.server.web.ServerPublicRoutes
 import splice.share.RefusalVoice
 import splice.share.ShareCatalog
 import java.security.KeyStore
+import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.seconds
 
 internal class ServerListener(
@@ -131,7 +145,8 @@ internal class ServerListener(
             identity.clock,
         )
     }
-    private val forwardAuth = ForwardAuthRoute(server, parts.keys, parts.people, adminAccess, browser, voice)
+    private val drain = DrainGate(parts.limits.load)
+    private val forwardAuth = ForwardAuthRoute(server, parts.keys, parts.people, adminAccess, browser, voice, drain)
     private val publicRoutes = ServerPublicRoutes(server, addresses, tls != null, voice, forwardAuth)
     private val keyAdmission = KeyAdmission(parts.keys, addresses, log)
     private val watched = WatchedRelay()
@@ -144,8 +159,11 @@ internal class ServerListener(
 
     /** How often a streamed turn's client is sent a keepalive while its answer is silent; null sends none. */
     private val keepalive = server.keepaliveSeconds.takeIf { it > 0 }?.seconds
-    private val openAi = OpenAiRoute(parts, io, log, keepalive, minimum)
-    private val routing = HeadRouting(voice, catalog, admission, watched, minimum, keepalive)
+
+    /** How long a streamed answer may fall silent after its first word before it is ended; 0 waits however long. */
+    private val streamIdleMs = TimeUnit.SECONDS.toMillis(server.streamIdleSeconds.toLong())
+    private val openAi = OpenAiRoute(parts, io, log, keepalive, minimum, streamIdleMs)
+    private val routing = HeadRouting(voice, catalog, admission, watched, minimum, keepalive, streamIdleMs)
     private val heads = HeadCommandRoute(parts, routing, log)
     private val profile = ProfileRoute(server, parts.heads, io, addresses, secure = tls != null)
     private val telemetry = server.telemetry?.let { TelemetryRelay(it, voice, log) }
@@ -184,9 +202,17 @@ internal class ServerListener(
         log("[server] serving $commands to key holders on $scheme://${address.host}:${address.port}\n")
     }
 
-    fun stop() {
-        engine?.stop(SERVER_STOP_GRACE_MS, SERVER_STOP_TIMEOUT_MS)
-        engine = null
+    /** Drains, then closes the listener: new turns are refused and `/health` says draining from now, and the turns in
+     *  flight are given up to `[server] drain_seconds` to end before the listener closes (#791). */
+    suspend fun stop() {
+        val engine = engine ?: return
+        val drainMs = TimeUnit.SECONDS.toMillis(server.drainSeconds.toLong())
+        if (!parts.limits.load.drain(drainMs) && drainMs > 0) {
+            val left = parts.limits.load.inflight()
+            log("[server] stop: $left turn(s) still in flight after the drain; they are cut\n")
+        }
+        engine.stop(SERVER_STOP_GRACE_MS, SERVER_STOP_TIMEOUT_MS)
+        this.engine = null
     }
 
     private suspend fun answer(call: ApplicationCall) {
@@ -196,7 +222,11 @@ internal class ServerListener(
         // A request refused before its route is known is still refused in the shape its client reads.
         val voiced = if (path != null && openAi.asks(call, path)) openAi.voice else voice
         val key = keyAdmission.admitted(call, voiced) ?: return
-        if (path == null) noSuchPath(call) else routed(call, key, path)
+        when {
+            drain.refused(call, voiced) -> Unit
+            path == null -> noSuchPath(call)
+            else -> routed(call, key, path)
+        }
         parts.keys.keepUse()
     }
 
@@ -204,7 +234,11 @@ internal class ServerListener(
     private suspend fun answeredOpen(call: ApplicationCall, path: List<String>?): Boolean = when {
         path == null -> false
         call.request.httpMethod == HttpMethod.Get && path == listOf(HEALTH_ROUTE) -> {
-            call.respondText(HEALTH_BODY, ContentType.Application.Json)
+            if (parts.limits.load.draining) {
+                call.respondText(DRAINING_BODY, ContentType.Application.Json, HttpStatusCode.ServiceUnavailable)
+            } else {
+                call.respondText(HEALTH_BODY, ContentType.Application.Json)
+            }
             true
         }
         signins.asks(path) -> {
@@ -252,6 +286,7 @@ internal const val SERVER_ERROR_PREFIX: String = "splice server: "
 
 private const val HEALTH_ROUTE = "health"
 private const val HEALTH_BODY = """{"status":"ok"}"""
+private const val DRAINING_BODY = """{"status":"draining"}"""
 
 /** The first path segment of the server's own routes; no command may be named it. */
 internal const val SERVER_ROOT: String = "server"

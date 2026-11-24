@@ -4,7 +4,7 @@
 package splice.core.failure
 
 /** What every line splice writes to a person opens with. */
-internal const val SPLICE_PREFIX: String = "[splice] "
+public const val SPLICE_PREFIX: String = "[splice] "
 
 /** One plain line a person reads in Claude Code, composed by [SpliceLines] and nowhere else. */
 @JvmInline

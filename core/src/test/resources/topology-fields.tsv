@@ -263,6 +263,7 @@ server.cost_meters.*.file
 server.cost_meters.*.hourly_usd	
 server.cost_meters.*.poll_seconds	
 server.cost_meters.*.url	
+server.drain_seconds	
 server.export	
 server.export.access_key_env	
 server.export.endpoint	
@@ -282,7 +283,12 @@ server.forward_auth.session_seconds
 server.keepalive_seconds	
 server.key_prefix	
 server.limits	
+server.limits.busy_message	
+server.limits.busy_retry_after	
+server.limits.busy_status	
 server.limits.inflight_per_person	
+server.limits.inflight_per_upstream	
+server.limits.inflight_total	
 server.limits.rpm_per_person	
 server.limits.tpm_per_person	
 server.listen	
@@ -299,6 +305,7 @@ server.signin.hosted_domain
 server.signin.issuer	
 server.signin.key_days	
 server.signin.rate_per_minute	
+server.stream_idle_seconds	
 server.teams	
 server.teams.by_domain	
 server.teams.by_domain.*	

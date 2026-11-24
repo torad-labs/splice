@@ -34,6 +34,13 @@ public data class ServerConfig(
     /** How often a streamed turn's client is sent an SSE keepalive while its answer is silent, as a model server
      *  prefilling a long prompt is; the stream is opened to the client at once for it. 0 sends none. */
     @SerialName("keepalive_seconds") val keepaliveSeconds: Int = 0,
+    /** How long a streamed turn's answer may fall silent after its first event before it is ended with an error event
+     *  (#791). 0 waits on it however long, which is the default: a model may think in silence, and only the operator
+     *  knows how long theirs does. */
+    @SerialName("stream_idle_seconds") val streamIdleSeconds: Int = 0,
+    /** How long a stop waits for the turns in flight to finish, refusing new ones and answering `/health` as draining,
+     *  before it closes the listener (#791). 0 gives them the listener's one second of grace, as before. */
+    @SerialName("drain_seconds") val drainSeconds: Int = 0,
     /** What the same tokens would cost on a hosted model, beside each report's own cost (F5). */
     val reference: ServerReference = ServerReference(),
     /** Which team a person is on when the operator set none for them (decision 5). */
@@ -104,7 +111,24 @@ public data class ServerLimits(
     /** Tokens, prompt and answer, of one person's turns that ended in the last minute, past which their next turn waits
      *  (F12). */
     @SerialName("tpm_per_person") val tpmPerPerson: Int = 0,
+    /** Turns the whole server may have in flight at once, everyone's together (#791). */
+    @SerialName("inflight_total") val inflightTotal: Int = 0,
+    /** Turns each server of a provider that is several (`[[providers.<p>.upstreams]]`) may have in flight at once: a
+     *  turn is refused while every healthy one holds this many (#791). */
+    @SerialName("inflight_per_upstream") val inflightPerUpstream: Int = 0,
+    /** The status a turn refused by [inflightTotal] or [inflightPerUpstream] is answered with: 429 (null, the default,
+     *  which Claude Code and the OpenAI SDKs back off and retry on) or 503 (the server is full, which a load balancer
+     *  reads as "try another"). */
+    @SerialName("busy_status") val busyStatus: Int? = null,
+    /** The seconds that refusal's `Retry-After` names. */
+    @SerialName("busy_retry_after") val busyRetryAfter: Int = DEFAULT_BUSY_RETRY_AFTER,
+    /** The sentence that refusal says in place of splice's own; blank says splice's. */
+    @SerialName("busy_message") val busyMessage: String = "",
 )
+
+// why: a short turn on a small pool ends in seconds; five is long enough not to hammer a full server and short
+// enough that a freed slot is taken soon after it frees.
+private const val DEFAULT_BUSY_RETRY_AFTER = 5
 
 /** `[server.client]` (F9, F15): the oldest splice a laptop may run against this server, and optionally where laptops
  *  fetch the client build its policy wants. [minimum] is a dotted splice version, as in "0.10.0"; null lets every

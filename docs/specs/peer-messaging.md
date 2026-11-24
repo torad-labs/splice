@@ -127,8 +127,8 @@ Here is what Splice does guarantee:
   frame with no auth line is accepted, as Claude Code itself accepts one on Linux, and is journaled with
   `"auth":"none"`.
 - **Every inbound sender is labeled by how it was checked.** The journal marks it `registered` when its
-  `from` address names a live registry record, or `unregistered` when it does not. Neither label proves who
-  wrote the bytes, and the docs say so.
+  reply address (1.3) names a live registry record, or `unregistered` when it does not. Neither label proves
+  who wrote the bytes, and the docs say so.
 
 ## 1. Wire contract (package A implements, everyone reads)
 
@@ -202,10 +202,18 @@ the normal case: it sends one only for `held`, `expired` or `dropped`. A peer se
   there. The reply address is the envelope's `from`, or else the frame's; a helper that shows the message to
   a model (Codex, the ACP translator) puts this one in the envelope it builds. The claimed name is the
   envelope's `from-name`.
-- **The sender as journaled.** The claimed address is looked up among the live registry records by
+- **The sender as journaled.** The reply address is looked up among the live registry records by
   `messagingSocketPath`, with procStart checked as `SessionRegistry` already does. On a hit, the sender is
   recorded as `{name: record.name, sessionId, address, check:"registered"}`. On a miss, it is
-  `{name: claimedName, address, check:"unregistered"}`. The claimed name is always kept as `claimedName`.
+  `{name: claimedName, address, check:"unregistered"}`. `address` is the claimed address either way, and the
+  claimed name is always kept as `claimedName`. The check rests on the reply address because that is where an
+  answer goes: `registered` says that answering reaches the session it names. A Claude Code peer's frame
+  `from` is its unlisted return helper, so checking it would mark every genuine send `unregistered`. Both
+  addresses are the sender's claim, so this is no easier to meet than when the two were one socket: a frame
+  still looks registered only by naming a live session's socket, and a frame that names another session's
+  socket sends the answers to that session, not to its writer. A frame that names a live session only as its
+  receipt address is `unregistered`, so no frame carries a session's name while its answers go elsewhere. A
+  receipt is checked on its own `from`.
 - **`type:"control"` frames with `action:"peer_message_status"`.** These are journaled as receipts for this
   peer's earlier sends.
 - **Every other line** is ignored and counted.

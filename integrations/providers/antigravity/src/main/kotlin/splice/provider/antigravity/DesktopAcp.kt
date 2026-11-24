@@ -24,6 +24,7 @@ import splice.provider.antigravity.peer.DesktopPeerInboxFactory
 import splice.provider.antigravity.peer.DesktopPeerMessage
 import splice.provider.antigravity.peer.DesktopPeerWiring
 import splice.provider.antigravity.skills.ClaudeSkillCatalog
+import splice.provider.antigravity.skills.SkillShelf
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -110,18 +111,25 @@ public class DesktopAcp(
         val connected = object : BridgeConnected {
             override fun connected(serverName: String) = mcpState.markConnected(serverName)
         }
+        val skills = SkillShelf(ClaudeSkillCatalog(cwd, env, log))
         McpBridge(out, connected).use { bridge ->
-            val envTarget = CoordinatorEnv(claude, STRICT_MCP_CONFIG in args, cwd, env, log)
+            val envTarget = CoordinatorEnv(claude, STRICT_MCP_CONFIG in args, cwd, env, log, skills)
             val chan = CoordinatorIo(started, hello, helloFailure, lines, deferredLines, this)
             val coordinator = AgyMcpCoordinator(envTarget, chan, mcpState, bridge)
-            val factory = PartsFactory { id -> parts(id, claude, target.peerInbox, out, this) }
+            val scope = this
+            val factory = object : PartsFactory {
+                override val skills = skills
+                override val out = out
+
+                override fun build(sessionId: String) = parts(sessionId, claude, target.peerInbox, out, scope)
+            }
             val session = DesktopSession(claude, factory, coordinator, mcpState, bridge, clock, target.hooks)
-            val stop = Executors.defaultThreadFactory().newThread { session.closeRecord() }
+            val stop = Executors.defaultThreadFactory().newThread { session.lifecycle.close() }
             Runtime.getRuntime().addShutdownHook(stop)
             try {
                 loop(session, lines, deferredLines, started)
             } finally {
-                session.closeRecord()
+                session.lifecycle.close()
                 unhook(stop)
             }
         }
@@ -165,21 +173,12 @@ public class DesktopAcp(
             peerProtocol = ACP_PEER_PROTOCOL.takeIf { socket != null },
         )
         val facts = SessionFacts(pid, id, folder, recordVersion, entrypoint, env(HOST_SESSION), peerFacts)
-        val localSkills = ClaudeSkillCatalog(cwd, config, log).load()
         return DesktopParts(
             DesktopFrames(id),
             out,
             ClaudeTranscript(config, TranscriptOwner(id, folder, version, entrypoint), clock),
             ClaudeSessionRecord(config, facts, clock, log),
-            SessionLook(
-                folder,
-                claude.model.orEmpty(),
-                claude.permissionMode,
-                emptyList(),
-                version,
-                skills = localSkills.skillNames,
-            ),
-            localSkills = localSkills,
+            SessionLook(folder, claude.model.orEmpty(), claude.permissionMode, emptyList(), version),
             peerInbox = inbox,
         )
     }

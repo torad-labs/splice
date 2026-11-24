@@ -27,10 +27,23 @@ internal class AcpRequests {
         }
     }
 
-    /** A new session in [folder] with [mcpServers]. */
-    fun newSession(folder: String, mcpServers: JsonArray = JsonArray(emptyList())): JsonObject = buildJsonObject {
+    /** A new session in [folder] with [mcpServers], [append] added to agy's system prompt when given (agy's
+     *  `_meta.antigravity.systemPrompt.append`). Only a new session carries it: agy adds an append given on resume to
+     *  the one the session already has. */
+    fun newSession(
+        folder: String,
+        mcpServers: JsonArray = JsonArray(emptyList()),
+        append: String? = null,
+    ): JsonObject = buildJsonObject {
         put("cwd", folder)
         put("mcpServers", mcpServers)
+        if (append != null) {
+            putJsonObject("_meta") {
+                putJsonObject("antigravity") {
+                    putJsonObject("systemPrompt") { put("append", append) }
+                }
+            }
+        }
     }
 
     /** Session [id] taken up again in [folder] with [mcpServers]. */

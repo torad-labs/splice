@@ -2,13 +2,9 @@
 // Claude config-file MCP discovery, and mid-session live model switching to/from Gemini.
 package splice.provider.antigravity
 
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -23,14 +19,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.client.ClaudeProjectFolder
-import splice.core.util.EnvReader
-import splice.core.util.LogSink
-import splice.core.util.WallClock
-import java.io.ByteArrayOutputStream
-import java.io.OutputStream
-import java.io.PipedInputStream
-import java.io.PipedOutputStream
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -53,7 +41,7 @@ internal class AgyMcpAndSwitchTest {
                 """"content":[{"type":"content","content":{"type":"text","text":"hello"}}]}'""",
             """stop "${'$'}id" end_turn""",
         ).joinToString("\n")
-        val rig = Rig(tmp)
+        val rig = AgyRig(tmp)
         var before = JsonArray(emptyList())
         var after = JsonArray(emptyList())
         val seen = rig.run(ScriptedAgy(turns = listOf(turn))) {
@@ -82,10 +70,10 @@ internal class AgyMcpAndSwitchTest {
 
     @Test
     fun `mcp_set_servers adds servers and reports dropped servers as errors`() {
-        val rig = Rig(tmp)
+        val rig = AgyRig(tmp)
         var added = JsonArray(emptyList())
         var dropped = JsonObject(emptyMap())
-        rig.run(ScriptedAgy(onResume = RESUMED)) {
+        rig.run(ScriptedAgy(onResume = RIG_RESUMED)) {
             control("init-1", """{"subtype":"initialize","mcpServers":{$FILES}}""")
             answer("init-1")
             control("set-1", """{"subtype":"mcp_set_servers","servers":{$FILES,$EXTRA}}""")
@@ -107,9 +95,9 @@ internal class AgyMcpAndSwitchTest {
             """      tok=${'$'}(printf '%s\n' "${'$'}l" | grep -o 'Bearer [0-9a-f]*' | head -1)""",
             """      curl -s -o "${'$'}DIR/during-open.json" -H 'Content-Type: application/json'""" +
                 """ -H "Authorization: ${'$'}tok" --data '$MCP_INIT' "${'$'}url"""",
-            OPEN_NEW,
+            RIG_OPEN_NEW,
         ).joinToString("\n")
-        val rig = Rig(tmp)
+        val rig = AgyRig(tmp)
         var status = JsonArray(emptyList())
         val seen = rig.run(ScriptedAgy(onNew = connectDuringOpen)) {
             control(
@@ -148,7 +136,7 @@ internal class AgyMcpAndSwitchTest {
 
     @Test
     fun `Claude config-file MCP servers load with expansion and Desktop overrides collisions`() {
-        val rig = Rig(tmp)
+        val rig = AgyRig(tmp)
         Files.createDirectories(rig.home.resolve(".claude"))
         Files.createDirectories(rig.project.resolve(".claude"))
         Files.writeString(
@@ -181,7 +169,7 @@ internal class AgyMcpAndSwitchTest {
 
     @Test
     fun `live switch from Claude hands off transcript cleanly and set_model to Claude exits cleanly`() {
-        val rig = Rig(tmp)
+        val rig = AgyRig(tmp)
         val id = "9d7c1d2e-0000-4000-8000-000000000001"
         val tx = rig.transcriptFile(id)
         Files.createDirectories(tx.parent)
@@ -242,175 +230,6 @@ internal class AgyMcpAndSwitchTest {
         """{"type":"control_response","response":{"subtype":"success",""" +
             """"request_id":"$id","response":{"mcp_response":$resp}}}"""
 
-    private class ScriptedAgy(
-        val onNew: String = OPEN_NEW,
-        val onResume: String = UNKNOWN,
-        val turns: List<String> = listOf("""stop "${'$'}id" end_turn"""),
-    ) {
-        fun script(log: Path): String {
-            val cases = turns.mapIndexed { idx, body -> "      ${idx + 1})\n$body\n        ;;" }.joinToString("\n")
-            val updFn = """upd() { printf '{"jsonrpc":"2.0","method":"session/update",""" +
-                """"params":{"sessionId":"s-1","update":%s}}\n' "${'$'}1"; }"""
-            val stopFn = """stop() { printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"%s"}}\n'""" +
-                """ "${'$'}1" "${'$'}2"; }"""
-            val idSed = """s/^{"jsonrpc":"2.0","id":\([0-9][0-9]*\),"method":.*/\1/p"""
-            val mSed = """s/^{"jsonrpc":"2.0",\("id":[0-9][0-9]*,\)\{0,1\}"method":"\([^"]*\)".*/\2/p"""
-            val raw =
-                """
-                |LOG='$log'
-                |DIR=${'$'}(dirname "${'$'}LOG")
-                |say() { printf '%s\n' "${'$'}1"; }
-                |$updFn
-                |$stopFn
-                |n=0
-                |while IFS= read -r l; do
-                |  printf '%s\n' "${'$'}l" >> "${'$'}LOG"
-                |  id=${'$'}(printf '%s\n' "${'$'}l" | sed -n '$idSed')
-                |  m=${'$'}(printf '%s\n' "${'$'}l" | sed -n '$mSed')
-                |  case "${'$'}m" in
-                |    initialize) say '{"jsonrpc":"2.0","id":'"${'$'}id"',"result":{"protocolVersion":1}}' ;;
-                |    session/new)
-                |$onNew
-                |      ;;
-                |    session/resume)
-                |$onResume
-                |      ;;
-                |    session/prompt)
-                |      n=${'$'}((n + 1))
-                |      case "${'$'}n" in
-                |$cases
-                |      *) stop "${'$'}id" end_turn ;;
-                |      esac
-                |      ;;
-                |    *) if [ -n "${'$'}id" ]; then say '{"jsonrpc":"2.0","id":'"${'$'}id"',"result":{}}'; fi ;;
-                |  esac
-                |done
-                |"""
-            return raw.trimMargin()
-        }
-    }
-
-    private class Rig(private val tmp: Path) {
-        val home: Path = tmp.resolve("home")
-        val project: Path = tmp.resolve("work.dir")
-        private val agyLog: Path = tmp.resolve("agy.jsonl")
-        val logged = StringBuffer()
-
-        fun asked(method: String): List<JsonObject> =
-            if (!Files.exists(agyLog)) {
-                emptyList()
-            } else {
-                Files.readAllLines(agyLog).filter(String::isNotBlank)
-                    .map { Json.parseToJsonElement(it).jsonObject }
-                    .filter { it.str("method") == method }
-                    .map { it.obj("params") }
-            }
-
-        fun transcriptFile(id: String): Path = home.resolve(".claude").resolve("projects")
-            .resolve(ClaudeProjectFolder.of(project.toString())).resolve("$id.jsonl")
-
-        fun run(agy: ScriptedAgy, extra: List<String> = emptyList(), drive: suspend Driver.() -> Unit): SeenOut {
-            Files.createDirectories(project)
-            Files.createDirectories(home)
-            val script = tmp.resolve("agy.sh")
-            Files.writeString(script, agy.script(agyLog))
-            val args = listOf(
-                "--output-format",
-                "stream-json",
-                "--model=claude-antigravity--gem-4-neon",
-                "--permission-mode=default",
-                "--stands-in-for=/home/me/claude-code/2.1.328/x/claude",
-            ) + extra
-            val env = EnvReader { if (it == "HOME") home.toString() else null }
-            val driver = Driver()
-            return runBlocking {
-                withTimeout(30_000L) {
-                    val job = async(Dispatchers.IO) {
-                        DesktopAcp(
-                            args,
-                            project,
-                            env,
-                            Dispatchers.IO,
-                            LogSink { logged.append(it) },
-                            WallClock { 1_795_300_000_000L },
-                            listOf("sh", script.toString()),
-                        ).run(driver.stdin, driver.stdout)
-                    }
-                    driver.running = job
-                    driver.drive()
-                    driver.close()
-                    job.await()
-                    driver.drain()
-                    SeenOut(driver.seen.toList(), driver.raw.toList())
-                }
-            }
-        }
-    }
-
-    private data class SeenOut(val lines: List<JsonObject>, val raw: List<String>)
-
-    private class Driver {
-        private val toSession = PipedOutputStream()
-        val stdin = PipedInputStream(toSession, 1 shl 16)
-        private val ch = Channel<String>(Channel.UNLIMITED)
-        val seen = mutableListOf<JsonObject>()
-        val raw = mutableListOf<String>()
-        lateinit var running: Deferred<Int>
-        private var closed = false
-        val stdout: OutputStream = object : OutputStream() {
-            private val buf = ByteArrayOutputStream()
-            override fun write(b: Int) {
-                if (b != '\n'.code) {
-                    buf.write(b)
-                } else {
-                    ch.trySend(buf.toString(Charsets.UTF_8))
-                    buf.reset()
-                }
-            }
-        }
-
-        fun send(line: String) {
-            toSession.write((line + "\n").toByteArray())
-            toSession.flush()
-        }
-
-        fun control(id: String, req: String) =
-            send("""{"type":"control_request","request_id":"$id","request":$req}""")
-
-        suspend fun next(pred: (JsonObject) -> Boolean): JsonObject {
-            while (true) {
-                val txt = ch.receive()
-                raw += txt
-                val obj = Json.parseToJsonElement(txt).jsonObject
-                seen += obj
-                if (pred(obj)) return obj
-            }
-        }
-
-        suspend fun nextMcpMessage(): JsonObject =
-            next { it.str("type") == "control_request" && it.obj("request").str("subtype") == "mcp_message" }
-
-        suspend fun answer(id: String): JsonObject =
-            next { it.str("type") == "control_response" && it.obj("response").str("request_id") == id }.obj("response")
-
-        suspend fun result(): JsonObject = next { it.str("type") == "result" }
-
-        fun close() {
-            if (!closed) {
-                closed = true
-                toSession.close()
-            }
-        }
-
-        fun drain() {
-            while (true) {
-                val txt = ch.tryReceive().getOrNull() ?: return
-                raw += txt
-                seen += Json.parseToJsonElement(txt).jsonObject
-            }
-        }
-    }
-
     private fun userMsg(text: String, uuid: String) =
         """{"type":"user","message":{"role":"user","content":"$text"},"parent_tool_use_id":null,"uuid":"$uuid"}"""
 
@@ -426,15 +245,6 @@ private fun JsonObject.array(key: String): JsonArray = getValue(key).jsonArray
 
 private fun JsonElement.primitiveText(): String = (this as JsonPrimitive).content
 
-private const val SESSION_DATA =
-    """{"sessionId":"s-1","modes":{"currentModeId":"default"},"configOptions":[""" +
-        """{"id":"model","currentValue":"gemini-4-neon",""" +
-        """"options":[{"value":"gemini-4-neon","name":"Gemini 4 Neon"}]}],""" +
-        """"models":{"availableModels":[{"modelId":"gemini-4-neon-high"}]}}"""
-private const val OPEN_NEW = """      say '{"jsonrpc":"2.0","id":'"${'$'}id"',"result":$SESSION_DATA}'"""
-private const val UNKNOWN =
-    """      say '{"jsonrpc":"2.0","id":'"${'$'}id"',"error":{"code":-32602,"message":"unknown"}}'"""
-private const val RESUMED = """      say '{"jsonrpc":"2.0","id":'"${'$'}id"',"result":$SESSION_DATA}'"""
 private const val FILES =
     """"files":{"command":"/usr/local/bin/files-mcp","args":["--root","/w"],"env":{"T":"sekret-1"}}"""
 private const val FILES_ACP =

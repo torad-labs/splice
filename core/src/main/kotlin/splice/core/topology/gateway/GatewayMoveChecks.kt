@@ -89,10 +89,12 @@ internal class GatewayMoveChecks(private val topology: Topology) {
 
     /** The head's standing prompt, text, file and mode, which the gateway reads as one value (HeadFallbacks): each key
      *  the head says other than its provider is a warning, and they move to the provider together, and only when every
-     *  one of them the provider says is the head's own and every head on the provider is served the same prompt. Moved
-     *  one at a time, the key left behind would no longer be served and turn into a new warning; moved beside a prompt
-     *  the provider wrote, they would make a third prompt; moved while another head is served another, that head would
-     *  read the moved keys where it says none (a mode it leaves to `append` would turn `replace`). */
+     *  one of them the provider says is the head's own, and every head on the provider and the gateway are served the
+     *  same prompt, so no one is served another after the move. Moved one at a time, the key left behind would no
+     *  longer be served and turn into a new warning; moved beside a prompt the provider wrote, they would make a third
+     *  prompt; moved while another head is served another, that head would read the moved keys where it says none (a
+     *  mode it leaves to `append` would turn `replace`); moved while the gateway serves the part the provider says,
+     *  the gateway's prompt would change under it. */
     private fun prompt(key: String, head: HeadConfig, provider: ProviderConfig): List<TopologyFinding> {
         val table = "providers.${keys.render(head.provider)}"
         val gets = served.getValue(head.provider)
@@ -102,17 +104,21 @@ internal class GatewayMoveChecks(private val topology: Topology) {
             Said("system_prompt_mode", head.systemPromptMode, provider.systemPromptMode, gets.systemPromptMode),
         )
         val own = trio.all { it.provider == null || it.provider == it.head }
-        val shared = topology.heads.values.filter { it.provider == head.provider }
-            .map { servedPrompt(it, provider) }.distinct().size == 1
+        val heads = topology.heads.values.filter { it.provider == head.provider }.map { servedPrompt(it, provider) }
+        val gateway = Prompt(gets.systemPrompt, gets.systemPromptFile, gets.systemPromptMode ?: SystemPromptMode.APPEND)
+        val kept = heads.all { it == gateway }
         val apart = trio.filter { it.head != null && it.head != it.provider }
-        val why = if (own && !shared) {
-            "another head on this provider is served another standing prompt, which a move to [$table] would " +
-                "change; set the one the gateway should serve in [$table], and on each head the one it should keep"
-        } else {
-            null
+        val why = when {
+            !own || kept -> null
+            heads.distinct().size > 1 ->
+                "another head on this provider is served another standing prompt, which a move to [$table] would " +
+                    "change; set the one the gateway should serve in [$table], and on each head the one it should keep"
+            else ->
+                "the gateway serves the part of the standing prompt [$table] says, which a move would change; set " +
+                    "the whole prompt the gateway should serve in [$table], and on each head the one it should keep"
         }
         return apart.mapNotNull { said ->
-            held(key, said, table, Together(own && shared, apart.map(Said<*>::field) - said.field, why))
+            held(key, said, table, Together(own && kept, apart.map(Said<*>::field) - said.field, why))
         }
     }
 

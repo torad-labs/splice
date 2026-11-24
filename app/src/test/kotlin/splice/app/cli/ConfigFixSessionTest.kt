@@ -5,14 +5,11 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.terminal.TerminalOutput
-import splice.topology.ConfigFindings
-import splice.topology.ConfigRead
 import java.nio.file.Files
 import java.nio.file.Path
 
 /** The fix session repairs a splice.toml finding by finding, backs it up first, and never boots on a finding. */
-class ConfigFixSessionTest {
+class ConfigFixSessionTest : ConfigFixRig() {
     private val provider = """
         [providers.demo]
         dialect = "openai-chat"
@@ -33,35 +30,6 @@ class ConfigFixSessionTest {
             """.trimIndent() + "\n",
         )
     }
-
-    /** A session over the file's findings, or with [advisory] over the warnings boot serves past
-     *  (`check-config --fix`), a finding a move would add counted too. */
-    private fun session(
-        file: Path,
-        root: Path,
-        replies: ArrayDeque<String>,
-        said: MutableList<String>,
-        advisory: Boolean = false,
-    ) =
-        ConfigFixSession(
-            file,
-            TerminalOutput { said += it },
-            object : FixPrompter {
-                override fun ask(question: String): String? = replies.removeFirstOrNull()
-
-                override fun secret(question: String): String? = replies.removeFirstOrNull()
-
-                override fun edit(file: Path, line: Int?): Boolean = false
-            },
-            { text ->
-                when (val read = ConfigFindings.read(text, root)) {
-                    is ConfigRead.Refused -> read.findings
-                    is ConfigRead.Ready -> if (advisory) read.warnings else emptyList()
-                }
-            },
-            { source -> Files.copy(source, root.resolve("backup.toml")) },
-            advisory,
-        )
 
     @Test
     fun `setting a value fixes the finding after a backup and the session ends with none left`(@TempDir root: Path) {
@@ -136,41 +104,6 @@ class ConfigFixSessionTest {
         assertTrue(fixed)
         assertTrue(Files.isSymbolicLink(link), "the link is still a link")
         assertTrue(Files.readString(target).contains("provider = \"demo\""), "the target is what was fixed")
-    }
-
-    /** A provider with one declared model, then [extra] under the head `one`, which serves it. */
-    private fun served(root: Path, providerExtra: String, headExtra: String): Path = root.resolve("splice.toml").also {
-        Files.writeString(
-            it,
-            """
-            [providers.demo]
-            dialect = "openai-chat"
-            base_url = "https://demo.invalid"
-            auth = { kind = "api-key", env = "DEMO_KEY" }
-            """.trimIndent() + "\n" + providerExtra + """
-
-            [[providers.demo.models]]
-            id = "m"
-            context_window = 1000
-
-            [[providers.demo.models]]
-            id = "s"
-            context_window = 1000
-
-            [heads.one]
-            provider = "demo"
-            port = 3101
-            discovery_prefix = "claude-demo--"
-            pinned_model = "m"
-            """.trimIndent() + "\n" + headExtra,
-        )
-    }
-
-    /** The file boots, and says nothing it serves past: every warning was moved too. */
-    private fun readsClean(file: Path, root: Path) {
-        val read = ConfigFindings.read(Files.readString(file), root)
-        assertTrue(read is ConfigRead.Ready, Files.readString(file))
-        assertEquals(emptyList<Any>(), (read as ConfigRead.Ready).warnings, Files.readString(file))
     }
 
     @Test
@@ -354,105 +287,6 @@ class ConfigFixSessionTest {
         assertTrue(provider.contains("system_prompt_mode = \"replace\""), text)
         assertTrue(text.substringAfter("[heads.two]").contains("system_prompt_mode = \"replace\""), text)
         readsClean(file, root)
-    }
-
-    /** [served] with `[providers.other]`, whose own multi-line prompt shows a `[providers.demo]` table as an example,
-     *  written ahead of the real one. */
-    private fun behindAnExample(root: Path, headExtra: String): Path {
-        val file = served(root, "", headExtra)
-        val other = "[providers.other]\ndialect = \"openai-chat\"\nbase_url = \"https://other.invalid\"\n" +
-            "auth = { kind = \"api-key\", env = \"OTHER_KEY\" }\nsystem_prompt = \"\"\"\nWrite it like this:\n" +
-            "[providers.demo]\nsystem_prompt = 'kept'\n\"\"\"\n\n[[providers.other.models]]\nid = \"o\"\n" +
-            "context_window = 1000\n\n"
-        Files.writeString(file, other + Files.readString(file))
-        return file
-    }
-
-    @Test
-    fun `a table header written inside another provider's multi-line prompt is not where a move lands`(
-        @TempDir root: Path,
-    ) {
-        val file = behindAnExample(root, "system_prompt = \"Review as the demo team.\"\n")
-        val said = mutableListOf<String>()
-
-        val fixed = session(file, root, ArrayDeque(listOf("m")), said, advisory = true).run()
-
-        val text = Files.readString(file)
-        assertTrue(fixed, "$said\n$text")
-        assertTrue(
-            text.contains("Write it like this:\n[providers.demo]\nsystem_prompt = 'kept'\n\"\"\"\n"),
-            "the other provider's prompt is unchanged: $text",
-        )
-        val real = "\n\n[providers.demo]\nsystem_prompt = \"Review as the demo team.\"\ndialect = "
-        assertTrue(text.contains(real), "it lands under the real header: $text")
-        readsClean(file, root)
-    }
-
-    @Test
-    fun `a head's multi-line prompt moves whole and a line inside it is never taken for its mode`(
-        @TempDir root: Path,
-    ) {
-        val fake = "system_prompt_mode = \"replace\"\n[providers.demo]\n"
-        val literal = "system_prompt = '''\n$fake[not.a.table]\nC:\\'''\n"
-        val basic = "system_prompt = \"\"\"\nSay \"this\".\n$fake[not.a.table]\nEnd.\"\"\"\n"
-        val mode = "system_prompt_mode = \"append\" # appended on purpose\n"
-        listOf(literal, basic).forEachIndexed { case, prompt ->
-            val dir = Files.createDirectories(root.resolve("case$case"))
-            val file = served(dir, "", prompt + mode)
-            val said = mutableListOf<String>()
-
-            val fixed = session(file, dir, ArrayDeque(listOf("m")), said, advisory = true).run()
-
-            val text = Files.readString(file)
-            assertTrue(fixed, "$said\n$text")
-            assertTrue(text.startsWith("[providers.demo]\n$prompt$mode"), "both land under the real header: $text")
-            val head = text.substringAfter("[heads.one]")
-            assertFalse(head.contains("system_prompt"), "every line of the head's prompt is taken off: $text")
-            readsClean(file, dir)
-        }
-    }
-
-    /** A splice.toml whose provider is an inline table in `[providers]`, and whose head says [headExtra]. */
-    private fun inlineProvider(root: Path, headExtra: String): Path = root.resolve("splice.toml").also {
-        Files.writeString(
-            it,
-            "[providers]\ndemo = { dialect = \"openai-chat\", base_url = \"https://demo.invalid\", " +
-                "auth = { kind = \"api-key\", env = \"DEMO_KEY\" }, " +
-                "models = [{ id = \"m\", context_window = 1000 }] }\n\n[heads.one]\nprovider = \"demo\"\n" +
-                "port = 3101\ndiscovery_prefix = \"claude-demo--\"\npinned_model = \"m\"\n" + headExtra,
-        )
-    }
-
-    @Test
-    fun `a one-line prompt moves into an inline provider table`(@TempDir root: Path) {
-        val file = inlineProvider(root, "system_prompt = \"Review as the demo team.\"\n")
-
-        val fixed = session(file, root, ArrayDeque(listOf("m")), mutableListOf(), advisory = true).run()
-
-        val text = Files.readString(file)
-        assertTrue(fixed, text)
-        val inline = "models = [{ id = \"m\", context_window = 1000 }], system_prompt = \"Review as the demo team.\" }"
-        assertTrue(text.contains(inline), text)
-        readsClean(file, root)
-    }
-
-    @Test
-    fun `no move is offered into an inline provider table for a value it cannot hold as written`(
-        @TempDir root: Path,
-    ) {
-        val multiline = "system_prompt = \"\"\"\nReview\nas the team.\"\"\"\n"
-        for (prompt in listOf(multiline, "system_prompt = \"Review.\" # why\n")) {
-            val file = inlineProvider(root, prompt)
-            val before = Files.readString(file)
-            val said = mutableListOf<String>()
-
-            val fixed = session(file, root, ArrayDeque(listOf("m", "s")), said, advisory = true).run()
-
-            assertFalse(fixed, "$said")
-            assertEquals(before, Files.readString(file), "nothing is written")
-            assertFalse(said.any { it.contains("[m]") }, "no move is offered only to be refused: $said")
-            assertFalse(said.any { it.contains("cannot be moved") }, "$said")
-        }
     }
 
     @Test

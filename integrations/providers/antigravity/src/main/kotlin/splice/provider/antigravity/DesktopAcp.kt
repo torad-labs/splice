@@ -18,6 +18,7 @@ import splice.core.util.EnvReader
 import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.core.util.WallClock
+import splice.provider.antigravity.skills.ClaudeSkillCatalog
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -120,12 +121,14 @@ public class DesktopAcp(
         val entrypoint = env(ENTRYPOINT_VARIABLE) ?: ENTRYPOINT
         val folder = cwd.toString()
         val facts = SessionFacts(ProcessHandle.current().pid(), id, folder, version, entrypoint, env(HOST_SESSION))
+        val localSkills = ClaudeSkillCatalog(cwd, config, log).load()
         return DesktopParts(
             DesktopFrames(id),
             out,
             ClaudeTranscript(config, TranscriptOwner(id, folder, version, entrypoint), clock),
             ClaudeSessionRecord(config, facts, clock, log),
-            SessionLook(folder, model, claude.permissionMode, emptyList(), version),
+            SessionLook(folder, model, claude.permissionMode, emptyList(), version, skills = localSkills.skillNames),
+            localSkills,
         )
     }
 

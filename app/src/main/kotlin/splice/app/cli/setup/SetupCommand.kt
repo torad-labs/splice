@@ -4,16 +4,13 @@
 // AddProfiles and installed by calling AddCommand; the wizard never writes those tables.
 package splice.app.cli.setup
 
-import splice.app.AddWiring
 import splice.app.InstallWiring
-import splice.app.LifecycleWiring
 import splice.app.cli.AdminSupport
 import splice.app.cli.auth.LoginCommand
-import splice.configuration.add.AddDoctor
 import splice.configuration.add.AddProfiles
-import splice.configuration.add.DaemonRestart
 import splice.configuration.add.DaemonUpProbe
 import splice.core.terminal.TerminalOutput
+import splice.core.topology.CLAUDE_SPLICE_COMMAND
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.launch.install.InstallCommand
@@ -22,48 +19,7 @@ import splice.launch.install.InstallResult
 import splice.topology.TopologyLoader
 import java.nio.file.Path
 
-/** The steps of `setup` that change the machine, beside install: the profile add, the daemon restart and the
- *  Claude wrap. Not prompts, which is the line SetupPrompts draws. [wrap] reads through [env], not a fresh
- *  `EnvReader(System::getenv)`: DaemonClaudeWrap reads the mgmt-key and resolves the control port through it, so a
- *  default that ignored the hermetic environment was one preselection change away from a test wrapping the
- *  developer's own ~/.claude (V4-177 review). */
-internal class SetupEffects(
-    private val env: EnvReader,
-    /** The `splice add` arguments each head's answers add (SetupHeadChoices): its models and their windows. */
-    private val choices: MutableMap<String, List<String>> = mutableMapOf(),
-    private val add: ProfileAdd = CommandAdd(choices),
-    val restart: DaemonRestart = DaemonRestart { LifecycleWiring.restart() },
-    private val launchers: SetupLaunchers = SetupLaunchers(env),
-) {
-    fun heads(profiles: AddProfiles, prompts: SetupPrompts, env: EnvReader): SetupHeads =
-        SetupHeads(profiles, prompts.pickHeads, add, restart, prompts.hasConsole, env, prompts.frame)
-
-    fun launchers(): SetupLaunchers = launchers
-
-    /** `splice doctor`, once, after the last head is added. */
-    fun checkup(env: EnvReader) = add.checkup(env)
-
-    /** What each head's add carries beyond `--yes`, from the person's answers. */
-    fun choose(answers: Map<String, HeadChoice>) {
-        choices.clear()
-        answers.forEach { (name, choice) -> choices[name] = choice.addArgs }
-    }
-}
-
-/** `splice add <profile> --yes` as setup runs it. Each add would restart the daemon and end on `splice doctor`: setup
- *  restarts once after its last head and runs the checkup once too. Until Nov 11, 2026 a setup that added three heads
- *  printed the whole report three times. */
-private class CommandAdd(private val choices: Map<String, List<String>>) : ProfileAdd {
-    override suspend fun invoke(name: String): Boolean =
-        AddWiring.add(restart = DaemonRestart { true }, doctor = AddDoctor { true })
-            .add(listOf(name, "--yes") + choices[name].orEmpty(), EnvReader(System::getenv))
-
-    override fun checkup(env: EnvReader) {
-        AddWiring.checkup()(env)
-    }
-}
-
-/** The `setup` verb. Production constructs with defaults so Command.Setup does not change. */
+/** The `setup` verb, and `setup --update` (SetupUpdate). Production constructs with defaults. */
 internal class SetupCommand(
     loginHead: HeadSignIn = HeadSignIn { key -> LoginCommand().login(key) },
     /** V4-176: the six terminal seams as one collaborator — see SetupPrompts for why they were
@@ -86,11 +42,15 @@ internal class SetupCommand(
     private val menu = SetupMenu(frame, profiles)
     private val mcpShare = SetupMcpShare(prompts, InstallWiring.units(env), env)
     private val headChoices = SetupHeadChoices(prompts, profiles)
+    private val modes = SetupModes(prompts, env)
+    private val autoUpdate = SetupAutoUpdate(prompts, env)
 
     /** The post-install OAuth tail, in splice.app.cli.setup since V4-156 (concentration). */
     private val signIn = SetupSignIn(loginHead, env)
 
-    internal suspend fun setup(): Boolean = runWizard()
+    /** The wizard, or with [update] the checkup of an existing install that offers only what is new (SetupUpdate). */
+    internal suspend fun setup(update: Boolean = false): Boolean =
+        if (update) SetupUpdate(prompts, env, effects, detect).run() else runWizard()
 
     private suspend fun runWizard(): Boolean = when (val answer = ask()) {
         is WizardAnswer.Cancelled -> frame.cancel(answer.reason)
@@ -110,7 +70,8 @@ internal class SetupCommand(
         // point" menu came first, leaving the list meant "none of these" and the wizard went on to its next question.
         val heads = picker.offer(facts, path) ?: return WizardAnswer.Cancelled("cancelled")
         val choices = headChoices.ask(heads)
-        val launcherChoice = launchers.offer(prompts) ?: return WizardAnswer.Cancelled("cancelled")
+        val launcherChoice = launchers.offer(prompts, facts.capabilities?.desktop)
+            ?: return WizardAnswer.Cancelled("cancelled")
         return confirmPlan(path, launcherChoice, picker, heads, choices)
     }
 
@@ -125,29 +86,38 @@ internal class SetupCommand(
         val launchers = effects.launchers()
         val local = localModel.offer(path)
         val share = mcpShare.ask(path) ?: return WizardAnswer.Cancelled("cancelled")
+        val extras = SetupExtras(local, share, modes.offer(path).orEmpty(), autoUpdate.offer(path))
         val summary = menu.summaryLines(path, bin, heads, launchers.summaryLines(launcherChoice)) +
-            choices.values.map { it.summary } + localModel.summary(local) + mcpShare.summary(share)
+            choices.values.map { it.summary } + localModel.summary(local) + mcpShare.summary(share) +
+            modes.summary(extras.modes) + autoUpdate.summary(extras.autoUpdate)
         frame.note("Summary", summary)
         if (!frame.confirm("Install now?", true)) return WizardAnswer.Cancelled("not installing")
         effects.choose(choices)
-        return WizardAnswer.Plan(path, launchers, launcherChoice, picker, heads, local, share)
+        return WizardAnswer.Plan(path, launchers, launcherChoice, picker, heads, extras)
     }
 
     private suspend fun install(plan: WizardAnswer.Plan): Boolean {
         if (!linked()) return false
         val landed = plan.picker.addAll(plan.heads)
         plan.launchers.apply(plan.launcherChoice, frame)
-        localModel.install(plan.local)
+        localModel.install(plan.extras.local)
         val topology = TopologyLoader.loadOrMaterialize(plan.path)
-        mcpShare.save(plan.path, plan.share)
-        mcpShare.hub(plan.path, plan.share)
+        mcpShare.save(plan.path, plan.extras.share)
+        mcpShare.hub(plan.path, plan.extras.share)
+        modes.save(plan.path, plan.extras.modes)
+        autoUpdate.save(plan.path, plan.extras.autoUpdate)
+        // A running daemon read splice.toml before the modes were turned on; restart it so the doctor below and the
+        // next session see them. auto_update needs none: the updater reads it live.
+        if (plan.extras.modes.isNotEmpty()) effects.restart()
         val ok = signIn.signInPendingHeads(topology)
         headChoices.checkLive(landed, topology, env)
-        if (landed.isNotEmpty()) effects.checkup(env)
-        signIn.printNextSteps(topology)
+        // The checkup runs with no plan connected too: `claude` on splice's door is a whole setup, and until Nov 23,
+        // 2026 that setup skipped the doctor and closed on "Not set up yet." over a working install.
+        effects.checkup(env)
+        signIn.printNextSteps(topology, if (plan.launcherChoice.cliShortcut) CLAUDE_SPLICE_COMMAND else LAUNCH_CLAUDE)
         // The ONE completion line on the last screen — printNextSteps deliberately has none. "You're
         // set." rather than "Toolkit ready!": splice is not called a toolkit anywhere else.
-        frame.outro(if (topology.heads.isEmpty()) "Not set up yet." else "You're set.")
+        frame.outro("You're set.")
         return ok
     }
 
@@ -173,20 +143,4 @@ internal class SetupCommand(
         InstallWiring.init(env, output)
         return InstallCommand(output, TerminalOutput(System.err::println)).install("--all", env)
     }
-}
-
-/** What the wizard's questions end in: a plan the operator said go to, or the reason it ends without installing. */
-private sealed class WizardAnswer {
-    class Cancelled(val reason: String) : WizardAnswer()
-
-    class Plan(
-        val path: Path,
-        val launchers: SetupLaunchers,
-        val launcherChoice: LauncherChoice,
-        val picker: SetupHeads,
-        val heads: List<String>,
-        val local: Boolean,
-        /** [daemon] mcp_share and optional user MCP import/harness sync choices. */
-        val share: McpSetupAnswer,
-    ) : WizardAnswer()
 }

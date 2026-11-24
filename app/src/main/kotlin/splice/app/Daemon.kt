@@ -312,7 +312,7 @@ public class Daemon(
         topology,
         statePaths,
         log,
-        DesktopAppLibrary(DesktopAppConfig(statePaths.envReader)),
+        DesktopAppLibrary(DesktopAppConfig(statePaths.envReader), log = log),
     )
     private val stopLock = Mutex()
     private var stopped = false

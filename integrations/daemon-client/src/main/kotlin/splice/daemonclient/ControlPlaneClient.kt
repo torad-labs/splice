@@ -128,7 +128,7 @@ public object ControlPlaneClient {
     }
 
     /** What both halves of a control-plane call agree a success is: the sender picks the stream to
-     *  read from it, and [SetupClaudeLane] picks the sentence to print from it. Two spellings of
+     *  read from it, and a caller picks the sentence to print from it. Two spellings of
      *  "2xx" in two files is one rename away from a refusal being reported as a success. */
     public val OK_RANGE: IntRange = HttpURLConnection.HTTP_OK until HttpURLConnection.HTTP_MULT_CHOICE
 

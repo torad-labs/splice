@@ -163,8 +163,11 @@ public sealed class Command {
     public data class Logout(val server: String) : Command() {
         override suspend fun run(): Int = ServerLogin().logout(server)
     }
-    public data object Setup : Command() {
-        override suspend fun run(): Int = outcomeExitCode(SetupCommand().setup())
+
+    /** `splice setup [--update]`: the wizard, or with [update] the checkup of an existing install that offers only
+     *  what a new release adds. */
+    public data class Setup(val update: Boolean = false) : Command() {
+        override suspend fun run(): Int = outcomeExitCode(SetupCommand().setup(update))
     }
 
     /** v0.4.0 (FEATURES.md §1): `splice add <profile> [...]` — a second provider without editing TOML. */

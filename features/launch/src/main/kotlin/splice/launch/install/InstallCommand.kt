@@ -8,16 +8,31 @@ package splice.launch.install
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 
+// The targets that name the whole install: none, or `--all`.
+private val WHOLE_INSTALL = setOf(null, "--all")
+
 /** The `install` / `uninstall` verbs as one cohesive unit of behavior (Kotlin style law,
  *  2026-08-15: main sources carry no top-level functions) — they share the wrapper-symlink and
  *  launch-shim path resolution. [output] carries the operator's lines, [errors] the refusals. */
-public class InstallCommand(output: TerminalOutput, errors: TerminalOutput) {
+public class InstallCommand(private val output: TerminalOutput, errors: TerminalOutput) {
 
     private val heads = InstallHeads(output)
     private val linker = InstallLinker(output, heads = heads)
     private val uninstaller = UninstallCommand(output, errors, heads = heads)
 
-    public fun install(headArg: String?, env: EnvReader): InstallResult = linker.install(headArg, env)
+    /** The wrappers [headArg] names; for the whole install (`--all` or none) also the Antigravity shim install.sh lays
+     *  (GeminiShim), so an install from before it, or one whose bin folder moved, gets it. A shim that cannot be laid
+     *  is said, as install.sh says it, and fails nothing. */
+    public fun install(headArg: String?, env: EnvReader): InstallResult = linker.install(headArg, env).also {
+        if (it is InstallResult.Linked && headArg in WHOLE_INSTALL) {
+            (GeminiShim(env).lay() as? GeminiShimLaid.Failed)?.let { failed ->
+                output.line(
+                    "splice: warning: could not lay the Antigravity shim (${failed.why}); " +
+                        "Claude Desktop can't run Antigravity models",
+                )
+            }
+        }
+    }
 
     public fun installSelf(env: EnvReader): InstallResult = linker.installShortcut(SELF_COMMAND, env)
 

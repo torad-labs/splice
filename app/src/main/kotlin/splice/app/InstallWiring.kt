@@ -92,6 +92,26 @@ internal object InstallWiring {
         return ListenerSockets(unitFolder(env, output), output)
     }
 
+    /** An upgrade's aftercare, on Linux with the hub's front installed: the hub's units laid again where splice's own
+     *  differ from this release's, and `mcp-front.env` written again, as `splice install --all` and `splice init` lay
+     *  them. Nothing is enabled, started or restarted. Answers a line per thing that changed. */
+    fun refreshHub(env: EnvReader): List<String> {
+        if (!linux() || !frontInstalled(env)) return emptyList()
+        val said = mutableListOf<String>()
+        val output = TerminalOutput { said += it.removePrefix("splice: ") }
+        val folder = unitFolder(env, output)
+        folder.lay(HubUnits(folder, output).templates())
+        // Read, never made: an upgrade writes no splice.toml, so a missing or broken one reads as none.
+        val path = TopologyLoader.configPath(env)
+        val topology = Cancellables.runCatchingBestEffort {
+            if (Files.isRegularFile(path)) TopologyLoader.parse(Files.readString(path)) else null
+        }.getOrNull()
+        McpFrontEnv(path.resolveSibling("mcp-front.env"))
+            .write(StatePaths(envReader = env).stateDir.resolve("mcp-hub"), AdminSupport.controlPort(topology, env))
+            ?.let { said += it.removePrefix("splice: ") }
+        return said
+    }
+
     /** The MCP hub's units, on Linux with the hub's front installed beside the jar; null anywhere else. */
     fun units(env: EnvReader): HubUnits? {
         if (!linux() || !frontInstalled(env)) return null

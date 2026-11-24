@@ -343,8 +343,10 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/desktop/setup/DesktopAppLibrary.kt" to mapOf(".writeText(" to 1),
     "app/src/main/kotlin/splice/app/desktop/setup/DesktopLibraryFiles.kt" to
         mapOf("writeAtomic(" to 1, "writeAtomic0600(" to 1),
-    "app/src/main/kotlin/splice/app/desktop/setup/DesktopProfileSync.kt" to mapOf("Files.copy(" to 1),
-    "app/src/main/kotlin/splice/app/desktop/setup/DesktopPrograms.kt" to mapOf("writeAtomic(" to 2),
+    "app/src/main/kotlin/splice/app/desktop/setup/DesktopPrograms.kt" to mapOf("writeAtomic(" to 3),
+    // An extension or skill copied whole into Desktop's gateway profile: staged beside it, then moved into place.
+    "app/src/main/kotlin/splice/app/desktop/setup/DesktopTreeCopy.kt" to
+        mapOf("Files.copy(" to 1, "Files.createSymbolicLink(" to 1, "Files.move(" to 1),
     "app/src/main/kotlin/splice/app/desktop/setup/SideBySideLaunchers.kt" to
         mapOf("Files.copy(" to 1, "Files.writeString(" to 4),
     // The console launch page, 0600, documented in the console-open.html README row.
@@ -445,6 +447,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/report/DoctorReportFiles.kt" to mapOf(
         "Files.writeString(" to 1,
     ),
+    // The Antigravity shim install.sh lays, laid again by `splice install --all` and an upgrade's aftercare (Nov 23).
+    "features/launch/src/main/kotlin/splice/launch/install/GeminiShim.kt" to mapOf("writeAtomic(" to 1),
     "features/launch/src/main/kotlin/splice/launch/install/InstallLinker.kt" to mapOf("Files.createSymbolicLink(" to 1),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt" to mapOf("a shell redirect" to 2),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/restart/DaemonSuccessor.kt" to mapOf(

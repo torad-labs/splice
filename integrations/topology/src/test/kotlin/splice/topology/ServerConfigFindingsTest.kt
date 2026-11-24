@@ -68,6 +68,19 @@ class ServerConfigFindingsTest {
     }
 
     @Test
+    fun `a mode serving the listener is refused a name the listener answers itself or serves a command at`() {
+        val modes = { names: List<String> -> names.joinToString("") { "[modes.$it]\nserver_routes = true\n" } }
+        val taken = listOf("server", "door", "health", "box")
+        val read = ConfigFindings.read(server() + head() + modes(taken + "harbor"), directory, configDir = directory)
+        val findings = assertInstanceOf(ConfigRead.Refused::class.java, read).findings.map { it.path }
+        assertEquals(taken.map { "modes.$it.server_routes" }, findings.filter { it.endsWith("server_routes") })
+        val off = ConfigFindings.read(server() + head() + "[modes.box]\non = true\n", directory, configDir = directory)
+        assertInstanceOf(ConfigRead.Ready::class.java, off, off.toString())
+        val noServer = ConfigFindings.read(head() + modes(listOf("box")), directory, configDir = directory)
+        assertInstanceOf(ConfigRead.Ready::class.java, noServer, noServer.toString())
+    }
+
+    @Test
     fun `a file with no server table is not asked for one`() {
         val read = ConfigFindings.read(head(), directory, configDir = directory)
         assertInstanceOf(ConfigRead.Ready::class.java, read, read.toString())

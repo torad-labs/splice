@@ -84,7 +84,8 @@ admins = ["ops@team.example"]
 ```
 
 - Routes on the listener: `GET /health` (open), `GET /` and `GET /<command>/launch` (as share mode serves them),
-  `ANY /<command>/v1/...` for turns, `/server/...` for the server's own API.
+  `ANY /<command>/v1/...` for turns, `/server/...` for the server's own API, and `/server/mod/<name>/...` for the
+  modes splice.toml lets serve here ([Mode routes](#mode-routes)).
 - A key arrives as `x-api-key` or `Authorization: Bearer`. A missing, unknown, revoked or expired key is a 401
   `authentication_error` that never echoes the key, and nothing reaches the upstream.
 - CLI: `splice server key create --person <email> [--name <n>] [--expires <duration>] --json`,
@@ -372,6 +373,36 @@ What is the server's holds on that *selected provider*, never on the selector th
 
 `[server] commands` serves a provider by its key too (no head needed), except a provider that signs with one person's
 plan login. The `/<command>/...` routes of the heads that exist keep working beside the door, unchanged.
+
+## Mode routes
+
+A mode (modes/README.md) can answer a team's key holders on the same listener, under `/server/mod/<name>/...`. It is
+off until splice.toml turns it on, per mode:
+
+```toml
+[modes.<name>]
+server_routes = true       # key holders reach the mode at /server/mod/<name>/...
+server_admin_only = true   # and only the people `[server] admins` names
+```
+
+- **A key first.** A mod path is never one of the open routes: a missing, unknown, revoked or expired key is the same
+  401 as anywhere else, and no mode is reached.
+- **Who is asking, never the key.** The mode is told the key's person (their email), their team (their own, else their
+  domain's) and whether they are an admin. It is never handed the key, its prefix or its hash, and of the request's
+  headers only `accept`, `content-type` and `user-agent`: `authorization`, `x-api-key` and `cookie` never reach it. It
+  gets the method, the path after `/server/mod/<name>`, the query (the first value of each name) and the body.
+- **Gates.** A mode that is not carried, or whose `server_routes` is not true, is a 404 `not_found_error`: a key holder
+  cannot tell it from a name no mode has. With `server_admin_only`, a member's key is a 403 `permission_error` naming
+  them, and an admin's is answered. The switches are read per request, so a console switch applies to the next one,
+  and turning a mode on or off from the console keeps them.
+- **Limits.** A body is read up to 1 MiB (past that, 413 `request_too_large`) and for at most 30 seconds (408). A mode
+  that throws is a 500 naming its exception's class and nothing it held; a path it has no answer for is a 404.
+- **Names.** A mode with `server_routes = true` may not be named `server`, `door` or `health`, nor a name
+  `[server] commands` serves at (a command, or its head's key or command): boot and `splice check-config` refuse it at
+  `modes.<name>.server_routes`, so a mode's name never reads as a path the listener answers itself.
+
+A mode answers with `Mode.serve(request)`: its status, content type and body, or null for a path it does not have. Its
+code runs in the daemon, as every mode's does.
 
 ## P3
 

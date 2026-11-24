@@ -13,10 +13,10 @@ import io.ktor.server.request.httpMethod
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import splice.core.auth.BearerScheme
+import splice.core.server.SERVER_ROOT
 import splice.core.topology.ServerConfig
 import splice.core.wire.HttpStatus
 import splice.server.KeyVerdict
-import splice.server.SERVER_ROOT
 import splice.server.ServerKey
 import splice.server.ServerKeys
 import splice.server.ServerPeople

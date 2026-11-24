@@ -90,7 +90,7 @@ public object ConfigFindings {
         val declared = CapabilityDeclarations(topology?.heads?.keys, messages = messages)
             .read(parts.capabilities.tables)
         val found = beside.modes?.of(mods.config, configDir ?: stateBase, topology)
-        val modes = ModeSettingsReader(topology?.heads?.keys, found?.names).read(parts.modes.tables)
+        val modes = ModeSettingsReader(topology?.heads?.keys, found?.names, served(topology)).read(parts.modes.tables)
         val elsewhere = declared.findings + modes.findings + mods.findings + found?.findings.orEmpty()
         if (decoded == null) return refused(structural + TopologyTypeMismatch.all(text) + elsewhere)
         if (topology == null) return refused(undecodable(text, requireNotNull(decoded.exceptionOrNull())) + elsewhere)
@@ -114,6 +114,15 @@ public object ConfigFindings {
         val warnings = TopologyFindings.warnings(topology)
             .map { it.copy(line = lineOf(text, it.path)) } + beside.retired?.warnings(topology).orEmpty()
         return refused(checks + OperatorTelemetryFindings.of(topology) + local + elsewhere, ready, warnings)
+    }
+
+    /** The first path segments the server's listener serves its commands at: each `[server] commands` entry, and for
+     *  one a head runs, that head's key and command, either of which reaches it there; null without a topology. */
+    private fun served(topology: Topology?): Set<String>? = topology?.let { read ->
+        read.server.commands.flatMap { command ->
+            val keys = read.resolveHeadKeys(command)
+            listOf(command) + keys + keys.mapNotNull { read.heads[it]?.claude?.command }
+        }.toSet()
     }
 
     /** A knob finding keeps boot's own reason as written (the console writer pins its exact text); the boot

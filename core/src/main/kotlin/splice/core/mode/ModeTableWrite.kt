@@ -45,6 +45,8 @@ public class ModeTableWrite(private val writer: TopologyWriter) {
         if (setting.heads.isNotEmpty()) {
             keys[MODE_HEADS] = JsonObject(setting.heads.mapValues { JsonPrimitive(it.value) })
         }
+        setting.serverRoutes?.let { keys[MODE_SERVER_ROUTES] = JsonPrimitive(it) }
+        setting.serverAdminOnly?.let { keys[MODE_SERVER_ADMIN_ONLY] = JsonPrimitive(it) }
         return keys.takeIf { it.isNotEmpty() }?.let(::JsonObject)
     }
 }

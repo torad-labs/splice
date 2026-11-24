@@ -62,7 +62,7 @@ internal class ServerListenerWiring(
             val issuer = SigninIssuer(SigninClient(signin, signinSecret), io, clock)
             SigninParts(signin, issuer, IdTokens(signin, issuer, clock))
         }
-        return ServerListener(server, parts, tls, stores.admin, io, log, signin)
+        return ServerListener(server, parts, tls, stores.admin, io, log, OptionalRoutes(signin, reach.mods))
     }
 }
 

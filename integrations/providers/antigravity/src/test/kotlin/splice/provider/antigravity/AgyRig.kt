@@ -28,7 +28,7 @@ import java.nio.file.Path
 
 /** An agy whose answer to each ACP method is a shell snippet run with `$id` (the request's id) and `$l` (its line). */
 internal class ScriptedAgy(
-    val onNew: String = RIG_OPEN_NEW,
+    val onNew: String = RIG_EMPTY_COMMANDS + "\n" + RIG_OPEN_NEW,
     val onResume: String = RIG_UNKNOWN,
     val turns: List<String> = listOf("""stop "${'$'}id" end_turn"""),
     val onInitialize: String = RIG_HELLO,
@@ -219,6 +219,8 @@ internal const val RIG_SESSION_DATA =
         """{"id":"model","currentValue":"gemini-4-neon",""" +
         """"options":[{"value":"gemini-4-neon","name":"Gemini 4 Neon"}]}],""" +
         """"models":{"availableModels":[{"modelId":"gemini-4-neon-high"}]}}"""
+private const val RIG_EMPTY_COMMANDS =
+    """      upd '{"sessionUpdate":"available_commands_update","availableCommands":[]}'"""
 internal const val RIG_OPEN_NEW = """      say '{"jsonrpc":"2.0","id":'"${'$'}id"',"result":$RIG_SESSION_DATA}'"""
 internal const val RIG_HELLO = """      say '{"jsonrpc":"2.0","id":'"${'$'}id"',"result":{"protocolVersion":1}}'"""
 internal const val RIG_UNKNOWN =

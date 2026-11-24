@@ -10,18 +10,20 @@ import java.nio.file.Path
 internal data class SkillRoot(val path: Path, val disabled: Set<String> = emptySet())
 
 internal class SkillScanner(private val log: LogSink) {
-    private val frontmatter = SkillFrontmatter(log)
+    private val frontmatter = SkillFrontmatter()
     private val reportedLargeRoots = mutableSetOf<Path>()
 
     fun skills(roots: List<SkillRoot>): Sequence<LocalSkillItem> =
         roots.asSequence()
-            .mapNotNull { root -> SkillPaths.directory(root.path)?.let { root.copy(path = it) } }
-            .distinctBy(SkillRoot::path)
-            .flatMap { root -> children(root.path).asSequence().mapNotNull { skill(it, root) } }
+            .mapNotNull { root -> SkillPaths.directory(root.path)?.let { root to it } }
+            .distinctBy { (_, dir) -> dir }
+            .flatMap { (root, dir) -> children(dir).asSequence().mapNotNull { skill(it, root) } }
 
     fun commands(roots: List<Path>): Sequence<LocalSkillItem> =
-        roots.asSequence().mapNotNull(SkillPaths::directory).distinct()
-            .flatMap { dir -> children(dir).asSequence().mapNotNull { command(it, dir) } }
+        roots.asSequence()
+            .mapNotNull { root -> SkillPaths.directory(root)?.let { root to it } }
+            .distinctBy { (_, dir) -> dir }
+            .flatMap { (root, dir) -> children(dir).asSequence().mapNotNull { command(it, root) } }
 
     private fun skill(child: Path, root: SkillRoot): LocalSkillItem? {
         val disabled = root.disabled

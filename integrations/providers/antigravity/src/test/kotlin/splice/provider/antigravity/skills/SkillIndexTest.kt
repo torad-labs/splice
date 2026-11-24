@@ -38,10 +38,10 @@ internal class SkillIndexTest {
         LocalSkillCatalog(items.toList(), items.filter { it.isSkill }.map { it.name })
 
     private fun skill(name: String, description: String, folder: Path) =
-        LocalSkillItem(name, description, "", "Body", SkillPlace(folder.resolve("SKILL.md"), folder, folder.parent))
+        LocalSkillItem(name, description, "", "", SkillPlace(folder.resolve("SKILL.md"), folder, folder.parent))
 
     private fun command(name: String, description: String, root: Path) =
-        LocalSkillItem(name, description, "", "Body", SkillPlace(root.resolve("$name.md"), null, root))
+        LocalSkillItem(name, description, "", "", SkillPlace(root.resolve("$name.md"), null, root))
 }
 
 private const val HEADER =

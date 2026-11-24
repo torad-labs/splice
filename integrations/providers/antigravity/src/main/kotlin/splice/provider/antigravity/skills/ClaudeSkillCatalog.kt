@@ -4,27 +4,27 @@ import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import java.nio.file.Path
 
-/** Where a command or skill was found: its real [file] and [folder] (null for a command), and the real path of the
- *  skills or commands folder it was found in ([root]), whatever its own entry links to (which is how agy, finding it
- *  in that folder, sees it). */
+/** The real [file] and [folder] (null for a command), and the declared discovery [root], before following links.
+ *  Keeping them separate lets the local menu honor aliases without granting them access to the startup index. */
 internal data class SkillPlace(val file: Path, val folder: Path?, val root: Path)
 
 /** Who may start a skill, from its frontmatter as Claude Code reads it: the person, by typing it (`user-invocable`,
  *  default true), and the model, by choosing it (`disable-model-invocation`, default false). */
 internal data class SkillUse(val byUser: Boolean = true, val byModel: Boolean = true)
 
-/** A discovered command or skill, including its bounded Markdown and canonical source. */
+/** A discovered command or skill's bounded metadata and source, without its body. */
 internal data class LocalSkillItem(
     val name: String,
     val description: String,
     val hint: String,
-    val body: String,
+    val fallbackDescription: String,
     val place: SkillPlace,
     val use: SkillUse = SkillUse(),
 ) {
     val file: Path get() = place.file
     val folder: Path? get() = place.folder
     val root: Path get() = place.root
+    val menuDescription: String get() = description.ifBlank { fallbackDescription }
 
     /** A skill is a folder with a SKILL.md; a command is a single Markdown file. */
     val isSkill: Boolean get() = folder != null
@@ -57,7 +57,7 @@ internal class ClaudeSkillCatalog(cwd: Path, env: EnvReader, log: LogSink) {
 
     /** The workspace roots that agy itself searches, nearest first. */
     fun nativeRoots(): List<Path> =
-        roots.workspace().mapNotNull { SkillPaths.directory(roots.nativeUnder(it)) }.distinct()
+        roots.workspace().map(roots::nativeUnder).filter { SkillPaths.directory(it) != null }
 
     /** The skills agy discovers by itself in [nativeRoots], each by its real folder and its name. */
     fun nativeSkills(): List<LocalSkillItem> = scanner.skills(nativeRoots().map { SkillRoot(it) }).toList()

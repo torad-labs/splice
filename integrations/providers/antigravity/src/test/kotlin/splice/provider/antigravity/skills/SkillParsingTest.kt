@@ -29,7 +29,7 @@ internal class SkillParsingTest {
 
         assertEquals("Astro middleware, API routes. It's SSR.", item.description)
         assertEquals("Use \"first\" then C:\\work", item.hint)
-        assertEquals("# Skill body", item.body)
+        assertEquals("# Skill body", SkillMarkdown().body(item.file))
     }
 
     @Test
@@ -38,7 +38,7 @@ internal class SkillParsingTest {
         val item = skill(markdown)
         assertEquals("selected", item.name)
         assertEquals("From frontmatter", item.description)
-        assertEquals("# Body\r\n", item.body)
+        assertEquals("# Body\r\n", SkillMarkdown().body(item.file))
     }
 
     @Test
@@ -46,8 +46,8 @@ internal class SkillParsingTest {
         val markdown = "---\nname: parsed\nuser-invocable: false\n\n# Body\n"
         val item = skill(markdown)
         assertEquals("from-folder", item.name)
-        assertEquals("---", item.description)
-        assertEquals(markdown, item.body)
+        assertEquals("---", item.menuDescription)
+        assertEquals(markdown, SkillMarkdown().body(item.file))
     }
 
     @Test
@@ -55,21 +55,21 @@ internal class SkillParsingTest {
         val markdown = "---\nname: parsed\n" + "  continuation\n".repeat(200) + "---\nBody\n"
         val item = skill(markdown)
         assertEquals("from-folder", item.name)
-        assertEquals(markdown, item.body)
+        assertEquals(markdown, SkillMarkdown().body(item.file))
     }
 
     @Test
     fun `the fallback skips bare heading markers and preserves hashtags`() {
         val item = skill("\n###\n  #hashtag in the body\n")
-        assertEquals("#hashtag in the body", item.description)
+        assertEquals("#hashtag in the body", item.menuDescription)
     }
 
     @Test
     fun `a long fallback ends with an ellipsis without cutting a Unicode character`() {
         val line = "x".repeat(248) + "🦉 and more content"
         val item = skill("###### $line")
-        assertEquals("x".repeat(248) + "🦉…", item.description)
-        assertEquals("###### $line", item.body)
+        assertEquals("x".repeat(248) + "🦉…", item.menuDescription)
+        assertEquals("###### $line", SkillMarkdown().body(item.file))
     }
 
     @Test
@@ -101,7 +101,7 @@ internal class SkillParsingTest {
     @Test
     fun `a hash at the start of a value leaves it empty`() {
         val empty = skill("---\ndescription: # nothing here\nuser-invocable: true # still typeable\n---\n# Heading\n")
-        assertEquals("Heading", empty.description, "an empty description falls back to the body")
+        assertEquals("Heading", empty.menuDescription, "an empty description falls back to the body")
         assertEquals(SkillUse(byUser = true, byModel = true), empty.use)
     }
 

@@ -213,7 +213,8 @@ or writing `~/.gemini`.
   `<CLAUDE_CONFIG_DIR or ~/.claude>/skills`; `~/.agents/skills`; the skills in
   `$CLAUDE_CODE_DESKTOP_SKILLS_PLUGIN_DIR/skills` that its `manifest.json` doesn't turn off; then `.claude/commands`
   along the same walk and `<config>/commands`. They are scanned when the session starts, before agy opens, and
-  again on each `reload_skills`.
+  again on each `reload_skills`. Discovery keeps only bounded metadata and file paths; the selected skill or
+  command's body is read from disk when invoked.
 - **Who may start one**, from the frontmatter as Claude Code reads it: `user-invocable: false` keeps a skill out of
   what the person can type (the slash menu, `reload_skills`, `system/init`'s `skills` and `/name` expansion), but the
   model may still choose it, so it is in the skill index. `disable-model-invocation: true` keeps a skill out of the
@@ -230,7 +231,8 @@ or writing `~/.gemini`.
   body. In the body, `$ARGUMENTS` is replaced by the arguments; if the body has no `$ARGUMENTS` and there are
   arguments, they are added after it as `ARGUMENTS: …`. In a message made of blocks, only that text block changes and
   images stay where they were. Desktop's replay and the transcript keep what was typed. agy's own commands go through
-  as typed. `/login` and `/splice:login` are never expanded, even when a local command has that name: as text alone
+  as typed, as do all commands until agy announces its native roster (which may be empty). `/login` and
+  `/splice:login` are never expanded, even when a local command has that name: as text alone
   they open Splice Console's Accounts page and never reach agy, and in a message with an image they go to agy as
   typed.
 - **`reload_skills`** scans the folders again and answers `{"skills": [{name, description, argumentHint}, …]}`, as
@@ -241,13 +243,15 @@ or writing `~/.gemini`.
 - **The skill index.** When agy offers `systemPrompt.append`, a new session (`session/new`, including the retry
   without MCP servers) gets a short index appended to agy's system prompt. It is built from the skills as they stand
   when `session/new` is sent, so a `reload_skills` before then counts. The index lists each local skill's name,
-  a one-line description and its `SKILL.md` path, so agy reads a skill when a task calls for it and loads nothing
-  otherwise. The boundary it keeps:
+  a one-line description when explicitly provided in frontmatter, and its `SKILL.md` path, so agy reads a skill when a
+  task calls for it and loads nothing otherwise. Body-derived summaries stay in local autocomplete. The boundary it keeps:
   - only when agy's ACP `initialize` advertised the capability as JSON `true` (not the string `"true"`), and only on
     `session/new`, never on `session/resume` or the `mcp_set_servers` resume, because agy adds a resumed append to
     the one the session already has;
   - skills only, and only those the model may choose (not `disable-model-invocation: true`; a `user-invocable:
     false` skill is included);
+  - only skills whose real directory and file stay inside their declared skill root; links outside that root can
+    still appear in local autocomplete, but are not sent in the startup index;
   - leaving out every skill agy serves itself: one found in an `.agents/skills` folder of the
     session's walk (even when its entry or its `SKILL.md` links elsewhere), one whose real folder is that of such a
     skill (a `.claude/skills` alias that links into `.agents/skills`), and one sharing such a skill's name;

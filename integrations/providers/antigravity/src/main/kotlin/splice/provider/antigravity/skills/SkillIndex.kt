@@ -15,7 +15,9 @@ internal class SkillIndex {
      *  false` one stays in. agy serves a skill found in one of its [nativeRoots], one whose real folder is that of one
      *  of its [native] skills (an alias that links there), and one with the name of one of them. */
     fun of(catalog: LocalSkillCatalog, nativeRoots: List<Path>, native: List<LocalSkillItem> = emptyList()): String? {
-        val skills = catalog.commands.filter { it.isSkill && it.use.byModel && !agyServes(it, nativeRoots, native) }
+        val skills = catalog.commands.filter { skill ->
+            skill.use.byModel && containedSkill(skill) && !agyServes(skill, nativeRoots, native)
+        }
         if (skills.isEmpty()) return null
         val lines = mutableListOf(INDEX_HEADER)
         var chars = INDEX_HEADER.length
@@ -34,6 +36,9 @@ internal class SkillIndex {
      *  folder as one of its skills, or the same name. */
     private fun agyServes(skill: LocalSkillItem, nativeRoots: List<Path>, native: List<LocalSkillItem>): Boolean =
         skill.root in nativeRoots || native.any { it.folder == skill.folder || it.name == skill.name }
+
+    private fun containedSkill(skill: LocalSkillItem): Boolean =
+        skill.folder?.startsWith(skill.root) == true && skill.file.startsWith(skill.root)
 
     private fun line(skill: LocalSkillItem): String {
         val summary = skill.description.replace(WHITESPACE, " ").trim()

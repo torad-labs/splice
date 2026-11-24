@@ -1,35 +1,24 @@
 package splice.provider.antigravity.skills
 
-import splice.core.util.LogSafe
-import splice.core.util.LogSink
-import java.nio.file.Path
-
-internal class SkillFrontmatter(private val log: LogSink) {
+internal class SkillFrontmatter {
     private val markdown = SkillMarkdown()
 
-    /** The command or skill in [file], found at [place]: a `user-invocable: false` one stays (only the model may start
-     *  it), and so does a `disable-model-invocation: true` one (only the person may). */
-    fun readItem(place: SkillPlace, fallbackName: String): LocalSkillItem {
-        val file = place.file
-        val document = markdown.read(file)
+    /** Read only the bounded metadata needed for discovery and the slash menu. */
+    fun readItem(place: SkillPlace, fallbackName: String): LocalSkillItem? {
+        val document = markdown.metadata(place.file) ?: return null
         val front = document.frontmatter
+        val description = scalar(front, "description")
         return LocalSkillItem(
             name = SkillName.valid(scalar(front, "name")) ?: fallbackName,
-            description = scalar(front, "description").ifBlank { bodyDescription(document.body) },
+            description = description,
             hint = scalar(front, "argument-hint"),
-            body = body(document, file),
+            fallbackDescription = if (description.isBlank()) bodyDescription(document.body) else "",
             place = place,
             use = SkillUse(
                 byUser = !scalar(front, "user-invocable").equals("false", ignoreCase = true),
                 byModel = !scalar(front, "disable-model-invocation").equals("true", ignoreCase = true),
             ),
         )
-    }
-
-    private fun body(document: SkillDocument, file: Path): String {
-        if (!document.truncated) return document.body
-        log("[antigravity] truncated skill document at 1 MiB: ${LogSafe.str(file.toString())}\n")
-        return "${document.body}\n\n[truncated: ${file.fileName} exceeds 1 MiB; read the full file at $file]"
     }
 
     private fun bodyDescription(body: String): String {

@@ -34,8 +34,8 @@ internal class SkillCatalogTest {
         val result = catalog.load()
         assertEquals(listOf("shared", "root-agent", "home-agent"), result.skillNames)
         assertEquals(listOf("shared", "root-agent", "home-agent", "build"), result.commands.map { it.name })
-        assertEquals("Nearest Claude", result.commands.first().description)
-        assertEquals("Build the app\n", result.commands.last().body)
+        assertEquals("Nearest Claude", result.commands.first().menuDescription)
+        assertEquals("Build the app\n", SkillMarkdown().body(result.commands.last().file))
         assertNull(result.commands.last().folder)
         assertEquals(
             listOf(work.resolve(".agents/skills").toRealPath(), repo.resolve(".agents/skills").toRealPath()),
@@ -63,7 +63,7 @@ internal class SkillCatalogTest {
 
         val result = catalog(work(), plugin).load()
         assertEquals(listOf("unlisted", "visible"), result.skillNames)
-        assertEquals("# visible\n", result.commands.last().body)
+        assertEquals("# visible\n", SkillMarkdown().body(result.commands.last().file))
     }
 
     @Test
@@ -81,7 +81,7 @@ internal class SkillCatalogTest {
         )
         val result = catalog.load()
         assertEquals(listOf("visible"), result.skillNames)
-        assertEquals("Fallback description", result.commands.single().description)
+        assertEquals("Fallback description", result.commands.single().menuDescription)
         assertTrue(logs.any { "malformed" in it && "manifest" in it })
     }
 
@@ -101,8 +101,8 @@ internal class SkillCatalogTest {
 
         val item = catalog(work).load().commands.single()
         assertEquals("a-skill", item.name)
-        assertEquals("Run the shared playbook.", item.description)
-        assertEquals(body, item.body)
+        assertEquals("Run the shared playbook.", item.menuDescription)
+        assertEquals(body, SkillMarkdown().body(item.file))
         assertEquals(target.toRealPath(), item.file)
         assertEquals(folder.toRealPath(), item.folder)
     }
@@ -132,10 +132,10 @@ internal class SkillCatalogTest {
         val quoted = items.getValue("renamed")
         assertEquals("First line second line third line", quoted.description)
         assertEquals("\"file\" \\ output", quoted.hint)
-        assertEquals(body, quoted.body)
+        assertEquals(body, SkillMarkdown().body(quoted.file))
         assertEquals("It's ready", items.getValue("single").description)
-        assertEquals("Line one\r\nLine two\r\n", items.getValue("single").body)
-        assertEquals("From the body", items.getValue("blank").description)
+        assertEquals("Line one\r\nLine two\r\n", SkillMarkdown().body(items.getValue("single").file))
+        assertEquals("From the body", items.getValue("blank").menuDescription)
     }
 
     @Test
@@ -145,13 +145,10 @@ internal class SkillCatalogTest {
         val bytesBeforeCharacter = 1024 * 1024 - 2
         val prefix = "a".repeat(bytesBeforeCharacter - front.length)
         val file = writeSkill(work.resolve(".agents/skills/large"), "$front$prefix🦉 not retained").toRealPath()
-        val logs = mutableListOf<String>()
-
-        val item = catalog(work, log = LogSink { logs += it }).load().commands.single()
+        val item = catalog(work).load().commands.single()
         val marker = "[truncated: SKILL.md exceeds 1 MiB; read the full file at $file]"
         assertEquals("Large document", item.description)
-        assertEquals("$prefix\n\n$marker", item.body)
-        assertTrue(logs.single().contains("truncated skill document at 1 MiB"))
+        assertEquals("$prefix\n\n$marker", SkillMarkdown().body(item.file))
     }
 
     @Test

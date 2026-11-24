@@ -79,12 +79,12 @@ internal class DesktopSession(
     /** What the `system/init` said on `initialize`, until the first turn begins. */
     private var announced: SessionLook? = null
 
-    private var agyCommands: List<AgyCommand> = emptyList()
+    private var agyCommands: List<AgyCommand>? = null
 
     override val agy: AgySession? get() = session
     override val skills: SkillShelf get() = partsFactory.skills
-    override val commands: List<AgyCommand> get() = lists.mergeCommands(agyCommands, skills.current.typed)
-    override val nativeCommands: Set<String> get() = agyCommands.mapTo(HashSet(), AgyCommand::name)
+    override val commands: List<AgyCommand> get() = lists.mergeCommands(agyCommands.orEmpty(), skills.current.typed)
+    override val nativeCommands: Set<String> get() = agyCommands.orEmpty().mapTo(HashSet(), AgyCommand::name)
 
     /** The session's frames; before agy opens, frames under the id Desktop gave, which a control answer (naming no
      *  session) is all they build. */
@@ -244,7 +244,13 @@ internal class DesktopSession(
         val uuid = JsonScalars.str(line, "uuid") ?: UUID.randomUUID().toString()
         val content = (line["message"] as? JsonObject)?.get("content") ?: JsonPrimitive("")
         if (!AcpLoginPrompt.matches(content)) {
-            submitUser(p, line, uuid, invocation.expand(content, skills.current.typed, nativeCommands))
+            // Before agy announces its roster, it may still own the typed command.
+            val prompt = if (agyCommands == null) {
+                content
+            } else {
+                invocation.expand(content, skills.current.typed, nativeCommands)
+            }
+            submitUser(p, line, uuid, prompt)
             return
         }
         // Desktop's `/login` is answered locally with Console Accounts, never sent to agy.
@@ -338,8 +344,8 @@ internal class DesktopSession(
 
     private fun update(update: JsonObject) {
         when (JsonScalars.str(update, "sessionUpdate")) {
-            "available_commands_update" -> {
-                agyCommands = lists.commands(update)
+            "available_commands_update" -> lists.commands(update)?.let { roster ->
+                agyCommands = roster
                 look = look?.copy(commands = commands)
             }
             "usage_update" -> {

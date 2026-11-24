@@ -14,6 +14,8 @@ import splice.provider.antigravity.TEXT_BLOCK
 
 /** Expands Desktop message content that invokes a local skill or command. */
 internal class SkillInvocation {
+    private val markdown = SkillMarkdown()
+
     /** [content] with its first text expanded when it invokes one of [items] whose name is not in [native]; else
      *  [content] as it was. Every other block (an image, say) stays where it was. */
     fun expand(content: JsonElement, items: List<LocalSkillItem>, native: Set<String>): JsonElement = when (content) {
@@ -38,16 +40,17 @@ internal class SkillInvocation {
         val match = INVOCATION.matchEntire(typed.trim()) ?: return null
         val name = match.groupValues[1]
         val item = items.firstOrNull { it.name == name }?.takeUnless { name in native || name in RESERVED }
-        return item?.let { prompt(it, match.groupValues[2].trim()) }
+            ?: return null
+        return markdown.body(item.file)?.let { prompt(item, match.groupValues[2].trim(), it) }
     }
 
-    private fun prompt(item: LocalSkillItem, args: String): String {
+    private fun prompt(item: LocalSkillItem, args: String, markdownBody: String): String {
         val header = listOfNotNull(
             "<command-name>/${item.name}</command-name>",
             "<command-args>$args</command-args>",
             item.folder?.let { "Base directory for this skill: $it" },
         )
-        val body = item.body.trim('\n', '\r')
+        val body = markdownBody.trim('\n', '\r')
         val filled = when {
             ARGUMENTS in body -> body.replace(ARGUMENTS, args)
             args.isEmpty() -> body

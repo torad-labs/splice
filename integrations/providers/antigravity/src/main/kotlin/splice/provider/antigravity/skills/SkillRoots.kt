@@ -7,16 +7,18 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 internal class SkillRoots(private val cwd: Path, private val env: EnvReader) {
-    fun config(): Path = namedDir("CLAUDE_CONFIG_DIR") ?: UserHome.claudeDir(env)
+    fun config(): Path = namedDir("CLAUDE_CONFIG_DIR")?.let(::canonical) ?: claudeUnder(home())
 
-    fun pluginDir(): Path? = namedDir("CLAUDE_CODE_DESKTOP_SKILLS_PLUGIN_DIR")
+    fun pluginDir(): Path? = namedDir("CLAUDE_CODE_DESKTOP_SKILLS_PLUGIN_DIR")?.let(::canonical)
 
     /** A git root is part of the workspace; the user's home is handled by the user sources instead. */
     fun workspace(): List<Path> {
-        val home = canonical(UserHome.dir(env))
+        val home = home()
         return generateSequence(canonical(cwd)) { dir -> dir.parent.takeUnless { gitRoot(dir) } }
             .takeWhile { it != home }.toList()
     }
+
+    private fun home(): Path = canonical(UserHome.dir(env))
 
     private fun canonical(path: Path): Path = SkillPaths.real(path) ?: path.toAbsolutePath().normalize()
 
@@ -24,7 +26,7 @@ internal class SkillRoots(private val cwd: Path, private val env: EnvReader) {
 
     fun skillDirs(workspace: List<Path>, config: Path): List<Path> =
         workspace.flatMap { dir -> listOf(claudeUnder(dir).resolve(LOCAL_SKILLS_DIR), nativeUnder(dir)) } +
-            listOf(config.resolve(LOCAL_SKILLS_DIR), nativeUnder(UserHome.dir(env)))
+            listOf(config.resolve(LOCAL_SKILLS_DIR), nativeUnder(home()))
 
     fun commandDirs(workspace: List<Path>, config: Path): List<Path> =
         workspace.map { claudeUnder(it).resolve(LOCAL_COMMANDS_DIR) } + listOf(config.resolve(LOCAL_COMMANDS_DIR))

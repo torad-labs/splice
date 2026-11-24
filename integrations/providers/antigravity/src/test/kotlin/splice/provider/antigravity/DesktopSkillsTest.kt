@@ -112,6 +112,53 @@ internal class DesktopSkillsTest {
     }
 
     @Test
+    fun `a typed command stays raw until agy announces its roster`() {
+        val rig = rig()
+        skill(rig.home.resolve(".claude/skills/goal"), "Local goal", "Local body")
+        val turn = """upd '{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"goal"}]}'""" +
+            "\n" + """stop "${'$'}id" end_turn"""
+        rig.run(ScriptedAgy(onNew = RIG_OPEN_NEW, turns = listOf(turn))) {
+            send(user("\"/goal first\"", "u-1"))
+            result()
+            send(user("\"/goal second\"", "u-2"))
+            result()
+        }
+        assertEquals(listOf("/goal first", "/goal second"), sentText(rig))
+    }
+
+    @Test
+    fun `an indented YAML fence does not end frontmatter or expose the remaining metadata`() {
+        for ((index, fence) in listOf("---", "...").withIndex()) {
+            val rig = rig("fence-$index")
+            val target = skill(rig.home.resolve(".claude/skills/manual"), "Manual", "Body")
+            val body = "---\ndescription: |\n  Manual\n  $fence\n  More\n$NO_MODEL\n$fence\nOnly the body.\n"
+            Files.writeString(target.resolve("SKILL.md"), body)
+            skill(rig.home.resolve(".claude/skills/control"), "Control skill", "Body")
+            rig.run(ScriptedAgy(onInitialize = hello(APPEND_OFFERED))) {
+                send(user("\"/manual\"", "u-1"))
+                result()
+            }
+            assertFalse("- manual" in indexSent(rig))
+            val expected = "<command-name>/manual</command-name>\n<command-args></command-args>\n" +
+                "Base directory for this skill: $target\n\nOnly the body."
+            assertEquals(expected, sentText(rig).single())
+        }
+    }
+
+    @Test
+    fun `typing a skill reads the body as it exists at invocation`() {
+        val rig = rig()
+        val file = skill(rig.home.resolve(".claude/skills/edit"), "Edit", "Old body").resolve("SKILL.md")
+        rig.run(ScriptedAgy()) {
+            initialize()
+            Files.writeString(file, "---\ndescription: Edit\n---\nNew body.\n")
+            send(user("\"/edit\"", "u-1"))
+            result()
+        }
+        assertTrue(sentText(rig).single().endsWith("\n\nNew body."))
+    }
+
+    @Test
     fun `reload_skills lists a skill added mid-session and its invocation then expands`() {
         val rig = rig()
         var listed = JsonArray(emptyList())
@@ -191,6 +238,39 @@ internal class DesktopSkillsTest {
         assertNull(quoted.asked("session/new").single()["_meta"], "only a JSON true offers the append")
         assertNull(resumed.asked("session/resume").single()["_meta"])
         assertEquals(emptyList<JsonObject>(), resumed.asked("session/new"))
+    }
+
+    @Test
+    fun `the startup index excludes body summaries and targets outside approved skill roots`() {
+        val rig = rig()
+        val homeSkills = Files.createDirectories(rig.home.resolve(".claude/skills"))
+        val plain = Files.createDirectories(homeSkills.resolve("plain"))
+        Files.writeString(plain.resolve("SKILL.md"), "# Local menu summary\nPrivate instructions\n")
+        val outside = skill(tmp.resolve("private-tree/directory"), "External description", "External body")
+        Files.createSymbolicLink(homeSkills.resolve("dir-alias"), outside)
+        val leaf = Files.createDirectories(homeSkills.resolve("leaf-alias"))
+        val leafTarget = skill(tmp.resolve("private-tree/leaf"), "External leaf description", "External leaf body")
+        Files.createSymbolicLink(leaf.resolve("SKILL.md"), leafTarget.resolve("SKILL.md"))
+        val rootTarget = skill(tmp.resolve("private-tree/root/target"), "External root description", "Body")
+        val projectClaude = Files.createDirectories(rig.project.resolve(".claude"))
+        Files.createSymbolicLink(projectClaude.resolve("skills"), rootTarget.parent)
+        val safe = skill(homeSkills.resolve(".library/approved"), "Explicit summary", "Approved instructions")
+        Files.createSymbolicLink(homeSkills.resolve("approved"), safe)
+
+        var menu: Map<String?, String?> = emptyMap()
+        rig.run(ScriptedAgy(onInitialize = hello(APPEND_OFFERED))) {
+            control("init-1", """{"subtype":"initialize"}""")
+            menu = answer("init-1").obj("response").array("commands").map { it.jsonObject }
+                .associate { it.str("name") to it.str("description") }
+        }
+
+        val append = indexSent(rig)
+        assertTrue("- approved: Explicit summary" in append, append)
+        assertEquals("Local menu summary", menu["plain"])
+        assertTrue("External description" in menu.values)
+        for (excluded in listOf("Local menu summary", "Private instructions", "External description", "private-tree")) {
+            assertFalse(excluded in append, append)
+        }
     }
 
     @Test

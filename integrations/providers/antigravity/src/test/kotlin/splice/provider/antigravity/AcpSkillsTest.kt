@@ -66,7 +66,8 @@ internal class AcpSkillsTest {
         )
         writeCommand(project.resolve(".claude/commands/deploy.md"), "---\ndescription: Deploy app\n---\nBody\n")
 
-        val catalog = ClaudeSkillCatalog(project, claudeDir, LogSink {}).load()
+        val env = mapOf("CLAUDE_CONFIG_DIR" to claudeDir.toString(), "HOME" to tmp.toString())
+        val catalog = ClaudeSkillCatalog(project, EnvReader(env::get), LogSink {}).load()
         val byName = catalog.commands.associateBy { it.name }
 
         assertEquals("Project version", byName["shared"]?.description)

@@ -129,7 +129,7 @@ public class DesktopAcp(
         val entrypoint = env(ENTRYPOINT_VARIABLE) ?: ENTRYPOINT
         val folder = cwd.toString()
         val facts = SessionFacts(ProcessHandle.current().pid(), id, folder, version, entrypoint, env(HOST_SESSION))
-        val localSkills = ClaudeSkillCatalog(cwd, config, log).load()
+        val localSkills = ClaudeSkillCatalog(cwd, env, log).load()
         return DesktopParts(
             DesktopFrames(id),
             out,

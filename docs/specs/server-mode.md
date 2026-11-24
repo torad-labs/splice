@@ -55,9 +55,9 @@ the laptop's client can do:
    Those plans' terms are for one person. `check-config` refuses such a command in `[server] commands`, naming the
    reason. API-key and self-hosted providers are served. Whether to ever offer an opt-in is the founder's call and is
    not built.
-4. **Keys are `<key_prefix><8 lowercase alphanumerics>_<32+ alphanumerics>`**, with `key_prefix` `spk_` unless
-   `[server] key_prefix` sets another. The server mints 40-character secrets and admits any of 32 or more, so an
-   imported key verifies by the same rule its import was checked by. The first two parts are the visible prefix
+4. **Keys are `<key_prefix><8 lowercase alphanumerics>_<32 to 128 alphanumerics>`**, with `key_prefix` `spk_` unless
+   `[server] key_prefix` sets another. The server mints 40-character secrets and admits any of 32 to 128 characters, so
+   an imported key verifies by the same rule its import was checked by. The first two parts are the visible prefix
    that names the key everywhere; only a hash of the whole key is stored. No file in the server's home, its log
    included, ever holds a key or its secret.
 5. **A person is a lowercased email.** Teams come from the email's domain (`[server.teams] by_domain`) unless the

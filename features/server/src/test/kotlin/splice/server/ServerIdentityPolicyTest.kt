@@ -94,17 +94,21 @@ internal class ServerIdentityPolicyTest {
     }
 
     @Test
-    fun `an imported key with a secret of 32 or more characters opens the server, and a shorter one is no key`() {
+    fun `an imported key with a secret of 32 to 128 characters opens the server, and outside that range is no key`() {
         val config = rig.config.copy(admins = listOf(ADMIN))
         rig.open(state, emptyList(), config)
         val admin = rig.keyFor(ADMIN)
-        for ((prefix, length) in listOf("spk_short032" to 32, "spk_longer64" to 64)) {
+        for ((prefix, length) in listOf("spk_short032" to 32, "spk_longer64" to 64, "spk_max00128" to 128)) {
             val key = prefix + "_" + "b".repeat(length)
             val row = """{"person":"ada@team.example","prefix":"$prefix","hash":"${sha256(key)}"}"""
             assertEquals(201, send("/server/api/keys/import", admin, method = "POST", body = row).statusCode())
             assertEquals(200, send("/", key).statusCode(), "an imported $length-character secret did not verify")
         }
+        val over = "spk_over0129_" + "b".repeat(129)
+        val overRow = """{"person":"ada@team.example","prefix":"spk_over0129","hash":"${sha256(over)}"}"""
+        assertEquals(201, send("/server/api/keys/import", admin, method = "POST", body = overRow).statusCode())
         assertEquals(401, send("/", "spk_short032_" + "b".repeat(31)).statusCode())
+        assertEquals(401, send("/", over).statusCode())
     }
 
     @Test

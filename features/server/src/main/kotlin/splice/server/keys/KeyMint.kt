@@ -1,6 +1,6 @@
 // Mint the configured mark, a public 8-character ID and a 40-character secret (~238 bits).
-// Only the SHA-256 of the complete key goes on disk. Verification accepts any secret of SERVER_KEY_SECRET_MIN_LENGTH
-// or more, so a key imported from an issuer that minted shorter secrets keeps working.
+// Only the SHA-256 of the complete key goes on disk. Verification accepts any secret of 32 to 128 alphanumerics,
+// so a key imported from another issuer verifies within the same bounded shape that leak detection scans.
 package splice.server.keys
 
 import splice.core.topology.SERVER_KEY_ID_LENGTH

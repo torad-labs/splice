@@ -77,6 +77,11 @@ class UpgradeFrom064TopologyTest {
         )
         assertTrue(warnings.all { it.line != null }, "each says its line: $warnings")
         assertTrue(warnings.all { it.move != null }, "each offers its move: $warnings")
+        // The gateway reads the standing prompt as one value, so either warning moves text and mode together.
+        val prompt = warnings.single { it.path == "heads.realinfer.system_prompt" }.move
+        val mode = warnings.single { it.path == "heads.realinfer.system_prompt_mode" }.move
+        assertEquals(listOf("system_prompt", "system_prompt_mode"), prompt?.keys)
+        assertEquals(listOf("system_prompt_mode", "system_prompt"), mode?.keys)
         assertTrue(warnings.none { PROMPT in it.text() || "400000" in it.text() }, "no value is said: $warnings")
         val served = warnings.filter { it.path != "heads.realinfer.discovery_prefix" }
         assertTrue(served.all { "the gateway serves the provider with it" in it.message }, "$served")
@@ -127,6 +132,19 @@ class UpgradeFrom064TopologyTest {
         val window = warnings.single { it.path == "heads.realinfer.context_window" }
         assertTrue("says another, which the gateway serves" in window.message, window.message)
         assertNull(window.move, "a value the provider already says is the person's choice, never moved over it")
+    }
+
+    @Test
+    fun `a head's prompt mode is never moved beside a prompt its provider already says`() {
+        val own = PROVIDER.replace(
+            "auth = { kind = \"api-key\", env = \"REALINFER_KEY\" }",
+            "auth = { kind = \"api-key\", env = \"REALINFER_KEY\" }\nsystem_prompt = \"The provider's own.\"",
+        )
+        val warnings = TopologyFindings.warnings(TopologyLoader.parse(own + HEAD))
+        val prompt = warnings.filter { it.path.startsWith("heads.realinfer.system_prompt") }
+        val paths = prompt.map { it.path }.toSet()
+        assertEquals(setOf("heads.realinfer.system_prompt", "heads.realinfer.system_prompt_mode"), paths)
+        assertTrue(prompt.all { it.move == null }, "half a prompt is never moved over the provider's: $prompt")
     }
 
     @Test

@@ -82,19 +82,27 @@ internal class GatewayMoveChecks(private val topology: Topology) {
                 ),
                 table,
             ),
-            held(key, Said("system_prompt", head.systemPrompt, provider.systemPrompt, gets.systemPrompt), table),
-            held(
-                key,
-                Said("system_prompt_file", head.systemPromptFile, provider.systemPromptFile, gets.systemPromptFile),
-                table,
-            ),
-            held(
-                key,
-                Said("system_prompt_mode", head.systemPromptMode, provider.systemPromptMode, gets.systemPromptMode),
-                table,
-            ),
             embeddedTiers(key, head, provider),
+        ) + prompt(key, head, provider)
+    }
+
+    /** The head's standing prompt, text, file and mode, which the gateway reads as one value (HeadFallbacks): each key
+     *  the head says other than its provider is a warning, and they move to the provider together, and only when every
+     *  one of them the provider says is the head's own. Moved one at a time, the key left behind would no longer be
+     *  served and turn into a new warning; moved beside a prompt the provider wrote, they would make a third prompt. */
+    private fun prompt(key: String, head: HeadConfig, provider: ProviderConfig): List<TopologyFinding> {
+        val table = "providers.${keys.render(head.provider)}"
+        val gets = served.getValue(head.provider)
+        val trio = listOf(
+            Said("system_prompt", head.systemPrompt, provider.systemPrompt, gets.systemPrompt),
+            Said("system_prompt_file", head.systemPromptFile, provider.systemPromptFile, gets.systemPromptFile),
+            Said("system_prompt_mode", head.systemPromptMode, provider.systemPromptMode, gets.systemPromptMode),
         )
+        val free = trio.all { it.provider == null || it.provider == it.head }
+        val apart = trio.filter { it.head != null && it.head != it.provider }
+        return apart.mapNotNull { said ->
+            held(key, said, table, Together(free, apart.map(Said<*>::field) - said.field))
+        }
     }
 
     /** The tiers a head names on its own model rows (`slot`), which the gateway reads from the provider's `model_slots`
@@ -111,11 +119,18 @@ internal class GatewayMoveChecks(private val topology: Topology) {
     }
 
     /** A warning when the head says [said]'s field and its provider does not say the same. It moves to the provider's
-     *  table when the provider says nothing; when the provider says something else, the person chooses which stands. */
-    private fun <T : Any> held(head: String, said: Said<T>, table: String): TopologyFinding? {
+     *  table when the provider says nothing; when the provider says something else, the person chooses which stands.
+     *  [together] is what moves with it, when it is one value with other keys of the head. */
+    private fun held(
+        head: String,
+        said: Said<*>,
+        table: String,
+        together: Together = Together(said.provider == null),
+    ): TopologyFinding? {
         if (said.head == null || said.head == said.provider) return null
-        val free = said.provider == null
-        val move = GatewayMove(table, said.field, value = null, keepsSource = false).takeIf { free }
+        val free = together.free
+        val move = GatewayMove(table, said.field, value = null, keepsSource = false, together.companions)
+            .takeIf { free }
         val why = unserved(free, inherited = said.gateway == said.head, table)
         return TopologyFinding("heads.$head.${said.field}", why, move = move)
     }
@@ -154,4 +169,8 @@ internal class GatewayMoveChecks(private val topology: Topology) {
     /** One value as a head says it ([head]), as its provider says it ([provider]) and as the gateway serves it
      *  today ([gateway]). */
     private data class Said<T : Any>(val field: String, val head: T?, val provider: T?, val gateway: T?)
+
+    /** Whether a value is [free] to move, its provider saying none of it, and the head's other keys that move with it
+     *  ([companions]). */
+    private data class Together(val free: Boolean, val companions: List<String> = emptyList())
 }

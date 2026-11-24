@@ -165,7 +165,13 @@ internal class ConfigFixSession(
 
     private fun showMenu(line: Int?, offers: FixOffers) {
         val choices = listOfNotNull(
-            offers.move?.let { "[m] move it to [${it.table}], where the gateway reads it" },
+            offers.move?.let { move ->
+                if (move.companions.isEmpty()) {
+                    "[m] move it to [${move.table}], where the gateway reads it"
+                } else {
+                    "[m] move ${move.named} to [${move.table}] together, where the gateway reads them as one"
+                }
+            },
             "[d] remove the line".takeIf { offers.removable },
             "[v] set a new value".takeIf { offers.settable },
         )
@@ -191,7 +197,7 @@ internal class ConfigFixSession(
             return false
         }
         backupOnce()
-        output.line("moving ${move.key} to [${move.table}]")
+        output.line("moving ${move.named} to [${move.table}]")
         rewrite { moved }
         return true
     }

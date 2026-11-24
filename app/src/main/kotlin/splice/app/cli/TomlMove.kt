@@ -17,26 +17,41 @@ internal class TomlMove(private val lines: List<String>) {
     fun valueAt(line: Int?): String? = line?.let { lines.getOrNull(it - 1) }
         ?.substringAfter('=', "")?.trim()?.takeIf(String::isNotEmpty)
 
-    /** [lines] with `key = value` in [table] (a dotted path as TOML spells it), and line number [removed] (1-based)
-     *  taken out when it names one; null when the file defines [table] in a way this cannot add to with certainty. */
-    fun of(table: String, key: String, value: String, removed: Int?): List<String>? {
-        val kept = lines.filterIndexed { index, _ -> index + 1 != removed }
+    /** The line (1-based) that assigns the bare [key] in the same section as [line], the table header above it down to
+     *  the next, or null when that section assigns it on no line of its own. */
+    fun lineOf(key: String, line: Int): Int? {
+        val at = line - 1
+        if (at !in lines.indices) return null
+        val start = (at downTo 0).firstOrNull { lines[it].trimStart().startsWith("[") } ?: -1
+        val end = (at + 1 until lines.size).firstOrNull { lines[it].trimStart().startsWith("[") } ?: lines.size
+        return (start + 1 until end).firstOrNull { index ->
+            val text = lines[index]
+            val equals = TomlLine(text).indexOutsideQuotes('=')
+            val names = if (equals > 0) TomlLine(text.substring(0, equals)).dotted() else emptyList()
+            !text.trimStart().startsWith("#") && names == listOf(key)
+        }?.plus(1)
+    }
+
+    /** [lines] with each of [entries] (`key = value`) in [table] (a dotted path as TOML spells it), in order, and the
+     *  line numbers [removed] (1-based) taken out; null when the file defines [table] in a way this cannot add to with
+     *  certainty. */
+    fun of(table: String, entries: List<String>, removed: Set<Int>): List<String>? {
+        val kept = lines.filterIndexed { index, _ -> index + 1 !in removed }
         val path = TomlLine(table).dotted()
         val header = headerAt(kept, path)
-        val entry = "$key = $value"
         return if (header >= 0) {
-            kept.take(header + 1) + entry + kept.drop(header + 1)
+            kept.take(header + 1) + entries + kept.drop(header + 1)
         } else {
-            placed(kept, path, table, entry)
+            placed(kept, path, table, entries)
         }
     }
 
-    /** [entry] where the file defines the table [path] other than by its own header. */
-    private fun placed(from: List<String>, path: List<String>, table: String, entry: String): List<String>? {
-        val found = definitionOf(from, path) ?: return from + listOf("", "[$table]", entry)
+    /** [entries] where the file defines the table [path] other than by its own header. */
+    private fun placed(from: List<String>, path: List<String>, table: String, entries: List<String>): List<String>? {
+        val found = definitionOf(from, path) ?: return from + listOf("", "[$table]") + entries
         return when (found.kind) {
-            Kind.INLINE -> inlined(from, found.index, entry)
-            Kind.DOTTED -> dotted(from, found, path.last(), entry)
+            Kind.INLINE -> inlined(from, found.index, entries.joinToString(", "))
+            Kind.DOTTED -> dotted(from, found, path.last(), entries)
             Kind.OTHER -> null
         }
     }
@@ -86,11 +101,12 @@ internal class TomlMove(private val lines: List<String>) {
         return from.take(index) + edited + from.drop(index + 1)
     }
 
-    /** `name.<entry>` added after the last line of the section that spells the table as dotted keys. */
-    private fun dotted(from: List<String>, table: Definition, leaf: String, entry: String): List<String> {
+    /** `name.<entry>` for each of [entries], added after the last line of the section that spells the table as dotted
+     *  keys. */
+    private fun dotted(from: List<String>, table: Definition, leaf: String, entries: List<String>): List<String> {
         val last = (table.index until table.end).last { index ->
             TomlLine(from[index].substringBefore('=')).dotted().first() == leaf && '=' in from[index]
         }
-        return from.take(last + 1) + "${table.name}.$entry" + from.drop(last + 1)
+        return from.take(last + 1) + entries.map { "${table.name}.$it" } + from.drop(last + 1)
     }
 }

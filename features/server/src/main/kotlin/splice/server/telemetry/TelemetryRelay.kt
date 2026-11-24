@@ -39,6 +39,7 @@ internal class TelemetryRelay(
     private val log: LogSink,
 ) {
     private val collector = telemetry.collector
+    private val identity = telemetry.identityAttributes
     private val bodies = CappedBodies(voice)
     private val json = JsonStamp()
     private val proto = ProtoStamp()
@@ -48,8 +49,8 @@ internal class TelemetryRelay(
         .followRedirects(HttpClient.Redirect.NEVER)
         .build()
 
-    /** Relays [call], for [rest] the path after `/server/otlp`, to the collector with [stamp] on every resource. */
-    suspend fun answer(call: ApplicationCall, rest: List<String>, stamp: ResourceStamp) {
+    /** Relays [call] to the collector with its authenticated [person] and [team] on every resource. */
+    suspend fun answer(call: ApplicationCall, rest: List<String>, person: String, team: String?) {
         val signal = OtlpSignal.entries.firstOrNull { rest == listOf(OTLP_VERSION, it.segment) }
             ?.takeIf { call.request.httpMethod == HttpMethod.Post }
         val type = call.request.headers[HttpHeaders.ContentType].orEmpty()
@@ -61,7 +62,7 @@ internal class TelemetryRelay(
             }
             !asJson && !PROTOBUF_TYPES.any(type::startsWith) ->
                 voice.refuse(call, HttpStatus.BAD_REQUEST, "an OTLP request is $JSON_TYPE or ${PROTOBUF_TYPES[0]}")
-            else -> relayed(call, signal, type, asJson, stamp)
+            else -> relayed(call, signal, type, asJson, ResourceStamp(person, team, identity))
         }
     }
 

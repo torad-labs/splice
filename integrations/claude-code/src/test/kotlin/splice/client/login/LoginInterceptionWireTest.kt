@@ -456,7 +456,6 @@ class LoginInterceptionWireTest {
         val hooks = LoginInterception.keySetupAdvertiser(
             configDir = tmp,
             spec = capture,
-            loginCommand = "openrouter login",
             hooks = HookInstaller(log = LogSink { log += it }),
         )
 

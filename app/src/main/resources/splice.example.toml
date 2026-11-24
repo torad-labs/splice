@@ -63,6 +63,17 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # once you set it, decides in place of this key; reset it there to hand the choice back here.
 # antigravity = false
 
+# ── Local harness catalog ──
+# Claude Code, Codex and Antigravity are built in. A new ACP harness is declared here,
+# not through the console. Use an absolute executable path and separate arguments; keep
+# credentials out of argv. This lists the harness in the Desktop map without routing any
+# models to it or registering a peer.
+# [harnesses.local-agent]
+# name = "Local ACP agent"
+# description = "Optional description for launchers"
+# protocol = "acp"
+# argv = ["/path/to/agent", "--acp"]
+
 # ── LAN share: this machine's door, run from your other machines (docs/specs/door-network.md) ──
 # `splice share on` writes this table and restarts; `splice share status` prints the door and the one add that puts
 # another machine's `claude` on it. Sharing opens one port to this machine's LAN with no login, token or encryption:
@@ -1054,6 +1065,10 @@ discovery_prefix = "claude--"
 #                           user service outside Linux's no-new-privileges bit, so that launch never escapes again
 #   DBUS_SESSION_BUS_ADDRESS read by `splice desktop launch`, never set by splice: with XDG_RUNTIME_DIR's bus or
 #                           systemd socket, it says the user's service manager can be reached for that escape
+#   DISPLAY                 read by bare `splice login` on Linux, never set by splice: when both DISPLAY and
+#                           WAYLAND_DISPLAY are unset (e.g. headless SSH), `splice login` prints the console URL
+#                           instead of trying to launch a graphical browser.
+#   WAYLAND_DISPLAY         read by bare `splice login` on Linux alongside DISPLAY to detect a graphical session.
 #   SSL_CERT_FILE           an OS trust-bundle path used when extending the JVM's trusted roots.
 #   ANTHROPIC_CUSTOM_HEADERS newline-separated headers inherited by a launched Claude Code client.
 #                           Read by the launcher (splice-launch), never sent to the daemon: it keeps the

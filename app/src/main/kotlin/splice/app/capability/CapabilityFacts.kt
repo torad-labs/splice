@@ -23,12 +23,14 @@ internal data class DesktopFacts(
 )
 
 /** The other harnesses: Antigravity's [agy] and [codex] on the PATH (null when absent), whether the Antigravity
- *  [geminiShim] is laid, and the harnesses whose MCP file already points at splice ([synced]). */
+ *  [geminiShim] is laid, the harnesses whose MCP file already points at splice ([synced]), and what `~/.codex/hooks.json`
+ *  holds when Codex is installed ([codexHooks]). */
 internal data class HarnessFacts(
     val agy: Path?,
     val codex: Path?,
     val geminiShim: Boolean,
     val synced: Set<McpHarness>,
+    val codexHooks: CodexHooksReading? = null,
 )
 
 /** The MCP hub: whether this is [linux], the hub's front is installed with sharing not turned off ([on]), and

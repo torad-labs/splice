@@ -13,6 +13,7 @@ internal enum class GapKind {
     PROCESS_WRAPPER,
     SIDE_BY_SIDE,
     MCP_SYNC,
+    CODEX_HOOKS,
     GEMINI_SHIM,
     HUB_SYSTEMD,
     AUTO_UPDATE,
@@ -24,7 +25,8 @@ internal data class Gap(val kind: GapKind, val text: String)
 /** [claudeWrapped]: plain `claude` runs through splice's launch shim (an older setup wrapped it). */
 internal class CapabilityGaps(private val facts: Capabilities, private val claudeWrapped: Boolean) {
     /** Every gap, `[daemon] auto_update` included. */
-    fun all(): List<Gap> = listOfNotNull(desktop(), wrapper(), sideBySide(), shim(), hub()) + sync() + autoUpdate()
+    fun all(): List<Gap> =
+        listOfNotNull(desktop(), wrapper(), sideBySide(), codexHooks(), shim(), hub()) + sync() + autoUpdate()
 
     /** The gaps an upgrade says: all but auto_update, which is a choice, not something the release left undone. */
     fun afterUpgrade(): List<Gap> = all().filterNot { it.kind == GapKind.AUTO_UPDATE }
@@ -56,6 +58,19 @@ internal class CapabilityGaps(private val facts: Capabilities, private val claud
                 "Claude Desktop is installed: the Claude (Splice) launcher runs it on splice beside your own",
             )
             else -> null
+        }
+    }
+
+    private fun codexHooks(): Gap? {
+        if (facts.harness.codex == null) return null
+        val reading = facts.harness.codexHooks ?: return null
+        return when (reading.state) {
+            CodexHooksState.NEEDS_MIGRATION -> Gap(
+                GapKind.CODEX_HOOKS,
+                "${reading.file} needs peer hook migration (${reading.issues.joinToString("; ")})",
+            )
+            // Missing ~/.codex/hooks.json is an opt-in doctor suggestion, not a required upgrade gap.
+            CodexHooksState.MISSING, CodexHooksState.CURRENT, CodexHooksState.UNREADABLE -> null
         }
     }
 

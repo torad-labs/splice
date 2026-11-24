@@ -59,6 +59,17 @@ class AgentCallConfigTest {
     }
 
     @Test
+    fun `ordinary reads and boot retain capability and mode tables together`() {
+        val toml = file("heads = [\"astra\"]\ncall = \"agent\"\n$TOOL") + "\n[modes.reporter]\non = true\n"
+        val boot = ConfigFindings.read(toml, directory, configDir = directory)
+        val ready = assertInstanceOf(ConfigRead.Ready::class.java, boot, boot.toString())
+        for (topology in listOf(ready.topology, TopologyLoader.parse(toml))) {
+            assertEquals("advisor", topology.capabilities.single().name)
+            assertEquals(true, topology.modes.getValue("reporter").on)
+        }
+    }
+
+    @Test
     fun `agent or both with no tool is refused at tool`() {
         listOf("agent", "both").forEach { call ->
             val findings = refused("heads = [\"astra\"]\ncall = \"$call\"")

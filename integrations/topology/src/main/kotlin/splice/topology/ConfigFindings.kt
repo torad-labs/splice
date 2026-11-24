@@ -16,6 +16,7 @@ import splice.core.mode.ModeSettingsReader
 import splice.core.model.HeadDiscoveredModels
 import splice.core.topology.Dialect
 import splice.core.topology.Topology
+import splice.core.topology.TopologyExtensions
 import splice.core.topology.TopologyFinding
 import splice.core.topology.TopologyFindings
 import splice.core.topology.TopologyRuleViolation
@@ -103,7 +104,8 @@ public object ConfigFindings {
             .map { it.copy(message = withFix(it), line = lineOf(text, it.path), move = it.move ?: moves.of(it)) }
         val local = runtimes.of(topology).distinct()
             .map { it.copy(line = rows.of(text, it.path) ?: lineOf(text, it.path)) }
-        val ready = topology.copy(capabilities = declared(topology).capabilities, modes = modes(topology).settings)
+        val extensions = TopologyExtensions(declared(topology).capabilities, modes(topology).settings)
+        val ready = topology.copy(extensions = extensions)
         val warnings = TopologyFindings.warnings(topology)
             .map { it.copy(line = lineOf(text, it.path)) } + beside.retired?.warnings(topology).orEmpty()
         return refused(checks + OperatorTelemetryFindings.of(topology) + local + elsewhere(topology), ready, warnings)

@@ -11,12 +11,20 @@
 package splice.app.desktop
 
 import io.ktor.server.application.ApplicationCall
+import kotlinx.serialization.json.JsonObject
 import splice.app.desktop.record.DesktopLastTurn
+import splice.core.client.AGENT_HEADER
+import splice.core.parse.lenientJson
+import splice.core.speed.SessionSpeeds
+import splice.core.util.JsonScalars
 import splice.core.util.WallClock
 import splice.head.GatewayTurn
 import java.time.Instant
 
-internal class DoorRelay(private val clock: WallClock) {
+internal class DoorRelay(
+    private val clock: WallClock,
+    private val sessionSpeeds: SessionSpeeds? = null,
+) {
     /** [ask] served for [caller] on [route]'s provider as the model it runs there, or counted, to the window the
      *  caller's sessions hold. */
     suspend fun send(call: ApplicationCall, caller: DoorCaller, route: DoorRoute, ask: DoorAsk, counting: Boolean) {
@@ -25,6 +33,16 @@ internal class DoorRelay(private val clock: WallClock) {
         if (counting) return route.provider.countTokens(call, turn)
         val at = Instant.ofEpochMilli(clock()).toString()
         caller.sending(DesktopLastTurn(at, ask.session, route.provider.key, ask.model, route.upstream))
+        if (!ask.probe && call.request.headers[AGENT_HEADER].isNullOrBlank()) {
+            val session = bodySessionId(ask.request) ?: ask.session
+            sessionSpeeds?.ran(session, route.upstream, provider = route.provider.booksKey)
+        }
         route.provider.serve(call, turn)
+    }
+
+    private fun bodySessionId(raw: JsonObject): String? {
+        val text = JsonScalars.str((raw["metadata"] as? JsonObject)?.get("user_id")) ?: return null
+        val ids = JsonScalars.objectOrNull(lenientJson, text)
+        return JsonScalars.str(ids, "session_id")?.takeIf(String::isNotBlank)
     }
 }

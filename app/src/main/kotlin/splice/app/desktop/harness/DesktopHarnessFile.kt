@@ -12,6 +12,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import splice.core.harness.HarnessDefinition
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
@@ -21,7 +22,7 @@ import java.nio.file.LinkOption
 import java.nio.file.Path
 
 /** A family's harness, and whether its sessions run at all. */
-internal data class HarnessChoice(val harness: DesktopHarness, val enabled: Boolean)
+internal data class HarnessChoice(val harness: HarnessDefinition, val enabled: Boolean)
 
 /** What the harness file holds now. */
 internal sealed class HarnessFileRead {
@@ -100,7 +101,8 @@ internal class DesktopHarnessFile(val file: Path) {
 
     /** [row]'s choice for [family], or null when it names a harness [family] does not run on, or no switch. */
     private fun choiceOf(family: HarnessFamily, row: JsonObject?): HarnessChoice? {
-        val harness = words.harness(JsonScalars.str(row, HARNESS_KEY_HARNESS))?.takeIf { it in family.choices }
+        val id = JsonScalars.str(row, HARNESS_KEY_HARNESS)
+        val harness = family.choices.firstOrNull { it.wire == id }
         val enabled = switchOf(row?.get(HARNESS_KEY_ENABLED))?.takeIf { it || family.toggleable }
         return if (harness != null && enabled != null) HarnessChoice(harness, enabled) else null
     }

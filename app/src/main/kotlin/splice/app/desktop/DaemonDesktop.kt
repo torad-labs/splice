@@ -19,6 +19,9 @@ import splice.app.desktop.catalog.DesktopProviders
 import splice.app.desktop.catalog.DoorCatalog
 import splice.app.desktop.catalog.PublishedCatalog
 import splice.app.desktop.catalog.SelectorAliases
+import splice.app.desktop.harness.DesktopHarnessFile
+import splice.app.desktop.harness.DesktopHarnesses
+import splice.app.desktop.harness.HarnessTarget
 import splice.app.desktop.lane.ClaudeHeadLane
 import splice.app.desktop.lane.TerminalDoor
 import splice.app.desktop.record.DesktopKey
@@ -37,10 +40,12 @@ import splice.app.provider.ServingProviders
 import splice.client.desktop.DoorSelectors
 import splice.client.models.AnthropicTiers
 import splice.core.config.StatePaths
+import splice.core.topology.ProviderFamilyRule
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.provider.antigravity.ANTIGRAVITY_KEY
 import splice.share.ShareMachine
 import splice.upstream.codemode.ProcessDispatchers
 import java.time.Instant
@@ -51,9 +56,18 @@ internal class DaemonDesktop(
     private val log: LogSink,
     /** Where Claude Desktop keeps its 3P configuration (desktop-full): the person's own, but a test's fixture home. */
     private val library: DesktopAppLibrary = DesktopAppLibrary(),
-) : DesktopPolicyTarget {
+) : DesktopPolicyTarget, HarnessTarget {
     private val key = DesktopKey(statePaths.desktopKeyFile, log)
     private val records = DesktopRecords(statePaths.desktopFile, log)
+
+    /** Which program each Desktop session runs on, by model prefix, for every provider in splice.toml and Antigravity
+     *  (desktop-harnesses). */
+    override val harnesses = DesktopHarnesses(
+        DesktopHarnessFile(statePaths.desktopHarnessesFile),
+        topology.providers.mapValues { (key, provider) -> ProviderFamilyRule().of(key, provider) },
+        topology.daemon.antigravity,
+        log,
+    )
 
     /** What splice changes in Claude Desktop: its configuration in Desktop's library and the helper that names. */
     private val app = DesktopAppMode(records, library, DesktopPrograms(statePaths.stateDir))
@@ -87,6 +101,10 @@ internal class DaemonDesktop(
     @Volatile
     private var servedProviders: ServingProviders? = null
 
+    /** The providers only Desktop runs (Antigravity) once [open] has run; null before. */
+    @Volatile
+    private var desktopOnly: ServingProviders? = null
+
     @Volatile
     private var door: String? = null
     private val io = ProcessDispatchers().io()
@@ -109,6 +127,8 @@ internal class DaemonDesktop(
         val catalog = PublishedCatalog(CatalogBuild(), CatalogFile(statePaths.modelCatalogFile, log), io)
         val lineups = DesktopProviders(providers, desktopOnly, aliases, catalog)
         this.servedProviders = providers
+        this.desktopOnly = desktopOnly
+        withContext(io) { harnesses.publish() }
         this.lineups = lineups
         rosters.credentialChanged = CredentialChanged { republish() }
         lineups.publish()
@@ -150,6 +170,8 @@ internal class DaemonDesktop(
             door?.let { publish(it, source.lineup()) }
         }
     }
+
+    override fun antigravityServed(): Boolean? = desktopOnly?.invoke()?.any { it.key == ANTIGRAVITY_KEY }
 
     /** splice's policy for Desktop, the console's values among it (DesktopPolicyLayers). */
     override val policyLayers: DesktopPolicyLayers get() = library.layers

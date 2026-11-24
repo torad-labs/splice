@@ -78,3 +78,13 @@
 .lens .rs-said { font-size: var(--fs-small); color: var(--verdigris); }
 /* the glass never runs under the composer: a tall one scrolls inside itself */
 .lens[data-id] { max-height: var(--lens-room); overflow-y: auto; overscroll-behavior: contain; }
+
+/* a provider's Desktop harness (deck-desktop-harnesses.js): which program its Claude Desktop sessions run on, the one
+   press that changes it, and the way to Settings */
+.rail-r .harness { display: grid; gap: var(--sp-1); padding-top: var(--sp-2); border-top: var(--hair) solid var(--hairline); }
+.rail-r .harness .acct { flex-direction: column; align-items: flex-start; gap: 0; }
+.rail-r .harness .st { font-family: var(--font-data); font-size: var(--fs-small); color: var(--c); overflow-wrap: anywhere; }
+.rail-r .harness-acts { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.rail-r .harness-acts .btn { margin-left: calc(var(--sp-4) * -1); }
+.rail-r .harness-acts a { color: var(--ink-quiet); text-decoration: underline; }
+.rail-r .harness-why { color: var(--vermilion-text); }

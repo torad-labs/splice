@@ -2,13 +2,14 @@
    it is: Sessions -> one gate per command -> Stalled responses -> Reasoning display back, and the system row (Usage
    alerts, MCP servers, Modes, Desktop policy, Storage, Projects, Splice, Advanced; Modes since Nov 21, 2026: what each
    mode adds to a session and its switch per command, modes/README.md; Desktop policy since Nov 23, 2026: the Claude
-   Desktop policy keys a person sets from splice, deck-desktop-policy.js). Each part shows its live figure; pressing one grows its
+   Desktop policy keys a person sets from splice, deck-desktop-policy.js); Desktop harnesses since Nov 23, 2026: which program a
+   Claude Desktop session runs on for each model family, deck-desktop-harnesses.js). Each part shows its live figure; pressing one grows its
    glass holding only its controls. A value is picked, never typed, unless it truly is free, and every change saves the
    moment it is made, its row saying what splice answered: Applied, At restart, or Not saved with why (the old value
    back). At rest a row names where its value comes from. The model and every read and write are deck-settings-model.js. */
 (() => {
   'use strict';
-  const { $, $$, h } = Deck, S = window.SETTINGS_LIVE, F = S.fmt, SP = window.SPLICE, DP = window.DESKTOP_POLICY;
+  const { $, $$, h } = Deck, S = window.SETTINGS_LIVE, F = S.fmt, SP = window.SPLICE, DP = window.DESKTOP_POLICY, DH = window.DESKTOP_HARNESSES;
   const mc = $('#mc'), ins = Deck.inspector(mc);
   const pc = cmd => (SP.providerOf(cmd) || {}).color || 'var(--ink-faint)';
   // a provider is named alone, as the approved page names its gates; its command is added only where two commands share it
@@ -30,11 +31,12 @@
     mcp: ['mcpShare', 'mcpHarnesses', 'mcpImport', 'mcpIdleTimeoutMs', 'mcpUnshared', 'mcpMaxServers', 'mcpRequestTimeoutMs', 'mcpInitializeTimeoutMs'],
     modes: [],   // no setting of /api/config: its rows are the modes GET /api/modes lists (modesLens)
     desktop: [], // no setting of /api/config: its rows are Claude Desktop's policy, GET /api/desktop/policy (deck-desktop-policy.js)
+    harnesses: [], // no setting of /api/config: its rows are the Desktop harness map, GET /api/desktop/harnesses (deck-desktop-harnesses.js)
     storage: ['transcriptView', 'keep', 'traceMaxBodyChars'],
     projects: ['projectsFolders', 'statuslineGitRoots'],
     splice: ['version', 'restart', 'debug', 'files', 'fixed'],
   };
-  const NAME = { cc: 'Sessions', reasoning: 'Reasoning display', gates: 'Concurrent requests', watch: 'Stalled responses', mcp: 'MCP servers', modes: 'Modes', desktop: 'Desktop policy', storage: 'Storage', limits: 'Usage alerts', projects: 'Projects', splice: 'Splice', internals: 'Advanced' };
+  const NAME = { cc: 'Sessions', reasoning: 'Reasoning display', gates: 'Concurrent requests', watch: 'Stalled responses', mcp: 'MCP servers', modes: 'Modes', desktop: 'Desktop policy', harnesses: 'Desktop harnesses', storage: 'Storage', limits: 'Usage alerts', projects: 'Projects', splice: 'Splice', internals: 'Advanced' };
   const keysOf = item => {
     if (!item) return [];
     const ks = [];
@@ -108,6 +110,8 @@
     fill($('[data-part="modes"]'), { part: 'modes', name: NAME.modes, fig: md ? String(mdOn) : '—', unit: md ? `of ${md.length} on` : '', cap: md ? 'Tools Splice adds to a session' : 'Not read' });
     const dp = DP.summary();
     fill($('[data-part="desktop"]'), { part: 'desktop', name: NAME.desktop, fig: dp.fig, unit: dp.unit, cap: dp.cap, wait: dp.waiting, dot: dp.changed });
+    const dh = DH.summary();
+    fill($('[data-part="harnesses"]'), { part: 'harnesses', name: NAME.harnesses, fig: dh.fig, unit: dh.unit, cap: dh.cap, wait: dh.waiting, dot: dh.changed });
     const st = S.data.stores, total = st.length ? st.reduce((n, s) => n + (s.bytes || 0), 0) : null;
     const sv = h('div');
     if (total) {
@@ -175,7 +179,7 @@
     anchor.setAttribute('aria-expanded', 'true');
     openPart = part; openAnchor = anchor;
     ins.openBeside(anchor, el => {
-      el.classList.toggle('wide', ['watch', 'storage', 'gates', 'limits', 'reasoning', 'cc', 'internals', 'mcp', 'desktop'].includes(part) || (!!anchor.dataset.gate && anchor.dataset.gate !== '*'));
+      el.classList.toggle('wide', ['watch', 'storage', 'gates', 'limits', 'reasoning', 'cc', 'internals', 'mcp', 'desktop', 'harnesses'].includes(part) || (!!anchor.dataset.gate && anchor.dataset.gate !== '*'));
       const hd = h('div', 'hd'), gate = anchor.dataset.gate;
       if (gate && gate !== '*') hd.append(Deck.lamp('ready', pc(gate)));
       hd.append(h('h3', '', gate ? (gate === '*' ? 'No requests today' : provName(gate)) : NAME[part]));
@@ -250,6 +254,7 @@
     if (part === 'internals') return internalsLens(body);
     if (part === 'modes') return modesLens(body);
     if (part === 'desktop') return DP.lens(body, { commit, reopen });
+    if (part === 'harnesses') return DH.lens(body, { commit, reopen });
     PARTS[part].map(S.item).filter(i => i && !i.adv).forEach(i => body.append(...render(i, 'main')));
   }
   function internalsLens(body) {
@@ -722,7 +727,7 @@
   clock(); setInterval(clock, 30000);
   S.onWeek(() => { if (!busy) { draw(); reopen(); } });
   /* an address names a part to open (other pages' doors: #data, #projects), and only a part this page has */
-  const HASH = { data: 'storage', storage: 'storage', projects: 'projects', mcp: 'mcp', modes: 'modes', desktop: 'desktop', 'desktop-policy': 'desktop', limits: 'limits', alerts: 'limits', version: 'splice', splice: 'splice', reasoning: 'reasoning', stalls: 'watch', gates: 'gates', advanced: 'internals' };
+  const HASH = { data: 'storage', storage: 'storage', projects: 'projects', mcp: 'mcp', modes: 'modes', desktop: 'desktop', 'desktop-policy': 'desktop', harnesses: 'harnesses', 'desktop-harnesses': 'harnesses', limits: 'limits', alerts: 'limits', version: 'splice', splice: 'splice', reasoning: 'reasoning', stalls: 'watch', gates: 'gates', advanced: 'internals' };
   let hashDone = false;
   const openFromHash = () => {
     if (hashDone) return; hashDone = true;
@@ -734,7 +739,7 @@
     if (reading || busy || typing() || document.hidden || document.body.classList.contains('locked')) return;
     reading = true;
     try {
-      const [ok] = await Promise.all([S.read(), DP.read()]);
+      const [ok] = await Promise.all([S.read(), DP.read(), DH.read()]);
       if (ok) { draw(); reopen(); openFromHash(); } else $('#mcRunning').textContent = 'Not answering';
     } finally { reading = false; }
   };

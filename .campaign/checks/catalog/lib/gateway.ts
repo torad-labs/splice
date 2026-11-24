@@ -81,7 +81,8 @@ export function listsOf(x: Launch, s: Splice): string[] {
   for (const k of LIST_KEYS) if (k in x.overlay) found.push(`--settings ${k}`);
   for (const v of LIST_VARS) if (x.sets[v] !== undefined) found.push(`env ${v}`);
   const env = (x.overlay.env ?? {}) as Record<string, unknown>;
-  for (const v of LIST_VARS) if (v in env) found.push(`--settings env.${v}`);
+  // #791: a door launch's overlay says each of these empty, which clears a list a settings file lays and lays none
+  for (const v of LIST_VARS) if (v in env && env[v] !== "") found.push(`--settings env.${v}`);
   if (x.dir !== join(s.home, ".claude")) {
     const settings = jsonFile(join(x.dir, "settings.json"));
     for (const k of LIST_KEYS) if (k in settings) found.push(`${x.dir}/settings.json ${k}`);

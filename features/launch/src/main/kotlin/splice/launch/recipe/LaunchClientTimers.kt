@@ -4,8 +4,6 @@
 // already bounds, and every head wants its session to survive a hold.
 package splice.launch.recipe
 
-import splice.launch.LaunchSpec
-
 /** why: Claude Code arms its stream idle timer with setTimeout, which takes a signed 32-bit delay; a longer one fires at
  *  once instead of late, so the planted idle timeout never exceeds it (about 24.8 days, past every head's wall). */
 private const val CLIENT_TIMER_MAX_MS: Long = Int.MAX_VALUE.toLong()
@@ -16,10 +14,12 @@ private const val CLIENT_TIMER_MAX_MS: Long = Int.MAX_VALUE.toLong()
 private const val CLIENT_BYTE_IDLE_MS: Long = 300_000L
 
 internal object LaunchClientTimers {
-    fun of(spec: LaunchSpec): Map<String, String> = buildMap {
+    /** The timers of a session whose client timeout is [apiTimeoutMs]: a head's wall plus its grace, or on the door the
+     *  longest of the walls its turns can run under (#791). */
+    fun of(apiTimeoutMs: Long): Map<String, String> = buildMap {
         // Claude Code's default request timeout is 600s and it also bounds the first-byte
         // deadline; the head's whole-turn cap is the wall that decides a turn, so the client
-        // must outlive it (spec.gateway.apiTimeoutMs = cap + grace). Without this every compaction
+        // must outlive it (apiTimeoutMs = cap + grace). Without this every compaction
         // longer than ten minutes died as client_abort while the daemon was still serving it.
         // The head's own wall owns this deadline, so an ambient API_TIMEOUT_MS is replaced rather than
         // merged (unlike NO_PROXY); a larger value buys nothing past totalCap and a smaller one recreates
@@ -29,7 +29,7 @@ internal object LaunchClientTimers {
         // path answers it silently until the terminal body, and with the deadline past totalCap
         // the head's wall speaks first. CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK would only
         // delete a recovery path.
-        put("API_TIMEOUT_MS", spec.gateway.apiTimeoutMs.toString())
+        put("API_TIMEOUT_MS", apiTimeoutMs.toString())
         // Nov 8-9: Claude Code cut every non-streaming request through splice at about 360 s and re-sent it 228
         // times, so the deadline above never got to decide. The cut is Bun's own fetch timeout, not the client's
         // (measured on Bun 1.4.3: a server that sends nothing is cut at 360363 ms with the default options, and
@@ -69,7 +69,7 @@ internal object LaunchClientTimers {
         // so this timer takes the same value and never decides a turn the head is still keeping. Left on, not
         // disabled: off, the client stops yielding those pings as progress and its async-agent stall timer falls to a
         // fixed 600 s, which would end a held subagent's turn instead. That stall timer is this value plus 300 s.
-        put("CLAUDE_STREAM_IDLE_TIMEOUT_MS", minOf(spec.gateway.apiTimeoutMs, CLIENT_TIMER_MAX_MS).toString())
+        put("CLAUDE_STREAM_IDLE_TIMEOUT_MS", minOf(apiTimeoutMs, CLIENT_TIMER_MAX_MS).toString())
         // The value above also becomes the client's byte-level idle timeout and its first-byte window (capped at 30
         // min) unless this is set. Those catch a path that sends no byte at all, which a held turn never is (the
         // keepalive), so they keep the 300 s they had.

@@ -34,7 +34,14 @@ private data class LaunchRequest(
     val cwd: String?,
     val inheritedConfigDir: String?,
     val launch: String? = null,
-)
+    /** shim-30 (#791): the caller shell's NO_PROXY and no_proxy, which a launch keeps beside loopback. */
+    val noProxy: List<String> = emptyList(),
+) {
+    /** Who is launching, as this request says: through [wrapped] when it came through the wrapped `claude`, on
+     *  [gateway] for a head's command that starts on the Splice gateway, [command] the one typed. */
+    fun caller(wrapped: WrappedLaunch? = null, gateway: GatewayAt? = null, command: String? = null): LaunchCaller =
+        LaunchCaller(cwd, wrapped, inheritedConfigDir, launch, gateway, command, noProxy)
+}
 
 /** The head one launch runs, and [wrapped] when it came through the wrapped `claude` (V4-129). */
 private data class Resolved(val head: LaunchHead, val wrapped: WrappedLaunch?)
@@ -54,7 +61,11 @@ public class LaunchRoutes(
         val elsewhere = launchService?.remotes?.takeIf { key == CLAUDE_COMMAND }?.launch(key)
         if (elsewhere != null) return remoteReply(call, key, elsewhere)
         val door = doorLaunch(key)
-        if (door != null) return doorReply(call, key, door)
+        // #791: this machine's door outlives its heads' walls as well as its providers'; another machine's says its own
+        if (door != null) {
+            val walls = heads.all().mapNotNull { it.spec?.gateway?.apiTimeoutMs }
+            return doorReply(call, key, door.outliving(walls))
+        }
         val targets = heads.targets(key)
         if (targets.size > 1) {
             val ambiguous = TopologyMessages.ambiguousHeadMessage(key, targets.map { it.head.key })
@@ -106,8 +117,7 @@ public class LaunchRoutes(
         // head-catalog: every head's command starts on the Splice gateway but one that forwards the person's own Claude
         // login, which the gateway never carries
         val gateway = service.door?.takeIf { launched.startsOnGateway }?.gateway(launched.signIn.headKey)
-        val caller =
-            LaunchCaller(request.cwd, resolved.wrapped, request.inheritedConfigDir, request.launch, gateway, key)
+        val caller = request.caller(resolved.wrapped, gateway, key)
         val outcome = when (val launch = launchFor(target, launched, request, caller, service)) {
             is LaunchOutcome.Ready ->
                 LaunchOutcome.Ready(launchResponse.withAuthWarning(target, launched, launch.recipe))
@@ -121,7 +131,7 @@ public class LaunchRoutes(
     private suspend fun doorReply(call: ApplicationCall, key: String, door: DoorLaunchSpec) {
         val service = requireNotNull(launchService)
         val request = receiveLaunchRequest(call)
-        val caller = LaunchCaller(request.cwd, null, request.inheritedConfigDir, request.launch)
+        val caller = request.caller()
         val headDirs = heads.all().mapNotNull { it.spec?.trees?.own }
         val skip = request.dangerouslySkipPermissions
         val told = door.copy(notice = inHeadFolder(request.inheritedConfigDir, service))
@@ -153,7 +163,7 @@ public class LaunchRoutes(
         val wrapped = service.wrap.launchThrough(key)
         val refusal = service.loginGuard?.refusal(wrapped?.configDir ?: spec.trees.own)
         if (refusal != null) return refuse(call, key, refusal, HttpStatusCode.Conflict)
-        val caller = LaunchCaller(request.cwd, wrapped, request.inheritedConfigDir, request.launch)
+        val caller = request.caller(wrapped)
         val skip = request.dangerouslySkipPermissions
         val outcome = service.launchOutcome(spec, request.extraArgs, skip, caller = caller)
         answer(call, key, outcome)
@@ -227,6 +237,7 @@ public class LaunchRoutes(
             fields["cwd"],
             fields["inheritedConfigDir"],
             fields["launch"],
+            fields.getAll(NO_PROXY_FIELD).orEmpty(),
         )
     }
 
@@ -244,6 +255,10 @@ public class LaunchRoutes(
             JsonScalars.str(body, "cwd"),
             JsonScalars.str(body, "inheritedConfigDir"),
             JsonScalars.str(body, "launch"),
+            listOfNotNull(JsonScalars.str(body, NO_PROXY_FIELD)),
         )
     }
 }
+
+/** The form field the shim sends the caller shell's NO_PROXY and no_proxy in, once each (shim-30, #791). */
+private const val NO_PROXY_FIELD = "noProxy"

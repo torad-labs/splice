@@ -242,6 +242,11 @@ val provenance = repositoryRoot.file("docs/PROVENANCE.md")
 // PR 6: the launch shim ships from the application's dist layout, not from bin/ — one path, read by
 // stageRelease here and by `bun tools/release accept`/`verify` through tools/release/src/lib/shim.ts.
 val launchShim = layout.projectDirectory.file("src/main/dist/bin/splice-launch")
+// #791: ShimHeadersTest sources the shim, so a change to it alone reruns the tests.
+tasks.test {
+    inputs.file(launchShim).withPathSensitivity(PathSensitivity.NONE).withPropertyName("launchShim")
+    systemProperty("splice.launchShim", launchShim.asFile.absolutePath)
+}
 val installScript = repositoryRoot.file("install.sh")
 val packageJson = repositoryRoot.file("package.json")
 val bunLock = repositoryRoot.file("bun.lock")

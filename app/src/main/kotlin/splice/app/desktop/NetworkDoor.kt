@@ -55,7 +55,8 @@ internal class NetworkDoor : ShareDoor {
         val open = opened ?: return null
         val lineup = open.lane.lineup()
         val rows = open.rows(lineup).map { SharedDoorRow(it.model, it.label, it.command) }
-        return SharedDoorLaunch(open.machine, open.lane.window(lineup), open.lane.starting(lineup).first, rows)
+        val starting = open.lane.starting(lineup).first
+        return SharedDoorLaunch(open.machine, open.lane.window(lineup), starting, rows, lineup.clientWallMs())
     }
 
     override suspend fun answer(call: ApplicationCall, counting: Boolean) {

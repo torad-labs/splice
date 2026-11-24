@@ -2,8 +2,8 @@
 // own. A provider with `send_version = true` is sent, on every request, `x-splice-client: <splice's version>` (the
 // header and value server-client-header sends a splice server) beside its Via line, and the wrapper's identity,
 // `x-splice-wrapper: <name>/<version>`, when the session sends it. A wrapper sends it by setting it in Claude Code's
-// ANTHROPIC_CUSTOM_HEADERS, which a launch on the door leaves as the wrapper set it. A provider without send_version is
-// sent neither.
+// ANTHROPIC_CUSTOM_HEADERS, which a launch on the door keeps before its own (the launcher merges them). A provider
+// without send_version is sent neither.
 
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { recipe } from "../desktop/lib/desktop.ts";
@@ -90,9 +90,13 @@ describe("cp-identity", () => {
     expect(h["x-splice-wrapper"]).toBeUndefined();
   });
 
-  test("a launch on the door leaves the wrapper's ANTHROPIC_CUSTOM_HEADERS as it set them", async () => {
+  // #791: the recipe names splice's own headers alone (the client wall); the launcher puts the wrapper's before them,
+  // x-splice-wrapper included, in the shell (splice-launch caller_headers), so they never reach the daemon.
+  test("a door launch leaves the wrapper's ANTHROPIC_CUSTOM_HEADERS to the launcher, naming only its own", async () => {
     const r = await recipe(s, "claude");
     expect(r.unset).not.toContain("ANTHROPIC_CUSTOM_HEADERS");
-    expect(r.env.ANTHROPIC_CUSTOM_HEADERS).toBeUndefined();
+    const lines = (r.env.ANTHROPIC_CUSTOM_HEADERS ?? "").split("\n").filter(Boolean);
+    const own = /^x-splice-(client-wall-ms|client-window|launch-proof|client):/;
+    for (const line of lines) expect(line.toLowerCase()).toMatch(own);
   });
 });

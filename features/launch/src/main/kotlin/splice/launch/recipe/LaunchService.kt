@@ -21,6 +21,7 @@ import splice.client.MaterializeSignIn
 import splice.client.MaterializeSpec
 import splice.client.SessionHelpers
 import splice.client.TrustedLaunch
+import splice.client.desktop.FIRST_PARTY_ENV
 import splice.client.desktop.GATEWAY_DISCOVERY
 import splice.client.desktop.providerSwitches
 import splice.client.mcp.HubLaunchArgs
@@ -35,7 +36,6 @@ import splice.client.wrap.WrapStateRead
 import splice.client.wrap.WrappedHead
 import splice.client.wrap.WrappedLaunch
 import splice.core.GATEWAY_VERSION
-import splice.core.client.CLIENT_WALL_HEADER
 import splice.core.client.SPLICE_CLIENT_HEADER
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
@@ -44,7 +44,6 @@ import splice.launch.LaunchOutcome
 import splice.launch.LaunchSpec
 import splice.launch.RemoteCommands
 import splice.sessions.registry.LaunchMarker
-import java.net.URI
 import java.nio.file.Path
 
 // LaunchSpec + LaunchRecipe live in LaunchTypes.kt (concentration, 2026-08-19).
@@ -105,7 +104,10 @@ public class LaunchService(
     private val onGateway = GatewayLaunch()
 
     /** What a launch of `claude` on the [door] runs. */
-    internal val onDoor = DoorRecipe(wrap, wrapState, claudeBinary)
+    internal val onDoor = DoorRecipe(wrap, wrapState, claudeBinary, envReader)
+
+    /** What a launch merges with the environment it inherits: NO_PROXY and the custom headers. */
+    private val ambient = LaunchAmbient(envReader)
 
     /** How the head's effort reaches the Claude Code this launch starts. */
     private val effort = LaunchEffort()
@@ -320,7 +322,8 @@ public class LaunchService(
         val dirs = listOf(spec.trees.own) + spec.trees.siblings
         val config = wrapped?.configRootUnsets(caller.inheritedConfigDir, dirs).orEmpty()
         // V4-449: what this head no longer plants must not leak in from an outer head's session either.
-        val planted = (gateway?.let { onGateway.env(buildEnv(held, emptyList()), held, it) } ?: buildEnv(held, slots)) +
+        val own = { tiers: List<Pair<String, String>> -> buildEnv(held, tiers, caller.noProxy) }
+        val planted = (gateway?.let { onGateway.env(own(emptyList()), held, it) } ?: own(slots)) +
             effort.env(held)
         val clientModels = if (spec.gateway.clientModels) {
             LaunchModelEnvironment.inherited(planted)
@@ -344,7 +347,12 @@ public class LaunchService(
     private fun helperShadows(spec: LaunchSpec): List<String> =
         if (spec.gateway.keyHelper != null) listOf("ANTHROPIC_AUTH_TOKEN") else emptyList()
 
-    private fun buildEnv(spec: LaunchSpec, slots: List<Pair<String, String>>): Map<String, String> {
+    /** What [spec]'s launch sets with its tiers [slots], beside the caller shell's [noProxy] (LaunchCaller.noProxy). */
+    private fun buildEnv(
+        spec: LaunchSpec,
+        slots: List<Pair<String, String>>,
+        noProxy: List<String>,
+    ): Map<String, String> {
         return buildMap {
             // LAN share: a command another machine serves goes to that machine's address, never through this one.
             put("ANTHROPIC_BASE_URL", spec.gateway.remote ?: "http://127.0.0.1:${spec.gateway.port}")
@@ -361,20 +369,19 @@ public class LaunchService(
             // the wrapped /v1/models spelling must never reach the picker.
             putAll(LaunchModelEnvironment.models(spec, slots))
             putAll(LaunchModelEnvironment.windows(spec))
-            put("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "85")
+            putAll(LaunchModelEnvironment.compactPercent)
             // The default only: splice-launch keeps a MAX_THINKING_TOKENS the caller already set, so a headless caller
             // that bounds its own thinking keeps that bound.
             put("MAX_THINKING_TOKENS", "128000")
             // The client's own timers and retry limits, so the head's wall decides every turn (LaunchClientTimers).
-            putAll(LaunchClientTimers.of(spec))
+            putAll(LaunchClientTimers.of(spec.gateway.apiTimeoutMs))
             // Server mode (F8): Claude Code's own telemetry goes to its server's relay, when the server has one.
             putAll(LaunchTelemetry.env(spec))
             // Failure-handling slice 5: the same timeout, told to the head on every request, so a turn held for a reset
             // fits the session that sent it (a session launched before this reads as the 960 s every session had).
-            // Merged with any custom headers the shell already names, which Claude Code reads one per line.
-            put("ANTHROPIC_CUSTOM_HEADERS", customHeaders(spec))
-            // curl, which runs the statusline, reads the lowercase spelling first and ignores NO_PROXY once it is set.
-            mergedNoProxy(spec).let { put("NO_PROXY", it); put("no_proxy", it) }
+            // The shim adds the caller's own custom headers before these (LaunchAmbient).
+            putAll(ambient.customHeaders(spec.gateway.apiTimeoutMs, ownHeaders(spec)))
+            putAll(ambient.noProxy(spec.gateway.remote, noProxy))
             // Hide Claude Code's built-in Anthropic-account commands: in a gateway head, auth is the
             // proxy bearer above, so /login (a local-jsx command hardwired to platform.claude.com —
             // no hook or base-url override can reach it) and /logout are dead doors. These are the
@@ -402,36 +409,13 @@ public class LaunchService(
         }
     }
 
-    /** The ambient ANTHROPIC_CUSTOM_HEADERS without splice's own headers, the session's client wall and window, and
-     *  on a head here that forwards the client's login, the launch's proof. An outer session's splice headers never
-     *  ride along: its proof would reach a head it was not planted for, or another machine, and its window is not
-     *  this launch's. */
-    private fun customHeaders(spec: LaunchSpec): String {
-        // Every header splice plants for a session starts "x-splice-" (the client wall, the window, the launch proof).
-        val ambient = envReader("ANTHROPIC_CUSTOM_HEADERS").orEmpty().lines()
-            .filter { it.isNotBlank() && !it.trim().startsWith("x-splice-", ignoreCase = true) }
+    /** splice's headers for [spec]'s session besides its client wall (LaunchAmbient.customHeaders): its window, on a
+     *  head here that forwards the client's login the launch's proof, and a team server's word that this is splice. */
+    private fun ownHeaders(spec: LaunchSpec): List<String> {
         // Server mode (F9): a team server's command names this laptop's splice, so an older one is told to upgrade.
         val client = listOfNotNull(spec.teamServer?.let { "$SPLICE_CLIENT_HEADER: $GATEWAY_VERSION" })
-        val wall = "$CLIENT_WALL_HEADER: ${spec.gateway.apiTimeoutMs}"
-        return (ambient + wall + LaunchModelEnvironment.windowHeader(spec) + spec.gateway.proofLines + client)
-            .joinToString("\n")
+        return LaunchModelEnvironment.windowHeader(spec) + spec.gateway.proofLines + client
     }
-
-    /** The ambient NO_PROXY with loopback added, and for a command another machine serves (LAN share) that machine's
-     *  host, which a proxy the shell names can't reach: Claude Code and the statusline's curl both honour it. */
-    private fun mergedNoProxy(spec: LaunchSpec): String =
-        sequenceOf(
-            envReader("NO_PROXY"),
-            envReader("no_proxy"),
-            "127.0.0.1,localhost",
-            spec.gateway.remote?.let { URI.create(it).host?.removeSurrounding("[", "]") },
-        )
-            .filterNotNull()
-            .flatMap { it.split(',').asSequence() }
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .distinct()
-            .joinToString(",")
 
     private fun withoutTokenCapture(spec: LaunchSpec) =
         spec.copy(signIn = spec.signIn.copy(tokenCapture = null, advertiseKeySetup = false))
@@ -443,7 +427,3 @@ private const val CONFIG_DIR_ENV = "CLAUDE_CONFIG_DIR"
 // why: who a launch is for, in the words a mode's manifest uses for its callers (modes/README.md, `[callers] off`).
 private const val OWN_MCP_CALLER_DOOR = "door"
 private const val OWN_MCP_CALLER_HEAD = "head"
-
-/** Claude Code's word that ANTHROPIC_BASE_URL is Anthropic's own API behind another address (read in the 2.1.326
- *  client, where it is that variable's declared companion). */
-internal const val FIRST_PARTY_ENV = "_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL"

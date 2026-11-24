@@ -71,13 +71,26 @@ internal object LaunchModelEnvironment {
             spec.models.tiers.presentedWindow,
             spec.models.tiers.spelledWindow,
         )
-        return mapOf(
-            "CLAUDE_CODE_MAX_CONTEXT_TOKENS" to spec.models.contextWindow.toString(),
-            "CLAUDE_CODE_AUTO_COMPACT_WINDOW" to compactWindow.toString(),
-        )
+        return mapOf(MAX_CONTEXT to spec.models.contextWindow.toString(), AUTO_COMPACT to compactWindow.toString())
     }
+
+    /** The point of the window a session compacts at, which every launch plants so a settings file's own percentage
+     *  never moves it. */
+    val compactPercent: Map<String, String> = mapOf("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE" to "85")
+
+    /** A session on the door: [window], the one window the gateway declares and reports every count as a share of, is
+     *  both its context and its compaction window (floored as a head's is), at the percentage a head's compacts at.
+     *  Planted, not left unset, so a settings file's own window, one left from another provider, never decides when
+     *  the session compacts (#791). */
+    fun gatewayWindows(window: Long): Map<String, String> = mapOf(
+        MAX_CONTEXT to window.toString(),
+        AUTO_COMPACT to maxOf(AUTO_COMPACT_FLOOR, window).toString(),
+    ) + compactPercent
 }
 
 // A client-login head removes inherited selectors unless it explicitly supplies a launch default.
-private val CLIENT_PICKED_ENV =
-    listOf("ANTHROPIC_MODEL", "CLAUDE_CODE_MAX_CONTEXT_TOKENS", "CLAUDE_CODE_AUTO_COMPACT_WINDOW")
+private val CLIENT_PICKED_ENV = listOf("ANTHROPIC_MODEL", MAX_CONTEXT, AUTO_COMPACT)
+
+/** Claude Code's context window and the window it compacts against. */
+private const val MAX_CONTEXT = "CLAUDE_CODE_MAX_CONTEXT_TOKENS"
+private const val AUTO_COMPACT = "CLAUDE_CODE_AUTO_COMPACT_WINDOW"

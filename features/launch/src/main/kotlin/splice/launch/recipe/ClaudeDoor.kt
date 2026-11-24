@@ -9,14 +9,23 @@ package splice.launch.recipe
 import splice.launch.LaunchSpec
 
 /** What a launch of `claude` on the door carries. [overlay] is the `--settings` JSON laid over the person's own
- *  settings for this run. */
+ *  settings for this run, its `env` holding every value of [env] but the key, and what [unset] takes out spelled
+ *  empty (DoorSession.settingsEnv). [window] is the one window the door declares. */
 public data class DoorLaunchSpec(
     val env: Map<String, String>,
     val unset: List<String>,
     val overlay: String,
+    val window: Long,
     /** head-catalog: what a head's own launch says, for a `claude` started in that head's own Claude folder. */
     val notice: String? = null,
-)
+    /** #791: the client timeout the session must outlive, the longest wall of the heads its turns can run on; null
+     *  while no head here has one, and then no timer is planted. */
+    val wallMs: Long? = null,
+) {
+    /** This launch outliving [walls] too, the walls of the heads here: a 0.6.4 file's head can hold a longer cap than
+     *  its provider's route. */
+    public fun outliving(walls: List<Long>): DoorLaunchSpec = copy(wallMs = (walls + listOfNotNull(wallMs)).maxOrNull())
+}
 
 /** The door's part of a launch of `claude`. Assigned by the daemon before routes serve requests. */
 public interface ClaudeDoor {

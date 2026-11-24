@@ -20,7 +20,12 @@ public object ClaudeModelLists {
 
     /** The variables that lay a model list from a settings file's `env`. */
     public val variables: List<String> = ClaudeTiers.names.flatMap(ClaudeTiers::variables) +
-        listOf("ANTHROPIC_SMALL_FAST_MODEL", "ANTHROPIC_CUSTOM_MODEL_OPTION")
+        listOf(
+            "ANTHROPIC_SMALL_FAST_MODEL",
+            "ANTHROPIC_CUSTOM_MODEL_OPTION",
+            "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME",
+            "ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION",
+        )
 
     /** The picker rows Claude Code caches in a Claude folder's .claude.json, as an earlier launch of a head wrote. */
     public const val STATE_CACHE: String = "additionalModelOptionsCache"

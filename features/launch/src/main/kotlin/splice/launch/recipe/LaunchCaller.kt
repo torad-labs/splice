@@ -22,6 +22,9 @@ public data class LaunchCaller(
     val gateway: GatewayAt? = null,
     /** The command the person typed, which the launch's notice names (head-catalog); null where none is known. */
     val command: String? = null,
+    /** shim-30 (#791): the caller shell's NO_PROXY and no_proxy, kept beside loopback in what the launch sets: the
+     *  daemon's own environment is not the caller's. Empty from an older shim. */
+    val noProxy: List<String> = emptyList(),
 ) {
     /** The cwd as an absolute path, or null when the shim sent none or a relative one. */
     internal fun absoluteCwd(): Path? = cwd?.let { Paths.get(it) }?.takeIf { it.isAbsolute }

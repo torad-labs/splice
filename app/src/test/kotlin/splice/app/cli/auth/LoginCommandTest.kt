@@ -21,6 +21,26 @@ import java.nio.file.Paths
 class LoginCommandTest {
 
     @Test
+    fun `bare splice login opens Splice Console Accounts instead of printing which head`(@TempDir tmp: Path) {
+        var opened = 0
+        val out = mutableListOf<String>()
+        val ok = UserHome.within(tmp) {
+            kotlinx.coroutines.runBlocking {
+                LoginCommand(
+                    output = { out += it },
+                    openConsole = {
+                        opened++
+                        true
+                    },
+                ).login(headArg = null)
+            }
+        }
+        assertTrue(ok)
+        assertEquals(1, opened, "bare `splice login` must open Splice Console Accounts")
+        assertTrue(out.none { "which head" in it }, out.toString())
+    }
+
+    @Test
     fun `oauth login writes to the provider configured auth file`() {
         val provider = ProviderConfig(
             dialect = Dialect.OPENAI_RESPONSES,

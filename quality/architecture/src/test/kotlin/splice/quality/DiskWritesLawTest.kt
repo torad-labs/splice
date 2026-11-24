@@ -329,6 +329,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/mcp/CodexMcpTomlWriter.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/mcp/NativeCodexMcpFiles.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/mcp/NativeCodexSocketProxy.kt" to mapOf("writeAtomic0600(" to 1),
+    // Codex peer hooks installed or migrated by `splice setup` / `splice setup --update`, in the ~/.codex/hooks.json README row.
+    "app/src/main/kotlin/splice/app/capability/CodexPeerHooks.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeAccountFolders.kt" to mapOf("writeAtomic0600(" to 4),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeCredentialProfiles.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeRemovedOwnLogins.kt" to mapOf("writeAtomic0600(" to 1),

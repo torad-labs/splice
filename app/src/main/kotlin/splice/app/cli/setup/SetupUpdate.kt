@@ -8,6 +8,7 @@
 package splice.app.cli.setup
 
 import splice.app.capability.CapabilityGaps
+import splice.app.capability.CodexHooksReading
 import splice.app.capability.DesktopFacts
 import splice.app.capability.Gap
 import splice.app.capability.GapKind
@@ -39,6 +40,7 @@ internal class SetupUpdate(
 ) {
     private val frame = prompts.frame
     private val sync = SetupMcpSync(env)
+    private val codexHooks = SetupCodexHooks(prompts)
     private val autoUpdate = SetupAutoUpdate(prompts, env)
 
     /** False only when there is no install to update; every offer declined is still a good run. */
@@ -54,17 +56,29 @@ internal class SetupUpdate(
         val gaps = facts?.let { CapabilityGaps(it, claudeWrapped()).all() }.orEmpty()
         // The shim is upkeep, said when laid, and no offer: "nothing new" is about what the person is asked.
         shim()
-        if (prompts.hasConsole()) asked(path, facts?.desktop, gaps) else unattended(gaps)
+        val hooksReading = facts?.harness?.takeIf { it.codex != null }?.codexHooks
+        if (prompts.hasConsole()) asked(path, facts?.desktop, hooksReading, gaps) else unattended(gaps)
         effects.checkup(env)
         frame.outro("Up to date.")
         return true
     }
 
     /** Each offer in turn, then what no offer here closes; "nothing new" only when nothing was offered or left. */
-    private suspend fun asked(path: Path, desktop: DesktopFacts?, gaps: List<Gap>) {
+    private suspend fun asked(
+        path: Path,
+        desktop: DesktopFacts?,
+        hooksReading: CodexHooksReading?,
+        gaps: List<Gap>,
+    ) {
         val kinds = gaps.map { it.kind }.toSet()
-        val offers = listOf(launchers(desktop), desktop(desktop), mcp(GapKind.MCP_SYNC in kinds)) +
-            listOf(modes(path), autoUpdate(path))
+        val offers = listOf(
+            launchers(desktop),
+            desktop(desktop),
+            mcp(GapKind.MCP_SYNC in kinds),
+            codexPeerHooks(hooksReading),
+            modes(path),
+            autoUpdate(path),
+        )
         val left = gaps.filter { it.kind in SAID_ONLY }
         left.forEach { frame.step(it.text) }
         when {
@@ -130,6 +144,12 @@ internal class SetupUpdate(
             unsynced -> Offer.DECLINED
             else -> Offer.NOTHING
         }
+    }
+
+    private fun codexPeerHooks(reading: CodexHooksReading?): Offer = when (codexHooks.offerUpdate(reading)) {
+        null -> Offer.NOTHING
+        true -> Offer.DONE
+        false -> Offer.DECLINED
     }
 
     /** The Modes that are off; a running daemon is restarted onto any turned on, so the doctor and the next session

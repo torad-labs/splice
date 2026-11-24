@@ -17,7 +17,8 @@ internal class DesktopAcpCommand(private val env: EnvReader, private val err: Te
     /** Runs the session Desktop started with `claude` [args]; its exit code. */
     suspend fun run(args: List<String>): Int {
         val log = LogSink { err.line(it.trimEnd()) }
+        val hooks = DesktopAcpHooks(env).build()
         val session = DesktopAcp(args, Path.of("").toAbsolutePath(), env, ProcessDispatchers().io(), log)
-        return session.run(System.`in`, System.out)
+        return session.run(System.`in`, System.out, hooks)
     }
 }

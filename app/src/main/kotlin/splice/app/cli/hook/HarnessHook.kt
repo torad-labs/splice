@@ -130,20 +130,19 @@ internal class HarnessHook(
     private fun read(text: String): HookFields {
         val obj = JsonScalars.objectOrNull(json, text.trim()) ?: return HookFields(null, null, null)
         return HookFields(
-            JsonScalars.str(obj, EVENT)?.takeIf(String::isNotBlank),
-            JsonScalars.str(obj, HOOK_SESSION_ID_FIELD)?.takeIf(String::isNotBlank),
-            JsonScalars.str(obj, CWD)?.takeIf(String::isNotBlank),
+            event = firstField(obj, "hook_event_name", "hookEventName"),
+            sessionId = firstField(obj, "session_id", "conversationId", "sessionId"),
+            cwd = firstField(obj, "cwd"),
         )
     }
+
+    private fun firstField(obj: kotlinx.serialization.json.JsonObject, vararg keys: String): String? =
+        keys.firstNotNullOfOrNull { key -> JsonScalars.str(obj, key)?.takeIf(String::isNotBlank) }
+
+    private data class HookFields(val event: String?, val sessionId: String?, val cwd: String?)
 }
 
-private data class HookFields(val event: String?, val sessionId: String?, val cwd: String?)
-
-private const val EVENT: String = "hook_event_name"
-private const val HOOK_SESSION_ID_FIELD: String = "session_id"
-private const val CWD: String = "cwd"
-
-// why: both harnesses reserve exit 2 for blocking; exit 1 reports bad hook arguments without blocking the turn.
+// why: harnesses reserve exit 2 for blocking; exit 1 reports bad hook arguments without blocking the turn.
 private const val NON_BLOCKING: Int = 1
-private const val NO_THREAD: String = "splice peer: no Codex thread id; leaving the session alone"
-private const val BAD_ARGS: String = "splice peer: these arguments are not a Codex hook invocation"
+private const val NO_THREAD: String = "splice hook: no session id; leaving the session alone"
+private const val BAD_ARGS: String = "splice hook: invalid hook arguments"

@@ -12,9 +12,12 @@ import kotlinx.serialization.json.JsonObject
 import splice.app.desktop.GatewayModels
 import splice.app.desktop.catalog.DesktopLineup
 import splice.app.desktop.catalog.DoorCatalog
+import splice.client.desktop.DoorHooks
 import splice.client.desktop.DoorPickerRow
 import splice.client.desktop.DoorSession
 import splice.client.login.DoorLogin
+import splice.client.resume.ResumeHookTarget
+import splice.core.topology.AuthKind
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -26,6 +29,8 @@ internal class ClaudeDoorLaunch(
     private val lane: ClaudeLane,
     private val login: DoorLogin,
     private val log: LogSink,
+    private val doorHooks: DoorHooks? = null,
+    private val hookTarget: ResumeHookTarget? = null,
 ) {
     private val ids = GatewayModels()
 
@@ -66,15 +71,27 @@ internal class ClaudeDoorLaunch(
     private fun spec(lineup: DesktopLineup, selector: String?, layLogin: Boolean): DoorLaunchSpec {
         val model = selector?.let { ids.idFor(lineup, it) }
         val session = DoorSession(lane.door, lane.key.get(), lane.window(lineup), model)
-        val loginHooks = if (layLogin) hooks() else emptyMap()
+        val loginHooks = if (layLogin) hooks() else overlayLoginHooks()
+        val target = hookTarget
+        val hooksHelper = doorHooks
+        val allHooks = if (target != null && hooksHelper != null) {
+            val speedHooks = if (hasChatGpt(lineup)) hooksHelper.speedHooks(target) else emptyMap()
+            val startHooks = hooksHelper.sessionStartHooks(target)
+            hooksHelper.merge(loginHooks, speedHooks, startHooks)
+        } else {
+            loginHooks
+        }
         return DoorLaunchSpec(
             session.env(),
             session.unset(),
-            session.overlay(LaunchMarker.here, LaunchMarker.SPLICE_LAUNCH_KEY, loginHooks),
+            session.overlay(LaunchMarker.here, LaunchMarker.SPLICE_LAUNCH_KEY, allHooks),
             session.window,
             wallMs = lineup.clientWallMs(),
         )
     }
+
+    private fun hasChatGpt(lineup: DesktopLineup): Boolean =
+        lineup.providers.any { it.authKind == AuthKind.ChatgptOAuth.wire }
 
     /** The picker's rows: the model catalog's, as the door serves them now (DoorCatalog.picker), for a door this
      *  machine shares with another. */
@@ -87,6 +104,16 @@ internal class ClaudeDoorLaunch(
         if (login.lay() == null) login.hooks() else emptyMap()
     }.getOrElse { failure ->
         log("[claude] splice's /login was not laid, so /login is not splice's: ${SafeFailureText.render(failure)}\n")
+        emptyMap()
+    }
+
+    /** Side-by-side /login hook in the `--settings` overlay alone: writes only into splice's state folder and never
+     *  touches `~/.claude`, so `splice launch claude` and `claude-splice` still catch `/login` and `/splice:login`
+     *  and open Splice Console's Accounts page. */
+    private fun overlayLoginHooks(): Map<String, List<JsonObject>> = Cancellables.runCatchingCancellable {
+        login.hooks()
+    }.getOrElse { failure ->
+        log("[claude] splice's /login hook was not staged: ${SafeFailureText.render(failure)}\n")
         emptyMap()
     }
 }

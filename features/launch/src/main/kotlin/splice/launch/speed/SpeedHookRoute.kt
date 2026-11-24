@@ -44,6 +44,7 @@ public class SpeedHookRoute(
     private val log: LogSink,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+    private val doorResolve = DoorSpeedResolve(heads, speeds)
 
     public suspend fun speed(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
@@ -63,13 +64,20 @@ public class SpeedHookRoute(
         val head = heads.byKey(key)?.spec
         val unchanged = "so nothing changed."
         return when {
-            head == null -> blocked("${command.name} works on a head splice serves; this one is not, $unchanged")
             !SESSION_ID_SHAPE.matches(session) -> blocked("${command.name} found no session to set, $unchanged")
-            else -> {
+            head != null -> {
                 val model = speeds.sessions.lastModel(session) ?: head.models.pinnedModel
                 blocked(switched(key, session, model, command))
             }
+            doorResolve.isDoor(key) -> decideDoor(session, command, unchanged)
+            else -> blocked("${command.name} works on a head splice serves; this one is not, $unchanged")
         }
+    }
+
+    private fun decideDoor(session: String, command: SpeedCommand, unchanged: String): JsonObject {
+        val chosen = doorResolve.choose(session)
+            ?: return blocked("${command.name} works on a ChatGPT provider; none is active on the door, $unchanged")
+        return blocked(switched(chosen.catalogKey, session, chosen.model, command))
     }
 
     /** What [command] does to [session], whose model is [model], said as the person reads it. */

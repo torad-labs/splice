@@ -59,7 +59,8 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # reserved_peer_names = ["inbox"]
 # Antigravity (absent reads as on). At its start the daemon asks Google's `agy`, when it is installed and signed in,
 # which models it offers, so Claude Desktop lists them in Chat and the Code tab. false never runs agy and leaves
-# Antigravity out of Desktop's lists. Read at the daemon's start.
+# Antigravity out of Desktop's lists. Read at the daemon's start. The console's switch (Settings, Desktop harnesses),
+# once you set it, decides in place of this key; reset it there to hand the choice back here.
 # antigravity = false
 
 # ── LAN share: this machine's door, run from your other machines (docs/specs/door-network.md) ──

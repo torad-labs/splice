@@ -31,6 +31,6 @@ class AntigravityOptInTest(@param:TempDir private val tmp: Path) {
         assertFalse(join.join(this, ServingProviders { emptyList() }))
         assertTrue(join().isEmpty())
         assertEquals(1, said.size, said.toString())
-        assertTrue(said.single().startsWith("[antigravity] off: splice.toml's [daemon] antigravity is false"), said[0])
+        assertTrue(said.single().startsWith("[antigravity] off (Desktop harnesses"), said[0])
     }
 }

@@ -28,7 +28,7 @@ import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
 
 /** Antigravity once agy has said what it offers ([join]); no provider before. Read with [config]'s limits; what each
- *  try came to goes to [log]. [enabled] is splice.toml's `[daemon] antigravity`: false never asks agy. */
+ *  try came to goes to [log]. [enabled] is whether Antigravity is on (DesktopHarnesses): false never asks agy. */
 internal class AntigravityJoin(
     private val config: ConfigService,
     private val log: LogSink,
@@ -55,7 +55,7 @@ internal class AntigravityJoin(
      *  install or a sign-in, and a restart, change that. */
     suspend fun join(scope: CoroutineScope, door: ServingProviders): Boolean {
         if (!enabled) {
-            log("[antigravity] off: splice.toml's [daemon] antigravity is false, so agy is not asked\n")
+            log("[antigravity] off (Desktop harnesses or splice.toml's [daemon] antigravity): agy is not asked\n")
             return false
         }
         if (door().any { it.key == ANTIGRAVITY_KEY }) {

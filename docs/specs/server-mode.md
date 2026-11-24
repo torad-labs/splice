@@ -271,7 +271,9 @@ busy_message = ""            # blank: splice's own sentence naming the cap
   refused at once with `busy_status`, `Retry-After: busy_retry_after` and `busy_message` or a sentence naming the
   cap. These caps are asked after the person's token cap and before their turns in flight and turns a minute, so a
   turn they refuse spends none of its person's `rpm_per_person`. One slot holds both places, so a turn's end and its
-  client's hang-up each give both back, once. With `inflight_per_upstream` each admitted turn reserves a place in the pool at
+  client's hang-up each give both back, once. A turn that runs to its end gives them back as the last part of its
+  answer is handed to the client's connection, after its upstream has answered in full and before the client can have
+  the whole answer, so a client that asks again only once it has its answer is never refused for the turn before. With `inflight_per_upstream` each admitted turn reserves a place in the pool at
   admission, counted against the servers' room together with every lease, so turns admitted before any of them leased
   never add up past the cap; the turn's first lease takes its place. No lease is ever given on a server that is
   full, and a lease that holds no reserved place never takes one that is reserved: a turn that finds no place (every

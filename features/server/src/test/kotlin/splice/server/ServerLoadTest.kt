@@ -173,8 +173,10 @@ internal class ServerLoadTest {
 
         release.countDown()
         assertEquals(200, inFlight.get(10, TimeUnit.SECONDS).statusCode())
-        // Bo's refused turn gave back the slot it took under their own cap of one, or this would be a 429.
-        assertEquals(200, turn(bo).statusCode(), "a turn the server refused kept its person's slot")
+        // Bo's refused turn gave back the slot it took under their own cap of one, or this would be a 429; and Ada's
+        // place was free by the time her answer had come, or this would be the server's 503.
+        val again = turn(bo)
+        assertEquals(200, again.statusCode(), "a place was held after every turn was answered: ${again.body()}")
     }
 
     @Test

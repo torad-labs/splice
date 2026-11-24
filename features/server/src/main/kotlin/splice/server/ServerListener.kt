@@ -14,7 +14,6 @@ import splice.core.topology.ServerAddress
 import splice.core.topology.ServerConfig
 import splice.core.util.LogSink
 import splice.http.listen.HttpListenerThreads
-import splice.server.load.AnswersInFlight
 import splice.server.load.ServerLoad
 import java.security.KeyStore
 import java.util.concurrent.TimeUnit
@@ -26,9 +25,6 @@ internal class ServerListener(
     private val requests: ServerRequests,
     private val log: LogSink,
 ) {
-    /** What a stop's drain waits for: the answers begun on the listener's connections and not yet written. */
-    private val answers = AnswersInFlight()
-
     @Volatile
     private var engine: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
 
@@ -52,7 +48,7 @@ internal class ServerListener(
                 }
             }
             shutdownGracePeriod = SERVER_STOP_GRACE_MS
-            channelPipelineConfig = { pipeline -> answers.watch(pipeline) }
+            channelPipelineConfig = { pipeline -> load.answers.watch(pipeline) }
         }
         server.start(wait = false)
         engine = server
@@ -68,8 +64,8 @@ internal class ServerListener(
         val engine = engine ?: return
         val drainMs = TimeUnit.SECONDS.toMillis(server.drainSeconds.toLong())
         load.refuseNew()
-        if (!answers.written(maxOf(drainMs, SERVER_STOP_GRACE_MS)) && drainMs > 0) {
-            val left = answers.unwritten()
+        if (!load.answers.written(maxOf(drainMs, SERVER_STOP_GRACE_MS)) && drainMs > 0) {
+            val left = load.answers.unwritten()
             val turns = load.inflight()
             log("[server] stop: $left answer(s) still unwritten after the drain, $turns of them turns; they are cut\n")
         }

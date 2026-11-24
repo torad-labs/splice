@@ -5,7 +5,8 @@
 // a provider once its healthy servers have no place left, every lease and every place reserved for a turn admitted
 // before it counted (UpstreamPool.reserve). A turn past either is refused at once, never queued, with
 // `busy_status` (429 or 503), `Retry-After: busy_retry_after` and `busy_message` or splice's own sentence, and it
-// counts toward neither. Its place is given back with its person's, through the one slot the turn holds (TurnSlot).
+// counts toward neither. Its place is given back with its person's, through the one slot the turn holds (TurnSlot):
+// as the last part of the turn's answer is handed to its connection (AnswersInFlight), or when its client hangs up.
 //
 // It is also where a stop's drain is said (`[server] drain_seconds`): from the moment the listener starts to stop,
 // every new turn is refused with a 503 and `Retry-After` and `/health` answers that the server is draining. What the
@@ -20,6 +21,10 @@ import splice.server.TurnSlot
 import splice.server.UpstreamApi
 
 internal class ServerLoad(private val limits: ServerLimits, private val upstreams: UpstreamApi) {
+    /** The listener's answers on the wire: what a stop's drain waits for, and what gives a turn's place back as the
+     *  last part of its answer goes out. */
+    val answers = AnswersInFlight()
+
     // Every admitted turn in flight, the server's together.
     @Volatile
     private var held = 0

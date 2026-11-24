@@ -138,7 +138,7 @@ internal class ServerRequests(
     private val forwardAuth = ForwardAuthRoute(server, parts.keys, parts.people, adminAccess, browser, voice, drain)
     private val publicRoutes = ServerPublicRoutes(server, addresses, secure, voice, forwardAuth)
     private val keyAdmission = KeyAdmission(parts.keys, addresses, log)
-    private val watched = WatchedRelay()
+    private val watched = WatchedRelay(parts.limits.load.answers)
     private val paths = RequestPaths()
     private val admission = TurnAdmission(parts, voice, catalog, watched)
     private val checkins = ClientCheckins(server.client, voice)

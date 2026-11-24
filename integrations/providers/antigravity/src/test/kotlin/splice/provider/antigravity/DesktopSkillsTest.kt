@@ -192,10 +192,61 @@ internal class DesktopSkillsTest {
         assertEquals(listOf("docs"), servers)
     }
 
+    @Test
+    fun `the index agy opens with lists the skills a reload before initialize found`() {
+        val rig = rig()
+        val gone = skill(rig.home.resolve(".claude/skills/gone"), "Removed before open", "Body")
+        rig.run(ScriptedAgy(onInitialize = hello(APPEND_OFFERED))) {
+            Files.delete(gone.resolve("SKILL.md"))
+            Files.delete(gone)
+            skill(rig.home.resolve(".claude/skills/fresh"), "Added before open", "Body")
+            control("reload-1", """{"subtype":"reload_skills"}""")
+            answer("reload-1")
+            initialize()
+        }
+        val append = indexSent(rig)
+        assertTrue("- fresh: Added before open" in append, append)
+        assertFalse("gone" in append, append)
+    }
+
+    @Test
+    fun `a claude skill that aliases or shares a name with one of agy's own stays out of the index`() {
+        val rig = rig()
+        val native = skill(rig.project.resolve(".agents/skills/shared"), "agy serves this", "Body")
+        val claude = Files.createDirectories(rig.project.resolve(".claude/skills"))
+        Files.createSymbolicLink(claude.resolve("shared"), native)
+        skill(rig.project.resolve(".agents/skills/twin"), "agy's twin", "Body")
+        skill(rig.home.resolve(".claude/skills/twin"), "A user skill named like agy's", "Body")
+        skill(rig.home.resolve(".claude/skills/audit"), "Run an audit", "Body")
+        rig.run(ScriptedAgy(onInitialize = hello(APPEND_OFFERED))) { initialize() }
+        val append = indexSent(rig)
+        assertTrue("- audit: Run an audit" in append, append)
+        assertFalse("shared" in append || "twin" in append, append)
+    }
+
+    @Test
+    fun `slash login with an image goes to agy as typed even when a local login command exists`() {
+        val rig = rig()
+        Files.createDirectories(rig.home.resolve(".claude/commands"))
+        Files.writeString(rig.home.resolve(".claude/commands/login.md"), "---\ndescription: Mine\n---\nSECRET BODY\n")
+        val image = """{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBORw0KGgo="}}"""
+        rig.run(ScriptedAgy(onInitialize = hello(""""promptCapabilities":{"image":true}"""))) {
+            send(user("""[{"type":"text","text":"/login now"},$image]""", "u-1"))
+            result()
+            send(user("""[{"type":"text","text":"/splice:login"},$image]""", "u-2"))
+            result()
+        }
+        assertEquals(listOf("/login now", "/splice:login"), sentText(rig))
+    }
+
     private suspend fun AgyDriver.initialize() {
         control("init-1", """{"subtype":"initialize"}""")
         answer("init-1")
     }
+
+    /** The skill index the new agy session was opened with. */
+    private fun indexSent(rig: AgyRig): String =
+        rig.asked("session/new").single().obj("_meta").obj("antigravity").obj("systemPrompt").str("append").orEmpty()
 
     /** A rig whose project is a repository of its own, so no folder above the test's shows up as a skill root. */
     private fun rig(name: String = "s"): AgyRig {

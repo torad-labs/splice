@@ -1,17 +1,20 @@
 // NEW: desktop-antigravity (ACP skills). The bounded skill index a new agy session gets through
 // `_meta.antigravity.systemPrompt.append`: the name, a one-line description and the SKILL.md path of each local skill
 // agy does not discover by itself, so agy reads a skill when a task calls for it and loads nothing otherwise. Skills
-// found in an `.agents/skills` folder of the workspace walk are agy's own and are left out, even when their entry
-// links elsewhere. The index never carries Desktop's system prompt.
+// agy serves are left out: one found in an `.agents/skills` folder of the workspace walk (even when its entry links
+// elsewhere), one that is an alias of such a skill's folder, and one sharing such a skill's name. The index never
+// carries Desktop's system prompt.
 package splice.provider.antigravity.skills
 
 import java.nio.file.Path
 
 /** Builds the skill index for agy's system prompt. */
 internal class SkillIndex {
-    /** [catalog]'s skills that lie outside [nativeRoots], as an index; null when none qualify. */
-    fun of(catalog: LocalSkillCatalog, nativeRoots: List<Path>): String? {
-        val skills = catalog.commands.filter { it.folder != null }.filterNot { agyFinds(it, nativeRoots) }
+    /** [catalog]'s skills that agy does not serve itself, as an index; null when none qualify. agy serves a skill
+     *  found in one of its [nativeRoots], one whose real folder is that of one of its [native] skills (an alias that
+     *  links there), and one with the name of one of them. */
+    fun of(catalog: LocalSkillCatalog, nativeRoots: List<Path>, native: List<LocalSkillItem> = emptyList()): String? {
+        val skills = catalog.commands.filter { it.isSkill && !agyServes(it, nativeRoots, native) }
         if (skills.isEmpty()) return null
         val lines = mutableListOf(INDEX_HEADER)
         var chars = INDEX_HEADER.length
@@ -26,9 +29,10 @@ internal class SkillIndex {
         return lines.joinToString("\n")
     }
 
-    /** Whether agy lists [skill] itself: it was found in one of agy's own skill folders. Where the folder's entry
-     *  links to doesn't matter, since agy finds it by the entry. */
-    private fun agyFinds(skill: LocalSkillItem, nativeRoots: List<Path>): Boolean = skill.root in nativeRoots
+    /** Whether agy already serves [skill]: found in one of its folders whatever the entry links to, the same real
+     *  folder as one of its skills, or the same name. */
+    private fun agyServes(skill: LocalSkillItem, nativeRoots: List<Path>, native: List<LocalSkillItem>): Boolean =
+        skill.root in nativeRoots || native.any { it.folder == skill.folder || it.name == skill.name }
 
     private fun line(skill: LocalSkillItem): String {
         val summary = skill.description.replace(WHITESPACE, " ").trim()

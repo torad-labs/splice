@@ -104,7 +104,7 @@ public class DesktopAcp(
         }
         val skills = SkillShelf(ClaudeSkillCatalog(cwd, env, log))
         McpBridge(out, connected).use { bridge ->
-            val envTarget = CoordinatorEnv(claude, STRICT_MCP_CONFIG in args, cwd, env, log, skills.index())
+            val envTarget = CoordinatorEnv(claude, STRICT_MCP_CONFIG in args, cwd, env, log, skills)
             val chan = CoordinatorIo(started, hello, helloFailure, lines, deferredLines, scope)
             val coordinator = AgyMcpCoordinator(envTarget, chan, mcpState, bridge)
             val factory = object : PartsFactory {

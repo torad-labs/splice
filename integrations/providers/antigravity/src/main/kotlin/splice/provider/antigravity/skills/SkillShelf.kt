@@ -12,6 +12,7 @@ internal class SkillShelf(private val catalog: ClaudeSkillCatalog) {
     /** Scans the skill folders again and keeps what it finds. */
     fun reload(): LocalSkillCatalog = catalog.load().also { current = it }
 
-    /** The index of skills that agy cannot find by itself, for its system prompt; null when none qualify. */
-    fun index(): String? = SkillIndex().of(current, catalog.nativeRoots())
+    /** The index of the current skills that agy cannot find by itself, for its system prompt; null when none
+     *  qualify. Read when agy opens, so a reload before then is what it lists. */
+    fun index(): String? = SkillIndex().of(current, catalog.nativeRoots(), catalog.nativeSkills())
 }

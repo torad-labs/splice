@@ -1,8 +1,8 @@
 // NEW: desktop-antigravity (ACP skills). A typed `/name args` that names a local skill or command agy does not own,
 // expanded into the prompt agy reads, the way Claude Code expands one: the command's name and arguments, the skill's
 // folder (so relative `scripts/` and `references/` paths resolve), then its body with `$ARGUMENTS` filled in. Only what
-// agy reads changes; Desktop's replay and the transcript keep what the person typed. agy's own commands go through as
-// typed.
+// agy reads changes; Desktop's replay and the transcript keep what the person typed. agy's own commands, `/login` and
+// `/splice:login` go through as typed.
 package splice.provider.antigravity.skills
 
 import kotlinx.serialization.json.JsonArray
@@ -32,12 +32,13 @@ internal class SkillInvocation {
         return JsonArray(replaced)
     }
 
-    /** [typed] expanded, or null when it invokes no local skill or command that agy lacks. */
+    /** [typed] expanded, or null when it invokes no local skill or command that agy lacks. `/login` and
+     *  `/splice:login` are splice's own and never expand, whatever a local command of that name says. */
     private fun expanded(typed: String, items: List<LocalSkillItem>, native: Set<String>): String? {
         val match = INVOCATION.matchEntire(typed.trim()) ?: return null
         val name = match.groupValues[1]
-        val item = items.firstOrNull { it.name == name }?.takeUnless { name in native } ?: return null
-        return prompt(item, match.groupValues[2].trim())
+        val item = items.firstOrNull { it.name == name }?.takeUnless { name in native || name in RESERVED }
+        return item?.let { prompt(it, match.groupValues[2].trim()) }
     }
 
     private fun prompt(item: LocalSkillItem, args: String): String {
@@ -57,4 +58,7 @@ internal class SkillInvocation {
 }
 
 private const val ARGUMENTS = "\$ARGUMENTS"
+
+/** The commands splice answers itself (AcpLoginPrompt), which no local command of the same name takes over. */
+private val RESERVED = setOf("login", "splice:login")
 private val INVOCATION = Regex("/(\\S+)(?:\\s+([\\s\\S]*))?")

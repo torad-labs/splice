@@ -45,6 +45,9 @@ internal class ClaudeSkillCatalog(cwd: Path, env: EnvReader, log: LogSink) {
     fun nativeRoots(): List<Path> =
         roots.workspace().mapNotNull { SkillPaths.directory(roots.nativeUnder(it)) }.distinct()
 
+    /** The skills agy discovers by itself in [nativeRoots], each by its real folder and its name. */
+    fun nativeSkills(): List<LocalSkillItem> = scanner.skills(nativeRoots().map { SkillRoot(it) }).toList()
+
     private fun winners(items: Sequence<LocalSkillItem>): List<LocalSkillItem> {
         val names = mutableSetOf<String>()
         val files = mutableSetOf<Path>()

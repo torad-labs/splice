@@ -76,14 +76,14 @@ person's own that swaps the `claude` program by name; `splice desktop launch` ne
 opened, so a peer message to a Gemini session isn't delivered.
 
 The translator starts `agy acp` (`--add-dir` passed on;
-`--dangerously-skip-permissions` when Desktop's mode is `bypassPermissions`). It speaks stream-json to Desktop and ACP
-to agy:
+`--dangerously-skip-permissions` when Desktop's mode is `bypassPermissions`) and sends it ACP `initialize` at once,
+before Desktop writes anything, to learn what agy offers (images in prompts, `systemPrompt.append`). It speaks
+stream-json to Desktop and ACP to agy:
 
 | Desktop | agy |
 |---|---|
-| `initialize` request | ACP `initialize`; answer with the models, commands, `agents: []`, output styles, account; then `system/init` |
-| `reload_skills` | the local skills found again (see "Local skills") |
-| new session / `--resume=<id>` | `session/new` / `session/resume` |
+| `initialize` request (or the first `user` line, if Desktop sends none) | `session/new`, or `session/resume` for `--resume=<id>`, with Desktop's MCP servers; answer with the models, commands, `agents: []`, output styles, account; then `system/init` |
+| `reload_skills` | nothing: the local skills are found again and listed (see "Local skills") |
 | `user` line, also mid-turn | `session/prompt` (agy steers a running turn) |
 | text and thinking stream, `assistant` | `agent_message_chunk`, `agent_thought_chunk` |
 | tool cards (`Bash`, `Edit`, `Read`, `Grep`, `WebFetch`, `Task` + `system/task_started` / `system/task_notification`) | `tool_call` / `tool_call_update` by kind (`invoke_subagent` → `Task`) |
@@ -194,18 +194,25 @@ or writing `~/.gemini`.
   folder (`Base directory for this skill: …`, so relative `scripts/` and `references/` paths resolve), and then the
   body. In the body, `$ARGUMENTS` is replaced by the arguments; if the body has no `$ARGUMENTS` and there are
   arguments, they are added after it as `ARGUMENTS: …`. In a message made of blocks, only that text block changes and
-  images stay where they were. Desktop's replay and the transcript keep what was typed. agy's own commands, and
-  `/login`, go through as before.
+  images stay where they were. Desktop's replay and the transcript keep what was typed. agy's own commands go through
+  as typed. `/login` and `/splice:login` are never expanded, even when a local command has that name: as text alone
+  they open Splice Console's Accounts page and never reach agy, and in a message with an image they go to agy as
+  typed.
 - **`reload_skills`** scans the folders again and answers `{"skills": [{name, description, argumentHint}, …]}`, as
-  Claude Code does, with the local skills and commands that agy's own don't shadow. Autocomplete and `/name` use the
-  new list from then on.
+  Claude Code does, with the local skills and commands. It leaves out only the names of commands agy has already
+  reported in `available_commands_update`; before agy reports any, nothing is left out. It never opens the agy
+  session. Autocomplete, `/name` and the index of a session not yet opened use the new list from then on.
 - **The skill index.** When agy offers `systemPrompt.append`, a new session (`session/new`, including the retry
-  without MCP servers) gets a short index appended to agy's system prompt. The index lists each local skill's name,
+  without MCP servers) gets a short index appended to agy's system prompt. It is built from the skills as they stand
+  when `session/new` is sent, so a `reload_skills` before then counts. The index lists each local skill's name,
   a one-line description and its `SKILL.md` path, so agy reads a skill when a task calls for it and loads nothing
   otherwise. The boundary it keeps:
-  - only when `initialize` advertised the capability, and only on `session/new`, never on `session/resume` or the
-    `mcp_set_servers` resume, because agy adds a resumed append to the one the session already has;
-  - skills only, leaving out any under an `.agents/skills` folder of the session's walk, which agy lists itself;
+  - only when agy's ACP `initialize` advertised the capability as JSON `true` (not the string `"true"`), and only on
+    `session/new`, never on `session/resume` or the `mcp_set_servers` resume, because agy adds a resumed append to
+    the one the session already has;
+  - skills only, leaving out every skill agy serves itself: one found in an `.agents/skills` folder of the
+    session's walk (even when its entry or its `SKILL.md` links elsewhere), one whose real folder is that of such a
+    skill (a `.claude/skills` alias that links into `.agents/skills`), and one sharing such a skill's name;
   - bounded to 100 entries, 160 characters per description and about 12,000 characters, then
     `(N more skills omitted)`;
   - never Desktop's system prompt; no `--add-dir` per skill folder (a probe with 106 `--add-dir` flags stalled

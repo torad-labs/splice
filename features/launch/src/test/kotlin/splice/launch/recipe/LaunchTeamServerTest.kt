@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
+import splice.client.ManagedSettings
 import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.TranscriptModelRewrite
 import splice.client.resume.originals.TranscriptOriginals
@@ -55,7 +56,10 @@ class LaunchTeamServerTest(@param:TempDir private val tmp: Path) {
         resumeAcrossHeads = ResumeAcrossHeads(
             TranscriptModelRewrite(originals = TranscriptOriginals(StatePaths(baseOverride = tmp.resolve("state")))),
         ),
-    )
+    ).apply {
+        // why: a test never reads the machine's own managed settings (/etc/claude-code); this folder stands in for it.
+        managed = ManagedSettings(platformDir = tmp.resolve("platform"))
+    }
 
     @Test
     fun `a command on a server with a relay exports its metrics and logs there, and never a prompt`() {
@@ -118,6 +122,44 @@ class LaunchTeamServerTest(@param:TempDir private val tmp: Path) {
         assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"])
         assertEquals(OTEL_HELPER, settings()["otelHeadersHelper"]?.jsonPrimitive?.content)
     }
+
+    // #791: Claude Code also reads the machine's managed-settings.json and every managed-settings.d/*.json beside it as
+    // managed settings, and telemetry set in any one of them is the organisation's.
+    @Test
+    fun `telemetry set in the machine's managed settings or in any of their drop-ins turns the relay off`() {
+        val relayed = spec(TeamServerLaunch(LaunchTelemetry(RELAY, OTEL_HELPER)))
+        val dropIns = platform().resolve("managed-settings.d")
+        Files.createDirectories(dropIns)
+        val platformFile = platform().resolve("managed-settings.json")
+        Files.writeString(platformFile, """{"env":{"CLAUDE_CODE_ENABLE_TELEMETRY":"1"}}""")
+        assertNull(launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "the platform file set telemetry")
+        Files.writeString(platformFile, """{"permissions":{"deny":[]}}""")
+        Files.writeString(dropIns.resolve("10-base.json"), """{"env":{"SOME_OTHER_SETTING":"1"}}""")
+        Files.writeString(dropIns.resolve("20-otel.json"), """{"otelHeadersHelper":"corp-helper"}""")
+        assertNull(launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "a later drop-in set a helper of its own")
+        assertNull(settings()["otelHeadersHelper"])
+        Files.delete(dropIns.resolve("20-otel.json"))
+        Files.writeString(dropIns.resolve("20-otel.txt"), """{"env":{"OTEL_METRICS_EXPORTER":"otlp"}}""")
+        Files.writeString(dropIns.resolve(".hidden.json"), """{"env":{"OTEL_METRICS_EXPORTER":"otlp"}}""")
+        val endpoint = launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"]
+        assertEquals(RELAY, endpoint, "only visible *.json files are drop-ins")
+    }
+
+    @Test
+    fun `a managed settings file that is malformed, not an object or unreadable sets nothing`() {
+        val relayed = spec(TeamServerLaunch(LaunchTelemetry(RELAY, OTEL_HELPER)))
+        Files.createDirectories(platform().resolve("managed-settings.d"))
+        Files.createDirectories(tree())
+        Files.writeString(platform().resolve("managed-settings.json"), """{"env":{"OTEL_EXPORTER""")
+        Files.writeString(platform().resolve("managed-settings.d/a.json"), """["CLAUDE_CODE_ENABLE_TELEMETRY"]""")
+        // why: a folder where a file is expected cannot be read as one, as an unreadable file cannot.
+        Files.createDirectories(platform().resolve("managed-settings.d/b.json"))
+        Files.createDirectories(tree().resolve("remote-settings.json"))
+        assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"])
+        assertEquals(OTEL_HELPER, settings()["otelHeadersHelper"]?.jsonPrimitive?.content)
+    }
+
+    private fun platform(): Path = tmp.resolve("platform")
 
     private fun launch(spec: LaunchSpec): LaunchRecipe =
         service.launch(spec, extraArgs = emptyList(), dangerouslySkipPermissions = false)

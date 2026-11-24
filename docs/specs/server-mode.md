@@ -243,12 +243,25 @@ Drafted checks for these exist and are committed with the P2 plan once P1 has la
   key, sets `splice.person`, `splice.team` and `user.email` on every resource whatever the client claimed, and
   forwards it in the same encoding. The laptop recipe sets `CLAUDE_CODE_ENABLE_TELEMETRY=1` and
   `OTEL_EXPORTER_OTLP_ENDPOINT=<server>/server/otlp` with an `otelHeadersHelper` that sends the key, and never sets
-  `OTEL_LOG_USER_PROMPTS`. Where the command's `remote-settings.json` (organisation-managed) sets a telemetry key,
-  splice adds no telemetry of its own; managed settings that set none leave the relay on.
+  `OTEL_LOG_USER_PROMPTS`. Where any of the organisation's managed settings sets a telemetry key, splice adds no
+  telemetry of its own; managed settings that set none leave the relay on. Those are every source Claude Code honours
+  (#791): the platform's `managed-settings.json` (`/etc/claude-code`, `/Library/Application Support/ClaudeCode`,
+  `C:\Program Files\ClaudeCode`), each `managed-settings.d/*.json` beside it in filename order, and the command's
+  `remote-settings.json`. A malformed or unreadable file sets nothing.
 - **F9 client version policy.** `[server.client] minimum`. Each launch sends `x-splice-client: <version>` in
   `ANTHROPIC_CUSTOM_HEADERS`. An older client's turn is answered 200 with an assistant message naming the version
   to upgrade to, streamed or not, and nothing reaches the upstream (Claude Code retries a refusal about six times
-  and shows a 200 once). A request with no version (a script) is served. The upgrade itself goes through
+  and shows a 200 once). A request with no version (a script) is served. The minimum holds on a Messages turn, a
+  door turn and a chat completion alike. From an outside source (#791): `version_header` names the header a team's
+  own launcher sends its version in (`name/1.2.3` reads as `1.2.3`); `checkin = true` mounts
+  `POST /server/client/checkin` `{"version"}` under a person's key, whose latest report, kept in memory, stands for
+  their turns that name none; `outdated_status` is 200 (in the conversation, an OpenAI answer on the chat route), 400
+  or 426; `outdated_message` words the notice with `{version}` and `{minimum}`.
+- **Path aliases (#791).** `[server.aliases]` maps one first path segment to a served command or `door`, as
+  `"/v1" = "claude-team"`. The listener rewrites the decoded segments once, before any route reads them, so
+  `/v1/chat/completions`, `/v1/models`, `/v1/messages` and `/v1/messages/count_tokens` are the command's own routes
+  with its key, caps, allowlist and minimum client. Boot refuses an alias that is not `/<segment>`, that is
+  `server`, `health`, `door` or a served command, or that stands for anything else. The upgrade itself goes through
   `splice upgrade` and, with F15, the build the server points at: verified download, the new executable must run
   and name its version before it replaces the old, the old kept for rollback, one check at a time.
 - **F10 fixed-cost providers.** `hourly_usd` on a provider, metered from the host's live boot time read at report

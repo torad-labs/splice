@@ -253,6 +253,66 @@ class ServerConfigFindingsTest {
         assertEquals(setOf("server.client.download_url", "server.forward_auth.allow"), found.map { it.path }.toSet())
     }
 
+    // #791: the client minimum read from a launcher's own header or a check-in, and what an older one is answered with.
+    @Test
+    fun `a client table with its own header, status, words and check-in boots, and a wrong header or status is not`() {
+        val good = """
+            [server.client]
+            minimum = "0.10.0"
+            version_header = "x-team-launcher"
+            outdated_status = 426
+            outdated_message = "Run team-update: {version} is older than {minimum}."
+            checkin = true
+        """.trimIndent()
+        val ready = ConfigFindings.read(server(good) + head(), directory, configDir = directory)
+        val client = assertInstanceOf(ConfigRead.Ready::class.java, ready, ready.toString()).topology.server.client
+        assertEquals("x-team-launcher", client.header)
+        assertEquals(426, client.outdatedStatus)
+        assertTrue(client.checkin)
+        for (status in listOf(200, 400)) {
+            val read = ConfigFindings.read(
+                server("[server.client]\noutdated_status = $status") + head(),
+                directory,
+                configDir = directory,
+            )
+            assertInstanceOf(ConfigRead.Ready::class.java, read, "$status: $read")
+        }
+
+        val wrong = "[server.client]\nversion_header = \"x team: launcher\"\noutdated_status = 503"
+        val bad = refused(server(wrong) + head())
+        assertEquals(listOf("server.client.version_header", "server.client.outdated_status"), bad.map { it.path })
+    }
+
+    // #791: an alias is one plain path segment standing for a served command or the door.
+    @Test
+    fun `aliases to a served command or the door boot, and every alias that cannot be served is refused by name`() {
+        val ready = ConfigFindings.read(
+            server("[server.aliases]\n\"/v1\" = \"claude-team\"\n\"/openai\" = \"door\"") + head(),
+            directory,
+            configDir = directory,
+        )
+        val served = assertInstanceOf(ConfigRead.Ready::class.java, ready, ready.toString()).topology.server
+        assertEquals(mapOf("v1" to "claude-team", "openai" to "door"), served.aliasSegments)
+
+        val aliases = """
+            [server.aliases]
+            "v1" = "claude-team"
+            "/a/b" = "claude-team"
+            "/server" = "door"
+            "/health" = "door"
+            "/claude-team" = "door"
+            "/door" = "claude-team"
+            "/v2" = "claude-nobody"
+        """.trimIndent()
+        val found = refused(server(aliases) + head())
+        assertEquals(7, found.size, found.toString())
+        assertTrue(found.all { it.path == "server.aliases" }, found.toString())
+        val named = listOf("'v1'", "'/a/b'", "'/server'", "'/health'", "'/claude-team'", "'/door'", "'claude-nobody'")
+        for (alias in named) {
+            assertTrue(found.any { alias in it.message }, "$alias: $found")
+        }
+    }
+
     @Test
     fun `server backup accepts folder or signed S3 target and refuses malformed target or missing keys`() {
         val good = """

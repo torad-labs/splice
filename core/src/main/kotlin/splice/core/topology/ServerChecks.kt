@@ -22,7 +22,7 @@ internal class ServerChecks(
 
     fun findings(): List<TopologyFinding> = if (server.declared) {
         listen() + exclusive() + commands() + tls() + people() + limits() + client() + signin() + telemetry() +
-            ServerLedgerChecks(server).findings()
+            ServerRoutingChecks(server).findings() + ServerLedgerChecks(server).findings()
     } else {
         emptyList()
     }

@@ -211,8 +211,8 @@ class CodexDesktopThreadTest {
     }
 
     @Test
-    fun `desktop socket with group access is rejected before connecting`(@TempDir directory: Path) = runBlocking {
-        val home = directory.resolve("codex-home-insecure")
+    fun `desktop socket with group access is rejected before connecting`(@TempDir home: Path) = runBlocking {
+        // Use the temp dir as CODEX_HOME to stay within macOS's Unix socket path limit.
         val conversationId = "conversation-insecure-desktop"
         val socketPath = home.resolve("ipc/ipc.sock")
         val fixture = CodexDesktopStandIn(socketPath, conversationId)

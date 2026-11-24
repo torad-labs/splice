@@ -19,6 +19,7 @@ import splice.core.perf.PerfKeys
 import splice.core.pool.UpstreamPool
 import splice.core.server.ServedTokens
 import splice.core.server.ServedTurnBoard
+import splice.core.server.ServerModRoutes
 import splice.core.topology.Dialect
 import splice.core.topology.HourlyPrices
 import splice.core.topology.Topology
@@ -104,8 +105,14 @@ internal class DaemonServer(
     override fun hourly(): Map<String, Double> = HourlyPrices(topology.providers).prices()
 
     /** Opens server mode when `[server]` names an address, serving [heads], which say how each turn went on [served].
-     *  [gateway] serves a team's turns at `/door` on the providers, with no head. */
-    fun open(heads: Map<String, ManagedHead>, served: ServedTurnBoard, gateway: TeamGateway? = null) {
+     *  [gateway] serves a team's turns at `/door` on the providers, with no head, and [mods] the modes that answer key
+     *  holders under `/server/mod/<name>/...`. */
+    fun open(
+        heads: Map<String, ManagedHead>,
+        served: ServedTurnBoard,
+        gateway: TeamGateway? = null,
+        mods: ServerModRoutes? = null,
+    ) {
         val address = topology.server.address ?: return
         this.heads = heads
         Cancellables.runCatchingBestEffort {
@@ -113,7 +120,7 @@ internal class DaemonServer(
             val folder = stateDir.resolve(SERVER_STATE)
             val env = EnvReader(System::getenv)
             val io = ProcessDispatchers().io()
-            val reach = ServerReach(turnKey, served, env, gateway)
+            val reach = ServerReach(turnKey, served, env, gateway, mods)
             ServerBackupStore(
                 topology.server.backup,
                 folder,

@@ -25,6 +25,7 @@ import splice.app.desktop.catalog.DoorCatalog
 import splice.app.desktop.catalog.DoorModel
 import splice.app.desktop.catalog.DoorModelWire
 import splice.app.desktop.catalog.ModelDiscovery
+import splice.app.desktop.catalog.ProviderCatalog
 import splice.app.desktop.catalog.PublishedCatalog
 import splice.app.desktop.catalog.SelectorAliases
 import splice.app.desktop.catalog.ServedModel
@@ -34,6 +35,7 @@ import splice.client.models.AnthropicTiers
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.topology.ChatEffortVocabularyConfig
+import splice.core.topology.desktop.DesktopConfig
 import splice.core.usage.QuotaFull
 import splice.head.GatewayTurn
 import splice.usage.quota.HeadUsageSource
@@ -217,6 +219,52 @@ internal class DoorPickerRowsTest {
         val discovered = DoorCatalog(catalogued(lineup)).discovery().getValue("data").jsonArray.single().jsonObject
         assertEquals("1000000", discovered.getValue("max_input_tokens").jsonPrimitive.content)
         assertEquals("true", discovered.getValue("supports_1m").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `a configured 1M window is the bar for a model's 1M variant in Desktop's rows`() {
+        val row = ModelEntry("team-wide", "Team Wide", contextWindow = 600_000)
+        val lineup = catalogued(lineupOf(provider("work", rows = listOf(row)) to listOf(model("work", "team-wide"))))
+
+        // Desktop's shipped million: a 600,000 window has no 1M variant to advertise.
+        val shipped = DoorCatalog(lineup)
+        val plain = shipped.discovery(surface = ModelDiscovery.DESKTOP).getValue("data").jsonArray.single().jsonObject
+        assertEquals("false", plain.getValue("supports_1m").jsonPrimitive.content)
+        assertNull(shipped.inferenceModels(null).single().jsonObject["supports1m"])
+
+        // This install's big window at 500,000: the same model fills it, so both of Desktop's lists say so,
+        // while the advertised ceiling stays the provider's own 600,000, never a configured window.
+        val configured = DoorCatalog(lineup, DesktopConfig(codeWindow1m = 500_000))
+        val wide = configured.discovery(surface = ModelDiscovery.DESKTOP)
+            .getValue("data").jsonArray.single().jsonObject
+        assertEquals("true", wide.getValue("supports_1m").jsonPrimitive.content)
+        assertEquals("600000", wide.getValue("max_input_tokens").jsonPrimitive.content)
+        val settings = configured.inferenceModels(null).single().jsonObject
+        assertEquals("true", settings.getValue("supports1m").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `Desktop does not advertise a 1M-only row below its configured big window`() {
+        val source = buildJsonObject {
+            put("supports_1m", true)
+            put("prefer_1m", true)
+        }
+        val fact = CatalogModel("work", "wide", "Wide", contextWindow = 1_000_000, source = source)
+        val lineup = lineupOf(provider("work", login = true) to listOf(model("work", "wide[1m]")))
+            .copy(catalog = ProviderCatalog(listOf(fact)))
+        val catalog = DoorCatalog(lineup, DesktopConfig(codeWindow1m = 1_500_000))
+        val discovery = catalog.discovery(surface = ModelDiscovery.DESKTOP)
+            .getValue("data").jsonArray.single().jsonObject
+        val settings = catalog.inferenceModels(null).single().jsonObject
+
+        assertEquals("false", discovery.getValue("supports_1m").jsonPrimitive.content)
+        assertTrue(discovery["prefer_1m"]?.jsonPrimitive?.content != "true")
+        assertNull(settings["supports1m"])
+        assertNull(settings["prefer1m"])
+        assertEquals("work--wide[1m]", catalog.picker().single().model)
+        val terminal = catalog.discovery().getValue("data").jsonArray.single().jsonObject
+        assertEquals("true", terminal.getValue("supports_1m").jsonPrimitive.content)
+        assertEquals("true", terminal.getValue("prefer_1m").jsonPrimitive.content)
     }
 
     @Test

@@ -12,6 +12,7 @@ import splice.app.peer.PeersWiring
 import splice.control.mcp.APP_MCP_SLICE
 import splice.core.config.UserHome
 import splice.core.failure.HeadVoice
+import splice.core.util.EnvReader
 import splice.head.admission.AdmissionErrorBody
 import splice.http.ingress.HeapIngress
 import splice.lifecycle.restart.DetachedDaemonSuccessor
@@ -24,6 +25,7 @@ internal class ControlServerParts(
     /** The daemon's shared environment: its state, its settings, its management key and its log sink. */
     private val daemon: DaemonEnvironment,
     private val topology: BootedTopology,
+    private val env: EnvReader = EnvReader(System::getenv),
 ) {
     private val config get() = daemon.config
     private val log get() = daemon.log
@@ -43,7 +45,7 @@ internal class ControlServerParts(
         ),
         daemon.mcpAccess,
         // Oct 19, 2026: the peers whose own keys open Door.PEER (docs/specs/peer-messaging.md 3.1).
-        PeersWiring().store(log, topology.reservedPeerNames),
+        PeersWiring(env).store(log, topology.reservedPeerNames),
     )
 
     /** Pin the environment override to the live state directory, not its parent: the wrong parent

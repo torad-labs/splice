@@ -9,10 +9,18 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import splice.core.capability.CapabilityTable
 import splice.core.capability.CapabilityToml
+import splice.core.server.serverRoots
 import splice.core.topology.TopologyFinding
 
-/** One mode's switches in splice.toml: [on] for every head (null when unset), and [heads], head key -> on. */
-public data class ModeSetting(val on: Boolean? = null, val heads: Map<String, Boolean> = emptyMap())
+/** One mode's switches in splice.toml: [on] for every head (null when unset), and [heads], head key -> on. On a team
+ *  server, [serverRoutes] lets key holders reach the mode under `/server/mod/<name>/...` and [serverAdminOnly] keeps
+ *  those routes to the server's admins; each is null when unset, which is false. */
+public data class ModeSetting(
+    val on: Boolean? = null,
+    val heads: Map<String, Boolean> = emptyMap(),
+    val serverRoutes: Boolean? = null,
+    val serverAdminOnly: Boolean? = null,
+)
 
 /** The modes splice carries, as boot is handed them: their names, and the catalog's findings for broken ones. */
 public data class FoundModes(val names: Set<String>, val findings: List<TopologyFinding> = emptyList())
@@ -20,15 +28,21 @@ public data class FoundModes(val names: Set<String>, val findings: List<Topology
 /** The well-formed tables by mode name, and a finding for each fault. */
 public data class ModeSettingsRead(val settings: Map<String, ModeSetting>, val findings: List<TopologyFinding>)
 
-/** Reads `[modes.<name>]` tables against the heads splice.toml declares ([heads] null leaves that check out) and the
- *  modes splice found ([modes] null leaves that check out). */
-public class ModeSettingsReader(private val heads: Set<String>?, private val modes: Set<String>?) {
+/** Reads `[modes.<name>]` tables against the heads splice.toml declares ([heads] null leaves that check out), the
+ *  modes splice found ([modes] null leaves that check out), and the commands `[server] commands` serves ([served] null
+ *  leaves out the check that a mode serving the listener takes none of their names, nor one of [serverRoots]). */
+public class ModeSettingsReader(
+    private val heads: Set<String>?,
+    private val modes: Set<String>?,
+    private val served: Set<String>? = null,
+) {
     public fun read(tables: List<CapabilityTable>): ModeSettingsRead {
         val findings = mutableListOf<TopologyFinding>()
         val settings = LinkedHashMap<String, ModeSetting>()
+        val taken = served?.let { it + serverRoots }
         for (table in tables) {
             val before = findings.size
-            val setting = ModeTableCheck(table, heads, modes, findings).setting()
+            val setting = ModeTableCheck(table, heads, modes, taken, findings).setting()
             if (findings.size == before) settings[table.name] = setting
         }
         return ModeSettingsRead(settings, findings)
@@ -40,6 +54,8 @@ private class ModeTableCheck(
     private val table: CapabilityTable,
     private val heads: Set<String>?,
     private val modes: Set<String>?,
+    /** The names a mode serving the listener may not take; null leaves the check out. */
+    private val taken: Set<String>?,
     private val findings: MutableList<TopologyFinding>,
 ) {
     private val path = "$MODE_TABLES.${table.name}"
@@ -55,12 +71,21 @@ private class ModeTableCheck(
         table.keys.keys.filter { it !in KEYS }.forEach { key ->
             if (key == CapabilityToml.WHOLE) fault(null, "is not a table") else fault(key, NOT_A_KEY)
         }
-        return ModeSetting(on(), heads())
+        val routes = switch(MODE_SERVER_ROUTES)
+        if (routes == true && table.name in taken.orEmpty()) {
+            fault(
+                MODE_SERVER_ROUTES,
+                "cannot be true for a mode named '${table.name}': the server's listener already answers that name " +
+                    "as its own path or a served command",
+            )
+        }
+        return ModeSetting(switch(MODE_ON), heads(), routes, switch(MODE_SERVER_ADMIN_ONLY))
     }
 
-    private fun on(): Boolean? {
-        val value = table.keys[MODE_ON] ?: return null
-        return flag(value) ?: null.also { fault(MODE_ON, "is not true or false") }
+    /** The boolean at [key], or null when it is unset or (with its finding) not true or false. */
+    private fun switch(key: String): Boolean? {
+        val value = table.keys[key] ?: return null
+        return flag(value) ?: null.also { fault(key, "is not true or false") }
     }
 
     private fun heads(): Map<String, Boolean> {
@@ -93,5 +118,11 @@ public const val MODE_ON: String = "on"
 
 public const val MODE_HEADS: String = "heads"
 
-private val KEYS = setOf(MODE_ON, MODE_HEADS)
+/** A `[modes.<name>]` table's team-server switches: whether key holders reach the mode on the server's listener, and
+ *  whether only the server's admins do. */
+internal const val MODE_SERVER_ROUTES: String = "server_routes"
+
+internal const val MODE_SERVER_ADMIN_ONLY: String = "server_admin_only"
+
+private val KEYS = setOf(MODE_ON, MODE_HEADS, MODE_SERVER_ROUTES, MODE_SERVER_ADMIN_ONLY)
 private const val NOT_A_KEY = "is not a key a mode's table takes"

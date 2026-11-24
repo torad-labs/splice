@@ -29,7 +29,13 @@ internal class DoorRelay(
      *  caller's sessions hold. */
     suspend fun send(call: ApplicationCall, caller: DoorCaller, route: DoorRoute, ask: DoorAsk, counting: Boolean) {
         // reply-stream: the body asks for the provider's own id, so the turn carries the model Claude Code named.
-        val turn = GatewayTurn(ask.asking(route.upstream), caller.named, caller.windowOf(ask), asked = ask.model)
+        val turn = GatewayTurn(
+            ask.asking(route.upstream),
+            caller.named,
+            caller.windowOf(ask),
+            asked = ask.model,
+            requestWindow = caller.requestWindowOf(ask),
+        )
         if (counting) return route.provider.countTokens(call, turn)
         val at = Instant.ofEpochMilli(clock()).toString()
         caller.sending(DesktopLastTurn(at, ask.session, route.provider.key, ask.model, route.upstream))

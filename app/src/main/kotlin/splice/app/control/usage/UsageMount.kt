@@ -2,6 +2,7 @@
 // statusline (features/usage).
 package splice.app.control.usage
 
+import io.ktor.server.application.Application
 import io.ktor.server.request.receiveText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
@@ -92,6 +93,8 @@ internal class UsageMount(
     fun tagProjects(tags: RequestProjects) = usageReads.tagProjects(tags)
 
     fun nameAccounts(names: RecordedAccounts) = usageReads.nameAccounts(names)
+
+    fun prepare(app: Application) = usageReads.prepare(app)
 
     fun register(route: Route) {
         performance.register(route)

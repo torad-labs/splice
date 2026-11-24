@@ -234,6 +234,20 @@ Besides each command's own routes, the server answers the same door every local 
 
 The gateway resolves the model a request names (`claude-<provider>--<id>`, an old head-prefix selector, a `[door.selector_aliases]` entry, or a readable name) to the provider that serves it, and serves the turn on that provider directly; no head is read. The person's allowlist, caps, budget, ledger row and minimum client apply to that **resolved provider**, never to the selector string. A refused provider is a 403 naming it. The `/<command>/...` routes of existing heads keep working beside the door.
 
+## Mode routes
+
+To let a mode answer team requests on the same listener, enable `server_routes` for its manifest name in `splice.toml`. For a mode named `inventory`:
+
+```toml
+[modes.inventory]
+server_routes = true
+server_admin_only = true
+```
+
+Restart the daemon, then call `/server/mod/inventory/...` with a live personal key. Without a live key the listener returns 401. A missing or disabled mode returns 404 to an authenticated caller. With `server_admin_only`, callers must be listed in `[server].admins` and satisfy `admin_cidrs` if set; otherwise they get 403. Omit that setting to allow any authenticated key holder.
+
+The mode receives the caller's email, team and admin status, not their key. A mode exposed here may not use `server`, `door`, `health`, or a name in `[server].commands` (including the key and command of any head named there). See the [mode route contract](../specs/server-mode.md#mode-routes) for forwarded request fields and limits, and [installing an external mode](modes-and-extensions.md#install-an-external-mode) if the mode is not built in.
+
 ## Forward auth for your dashboards
 
 The server can be your reverse proxy's auth check (nginx `auth_request`, Traefik or Caddy `forward_auth`) for the team's dashboards, on the same identities. Admins are always admitted; everyone else must match `allow`.

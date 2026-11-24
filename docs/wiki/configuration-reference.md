@@ -56,7 +56,7 @@ Sources: `app/src/main/kotlin/splice/app/cli/{Command,CommandParser,Cli,ConfigPr
 
 See the full [example splice.toml](../../app/src/main/resources/splice.example.toml) for provider and model examples. **Unset** means omit the field (not a TOML null literal). **Required** means it has no default unless marked as a validation requirement.
 
-Schema source: [Topology.kt](../../core/src/main/kotlin/splice/core/topology/Topology.kt):50–73 declares `daemon`, `telemetry`, `claude`, `compaction`, `defaults`, `providers`, `heads`, `projects`, `share`, `remote`, `server`, `door`, `launch` and `harnesses`. Empty maps have no entries, optional object tables take their member defaults. `capabilities` and `modes` are parsed separately by `TopologyLoader.kt:341–355` and attached as extensions, not a table named `extensions`. There is no root `pricing`, `budgets`, `prompts` or `mcp` table: see provider/head cards, `server.budgets`, prompt fields, and the daemon/knob MCP settings below.
+Schema source: [Topology.kt](../../core/src/main/kotlin/splice/core/topology/Topology.kt):50–73 declares `daemon`, `telemetry`, `claude`, `compaction`, `defaults`, `providers`, `heads`, `projects`, `share`, `remote`, `server`, `door`, `launch` and `harnesses`. Empty maps have no entries, optional object tables take their member defaults. `capabilities`, `modes`, `mods` and `desktop` are top-level sections parsed separately by `TopologyLoader.kt` and attached as extensions, not a table named `extensions`. There is no root `pricing`, `budgets`, `prompts` or `mcp` table: see provider/head cards, `server.budgets`, prompt fields, and the daemon/knob MCP settings below.
 
 For example, set the control port and a shared concurrency limit as follows. If the tables already exist, add or replace the keys within them instead of repeating the table headers.
 
@@ -325,9 +325,21 @@ path = "~/work/api"
 instructions = "Keep failing test names and their error messages."
 ```
 
+## Desktop Code tab windows
+
+`[desktop]` takes two positive integer token counts. Set them only if the windows your Desktop installation gives its Code tab differ from these defaults. `code_window_1m` must be at least `code_window`.
+
+```toml
+[desktop]
+code_window = 200000
+code_window_1m = 1000000
+```
+
+The daemon reads this table at startup. Restart it and reopen Desktop after changing either value. See [how the Code tab compacts](claude-desktop.md#code-tab-context-windows).
+
 ## Modes and capabilities
 
-`[modes.<name>]` takes `on` (bool, unset) and `heads` (map of bool by declared head, empty). The manifest's eligibility restrictions are absolute; within them, head-specific `heads.<head>` takes precedence over `on`, then the manifest's own default. Only names present in the build catalog are valid. Source: [ModeSetting.kt](../../core/src/main/kotlin/splice/core/mode/ModeSetting.kt):14–97, `modes/api/src/main/kotlin/splice/modes/api/{ModeRule,FoundMode}.kt`, and per-mode `modes/*/mode.toml` manifests. The source manifests set `ccdsession` on by default and `tableapp`, `template`, `templateapp` off.
+`[modes.<name>]` takes `on` (bool, unset) and `heads` (map of bool by declared head, empty). The manifest's eligibility restrictions are absolute; within them, head-specific `heads.<head>` takes precedence over `on`, then the manifest's own default. Only names in the loaded catalog (built-in or external) are valid. `server_routes` and `server_admin_only` are optional booleans, both off when omitted; see [team mode routes](team-server-mode.md#mode-routes). `[mods].dir` sets the local archive directory (default: `mods/` beside the config). Each `[[mods.jar]]` takes a unique `name`, exactly one of `path` or `url`, and a trusted 64-digit hexadecimal `sha256`; see [installing an external mode](modes-and-extensions.md#install-an-external-mode). Source: [ModeSetting.kt](../../core/src/main/kotlin/splice/core/mode/ModeSetting.kt):14–97, `modes/api/src/main/kotlin/splice/modes/api/{ModeRule,FoundMode}.kt`, and per-mode `modes/*/mode.toml` manifests. The source manifests set `ccdsession` on by default and `tableapp`, `template`, `templateapp` off.
 
 `[capabilities.<name>]`: splice-run work around a model turn. Names use lowercase letters, digits and hyphens. Sources: `core/src/main/kotlin/splice/core/capability/{Capability,CapabilityDeclarations,CapabilityRule,CapabilityCalling,CapabilityWorkerCheck,CapabilityCallCheck,CapabilityColors}.kt`.
 

@@ -72,6 +72,8 @@ internal class TeamDoor : TeamGateway {
     override suspend fun models(call: ApplicationCall, voice: RefusalVoice, serves: ProviderFilter) {
         val open = opened ?: return voice.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, STARTING)
         val lineup = open.providers.lineup().serving { open.allows(it, serves) }
+        // A team's clients are Claude Code in a terminal, whose 1M variant holds Claude Code's own million; `[desktop]`
+        // states Claude Desktop's Code-tab windows and does not reach this list.
         JsonReply(HttpStatusCode.OK, DoorCatalog(lineup).discovery().toString()).send(call)
     }
 

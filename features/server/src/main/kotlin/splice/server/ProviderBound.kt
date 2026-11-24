@@ -21,10 +21,10 @@ import io.ktor.http.URLDecodeException
 import io.ktor.http.decodeURLQueryComponent
 import io.ktor.server.application.ApplicationCall
 import splice.core.util.LogSink
-import splice.server.web.BrowserCookieWire
 import splice.share.OutwardHeaders
 
-internal class ProviderBound(private val keys: ServerKeys, private val log: LogSink) {
+internal class ProviderBound(keys: ServerKeys, private val log: LogSink) {
+    private val credentials = ServerCredentials(keys)
     private val bodyType = listOf(HttpHeaders.ContentType.lowercase())
 
     /** The headers [call]'s request carries to a provider's server: of the caller's own the ones among [forwarded],
@@ -38,7 +38,7 @@ internal class ProviderBound(private val keys: ServerKeys, private val log: LogS
      *  one of this server's keys. Empty when nothing is left. */
     fun query(sent: String): String {
         val parameters = sent.removePrefix("?").split('&')
-        val free = parameters.filterNot { credentialIn(it) || credentialIn(decoded(it)) }
+        val free = parameters.filterNot { credentials.inText(it) || credentials.inText(decoded(it)) }
         if (free.size == parameters.size) return sent
         // A parameter's name is the caller's own text and may be the key itself, so the log names none.
         val left = parameters.size - free.size
@@ -62,15 +62,13 @@ internal class ProviderBound(private val keys: ServerKeys, private val log: LogS
 
     private fun credentialHeaders(call: ApplicationCall, names: List<String>): Set<String> = names.filterTo(
         linkedSetOf(),
-    ) { name -> call.request.headers.getAll(name).orEmpty().any(::credentialIn) }
+    ) { name -> call.request.headers.getAll(name).orEmpty().any(credentials::inText) }
 
     /** The headers among [names] that [call] sent and that hold none of this server's keys, by lowercase name. */
     private fun keyFree(call: ApplicationCall, names: List<String>): Set<String> {
         val sent = names.filter { name -> call.request.headers.getAll(name).orEmpty().any(String::isNotBlank) }
         return sent.toSet() - keyed(call, sent)
     }
-
-    private fun credentialIn(text: String): Boolean = keys.heldIn(text) || BrowserCookieWire.heldIn(text)
 
     private fun decoded(parameter: String): String = try {
         parameter.decodeURLQueryComponent()

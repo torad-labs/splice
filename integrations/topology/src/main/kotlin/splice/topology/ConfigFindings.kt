@@ -9,7 +9,6 @@ package splice.topology
 
 import kotlinx.serialization.SerializationException
 import splice.core.capability.CapabilityDeclarations
-import splice.core.capability.CapabilityToml
 import splice.core.config.retiredKnobsByKey
 import splice.core.mode.FoundModes
 import splice.core.mode.ModeSettingsReader
@@ -21,6 +20,7 @@ import splice.core.topology.TopologyFinding
 import splice.core.topology.TopologyFindings
 import splice.core.topology.TopologyRuleViolation
 import splice.core.topology.gateway.ServingBoundMove
+import splice.core.topology.mods.ModsConfig
 import splice.core.topology.toml.TomlLines
 import splice.core.util.SafeFailureText
 import splice.core.util.TopologyTypeFailure
@@ -47,7 +47,12 @@ public fun interface LocalRowFindings {
 /** What boot reads beside splice.toml's own text: each retired knob splice's environment or saved settings still set
  *  ([retired], said as warnings: splice ignores them), and the modes splice carries ([modes]: their names, which a
  *  `[modes.<name>]` table must name, and the findings of any that are broken). Null leaves each out. */
-public data class BootSettings(val retired: RetiredSettings? = null, val modes: FoundModes? = null)
+public data class BootSettings(val retired: RetiredSettings? = null, val modes: ModeFindings? = null)
+
+/** Resolves the catalog after reading mod declarations, even when other settings prevent a topology decode. */
+public fun interface ModeFindings {
+    public fun of(mods: ModsConfig, configDir: Path, topology: Topology?): FoundModes
+}
 
 /** Reads splice.toml text the way boot does and collects EVERY finding instead of throwing the first.
  *
@@ -71,29 +76,25 @@ public object ConfigFindings {
         runtimes: LocalRowFindings = LocalRowFindings { emptyList() },
         beside: BootSettings = BootSettings(),
     ): ConfigRead {
-        // The capability tables are read apart, so each wrong one is its own finding beside the schema's
-        // (docs/specs/harness.md, decision 1); every other layer reads the file with them blanked out. The
-        // `[modes.<name>]` tables are read apart the same way (modes/README.md).
-        val split = CapabilityToml.split(source)
-        val modeTables = ModeTables.split(split.rest)
-        val text = modeTables.rest
-        val declared = { topology: Topology? ->
-            val messages = topology?.headsSpeaking(Dialect.ANTHROPIC_PASSTHROUGH)
-            CapabilityDeclarations(topology?.heads?.keys, messages = messages).read(split.tables)
-        }
-        val modes = { topology: Topology? ->
-            ModeSettingsReader(topology?.heads?.keys, beside.modes?.names).read(modeTables.tables)
-        }
+        // Read the extensions apart so their findings are reported alongside the schema's.
+        val parts = TopologyFileParts(source)
+        val mods = parts.mods
+        val desktop = parts.desktop.read
+        val text = parts.rest
         // A structural finding is answered BEFORE any decode: a head roster written as an array of strings sends the
         // decoder into the loop the preflight exists to prevent, so the decoder never sees such a file.
         val structural = TomlStructurePreflight.failures(text).map { finding(it) }
-        val elsewhere = { topology: Topology? ->
-            declared(topology).findings + modes(topology).findings + beside.modes?.findings.orEmpty()
-        }
-        if (structural.isNotEmpty()) return refused(structural + TopologyTypeMismatch.all(text) + elsewhere(null))
-        val decoded = decode(text)
-        val topology = decoded.getOrNull()
-            ?: return refused(undecodable(text, requireNotNull(decoded.exceptionOrNull())) + elsewhere(null))
+        val decoded = if (structural.isEmpty()) decode(text) else null
+        val topology = decoded?.getOrNull()
+        val messages = topology?.headsSpeaking(Dialect.ANTHROPIC_PASSTHROUGH)
+        val declared = CapabilityDeclarations(topology?.heads?.keys, messages = messages)
+            .read(parts.capabilities.tables)
+        val found = beside.modes?.of(mods.config, configDir ?: stateBase, topology)
+        val modes = ModeSettingsReader(topology?.heads?.keys, found?.names, served(topology)).read(parts.modes.tables)
+        val elsewhere = declared.findings + modes.findings + mods.findings + desktop.findings +
+            found?.findings.orEmpty()
+        if (decoded == null) return refused(structural + TopologyTypeMismatch.all(text) + elsewhere)
+        if (topology == null) return refused(undecodable(text, requireNotNull(decoded.exceptionOrNull())) + elsewhere)
         val moves = ServingBoundMove(topology)
         val checks = TopologyFindings.of(
             topology,
@@ -105,11 +106,27 @@ public object ConfigFindings {
             .map { it.copy(message = withFix(it), line = lineOf(text, it.path), move = it.move ?: moves.of(it)) }
         val local = runtimes.of(topology).distinct()
             .map { it.copy(line = rows.of(text, it.path) ?: lineOf(text, it.path)) }
-        val extensions = TopologyExtensions(declared(topology).capabilities, modes(topology).settings)
+        val extensions = TopologyExtensions(
+            capabilities = declared.capabilities,
+            modes = modes.settings,
+            mods = mods.config,
+            desktop = desktop.config,
+        )
         val ready = topology.copy(extensions = extensions)
         val warnings = TopologyFindings.warnings(topology)
             .map { it.copy(line = lineOf(text, it.path)) } + beside.retired?.warnings(topology).orEmpty()
-        return refused(checks + OperatorTelemetryFindings.of(topology) + local + elsewhere(topology), ready, warnings)
+        return refused(checks + OperatorTelemetryFindings.of(topology) + local + elsewhere, ready, warnings)
+    }
+
+    /** The first path segments the server's listener serves its commands at: each `[server] commands` entry, and the
+     *  key and the command of every head the listener serves by the same rule (ServerConfig.serves), either of which
+     *  reaches that head there; null without a topology. */
+    private fun served(topology: Topology?): Set<String>? = topology?.let { read ->
+        val heads = read.heads.flatMap { (key, head) ->
+            val command = head.claude.command ?: key
+            if (read.server.serves(key, command)) listOf(key, command) else emptyList()
+        }
+        (read.server.commands + heads).toSet()
     }
 
     /** A knob finding keeps boot's own reason as written (the console writer pins its exact text); the boot

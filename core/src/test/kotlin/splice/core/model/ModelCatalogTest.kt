@@ -450,6 +450,20 @@ class ModelCatalogTest {
         assertEquals(CompactionBudget(50_000, 31_791, 272_000), CompactionBudgets.forRow(codex, "gpt-5.6-luna"))
         assertEquals(153_000.0 / 222_000, codex.usageScale("gpt-5.6-luna", 200_000), 1e-12)
     }
+
+    @Test
+    fun `a calibrated row scales up, never to nothing, under a window near the top of Long`() {
+        val codex = ModelCatalog(
+            discoveryPrefix = "claude-codex--",
+            models = listOf(ModelEntry("gpt-5.6-luna", contextWindow = 272_000, compactionReserveTokens = 50_000)),
+            defaultContextWindow = 272_000,
+            pinnedModel = "gpt-5.6-luna",
+            windows = CatalogWindows(compactionReserveDefaults = CodexCompactionReserves),
+        )
+        // A `[desktop]` window is any positive whole number; 85% of it is still far past the row's own target.
+        val scale = codex.usageScale("gpt-5.6-luna", requestWindow = Long.MAX_VALUE)
+        assertTrue(scale > 1e12, "scale $scale")
+    }
 }
 
 // 2026-09-05: a session runs on the env it was launched with for its whole life, and scaling its
@@ -486,6 +500,15 @@ class SessionWindowScaleTest {
     fun `a 1m id ignores the posted session window`() {
         assertEquals(1_000_000L, codex.clientContextWindowFor("gpt-5.6-sol[1m]", sessionWindow = 400_000))
         assertEquals(1.0, codex.usageScale("gpt-5.6-sol[1m]", sessionWindow = 400_000))
+    }
+
+    @Test
+    fun `a window read off the request stands where a 1m id's million would`() {
+        // Claude Desktop's Code tab given 640,000 for a 1M pick (`[desktop] code_window_1m`): the door read it off the
+        // request, so the row's counts are scaled to it, not to the client's own million.
+        assertEquals(640_000L, codex.clientContextWindowFor("gpt-5.6-sol[1m]", 400_000, requestWindow = 640_000))
+        assertEquals(0.64, codex.usageScale("gpt-5.6-sol[1m]", 400_000, requestWindow = 640_000), 1e-12)
+        assertEquals(1.0, codex.usageScale("gpt-5.6-sol[1m]", 400_000, requestWindow = null), "no reading: the million")
     }
 
     @Test

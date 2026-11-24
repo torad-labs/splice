@@ -17,10 +17,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.client.ClientVersion
 import splice.core.client.ClientVersionParser
+import splice.core.server.SERVER_ROOT
 import splice.core.topology.ServerClient
 import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus
-import splice.server.SERVER_ROOT
 import splice.server.ServerKey
 import splice.share.CappedBodies
 import splice.share.RefusalVoice

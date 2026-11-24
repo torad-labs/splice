@@ -106,6 +106,7 @@ internal class TurnStreamer(
                 provider.catalog,
                 meta,
                 clientWindow.of(call, provider.catalog, meta),
+                clientWindow.requested(call),
             ),
             voice = inputs.voice,
         )

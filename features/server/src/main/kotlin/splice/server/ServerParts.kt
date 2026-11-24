@@ -3,6 +3,7 @@
 // providers' servers, the server's books (F5).
 package splice.server
 
+import splice.core.server.ServerModRoutes
 import splice.server.budget.BudgetGate
 import splice.server.ledger.TurnLedger
 import splice.share.ShareRelay
@@ -28,3 +29,6 @@ internal data class TurnCarriers(val relay: ShareRelay, val gateway: TeamGateway
 /** The server's books: the ledger every turn leaves its row in, the budgets each turn must be within (F5), and the
  *  tokens of each person's turns that ended in the last minute (F12). */
 internal data class ServerBooks(val turns: TurnLedger, val budgets: BudgetGate, val tokens: MinuteTokens)
+
+/** The listener's optional sign-ins and the modes the daemon offers under `/server/mod/...`. */
+internal data class OptionalRoutes(val signins: ListenerSignins, val mods: ServerModRoutes?)

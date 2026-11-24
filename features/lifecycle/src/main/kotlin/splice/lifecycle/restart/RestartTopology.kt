@@ -10,7 +10,6 @@ import splice.core.util.SafeFailureText
 import splice.core.util.TopologyRefusal
 import splice.topology.BootSettings
 import splice.topology.LocalRowFindings
-import splice.topology.RetiredSettings
 import splice.topology.TopologyLoader
 import java.nio.file.Path
 
@@ -21,15 +20,20 @@ public fun interface ConfigRepair {
     public fun offer(): Boolean
 }
 
+/** The successor's boot checks, shared by the first read and a re-read after repair. */
+public class RestartChecks(
+    private val beside: BootSettings,
+    private val runtimes: LocalRowFindings = LocalRowFindings { emptyList() },
+) {
+    internal fun read(path: Path): Topology = TopologyLoader.loadForBoot(path, runtimes, beside).topology
+}
+
 internal class RestartTopology(
     private val output: TerminalOutput,
     private val env: EnvReader,
     private val repair: ConfigRepair,
-    private val runtimes: LocalRowFindings,
+    private val checks: RestartChecks,
 ) {
-    /** A retired knob this command's environment or splice's saved settings still set: the daemon this restart
-     *  starts would refuse it as boot does. */
-    private val retired = BootSettings(RetiredSettings(env))
 
     /** The topology, or null when the restart must not proceed. The daemon that comes back reads this same file
      *  before it boots, so a file this CLI cannot read is one no successor can boot on: nothing is stopped. A
@@ -38,8 +42,8 @@ internal class RestartTopology(
      *  the starter, as boot does. */
     fun read(): Topology? {
         val path = TopologyLoader.configPath(env)
-        val loaded = Cancellables.runCatchingCancellable { TopologyLoader.loadForBoot(path, runtimes, retired) }
-        return loaded.map { it.topology }.fold(
+        val loaded = Cancellables.runCatchingCancellable { checks.read(path) }
+        return loaded.fold(
             onSuccess = { it },
             onFailure = { failure ->
                 output.line("splice: ${SafeFailureText.render(failure)}")
@@ -53,7 +57,7 @@ internal class RestartTopology(
     private fun repaired(path: Path): Topology? {
         output.line("splice: nothing was stopped and $path is unchanged")
         if (!repair.offer()) return null
-        return Cancellables.runCatchingCancellable { TopologyLoader.loadForBoot(path, runtimes, retired).topology }
+        return Cancellables.runCatchingCancellable { checks.read(path) }
             .onFailure { output.line("splice: ${SafeFailureText.render(it)}") }
             .getOrNull()
     }

@@ -4,9 +4,13 @@
 // with a `context-1m-` beta (it strips the `[1m]` hint from the model it sends). Claude Code compacts at a share of that
 // window, and splice writes the counts it reads, so the door scales each app-mode turn's counts to it (repo CLAUDE.md
 // §22). A request is app mode's when it carries the header splice's configuration gives every request of Desktop's.
+// The pair itself is splice.toml's `[desktop]` (DesktopConfig): Desktop's shipped windows unless the table states the
+// ones this install's Desktop gives, so scaling follows the window Desktop actually sets here.
 package splice.client.desktop
 
-public class DesktopAppWindow {
+import splice.core.topology.desktop.DesktopConfig
+
+public class DesktopAppWindow(private val desktop: DesktopConfig = DesktopConfig()) {
     /** Whether a request carrying [header] (its [APP_MODE_HEADER]) is one of Claude Desktop's in app mode. */
     public fun app(header: String?): Boolean = header?.trim().equals(APP_MODE, ignoreCase = true)
 
@@ -16,18 +20,12 @@ public class DesktopAppWindow {
         if (!app(header)) return null
         val million = model.endsWith(ONE_MILLION_HINT, ignoreCase = true) ||
             beta.orEmpty().split(',').any { it.trim().startsWith(MILLION_WINDOW_BETA) }
-        return if (million) MILLION_WINDOW else STANDARD_WINDOW
+        return if (million) desktop.codeWindow1m else desktop.codeWindow
     }
 }
 
 /** The request header Claude Code names its betas in. */
 public const val ANTHROPIC_BETA_HEADER: String = "anthropic-beta"
-
-// why: the window Desktop gives the Code tab's Claude Code for a model picked as itself.
-private const val STANDARD_WINDOW = 200_000L
-
-// why: the window Desktop gives it for a model picked as its 1M variant.
-private const val MILLION_WINDOW = 1_000_000L
 
 // How a model's 1M variant is named, and the beta Claude Code asks for it with.
 private const val ONE_MILLION_HINT = "[1m]"

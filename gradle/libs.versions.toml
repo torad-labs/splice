@@ -76,6 +76,8 @@ kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-c
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 jackson-core = { module = "com.fasterxml.jackson.core:jackson-core", version.ref = "jackson" }
+# Pinned mods validate the ZIP central directory in memory; the JDK's streaming reader only reads local entries.
+commons-compress = { module = "org.apache.commons:commons-compress", version = "1.28.0" }
 ktoml-core = { module = "com.akuleshov7:ktoml-core", version.ref = "ktoml" }
 ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
 ktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor" }

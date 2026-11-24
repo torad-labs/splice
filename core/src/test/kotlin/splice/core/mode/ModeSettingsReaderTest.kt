@@ -33,4 +33,27 @@ class ModeSettingsReaderTest {
         assertFalse("certainly" in said || "vermilion" in said) { said }
         assertTrue(read.settings.isEmpty())
     }
+
+    @Test
+    fun `a mode serves the server's listener only when its table says so, and for admins alone when that says so`() {
+        val read = read("[modes.template]\nserver_routes = true\nserver_admin_only = true\n")
+        assertEquals(mapOf("template" to ModeSetting(serverRoutes = true, serverAdminOnly = true)), read.settings)
+        assertEquals(mapOf("template" to ModeSetting(on = true)), read("[modes.template]\non = true\n").settings)
+        val wrong = read("[modes.template]\nserver_routes = \"yes\"\nserver_admin_only = 1\n").findings.map { it.path }
+        assertEquals(listOf("modes.template.server_routes", "modes.template.server_admin_only"), wrong)
+    }
+
+    @Test
+    fun `a mode serving the listener may not take a name the listener answers itself or serves a command at`() {
+        val served = ModeSettingsReader(null, null, setOf("team", "claude-team"))
+        val tables = { text: String -> CapabilityToml.split(text, MODE_TABLES).tables }
+        listOf("server", "door", "health", "team").forEach { name ->
+            val read = served.read(tables("[modes.$name]\nserver_routes = true\n"))
+            assertEquals(listOf("modes.$name.server_routes"), read.findings.map { it.path }) { name }
+            assertTrue(read.settings.isEmpty())
+        }
+        assertTrue(served.read(tables("[modes.team]\non = true\nserver_routes = false\n")).findings.isEmpty())
+        assertTrue(served.read(tables("[modes.harbor]\nserver_routes = true\n")).findings.isEmpty())
+        assertTrue(reader.read(tables("[modes.template]\nserver_routes = true\n")).findings.isEmpty())
+    }
 }

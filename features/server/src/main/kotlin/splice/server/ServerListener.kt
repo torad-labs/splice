@@ -19,6 +19,8 @@
 //                                  to that provider's own server, refusals in OpenAI's error shape (OpenAiRoute)
 //   ANY  /server/api/...           the server's own API, for a key whose person is an admin (ServerAdmin)
 //   GET  /server/metrics           each person's traffic, live, as Prometheus text, for an admin's key (F6)
+//   ANY  /server/mod/<name>/...    a mode whose `[modes.<name>] server_routes` is true, told who is asking and never
+//                                  the key; with `server_admin_only` only an admin's key reaches it (ModRoute)
 //   POST /server/otlp/v1/{logs,metrics,traces}
 //                                  a laptop's Claude Code telemetry, stamped with the key's person and team and relayed
 //                                  to the collector `[server.telemetry] forward_to` names; no such path without one (F8)
@@ -87,6 +89,9 @@ import io.ktor.server.netty.NettyApplicationEngine
 import io.ktor.server.request.httpMethod
 import io.ktor.server.response.respondText
 import kotlinx.coroutines.CoroutineDispatcher
+import splice.core.server.SERVER_HEALTH_ROUTE
+import splice.core.server.SERVER_MOD_SEGMENT
+import splice.core.server.SERVER_ROOT
 import splice.core.topology.DOOR_SEGMENT
 import splice.core.topology.ServerAddress
 import splice.core.topology.ServerConfig
@@ -99,6 +104,7 @@ import splice.server.caller.KeyAdmission
 import splice.server.client.ClientCheckins
 import splice.server.client.ClientMinimum
 import splice.server.load.DrainGate
+import splice.server.mod.ModRoute
 import splice.server.path.PathAliases
 import splice.server.path.RequestPaths
 import splice.server.signin.SigninAttempts
@@ -124,11 +130,12 @@ internal class ServerListener(
     /** Blocking work runs here: reading a head's launch, and the relay's JDK I/O. */
     io: CoroutineDispatcher,
     private val log: LogSink,
-    identity: ListenerSignins,
+    optional: OptionalRoutes,
 ) {
     private val voice = RefusalVoice(SERVER_ERROR_PREFIX)
     private val catalog = ShareCatalog(parts.heads, io, voice)
     private val addresses = ClientAddresses(server.trustedProxies)
+    private val identity = optional.signins
     private val adminAccess = AdminAccess(server, addresses)
     private val keys = KeyApi(parts.keys, log, reads.audit)
     private val attempts = SigninAttempts(addresses, identity.clock)
@@ -167,6 +174,8 @@ internal class ServerListener(
     private val heads = HeadCommandRoute(parts, routing, log)
     private val profile = ProfileRoute(server, parts.heads, io, addresses, secure = tls != null)
     private val telemetry = server.telemetry?.let { TelemetryRelay(it, voice, log) }
+    private val mods =
+        ModRoute(optional.mods, server.teams, parts.people, adminAccess, voice, io, ServerCredentials(parts.keys))
 
     /** The path the telemetry relay answers under (F8). */
     private val otlpRoute = listOf(SERVER_ROOT, OTLP_ROUTE)
@@ -233,7 +242,7 @@ internal class ServerListener(
     /** Routes that handle their own auth or need none: health, sign-in, forward_auth, and install script. */
     private suspend fun answeredOpen(call: ApplicationCall, path: List<String>?): Boolean = when {
         path == null -> false
-        call.request.httpMethod == HttpMethod.Get && path == listOf(HEALTH_ROUTE) -> {
+        call.request.httpMethod == HttpMethod.Get && path == listOf(SERVER_HEALTH_ROUTE) -> {
             if (parts.limits.load.draining) {
                 call.respondText(DRAINING_BODY, ContentType.Application.Json, HttpStatusCode.ServiceUnavailable)
             } else {
@@ -260,10 +269,15 @@ internal class ServerListener(
         }
     }
 
-    /** [path] is none of the listener's own routes: the server's admin API, the team's door, or one of its commands. */
+    /** [path] is none of the listener's own routes: the server's admin API or its modes, the team's door, or one of its
+     *  commands. */
     private suspend fun beyond(call: ApplicationCall, key: ServerKey, path: List<String>) {
         when (path.first()) {
-            SERVER_ROOT -> admin.answer(call, key, path.drop(1))
+            SERVER_ROOT -> if (path.getOrNull(1) == SERVER_MOD_SEGMENT) {
+                mods.answer(call, key.person, path.drop(2))
+            } else {
+                admin.answer(call, key, path.drop(1))
+            }
             DOOR_SEGMENT -> teamDoor.answer(call, key, path.drop(1))
             else -> if (!openAi.answered(call, key, path)) heads.answer(call, key, path)
         }
@@ -284,12 +298,8 @@ internal class ServerListener(
 /** What every error the server listener answers with starts with. */
 internal const val SERVER_ERROR_PREFIX: String = "splice server: "
 
-private const val HEALTH_ROUTE = "health"
 private const val HEALTH_BODY = """{"status":"ok"}"""
 private const val DRAINING_BODY = """{"status":"draining"}"""
-
-/** The first path segment of the server's own routes; no command may be named it. */
-internal const val SERVER_ROOT: String = "server"
 
 // why: a stop lets requests already in the listener finish for a second before it closes; a relayed turn still
 // streaming is cut, and its client's Claude Code retries it as it retries any cut turn.

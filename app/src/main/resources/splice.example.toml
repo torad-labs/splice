@@ -10,6 +10,17 @@
 # Kimi, or Muse subscription.
 # A new OpenAI-compatible API-key vendor is otherwise pure TOML: base URL, key env, and models.
 
+# Optional: separately installed modes (docs/specs/server-mode.md#external-mode-jars).
+# Only list JARs you trust to run with your permissions. Use one path or URL and its real SHA-256;
+# check with `splice check-config` before restarting. URL JARs are cached by pin, never auto-updated.
+# [mods]
+# dir = "mods"                         # default: mods/ beside splice.toml
+# [[mods.jar]]
+# name = "inventory-release"
+# path = "inventory.jar"               # relative to dir, or absolute
+# sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+# To fetch instead, replace path with url = "https://downloads.example.org/splice/inventory.jar".
+
 [daemon]
 control_port = 3096          # loopback-only control plane + dashboard
 # state_dir = "/mnt/fast/splice-state"   # where the daemon keeps its lock, per-head state and traces (default
@@ -113,6 +124,18 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # path = "/home/me/projects/app" # the session's working directory, longest path wins
 # instructions = "Summarize the migration plan in docs/plan.md first."
 
+# ── Claude Desktop's Code-tab windows ──
+# The context windows Claude Desktop gives its Code tab's Claude Code on this install. Desktop sets them
+# itself (200,000, and 1,000,000 for a model picked as its 1M variant) and its Claude Code compacts at a
+# share of them; splice scales the counts each Desktop turn reports to these windows, so every model
+# compacts at its own real window. State them here only when this install's Desktop is given others (a
+# managed policy, a newer Desktop). The picker still advertises each provider's real ceiling; scaling,
+# not that number, carries a model whose window differs. Read when the daemon starts, so restart the
+# daemon and reopen Desktop after an edit.
+# [desktop]
+# code_window = 200000       # a model picked as itself
+# code_window_1m = 1000000   # a model picked as its 1M variant; never below code_window
+
 # ── terminal launch profiles: `splice launch claude --profile <name>` ──
 # A Claude folder of the profile's own, rebuilt from your ~/.claude before each launch (never written there), so the
 # session loads only what the profile keeps. Read at the daemon's start; boot refuses a dir that is ~/.claude itself.
@@ -123,6 +146,13 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # keep_plugins = ["code-review@claude-plugins-official"]  # none when empty
 # drop_blocks = ["team-notes"]  # CLAUDE.md blocks: <!-- name --> … <!-- /name --> or # BEGIN name … # END name
 # drop_names = ["team-", "old"]  # skills, agents and commands whose names start with these are left out
+
+# ── modes: turn a mode on or off, per head, and on a team server (modes/README.md) ──
+# `splice setup`, the console's Settings > Modes and `PUT /api/modes/<name>` write this table; its keys are optional.
+# [modes.template]
+# on = true                   # every head; heads = { kimi = false } overrides one
+# server_routes = true        # with [server]: key holders reach the mode at /server/mod/template/... (default false)
+# server_admin_only = true    # and only the people [server] admins names (default false)
 
 # ── ChatGPT Codex subscription via OAuth ───────────────────────────────────
 [providers.codex]

@@ -13,6 +13,7 @@ import splice.core.model.ModelCatalog
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
 import splice.core.util.JsonWire
+import splice.head.GatewayTurn
 import splice.head.wire.CollectingTerminal
 import splice.head.wire.FrameWrite
 import splice.head.wire.SseEmitterFactory
@@ -45,14 +46,16 @@ public class DirectAnthropicTurn(
     private val emitters = SseEmitterFactory()
     private val wiring = TurnWiring()
 
+    /** [model]'s turn served on [call], its counts scaled to [turn]'s windows: the one its session holds and the one
+     *  its gateway read off the request. */
     public suspend fun serve(
         call: ApplicationCall,
         model: String,
         stream: Boolean,
-        clientWindow: Long?,
+        turn: GatewayTurn,
         drive: DirectTurnDrive,
     ) {
-        val usagePayload = wiring.usagePayloadBuilderFor(catalog, model, clientWindow)
+        val usagePayload = wiring.usagePayloadBuilderFor(catalog, model, turn.clientWindow, turn.requestWindow)
         if (stream) {
             serveStream(call, model, usagePayload, drive)
         } else {

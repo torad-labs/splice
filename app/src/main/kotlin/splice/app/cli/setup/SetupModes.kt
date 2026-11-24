@@ -6,7 +6,7 @@
 package splice.app.cli.setup
 
 import splice.app.modes.ModeBoot
-import splice.core.mode.ModeSetting
+import splice.core.mode.ModeTableEdit
 import splice.core.mode.ModeTableWrite
 import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriteResult
@@ -61,12 +61,11 @@ internal class SetupModes(
     fun save(path: Path, on: List<String>) {
         if (on.isEmpty()) return
         val topology = Cancellables.runCatchingBestEffort { TopologyLoader.parse(Files.readString(path)) }.getOrNull()
-        val current = topology?.modes.orEmpty()
         val backups = TopologyStatePaths(env).of(topology).configBackupsDir
         val writer = TopologyWriter(path, backups, TopologyParse(TopologyLoader::parse))
         for (name in on) {
-            val wanted = (current[name] ?: ModeSetting()).copy(on = true)
-            val result = Cancellables.runCatchingBestEffort { ModeTableWrite(writer).write(name, wanted) }
+            val turnOn = ModeTableEdit(setsOn = true, on = true)
+            val result = Cancellables.runCatchingBestEffort { ModeTableWrite(writer).write(name, turnOn) }
             val refused = (result.getOrNull() as? TopologyWriteResult.Refused)
                 ?.findings?.joinToString("; ") { it.text() }
             val failed = result.exceptionOrNull()?.let { SafeFailureText.render(it) }

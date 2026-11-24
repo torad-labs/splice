@@ -7,7 +7,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
 import splice.core.util.SecureFile
+import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 
 internal class DesktopLibraryFiles {
@@ -18,6 +20,15 @@ internal class DesktopLibraryFiles {
 
     /** [file] read as a JSON object; null when there is no such file or it holds no JSON object. */
     fun read(file: Path): JsonObject? = text(file)?.let(::parsed)
+
+    /** [file] read as the JSON object splice is to update: an empty one where there is no such file. A file that is
+     *  there but is a link, not a regular file, or holds no JSON object is refused, so splice never writes over what
+     *  the person or Desktop has there. */
+    fun updatable(file: Path): JsonObject {
+        if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) return JsonObject(emptyMap())
+        if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) throw IOException("$file is not a regular file")
+        return read(file) ?: throw IOException("$file holds no JSON object; it was left as it is")
+    }
 
     /** [text] read as a JSON object, or null. */
     fun parsed(text: String): JsonObject? = JsonScalars.objectOrNull(Json, text)

@@ -40,7 +40,7 @@ internal class DoorRecipe(
         if (chosen is ClaudeToRun.Refused) return LaunchOutcome.Refused(chosen.reason)
         // custom-provider (cp-overlay): the person's own --settings are merged into the one overlay, never a second one.
         val modelGiven = ClaudeArgv.namesModel(extraArgs)
-        val held = held(door, modelGiven)
+        val held = held(door, modelGiven, caller.noProxy)
         val merged = when (val m = DoorOverlayMerge(door.overlay, caller.cwd, held).merge(extraArgs)) {
             is DoorOverlayMerge.Merged.Refused -> return LaunchOutcome.Refused(m.reason)
             is DoorOverlayMerge.Merged.Ready -> m
@@ -52,7 +52,7 @@ internal class DoorRecipe(
             addAll(merged.args)
         }
         val config = wrap.ownHome().configRootUnsets(caller.inheritedConfigDir, headDirs)
-        val headers = door.wallMs?.let { ambient.customHeaders(it, emptyList()) }.orEmpty()
+        val headers = ambient.customHeaders(door.wallMs, emptyList(), merged.headers)
         // what the overlay says empty, the process environment takes out
         val cleared = held.filterValues(String::isEmpty).keys
         val env = door.env - cleared + held.filterValues(String::isNotEmpty) + headers
@@ -63,15 +63,16 @@ internal class DoorRecipe(
     }
 
     /** What [door]'s launch plants beside what it carries, each in the process environment and in the overlay's `env`:
-     *  the client's timers for the heads' longest wall, the door's window as the context and compaction windows, and
-     *  NO_PROXY with the door's host; and with [modelGiven], the person's `--model`, an empty starting model, which
-     *  the process environment takes out. None is a secret. */
-    private fun held(door: DoorLaunchSpec, modelGiven: Boolean): Map<String, String> = buildMap {
-        door.wallMs?.let { putAll(LaunchClientTimers.of(it)) }
-        putAll(LaunchModelEnvironment.gatewayWindows(door.window))
-        putAll(ambient.noProxy(door.env[GATEWAY_BASE_URL]))
-        if (modelGiven) put(STARTING_MODEL, "")
-    }
+     *  the client's timers for the longest wall of its providers and heads, the door's window as the context and
+     *  compaction windows, and NO_PROXY with [noProxy], the caller's, and the door's host; and with [modelGiven], the
+     *  person's `--model`, an empty starting model, which the process environment takes out. None is a secret. */
+    private fun held(door: DoorLaunchSpec, modelGiven: Boolean, noProxy: List<String>): Map<String, String> =
+        buildMap {
+            door.wallMs?.let { putAll(LaunchClientTimers.of(it)) }
+            putAll(LaunchModelEnvironment.gatewayWindows(door.window))
+            putAll(ambient.noProxy(door.env[GATEWAY_BASE_URL], noProxy))
+            if (modelGiven) put(STARTING_MODEL, "")
+        }
 }
 
 /** Claude Code's variable for the model a session starts on, which its `--model` outranks. */

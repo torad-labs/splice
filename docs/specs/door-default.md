@@ -52,14 +52,21 @@ starts Claude Code in its gateway mode, the way Claude Code runs as a client of 
   `/v1/models`, decision 4), `ANTHROPIC_MODEL` (the selector of the model a session starts on, so the session shows
   the model it runs), `CLAUDE_CODE_MAX_CONTEXT_TOKENS` (the declared window), `CLAUDE_CODE_AUTO_MODE_SERVER=0`,
   `DISABLE_LOGIN_COMMAND=1` and `DISABLE_LOGOUT_COMMAND=1`. Since Nov 23, 2026 (#791), also what a head's launch sets
-  from the same code: the client's timers (`API_TIMEOUT_MS` from the longest wall of the heads a turn can run on,
-  `API_FORCE_IDLE_TIMEOUT=0`, `CLAUDE_CODE_RETRY_WATCHDOG`, the non-streaming retry cap, the stream and byte idle
-  timers) and the wall header in `ANTHROPIC_CUSTOM_HEADERS`; `CLAUDE_CODE_AUTO_COMPACT_WINDOW` from the declared
-  window and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`; and `NO_PROXY` and `no_proxy`, the shell's lists with loopback and the
-  door's host added. A caller's `--model` leaves `ANTHROPIC_MODEL` unset.
+  from the same code: the client's timers (`API_TIMEOUT_MS` from the longest wall of the providers and heads a turn
+  can run on, or for another machine's door the wall that machine says; `API_FORCE_IDLE_TIMEOUT=0`,
+  `CLAUDE_CODE_RETRY_WATCHDOG`, the non-streaming retry cap, the stream and byte idle timers) and the wall header in
+  `ANTHROPIC_CUSTOM_HEADERS`; `CLAUDE_CODE_AUTO_COMPACT_WINDOW` from the declared window and
+  `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`; and `NO_PROXY` and `no_proxy`, the caller shell's lists (which the launcher sends,
+  shim-30) and the daemon's, with loopback and the door's host added. A caller's `--model` (an option, read with
+  Claude Code's own grammar) leaves `ANTHROPIC_MODEL` unset.
+- `ANTHROPIC_CUSTOM_HEADERS` in the recipe holds splice's own headers alone (the wall, and a caller's `--settings`
+  headers taken out of the overlay). The launcher puts the caller shell's headers before them, without the four splice
+  plants (`x-splice-client-wall-ms`, `-client-window`, `-launch-proof`, `x-splice-client`), so a header that holds a
+  secret of the caller's never reaches the daemon and an outer session's never rides along.
 - In `unset`: everything that would send the session somewhere else or lay a list of models beside the gateway's:
   every provider switch (`CLAUDE_CODE_USE_BEDROCK`, `_VERTEX`, `_FOUNDRY`, `_MANTLE`), the Mantle variables
-  (`ANTHROPIC_BEDROCK_MANTLE_BASE_URL`, `AWS_BEARER_TOKEN_BEDROCK`), `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`,
+  (`ANTHROPIC_BEDROCK_MANTLE_BASE_URL`, `AWS_BEARER_TOKEN_BEDROCK`), `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` and
+  its refresh token, `_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL`,
   the tier variables (`ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL` with their name and description), and
   `ANTHROPIC_SMALL_FAST_MODEL` and `ANTHROPIC_CUSTOM_MODEL_OPTION`.
 - No `CLAUDE_CONFIG_DIR`: the session runs over the person's own Claude folder, as the wrapped `claude` head does.

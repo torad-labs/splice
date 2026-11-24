@@ -103,16 +103,17 @@ class LaunchSpecClientAuthTest {
 
     // Failure-handling slice 5 (2026-10-27): a turn that meets a limit holds in its own request, up to seven days,
     // so the client's request timeout outlives the head's whole-turn cap (600 s here) and the longest hold together.
-    // Every request names that timeout to the head in its wall header, so a hold fits inside it; the person's own
-    // custom headers ride along, and a wall header of theirs gives way to the launch's.
+    // Every request names that timeout to the head in its wall header, so a hold fits inside it. #791: the recipe
+    // names splice's own headers alone; the launcher puts the caller's before them in the shell (ShimHeadersTest), so
+    // the daemon's own environment never stands in for the caller's.
     @Test
     fun `every launch plants a client timeout longer than the longest hold, and the wall`(@TempDir tmp: Path) {
         val built = factory(tmp).launchSpecFor(build(tmp, Dialect.OPENAI_RESPONSES), 3099, forwardClientAuth = false)
         val spec = built.copy(trees = HeadTrees(tmp.resolve(".claude-held")))
-        val ambient = "x-team: blue\nx-splice-client-wall-ms: 5"
+        val daemonOwn = "x-team: blue\nx-splice-client-wall-ms: 5"
         val service = LaunchService(
             ClaudeConfigMaterializer(tmp.resolve("home")),
-            envReader = EnvReader { name -> ambient.takeIf { name == "ANTHROPIC_CUSTOM_HEADERS" } },
+            envReader = EnvReader { name -> daemonOwn.takeIf { name == "ANTHROPIC_CUSTOM_HEADERS" } },
         )
 
         val launched = service.launchOutcome(spec, emptyList(), dangerouslySkipPermissions = false)
@@ -124,7 +125,7 @@ class LaunchSpecClientAuthTest {
         // can carry another launch's window in the head's registry.
         val window = env.getValue("CLAUDE_CODE_MAX_CONTEXT_TOKENS")
         assertEquals(
-            listOf("x-team: blue", "x-splice-client-wall-ms: $timeout", "x-splice-client-window: $window"),
+            listOf("x-splice-client-wall-ms: $timeout", "x-splice-client-window: $window"),
             env.getValue("ANTHROPIC_CUSTOM_HEADERS").lines(),
         )
     }
@@ -132,24 +133,19 @@ class LaunchSpecClientAuthTest {
     // PR #247 review, Oct 29 (security): a head that forwards the caller's own login and holds logins of its own
     // serves only a caller proven splice's. A session launched on it names the head's turn key in the launch proof
     // header, among its custom headers. A translated head's session, whose bearer is the turn key already, names
-    // none, and a proof an outer session passes down never rides along, on either.
+    // none. A proof an outer session passes down is dropped by the launcher (ShimHeadersTest).
     @Test
     fun `a session on a head that forwards its own login names the turn key as its proof, and no other`(
         @TempDir tmp: Path,
     ) {
         val mgmt = MgmtKey(StatePaths(baseOverride = tmp))
-        val ambient = "x-team: blue\nx-splice-launch-proof: from-an-outer-session"
-        val service = LaunchService(
-            ClaudeConfigMaterializer(tmp.resolve("home")),
-            envReader = EnvReader { name -> ambient.takeIf { name == "ANTHROPIC_CUSTOM_HEADERS" } },
-        )
+        val service = LaunchService(ClaudeConfigMaterializer(tmp.resolve("home")))
         val proofs = { forward: Boolean ->
             val spec = factory(tmp, mgmtKey = mgmt)
                 .launchSpecFor(build(tmp, Dialect.ANTHROPIC_PASSTHROUGH), 3099, forwardClientAuth = forward)
                 .copy(trees = HeadTrees(tmp.resolve(".claude-held")))
             val launched = service.launchOutcome(spec, emptyList(), dangerouslySkipPermissions = false)
             val headers = (launched as LaunchOutcome.Ready).recipe.env.getValue("ANTHROPIC_CUSTOM_HEADERS").lines()
-            assertTrue("x-team: blue" in headers, "the person's own headers ride along: $headers")
             headers.filter { it.startsWith("x-splice-launch-proof", ignoreCase = true) }
         }
 

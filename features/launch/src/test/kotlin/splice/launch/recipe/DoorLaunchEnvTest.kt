@@ -59,8 +59,9 @@ class DoorLaunchEnvTest(@param:TempDir private val tmp: Path) {
         args: List<String> = emptyList(),
         ambient: Map<String, String> = emptyMap(),
         door: DoorLaunchSpec = spec(),
+        noProxy: List<String> = emptyList(),
     ): LaunchRecipe {
-        val caller = LaunchCaller(cwd = tmp.toString())
+        val caller = LaunchCaller(cwd = tmp.toString(), noProxy = noProxy)
         val outcome = service(ambient).onDoor.outcome(door, args, false, caller, emptyList())
         return (outcome as LaunchOutcome.Ready).recipe
     }
@@ -95,22 +96,33 @@ class DoorLaunchEnvTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `the wall header rides the custom headers beside the shell's own, and only in the process environment`() {
-        val ambient = mapOf("ANTHROPIC_CUSTOM_HEADERS" to "x-corp-route: blue\nx-splice-client-wall-ms: 1")
-        val recipe = launch(ambient = ambient)
-        val headers = recipe.env.getValue("ANTHROPIC_CUSTOM_HEADERS").lines()
-        assertEquals(listOf("x-corp-route: blue", "x-splice-client-wall-ms: $WALL"), headers)
-        // the shell's headers can carry its own secrets, so the overlay never repeats them
+    fun `the recipe's custom headers are splice's own, never the daemon's environment, and never in the overlay`() {
+        val daemonOwn = mapOf("ANTHROPIC_CUSTOM_HEADERS" to "x-corp-route: blue\nx-splice-client-wall-ms: 1")
+        val recipe = launch(ambient = daemonOwn)
+        assertEquals(listOf("x-splice-client-wall-ms: $WALL"), recipe.env.getValue("ANTHROPIC_CUSTOM_HEADERS").lines())
+        // the caller's headers can carry secrets: the launcher puts them before these in the shell (ShimHeadersTest)
         assertFalse("ANTHROPIC_CUSTOM_HEADERS" in overlayEnv(recipe))
         assertFalse("x-corp-route" in recipe.argv.joinToString(" "))
     }
 
     @Test
-    fun `with no head's wall to outlive no timer is planted`() {
+    fun `a caller's --settings headers join the launch's in the environment, never standing over the wall`() {
+        val headers = "x-splice-wrapper: acme-ai/1.4.0\nx-team: blue\nx-splice-client-wall-ms: 1"
+        val inline = """{"env":{"ANTHROPIC_CUSTOM_HEADERS":${JsonPrimitive(headers)}}}"""
+        val recipe = launch(listOf("--settings", inline))
+        assertEquals(
+            listOf("x-splice-wrapper: acme-ai/1.4.0", "x-team: blue", "x-splice-client-wall-ms: $WALL"),
+            recipe.env.getValue("ANTHROPIC_CUSTOM_HEADERS").lines(),
+        )
+        assertFalse("ANTHROPIC_CUSTOM_HEADERS" in overlayEnv(recipe), "the overlay never outranks the wall header")
+    }
+
+    @Test
+    fun `with no wall to outlive no timer is planted, and the headers still say none, so an outer one is dropped`() {
         val recipe = launch(door = spec(wall = null))
         assertNull(recipe.env["API_TIMEOUT_MS"])
         assertNull(overlayEnv(recipe)["API_TIMEOUT_MS"])
-        assertNull(recipe.env["ANTHROPIC_CUSTOM_HEADERS"])
+        assertEquals("", recipe.env["ANTHROPIC_CUSTOM_HEADERS"])
     }
 
     @Test
@@ -148,6 +160,15 @@ class DoorLaunchEnvTest(@param:TempDir private val tmp: Path) {
             assertTrue("ANTHROPIC_MODEL" in recipe.unset, "$args")
             assertEquals("", overlayEnv(recipe)["ANTHROPIC_MODEL"], "$args")
             assertEquals(args, recipe.argv.takeLast(args.size))
+        }
+    }
+
+    @Test
+    fun `a --model that is another option's value or a positional word does not stand for the caller's model`() {
+        for (args in listOf(listOf("--system-prompt", "--model"), listOf("--", "--model", "opus"))) {
+            val recipe = launch(args)
+            assertEquals(STARTING, recipe.env["ANTHROPIC_MODEL"], "$args")
+            assertEquals(STARTING, overlayEnv(recipe)["ANTHROPIC_MODEL"], "$args")
         }
     }
 
@@ -192,6 +213,8 @@ class DoorLaunchEnvTest(@param:TempDir private val tmp: Path) {
         val others = listOf(
             "ANTHROPIC_API_KEY",
             "CLAUDE_CODE_OAUTH_TOKEN",
+            "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
+            "_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL",
             "AWS_BEARER_TOKEN_BEDROCK",
             "ANTHROPIC_BEDROCK_BASE_URL",
             "ANTHROPIC_BEDROCK_MANTLE_BASE_URL",
@@ -213,10 +236,11 @@ class DoorLaunchEnvTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `NO_PROXY keeps the shell's entries and adds loopback, both spellings, in the environment and the overlay`() {
-        val ambient = mapOf("NO_PROXY" to "corp.example, 10.0.0.1", "no_proxy" to "internal.example,corp.example")
-        val recipe = launch(ambient = ambient)
-        val expected = "corp.example,10.0.0.1,internal.example,127.0.0.1,localhost"
+    fun `NO_PROXY keeps the caller's entries and the daemon's and adds loopback, in both spellings and both places`() {
+        val caller = listOf("corp.example, 10.0.0.1", "internal.example,corp.example")
+        val daemonOwn = mapOf("NO_PROXY" to "daemon.example")
+        val recipe = launch(ambient = daemonOwn, noProxy = caller)
+        val expected = "corp.example,10.0.0.1,internal.example,daemon.example,127.0.0.1,localhost"
         for (env in listOf(recipe.env, overlayEnv(recipe))) {
             assertEquals(expected, env["NO_PROXY"])
             assertEquals(expected, env["no_proxy"])

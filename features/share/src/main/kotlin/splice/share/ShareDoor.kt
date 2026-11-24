@@ -33,6 +33,9 @@ public data class SharedDoorLaunch(
     val window: Long,
     val model: String? = null,
     val rows: List<SharedDoorRow> = emptyList(),
+    /** #791: the client timeout a session there must outlive, the longest wall of that machine's providers; absent
+     *  from a machine before it, and null while it has none. */
+    val wallMs: Long? = null,
 )
 
 /** One row of the picker: the selector a pick sends, the model's label, and the command its head runs as there. */

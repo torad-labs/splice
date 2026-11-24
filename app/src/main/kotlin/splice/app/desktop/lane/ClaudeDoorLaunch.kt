@@ -72,6 +72,7 @@ internal class ClaudeDoorLaunch(
             session.unset(),
             session.overlay(LaunchMarker.here, LaunchMarker.SPLICE_LAUNCH_KEY, loginHooks),
             session.window,
+            wallMs = lineup.clientWallMs(),
         )
     }
 

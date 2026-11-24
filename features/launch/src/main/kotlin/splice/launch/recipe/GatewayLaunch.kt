@@ -6,6 +6,7 @@
 // (ProcessEnvironment.route). Split from LaunchService, which builds the rest of a head's launch as before.
 package splice.launch.recipe
 
+import splice.client.desktop.FIRST_PARTY_ENV
 import splice.client.desktop.GATEWAY_BASE_URL
 import splice.client.desktop.GATEWAY_TOKEN
 import splice.client.desktop.GatewayMode

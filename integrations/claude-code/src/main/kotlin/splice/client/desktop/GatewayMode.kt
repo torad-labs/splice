@@ -27,7 +27,7 @@ public class GatewayMode {
     /** What a gateway-mode launch takes out of the environment it inherits: every way past the gateway, and every
      *  model list but the gateway's. */
     public val unset: List<String> =
-        (providerSwitches + ALL_SWITCHES).distinct() + CREDENTIALS + ClaudeModelLists.variables
+        (providerSwitches + ALL_SWITCHES).distinct() + CREDENTIALS + FIRST_PARTY_ENV + ClaudeModelLists.variables
 
     /** [unset] as a settings file's `env` spells it taken out: a person's settings `env` is applied over the process
      *  environment, so a variable this launch unsets can come back from there. Each switch is `0`, which Claude Code
@@ -46,6 +46,14 @@ public const val GATEWAY_BASE_URL: String = "ANTHROPIC_BASE_URL"
 public const val GATEWAY_TOKEN: String = "ANTHROPIC_AUTH_TOKEN"
 public const val GATEWAY_DISCOVERY: String = "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"
 
+/** The headers Claude Code adds to every request, one per line, where a launch names its client wall to the gateway. */
+public const val GATEWAY_HEADERS: String = "ANTHROPIC_CUSTOM_HEADERS"
+
+/** Claude Code's word that ANTHROPIC_BASE_URL is Anthropic's own API behind another address (read in the 2.1.326
+ *  client, where it is that variable's declared companion): set only by a head's launch that reaches Anthropic, and
+ *  taken out of a session on the gateway, which is not Anthropic. */
+public const val FIRST_PARTY_ENV: String = "_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL"
+
 // Claude Code's provider switches: discovery does not run while one is set.
 private val ALL_SWITCHES =
     listOf("CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_USE_MANTLE")
@@ -54,4 +62,4 @@ private val ALL_SWITCHES =
 private const val SWITCH_OFF = "0"
 
 // The other credentials Claude Code would send in place of the gateway's key.
-private val CREDENTIALS = listOf("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN")
+private val CREDENTIALS = listOf("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_REFRESH_TOKEN")

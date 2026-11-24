@@ -21,7 +21,11 @@ public data class DoorLaunchSpec(
     /** #791: the client timeout the session must outlive, the longest wall of the heads its turns can run on; null
      *  while no head here has one, and then no timer is planted. */
     val wallMs: Long? = null,
-)
+) {
+    /** This launch outliving [walls] too, the walls of the heads here: a 0.6.4 file's head can hold a longer cap than
+     *  its provider's route. */
+    public fun outliving(walls: List<Long>): DoorLaunchSpec = copy(wallMs = (walls + listOfNotNull(wallMs)).maxOrNull())
+}
 
 /** The door's part of a launch of `claude`. Assigned by the daemon before routes serve requests. */
 public interface ClaudeDoor {

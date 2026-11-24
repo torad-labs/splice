@@ -73,4 +73,14 @@ class DoorOverlayMergeTest(@param:TempDir private val tmp: Path) {
         assertFalse("ANTHROPIC_AUTH_TOKEN" in envOf(overlayOf(result)))
         assertEquals(KEY, session.env()["ANTHROPIC_AUTH_TOKEN"], "the key rides the process environment")
     }
+
+    @Test
+    fun `a caller's custom headers leave the overlay, where they would outrank the wall, and come back apart`() {
+        val inline = """{"env":{"ANTHROPIC_CUSTOM_HEADERS":"x-splice-wrapper: acme-ai/1.4.0","FOO":"bar"}}"""
+        val result = merged(listOf("--settings", inline)) as DoorOverlayMerge.Merged.Ready
+        val env = envOf(overlayOf(result))
+        assertFalse("ANTHROPIC_CUSTOM_HEADERS" in env)
+        assertEquals("bar", env["FOO"])
+        assertEquals("x-splice-wrapper: acme-ai/1.4.0", result.headers)
+    }
 }

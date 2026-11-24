@@ -21,6 +21,7 @@ import splice.client.MaterializeSignIn
 import splice.client.MaterializeSpec
 import splice.client.SessionHelpers
 import splice.client.TrustedLaunch
+import splice.client.desktop.FIRST_PARTY_ENV
 import splice.client.desktop.GATEWAY_DISCOVERY
 import splice.client.desktop.providerSwitches
 import splice.client.mcp.HubLaunchArgs
@@ -321,7 +322,8 @@ public class LaunchService(
         val dirs = listOf(spec.trees.own) + spec.trees.siblings
         val config = wrapped?.configRootUnsets(caller.inheritedConfigDir, dirs).orEmpty()
         // V4-449: what this head no longer plants must not leak in from an outer head's session either.
-        val planted = (gateway?.let { onGateway.env(buildEnv(held, emptyList()), held, it) } ?: buildEnv(held, slots)) +
+        val own = { tiers: List<Pair<String, String>> -> buildEnv(held, tiers, caller.noProxy) }
+        val planted = (gateway?.let { onGateway.env(own(emptyList()), held, it) } ?: own(slots)) +
             effort.env(held)
         val clientModels = if (spec.gateway.clientModels) {
             LaunchModelEnvironment.inherited(planted)
@@ -345,7 +347,12 @@ public class LaunchService(
     private fun helperShadows(spec: LaunchSpec): List<String> =
         if (spec.gateway.keyHelper != null) listOf("ANTHROPIC_AUTH_TOKEN") else emptyList()
 
-    private fun buildEnv(spec: LaunchSpec, slots: List<Pair<String, String>>): Map<String, String> {
+    /** What [spec]'s launch sets with its tiers [slots], beside the caller shell's [noProxy] (LaunchCaller.noProxy). */
+    private fun buildEnv(
+        spec: LaunchSpec,
+        slots: List<Pair<String, String>>,
+        noProxy: List<String>,
+    ): Map<String, String> {
         return buildMap {
             // LAN share: a command another machine serves goes to that machine's address, never through this one.
             put("ANTHROPIC_BASE_URL", spec.gateway.remote ?: "http://127.0.0.1:${spec.gateway.port}")
@@ -372,9 +379,9 @@ public class LaunchService(
             putAll(LaunchTelemetry.env(spec))
             // Failure-handling slice 5: the same timeout, told to the head on every request, so a turn held for a reset
             // fits the session that sent it (a session launched before this reads as the 960 s every session had).
-            // Merged with any custom headers the shell already names, which Claude Code reads one per line.
+            // The shim adds the caller's own custom headers before these (LaunchAmbient).
             putAll(ambient.customHeaders(spec.gateway.apiTimeoutMs, ownHeaders(spec)))
-            putAll(ambient.noProxy(spec.gateway.remote))
+            putAll(ambient.noProxy(spec.gateway.remote, noProxy))
             // Hide Claude Code's built-in Anthropic-account commands: in a gateway head, auth is the
             // proxy bearer above, so /login (a local-jsx command hardwired to platform.claude.com —
             // no hook or base-url override can reach it) and /logout are dead doors. These are the
@@ -420,7 +427,3 @@ private const val CONFIG_DIR_ENV = "CLAUDE_CONFIG_DIR"
 // why: who a launch is for, in the words a mode's manifest uses for its callers (modes/README.md, `[callers] off`).
 private const val OWN_MCP_CALLER_DOOR = "door"
 private const val OWN_MCP_CALLER_HEAD = "head"
-
-/** Claude Code's word that ANTHROPIC_BASE_URL is Anthropic's own API behind another address (read in the 2.1.326
- *  client, where it is that variable's declared companion). */
-internal const val FIRST_PARTY_ENV = "_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL"

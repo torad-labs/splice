@@ -18,10 +18,14 @@ internal class ClientAddresses(trustedProxies: List<String>) {
     /** The client's address: [peer], the connection's other end, unless that is a trusted proxy naming another in
      *  [forwardedFor] (every `X-Forwarded-For` value, joined by commas). */
     fun of(peer: String, forwardedFor: String?): String {
-        if (!trusted(peer)) return peer
+        return verified(peer, forwardedFor) ?: peer
+    }
+
+    /** The address a network access policy can use. A proxy without an identifiable client is not that client. */
+    fun verified(peer: String, forwardedFor: String?): String? {
+        if (!trusted(peer)) return peer.takeIf { IpLiterals.parse(it) != null }
         val hops = forwardedFor.orEmpty().split(',').map(String::trim).filter(String::isNotEmpty)
-        // A hop that is no address at all is nobody's: the proxy's own address is the last one known.
-        return hops.lastOrNull { !trusted(it) }?.takeIf { IpLiterals.parse(it) != null } ?: peer
+        return hops.lastOrNull { !trusted(it) }?.takeIf { IpLiterals.parse(it) != null }
     }
 
     /** What a trusted proxy at [peer] says of the request in a header of its own, such as `X-Forwarded-Proto` ([value],

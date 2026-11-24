@@ -2,8 +2,12 @@
 // the way the CLI, the control plane and an admin's key all ask: through the one set of operations they share.
 package splice.server
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Runnable
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -14,14 +18,25 @@ import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.topology.ServerConfig
+import splice.core.topology.ServerKeyFormat
 import splice.core.util.LogSink
+import splice.server.keys.KeyImport
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.MessageDigest
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.util.HexFormat
+import kotlin.coroutines.CoroutineContext
 
 internal class ServerKeysTest {
     @TempDir lateinit var folder: Path
@@ -53,7 +68,7 @@ internal class ServerKeysTest {
         val server = server()
         val minted = created(server, "Ada@Team.Example", name = "laptop")
         val key = text(minted, "key")
-        assertTrue(Regex("^spk_[a-z0-9]{8}_[A-Za-z0-9]{32,}$").matches(key), "not the documented shape")
+        assertTrue(Regex("^spk_[a-z0-9]{8}_[A-Za-z0-9]{32,128}$").matches(key), "not the documented shape")
         assertEquals(key.split('_').take(2).joinToString("_"), text(minted, "prefix"))
         assertEquals("ada@team.example", text(minted, "person"))
         assertEquals("laptop", text(minted, "name"))
@@ -131,4 +146,136 @@ internal class ServerKeysTest {
         assertThrows(Exception::class.java) { server() }
         assertEquals("{ this is not the keys file", Files.readString(file))
     }
+
+    @Test
+    fun `heldIn verifies candidate runs by hash across lengths and ignores unregistered suffixes`() {
+        val file = folder.resolve("keys.json")
+        val keys = ServerKeys(file, Dispatchers.IO)
+        val minted = runBlocking { keys.mint(KeyRequest("ada@team.example")) }
+        val mintedKey = minted.reveal()
+        val key32 = "spk_short032_" + "d".repeat(32)
+        val key64 = "team_longer64_" + "b".repeat(64)
+        val key128 = "team_max00128_" + "e".repeat(128)
+        val over129 = "team_over0129_" + "f".repeat(129)
+        val mismatchedActual = "legacy_actual99_" + "c".repeat(48)
+        runBlocking {
+            assertNotNull(keys.importKey(KeyImport("ada@team.example", "spk_short032", sha256(key32), null, null)))
+            assertNotNull(keys.importKey(KeyImport("ada@team.example", "team_longer64", sha256(key64), null, null)))
+            assertNotNull(keys.importKey(KeyImport("ada@team.example", "team_max00128", sha256(key128), null, null)))
+            assertNotNull(keys.importKey(KeyImport("ada@team.example", "team_over0129", sha256(over129), null, null)))
+            assertNotNull(
+                keys.importKey(KeyImport("bo@team.example", "spk_stored01", sha256(mismatchedActual), null, null)),
+            )
+        }
+        // Cold restart: reopen from disk with zero prior admissions and verify every admitted length (32/40/64/128).
+        val reopened = ServerKeys(file, Dispatchers.IO)
+        assertFalse(ServerKeyFormat.validKey(over129))
+        assertInstanceOf(KeyVerdict.Unknown::class.java, runBlocking { reopened.admit(over129) })
+        assertFalse(reopened.heldIn("${minted.row.prefix}_${"z".repeat(40)}"))
+        assertFalse(reopened.heldIn("ref=${minted.row.prefix}_${"0".repeat(32)}; ok"))
+        assertFalse(reopened.heldIn("spk_stored01_${"c".repeat(48)}"))
+        assertTrue(reopened.heldIn(mintedKey))
+        assertTrue(reopened.heldIn("${mintedKey}extra"))
+        assertTrue(reopened.heldIn("Bearer $key32"))
+        assertTrue(reopened.heldIn("${key32}extraSuffix"))
+        assertTrue(reopened.heldIn("x-note=$key64; ok"))
+        assertTrue(reopened.heldIn("${key64}extraSuffix"))
+        assertTrue(reopened.heldIn("spk_aaaaaaaa_${"x".repeat(37)}${key64}tail99"))
+        assertTrue(reopened.heldIn("${key128}extraSuffix"))
+        assertTrue(reopened.heldIn("${mismatchedActual}extraSuffix"))
+        assertInstanceOf(KeyVerdict.Admitted::class.java, runBlocking { reopened.admit(mismatchedActual) })
+        assertTrue(reopened.heldIn("header=$mismatchedActual;"))
+        runBlocking { reopened.revoke(minted.row.prefix) }
+        assertTrue(reopened.heldIn(mintedKey))
+    }
+
+    @Test
+    fun `an older concurrent admission finishing after a newer one keeps the newer lastUsedAt in memory and on disk`() {
+        val file = folder.resolve("keys.json")
+        var nowMs = 5L
+        val clock = object : Clock() {
+            override fun instant(): Instant = Instant.ofEpochMilli(nowMs)
+
+            override fun getZone(): ZoneId = ZoneOffset.UTC
+
+            override fun withZone(zone: ZoneId): Clock = this
+        }
+        var defer = false
+        val pendingIo = ArrayDeque<Runnable>()
+        val io = object : CoroutineDispatcher() {
+            override fun dispatch(context: CoroutineContext, block: Runnable) {
+                if (defer) pendingIo.addLast(block) else block.run()
+            }
+        }
+        val keys = ServerKeys(file, io, clock)
+        runBlocking { keys.mint(KeyRequest("ada@team.example", source = SIGNIN_SOURCE, device = "laptop")) }
+        nowMs = 6L
+        val newer = runBlocking { keys.mint(KeyRequest("ada@team.example", source = SIGNIN_SOURCE, device = "laptop")) }
+
+        nowMs = 10L
+        defer = true
+        runBlocking {
+            val olderAdmission = launch { keys.admit(newer.reveal()) }
+            yield()
+            assertEquals(1, pendingIo.size)
+            pendingIo.removeFirst().run()
+            nowMs = 20L
+            defer = false
+            assertInstanceOf(KeyVerdict.Admitted::class.java, keys.admit(newer.reveal()))
+            assertEquals(20L, keys.list().single { it.prefix == newer.row.prefix }.lastUsedAt)
+            olderAdmission.join()
+        }
+        assertEquals(20L, keys.list().single { it.prefix == newer.row.prefix }.lastUsedAt)
+
+        // Two admissions at the same timestamp before flush must not dirty a second redundant write.
+        defer = true
+        runBlocking {
+            val flush = launch { keys.keepUse(olderThanMs = 0) }
+            yield()
+            assertEquals(1, pendingIo.size)
+            assertInstanceOf(KeyVerdict.Admitted::class.java, keys.admit(newer.reveal()))
+            pendingIo.removeFirst().run()
+            flush.join()
+            keys.keepUse(olderThanMs = 0)
+            assertTrue(pendingIo.isEmpty(), "same-timestamp admission must not schedule a redundant write")
+        }
+        assertEquals(20L, ServerKeys(file, io, clock).list().single { it.prefix == newer.row.prefix }.lastUsedAt)
+    }
+
+    @Test
+    fun `cancelling a mutation after disk replacement still updates memory and failed writes change nothing`() {
+        val file = folder.resolve("keys.json")
+        var defer = false
+        val pendingIo = ArrayDeque<Runnable>()
+        val io = object : CoroutineDispatcher() {
+            override fun dispatch(context: CoroutineContext, block: Runnable) {
+                if (defer) pendingIo.addLast(block) else block.run()
+            }
+        }
+        val keys = ServerKeys(file, io)
+        val minted = runBlocking { keys.mint(KeyRequest("ada@team.example")) }
+        defer = true
+        runBlocking {
+            val revokeJob = launch { keys.revoke(minted.row.prefix) }
+            yield()
+            assertEquals(1, pendingIo.size)
+            pendingIo.removeFirst().run()
+            revokeJob.cancel()
+            revokeJob.join()
+            assertTrue(revokeJob.isCancelled)
+        }
+        assertNotNull(ServerKeys(file, io).list().single().revokedAt)
+        assertNotNull(keys.list().single().revokedAt)
+        assertInstanceOf(KeyVerdict.Revoked::class.java, runBlocking { keys.admit(minted.reveal()) })
+
+        defer = false
+        val snapshot = keys.list()
+        Files.delete(file)
+        Files.createDirectories(file.resolve("blocking-entry"))
+        assertThrows(IOException::class.java) { runBlocking { keys.mint(KeyRequest("bo@team.example")) } }
+        assertEquals(snapshot, keys.list())
+    }
+
+    private fun sha256(text: String): String =
+        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(text.toByteArray()))
 }

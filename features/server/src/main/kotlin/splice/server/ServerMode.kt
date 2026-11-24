@@ -58,7 +58,7 @@ public class ServerMode(
      *  before constructing [ServerMode] so fresh disks fail closed before any store reads [folder]. */
     public val backup: ServerBackupStore = ServerBackupStore(server.backup, folder, BackupRun(io, clock, waiter, log))
 
-    private val keys = ServerKeys(folder.resolve(KEYS_FILE), io, clock)
+    private val keys = ServerKeys(folder.resolve(KEYS_FILE), io, clock, keyPrefix = server.keyPrefix)
     private val people = ServerPeople(folder.resolve(PEOPLE_FILE), io)
     private val limits = PersonLimits(server.limits, people, server.teams, clock)
 

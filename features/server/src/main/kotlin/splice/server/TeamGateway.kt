@@ -55,4 +55,6 @@ public data class TeamTurnMeta(
     /** How often the listener asks a streamed turn's client be sent a keepalive while its answer is silent, in
      *  milliseconds: `[server] keepalive_seconds`. Null asks for none beyond the native disconnect probe. */
     val keepaliveMs: Long? = null,
+    /** Lowercase header names that carry a server credential and must not reach the provider. */
+    val withheldHeaders: Set<String> = emptySet(),
 )

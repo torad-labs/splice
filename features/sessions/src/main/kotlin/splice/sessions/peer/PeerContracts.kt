@@ -25,6 +25,7 @@ public sealed class InboundFrame {
         val claimedAddress: String?,
         val claimedName: String?,
         val text: String,
+        val sessionId: String? = null,
     ) : InboundFrame()
 
     public data class Receipt(
@@ -35,8 +36,17 @@ public sealed class InboundFrame {
     ) : InboundFrame()
 }
 
+public enum class PeerSubmission(public val wire: String) {
+    ACCEPTED("accepted"),
+    QUEUED("queued"),
+    DELIVERED("delivered"),
+}
+
 public sealed class SendOutcome {
-    public data class Submitted(val msgId: String) : SendOutcome()
+    public data class Submitted(
+        val msgId: String,
+        val submission: PeerSubmission = PeerSubmission.ACCEPTED,
+    ) : SendOutcome()
 
     public data class Refused(val httpStatus: Int, val reason: String) : SendOutcome()
 

@@ -11,6 +11,10 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.control.peer.PeerParts
+import splice.app.control.peer.PeerRegisterRoute
+import splice.app.control.peer.PeerServiceSource
+import splice.app.control.peer.PeerServices
 import splice.app.peer.HELPER_MAIN_CLASS
 import splice.app.peer.PEER_BUILD_FLAG
 import splice.app.peer.PEER_HOST_COMMAND
@@ -31,6 +35,9 @@ import splice.sessions.peer.owner.PeerOwnerProcesses
 import splice.sessions.peer.store.PeerRegistration
 import splice.sessions.peer.store.PeerRequest
 import splice.sessions.peer.store.PeerStore
+import splice.sessions.registry.RouteOfPid
+import splice.sessions.registry.SessionRegistry
+import splice.sessions.registry.SessionRoute
 import splice.upstream.Ticker
 import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Files
@@ -138,6 +145,27 @@ class PeerOwnerLifecycleProcessTest {
             assertNull(fixture.store.get(PROCESS_PEER))
             assertFalse(Files.exists(fixture.settings.resolve("peers/$PROCESS_PEER/peer.json")))
             assertFalse(Files.exists(record))
+        }
+    }
+
+    @Test
+    fun `a launch registers the exec pid and retires it with its key`(@TempDir dir: Path) = runBlocking {
+        OwnedPeerProcesses(dir).use { fixture ->
+            val pid = fixture.harness.pid()
+            val log = LogSink { }
+            val registry = SessionRegistry(fixture.registry, RouteOfPid { SessionRoute.Unknown })
+            val parts = PeerParts(fixture.store, registry, null, PeerServiceSource { PeerServices() }, log)
+            assertTrue(PeerRegisterRoute(parts).subscribeClaude(pid, dir.toString()))
+            val peer = checkNotNull(fixture.store.get("cc-$pid"))
+            val keyFile = fixture.store.keyFile(peer.name)
+            assertEquals("claude-code", fixture.store.harnesses[peer.name])
+            assertEquals(pid, fixture.store.nativeOwners[peer.name]?.pid)
+            assertTrue(Files.exists(keyFile))
+            fixture.harness.destroy()
+            assertTrue(fixture.harness.waitFor(5, TimeUnit.SECONDS))
+            retire(fixture)
+            assertNull(fixture.store.get(peer.name))
+            assertFalse(Files.exists(keyFile))
         }
     }
 

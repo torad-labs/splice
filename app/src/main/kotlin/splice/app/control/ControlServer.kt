@@ -186,6 +186,10 @@ internal class ControlServer(
     @Volatile
     internal var peerServices: PeerServices = PeerServices()
 
+    init {
+        launchService?.peerLaunch = peers?.let { mount -> LaunchService.PeerLaunch(mount::launched) }
+    }
+
     // Nov 16, 2026: Claude Desktop's Code tab (docs/specs/desktop-door.md): its door and `splice desktop`.
     private val desktop = DesktopRoutes(ports, guard, ClaudeLink { launchService?.wrap })
 

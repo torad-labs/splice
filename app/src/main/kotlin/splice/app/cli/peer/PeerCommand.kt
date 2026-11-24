@@ -32,6 +32,7 @@ internal class PeerCommand(
         val code = when (verb) {
             "register", "attach", "list", "revoke", "rotate", "webhook" -> manage(verb, rest)
             "send", "inbox", "status" -> asPeer(verb, rest)
+            "mcp" -> PeerMcpStdio(env).run(rest)
             "codex" -> PeerCodexCommand(call, out, env, hooks).run(rest)
             "limit" -> PeerLimitCommand(call, out).run(rest)
             else -> null
@@ -58,10 +59,10 @@ internal class PeerCommand(
     }
 
     private fun list(args: List<String>): Int? {
-        val parsed = PeerArgsParser(emptySet(), setOf("--json")).parse(args)?.takeIf { it.words.isEmpty() }
+        val parsed = PeerArgsParser(emptySet(), setOf(JSON_SWITCH)).parse(args)?.takeIf { it.words.isEmpty() }
             ?: return null
         // The peers are printed a line each as they are read, which leaves the call no line of its own to print.
-        return ask.managed(ControlRequest("GET", "/api/peers"), "--json" in parsed.switches) { reply ->
+        return ask.managed(ControlRequest("GET", "/api/peers"), JSON_SWITCH in parsed.switches) { reply ->
             PeerLines(out).peers(reply)
             null
         }
@@ -116,11 +117,14 @@ internal class PeerCommand(
     /** `send --as <name> [--id ID] [--pid P [--proc-start S]] <to> <text|->`: an id makes the send idempotent, and a
      *  pid pins it to the process its target was resolved to. */
     private fun send(args: List<String>): Int? {
-        val parsed = PeerArgsParser(PeerSendFlags.VALUED, emptySet()).parse(args)
+        val parsed = PeerArgsParser(PeerSendFlags.VALUED, setOf(JSON_SWITCH)).parse(args)
         val words = parsed?.words?.takeIf { it.size == 2 && PeerSendFlags.valid(parsed.values) } ?: return null
         val text = if (words[1] == "-") stdin.read() else words[1]
         val key = call.peerKey(parsed.values["--as"]) ?: return PeerExit.REFUSED
         val body = PeerSendFlags.body(words[0], text, parsed.values)
-        return ask.finish(call.call("POST", "/api/peers/self/send", key, body)) { JsonScalars.str(it, "msgId") }
+        val answer = call.call("POST", "/api/peers/self/send", key, body)
+        val json = JSON_SWITCH in parsed.switches
+        if (json && answer is PeerAnswer.Exit) answer.body?.let { out.line(it.toString()) }
+        return ask.finish(answer, json) { JsonScalars.str(it, "msgId") }
     }
 }

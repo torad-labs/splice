@@ -55,9 +55,9 @@ public class DesktopAcp(
         val lines = Channel<String>(Channel.UNLIMITED)
         val reader = startInputReader(input, lines)
         val claude = ClaudeArgsReader().of(args)
-        val started = AgyLaunch(agy, cwd, io, peer.childEnv).start(claude, this)
+        val started = AgyLaunch(agy, cwd, io, peer.childEnv).start(claude, this, peer.forwardLaunchOptions)
         try {
-            serve(ServeTarget(claude, started, hooks, peer.inbox), lines, output)
+            serve(ServeTarget(claude, started, hooks, peer), lines, output)
         } finally {
             reader.shutdownNow()
             started.close(log)
@@ -92,7 +92,7 @@ public class DesktopAcp(
         val claude: ClaudeArgs,
         val started: StartedAgy,
         val hooks: AcpSessionHooks,
-        val peerInbox: DesktopPeerInboxFactory?,
+        val peer: DesktopPeerWiring,
     )
 
     private suspend fun serve(
@@ -113,8 +113,9 @@ public class DesktopAcp(
         McpBridge(out, connected).use { bridge ->
             val envTarget = CoordinatorEnv(claude, STRICT_MCP_CONFIG in args, cwd, env, log)
             val chan = CoordinatorIo(started, hello, helloFailure, lines, deferredLines, this)
-            val coordinator = AgyMcpCoordinator(envTarget, chan, mcpState, bridge)
-            val factory = PartsFactory { id -> parts(id, claude, target.peerInbox, out, this) }
+            val builtIns = AgyMcpReader(log).fromConfigMap(target.peer.mcpServers)
+            val coordinator = AgyMcpCoordinator(envTarget, chan, mcpState, bridge, builtIns)
+            val factory = PartsFactory { id -> parts(id, claude, target.peer.inbox, out, this) }
             val session = DesktopSession(claude, factory, coordinator, mcpState, bridge, clock, target.hooks)
             val stop = Executors.defaultThreadFactory().newThread { session.closeRecord() }
             Runtime.getRuntime().addShutdownHook(stop)

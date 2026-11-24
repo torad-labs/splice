@@ -56,6 +56,7 @@ internal class ControlServerParts(
         // A blank knob would hand systemd `--slice=`, which it rejects, so it falls back to the declared default.
         val slice = config.getConfig().mcpSlice.ifBlank { APP_MCP_SLICE }
         srv.peerServices = PeersWiring().services(guard.peers, daemon.statePaths.stateDir, slice, scope, log)
+            .copy(harnesses = topology.launches.harnesses)
     }
 
     /** The cold successor reuses this daemon's jar, home, config, state, and bound control port. */

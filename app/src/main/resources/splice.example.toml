@@ -66,13 +66,21 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # ── Local harness catalog ──
 # Claude Code, Codex and Antigravity are built in. A new ACP harness is declared here,
 # not through the console. Use an absolute executable path and separate arguments; keep
-# credentials out of argv. This lists the harness in the Desktop map without routing any
-# models to it or registering a peer.
+# credentials out of argv. The Desktop map carries only the name and description.
+# Launch it with splice desktop acp --harness local-agent. The shipped ids are reserved.
 # [harnesses.local-agent]
 # name = "Local ACP agent"
 # description = "Optional description for launchers"
 # protocol = "acp"
 # argv = ["/path/to/agent", "--acp"]
+#
+# [harnesses.local-agent.peer]
+# protocol = "acp"
+# auto_subscribe = true
+# For protocol = "command", provide an argv array (the peer envelope goes to stdin):
+# deliver_cmd = ["/path/to/deliver", "--inbox"]
+# For protocol = "webhook", provide an HTTP loopback URL without userinfo:
+# webhook_url = "http://127.0.0.1:8090/inbox"
 
 # ── LAN share: this machine's door, run from your other machines (docs/specs/door-network.md) ──
 # `splice share on` writes this table and restarts; `splice share status` prints the door and the one add that puts

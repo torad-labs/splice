@@ -47,6 +47,7 @@ public data class PeerRequest(
     val sendTo: List<String>,
     val owner: NativeProcess? = null,
     val nativeInbox: Boolean = false,
+    val harness: String? = null,
 )
 
 /** Why a register was refused: a request that can never succeed, or a name that is reserved or taken (400 and 409). */
@@ -117,6 +118,11 @@ public class PeerStore(
         booted.mapNotNull { file -> file.name.takeIf { file.nativeInbox } }.toSet()
 
     @Volatile
+    private var harnessIds: Map<String, String> = booted.mapNotNull { file ->
+        file.harness?.let { file.name to it }
+    }.toMap()
+
+    @Volatile
     private var byKeyHash: Map<String, String> = peers.values.associate { it.keySha256 to it.name }
 
     /** When each codex peer last attached since this store loaded: a thread's end before it does not revoke it. */
@@ -145,6 +151,9 @@ public class PeerStore(
 
     /** Registered peers whose owner process serves its own peer UDS inbox, so no `peer-host` helper is started. */
     public val nativeInboxes: Set<String> get() = nativeInboxNames
+
+    /** The configured harness, when this peer was registered by a launch. */
+    public val harnesses: Map<String, String> get() = harnessIds
 
     /**
      * Registers [request]'s thread as the codex peer `codex-<thread>`, or brings the one there up to date: peer.key
@@ -220,6 +229,7 @@ public class PeerStore(
                 scope = PeerFileScope(request.sendTo),
                 owner = request.owner?.let { PeerFileOwner(it.pid, it.procStart, it.pidDomain) },
                 nativeInbox = request.nativeInbox,
+                harness = request.harness,
             )
             folder.create(file, key)
             PeerRegistration.Registered(publish(file), folder.keyFile(request.name))
@@ -243,6 +253,7 @@ public class PeerStore(
         codexes = codexes - name
         owners = owners - name
         nativeInboxNames = nativeInboxNames - name
+        harnessIds = harnessIds - name
         attachedAt.remove(name)
         byKeyHash = byKeyHash.filterValues { it != name }
         folder.deleteTree(folder.dir(name))
@@ -299,6 +310,7 @@ public class PeerStore(
         owners = file.owner?.let { owners + (file.name to NativeProcess(it.pid, it.procStart, it.pidDomain)) }
             ?: (owners - file.name)
         nativeInboxNames = if (file.nativeInbox) nativeInboxNames + file.name else nativeInboxNames - file.name
+        harnessIds = file.harness?.let { harnessIds + (file.name to it) } ?: (harnessIds - file.name)
         byKeyHash = byKeyHash.filterValues { it != file.name } + (config.keySha256 to file.name)
         return config
     }

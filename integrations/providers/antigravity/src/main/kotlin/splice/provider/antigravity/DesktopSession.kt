@@ -203,6 +203,10 @@ internal class DesktopSession(
             return
         }
         if (message.isExpired) return
+        if (prompts.isNotEmpty()) {
+            message.abortIfUnsettled("the ACP session is busy")
+            return
+        }
         try {
             val outcome = Cancellables.runCatchingCancellable {
                 val p = if (switchingOut) null else ensureOpen(emptyList())
@@ -256,8 +260,7 @@ internal class DesktopSession(
             if (prompts.isEmpty()) p.record.write(busy = false)
             return false
         }
-        val handoff = pendingHandoff
-        pendingHandoff = null
+        val handoff = if (peer == null) pendingHandoff.also { pendingHandoff = null } else null
         val prompt = session?.prompt(content, handoff)
         return if (prompt != null) {
             prompts += prompt

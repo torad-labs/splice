@@ -14,14 +14,12 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.http.JsonBody
 import splice.sessions.note.PeerTarget
-import splice.sessions.note.PeerTargets
 import splice.sessions.peer.PeerConfig
-import splice.sessions.peer.PeerOutbox
 import splice.sessions.peer.PeerPrincipal
 import splice.sessions.peer.PeerSender
+import splice.sessions.peer.PeerSubmission
 import splice.sessions.peer.SendOutcome
 import splice.sessions.peer.store.PeerLimits
-import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 
 // why: spec 1.1 and 3.4, the text cap after defusing; the route refuses a longer raw text with 413 before it is built.
@@ -40,7 +38,7 @@ internal class PeerSendRoute(
     private val limits: PeerLimits,
 ) {
     private val store = parts.store
-    private val targets = PeerTargets(parts.registry)
+    private val drivers = HarnessPeerDrivers(parts)
     private val jsonBody = JsonBody()
     private val idLocks = Array(ID_LOCKS) { Mutex() }
 
@@ -48,7 +46,7 @@ internal class PeerSendRoute(
         sendAnswer(principal, jsonBody.parse(call)).send(call)
     }
 
-    private suspend fun sendAnswer(principal: PeerPrincipal, body: JsonObject?): PeerAnswer {
+    suspend fun sendAnswer(principal: PeerPrincipal, body: JsonObject?): PeerAnswer {
         val config = store.get(principal.name) ?: return PeerReplies.refuse(HttpStatusCode.NotFound, NO_PEER)
         val to = PeerReplies.string(body, "to")?.trim()?.takeIf { it.isNotEmpty() }
         val text = PeerReplies.string(body, "text")
@@ -72,7 +70,7 @@ internal class PeerSendRoute(
                 malformed != null -> PeerReplies.refuse(HttpStatusCode.BadRequest, malformed)
                 turn is IdTurn.Taken -> PeerReplies.refuse(HttpStatusCode.Conflict, turn.reason)
                 turn == IdTurn.Repeat && prior != null -> repeated(request.id.orEmpty(), prior)
-                else -> resolved(config, targets.resolve(to), Sending(text, request, turn))
+                else -> resolved(config, drivers.resolve(to), Sending(text, request, turn))
             }
         }
     }
@@ -85,11 +83,11 @@ internal class PeerSendRoute(
     private suspend fun resolved(config: PeerConfig, target: PeerTarget, sending: Sending): PeerAnswer =
         when (target) {
             is PeerTarget.One -> deliver(config, target.record, sending)
-            is PeerTarget.None -> PeerReplies.refuse(HttpStatusCode.NotFound, target.reason)
+            is PeerTarget.None -> PeerReplies.unavailable(HttpStatusCode.NotFound, target.reason)
             is PeerTarget.Ambiguous -> PeerReplies.refuse(HttpStatusCode.Conflict, target.reason)
-            is PeerTarget.NotRunning -> PeerReplies.refuse(HttpStatusCode.Conflict, target.reason)
-            is PeerTarget.NoSocket -> PeerReplies.refuse(HttpStatusCode.Conflict, target.reason)
-            is PeerTarget.SharedSocket -> PeerReplies.refuse(HttpStatusCode.Conflict, target.reason)
+            is PeerTarget.NotRunning -> PeerReplies.unavailable(HttpStatusCode.Conflict, target.reason)
+            is PeerTarget.NoSocket -> PeerReplies.unavailable(HttpStatusCode.Conflict, target.reason)
+            is PeerTarget.SharedSocket -> PeerReplies.unavailable(HttpStatusCode.Conflict, target.reason)
         }
 
     private fun textRefusal(text: String): PeerAnswer? = when {
@@ -108,19 +106,15 @@ internal class PeerSendRoute(
             return PeerReplies.refuse(HttpStatusCode.TooManyRequests, "over the send rate", wait.seconds)
         }
         val socket = senderSocket(config)
-        val outbox = parts.outbox
-        return if (socket == null || outbox == null) {
-            PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, HELPER_NOT_RUNNING)
+        return if (socket == null) {
+            PeerReplies.unavailable(HttpStatusCode.ServiceUnavailable, HELPER_NOT_RUNNING)
         } else {
-            submit(config, target, sending, PeerSender(socket = socket, name = config.name), outbox)
+            submit(config, target, sending, PeerSender(socket = socket, name = config.name))
         }
     }
 
     private fun senderSocket(config: PeerConfig): String? = if (config.name in store.nativeInboxes) {
-        val ownerPid = store.nativeOwners[config.name]?.pid ?: return null
-        parts.registry.read().firstOrNull {
-            it.availability != SessionAvailability.GONE && it.process.pid == ownerPid
-        }?.process?.messagingSocketPath
+        drivers.ownerRecord(config.name)?.process?.messagingSocketPath
     } else {
         parts.helpers?.running(config.name)?.socket
     }
@@ -144,28 +138,38 @@ internal class PeerSendRoute(
         target: SessionRecord,
         sending: Sending,
         sender: PeerSender,
-        outbox: PeerOutbox,
     ): PeerAnswer {
         val request = sending.request
-        val outcome = outbox.send(target, sending.text, sender, request.id)
+        val outcome = drivers.deliver(HarnessPeerMessage(target, sending.text, sender, request.id))
         val msgId = (outcome as? SendOutcome.Submitted)?.msgId ?: request.id
         val bytes = sending.text.toByteArray(Charsets.UTF_8).size
         parts.mail?.recordSend(config.name, SentRecord(msgId, target, bytes, outcome, request.digest))
         return when (outcome) {
             is SendOutcome.Submitted ->
-                PeerReplies.ok(HttpStatusCode.Accepted, sent(outcome.msgId, target.name, target.sessionId))
-            is SendOutcome.Refused -> PeerReplies.refuse(HttpStatusCode.fromValue(outcome.httpStatus), outcome.reason)
-            is SendOutcome.Failed -> PeerReplies.refuse(HttpStatusCode.BadGateway, outcome.reason)
+                PeerReplies.ok(
+                    if (outcome.submission == PeerSubmission.DELIVERED) HttpStatusCode.OK else HttpStatusCode.Accepted,
+                    sent(outcome.msgId, target.name, target.sessionId, outcome.submission.wire),
+                )
+            is SendOutcome.Refused ->
+                PeerReplies.unavailable(HttpStatusCode.fromValue(outcome.httpStatus), outcome.reason)
+            is SendOutcome.Failed -> PeerReplies.unavailable(HttpStatusCode.BadGateway, outcome.reason)
         }
     }
 
     /** The first send under [id] answered again: nothing is written, and the rate is not charged. */
     private fun repeated(id: String, prior: PriorSend): PeerAnswer =
-        PeerReplies.ok(HttpStatusCode.OK, sent(id, prior.name, prior.sessionId, repeat = true))
+        PeerReplies.ok(HttpStatusCode.OK, sent(id, prior.name, prior.sessionId, prior.submission, repeat = true))
 
-    private fun sent(msgId: String, name: String?, sessionId: String?, repeat: Boolean = false): JsonObject =
+    private fun sent(
+        msgId: String,
+        name: String?,
+        sessionId: String?,
+        status: String,
+        repeat: Boolean = false,
+    ): JsonObject =
         buildJsonObject {
             put("msgId", msgId)
+            put("status", status)
             putJsonObject("to") {
                 put("name", name)
                 put("sessionId", sessionId)

@@ -191,6 +191,7 @@ public object PeerWire {
             claimedAddress = JsonScalars.str(obj, "from") ?: envelope.fromAddress,
             claimedName = envelope.fromName,
             text = envelope.text,
+            sessionId = JsonScalars.str(obj, "session_id"),
         )
     }
 

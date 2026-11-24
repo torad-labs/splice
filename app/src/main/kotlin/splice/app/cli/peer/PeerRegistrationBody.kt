@@ -49,9 +49,11 @@ internal object PeerRegistrationBody {
         values: Map<String, String>,
         owner: NativeProcess?,
         nativeInbox: Boolean = false,
+        harness: String? = null,
     ): JsonObject = buildJsonObject {
         put("name", name)
         if (nativeInbox) put("nativeInbox", true)
+        harness?.let { put("harness", it) }
         owner?.let {
             putJsonObject("owner") {
                 put("pid", it.pid); put("procStart", it.procStart); put("pidDomain", it.pidDomain)

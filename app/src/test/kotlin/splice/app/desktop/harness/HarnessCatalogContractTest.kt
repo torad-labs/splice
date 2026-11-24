@@ -127,6 +127,30 @@ class HarnessCatalogContractTest {
     }
 
     @Test
+    fun `boot lists every bad peer protocol and fallback setting without disclosing values`() {
+        val source = listOf(
+            badPeerDeclaration("bad-protocol", "unknown", """deliver_cmd = ["relative", "private-argument"]"""),
+            badPeerDeclaration("no-command", "command"),
+            badPeerDeclaration("no-url", "webhook"),
+            badPeerDeclaration("remote-url", "webhook", """webhook_url = "http://private-url.invalid/collect""""),
+            badPeerDeclaration("credential-url", "webhook", """webhook_url = "http://private-credential@localhost/""""),
+        ).joinToString("\n")
+        val refused = assertInstanceOf(ConfigRead.Refused::class.java, ConfigFindings.read(source, tmp))
+        assertEquals(
+            setOf(
+                "harnesses.bad-protocol.peer.protocol",
+                "harnesses.bad-protocol.peer.deliver_cmd",
+                "harnesses.no-command.peer.deliver_cmd",
+                "harnesses.no-url.peer.webhook_url",
+                "harnesses.remote-url.peer.webhook_url",
+                "harnesses.credential-url.peer.webhook_url",
+            ),
+            refused.findings.map { it.path }.toSet(),
+        )
+        assertFalse("private-" in refused.findings.joinToString())
+    }
+
+    @Test
     fun `the topology writer cannot install or replace a harness command`() {
         val config = tmp.resolve("splice.toml")
         val original = custom(tmp.resolve("trusted"))
@@ -143,6 +167,18 @@ class HarnessCatalogContractTest {
         assertInstanceOf(TopologyWriteResult.Written::class.java, writer.write(unrelated, writer.current()))
         assertTrue(Files.readString(config).contains(original))
     }
+
+    private fun badPeerDeclaration(id: String, protocol: String, options: String = ""): String =
+        """
+        [harnesses.$id]
+        name = "Example harness"
+        protocol = "acp"
+        argv = ["/bin/false"]
+
+        [harnesses.$id.peer]
+        protocol = "$protocol"
+        $options
+        """.trimIndent()
 
     private fun paths(): StatePaths = StatePaths(baseOverride = tmp.resolve("state"), homeDir = tmp.resolve("home"))
 

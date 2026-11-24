@@ -46,6 +46,7 @@ public class PeerInbox(
     private val self: PeerSender,
     private val log: LogSink,
     elapsed: ElapsedClock = ElapsedClock { MonoClock.nowMs() },
+    private val receiptOnJournal: Boolean = true,
 ) : InboxHandler {
     private val limits = InboundLimits(elapsed)
 
@@ -98,7 +99,9 @@ public class PeerInbox(
         val verdict = decide(frame, sender, auth)
         val to = frame.claimedAddress
         val id = frame.msgId
+        val waitForDriver = !receiptOnJournal && verdict.status == DeliveryStatus.DELIVERED
         if (to == null || id == null) return null
+        if (waitForDriver) return null
         if (!outbox.receipt(to, id, verdict.status, verdict.detail, self)) {
             note("a ${verdict.status.wire} receipt could not be sent")
         }

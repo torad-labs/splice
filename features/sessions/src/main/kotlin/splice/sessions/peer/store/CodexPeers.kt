@@ -89,6 +89,8 @@ internal class CodexPeers {
             cwd = request.cwd,
             codex = codexOf(request, current.codex?.owner ?: current.owner),
             owner = null,
+            nativeInbox = false,
+            harness = null,
         )
         return if (next == current) CodexPlan.Same(current) else CodexPlan.Update(next)
     }

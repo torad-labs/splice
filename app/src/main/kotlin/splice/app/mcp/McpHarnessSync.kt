@@ -8,6 +8,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import splice.app.cli.peer.PeerMcpLaunch
+import splice.app.control.peer.PEER_MCP_SERVER
 import splice.client.mcp.McpPlan
 import splice.client.mcp.McpServerInput
 import splice.client.mcp.McpSharing
@@ -107,6 +109,9 @@ internal class McpHarnessSync(
         plan.rewritten.forEach { (name, elem) ->
             val obj = elem as? JsonObject ?: return@forEach
             toCodexEntry(obj)?.let { codexEntries[name] = it }
+        }
+        if (McpHarness.CODEX.definition.peer?.autoSubscribe == true) {
+            toCodexEntry(PeerMcpLaunch(env).entry())?.let { codexEntries[PEER_MCP_SERVER] = it }
         }
         val configFile = discovery.codexConfigFile()
         val rpc = seams.codexRpc ?: CodexRpcSync { dir, map ->

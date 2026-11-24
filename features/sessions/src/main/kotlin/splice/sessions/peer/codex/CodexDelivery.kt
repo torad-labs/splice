@@ -10,6 +10,7 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
+import splice.sessions.note.PeerWire
 import splice.sessions.peer.DeliveryStatus
 import splice.sessions.peer.PeerOutbox
 import splice.sessions.peer.PeerSender
@@ -21,17 +22,14 @@ private const val CODEX_BATCH = 50
 // why: spec 1.2, a receipt's detail is at most 200 characters.
 private const val CODEX_RECEIPT_DETAIL_CHARS = 200
 
-private const val ENVELOPE_END = "</cross-session-message>"
-private const val ENVELOPE_END_ESCAPED = "<\\/cross-session-message>"
 private const val MESSAGE_KIND = "message"
 
 /** Where a codex peer's refusals go: a receipt to the sender of the message Codex did not take. */
 public class CodexReturns(private val outbox: PeerOutbox, private val self: PeerSender) {
-    internal suspend fun dropped(record: JsonObject, reason: String): Boolean {
+    internal suspend fun receipt(record: JsonObject, status: DeliveryStatus, detail: String? = null): Boolean {
         val address = JsonScalars.str(record["from"] as? JsonObject, "address") ?: return false
         val id = JsonScalars.str(record, "id") ?: return false
-        val detail = "the Codex thread did not take it: $reason".take(CODEX_RECEIPT_DETAIL_CHARS)
-        return outbox.receipt(address, id, DeliveryStatus.DROPPED, detail, self)
+        return outbox.receipt(address, id, status, detail?.take(CODEX_RECEIPT_DETAIL_CHARS), self)
     }
 }
 
@@ -84,14 +82,24 @@ public class CodexDelivery(
         val message = CodexMessage(seq, id)
         ledger.step(message, CodexOutcome.ISSUING)
         return when (val start = thread.startTurn(id, envelope(record))) {
-            is TurnStart.Started -> finish(message, CodexOutcome.STARTED, start.turnId, null)
-            is TurnStart.Unknown -> finish(message, CodexOutcome.UNCONFIRMED, null, start.reason)
+            is TurnStart.Started -> {
+                returns.receipt(record, DeliveryStatus.DELIVERED)
+                finish(message, CodexOutcome.STARTED, start.turnId, null)
+            }
+            is TurnStart.Unknown -> {
+                returns.receipt(record, DeliveryStatus.DROPPED, "the Codex thread did not confirm the message")
+                finish(message, CodexOutcome.UNCONFIRMED, null, start.reason)
+            }
             is TurnStart.Refused -> {
                 finish(message, CodexOutcome.TURN_REFUSED, null, start.reason)
-                if (!returns.dropped(record, start.reason)) note("a dropped receipt for $id could not be sent")
+                val detail = "the Codex thread did not take it: ${start.reason}"
+                if (!returns.receipt(record, DeliveryStatus.DROPPED, detail)) {
+                    note("a dropped receipt for $id could not be sent")
+                }
                 null
             }
             is TurnStart.NotSent -> {
+                returns.receipt(record, DeliveryStatus.DROPPED, "the Codex thread could not be reached")
                 ledger.step(message, CodexOutcome.UNSENT, detail = start.reason)
                 start.reason
             }
@@ -107,15 +115,14 @@ public class CodexDelivery(
     /** The text as a Claude Code session reads a peer message: who sent it, then the text. */
     private fun envelope(record: JsonObject): String {
         val from = record["from"] as? JsonObject
-        val address = JsonScalars.str(from, "address").orEmpty()
-        val name = JsonScalars.str(from, "name") ?: JsonScalars.str(from, "claimedName").orEmpty()
-        val text = JsonScalars.str(record, "text").orEmpty().replace(ENVELOPE_END, ENVELOPE_END_ESCAPED)
-        return "<cross-session-message from=\"${attribute(address)}\" from-name=\"${attribute(name)}\">\n" +
-            "$text\n$ENVELOPE_END"
+        val address = JsonScalars.str(from, "address")?.takeIf(PeerWire::attributeSafe)
+        val name = JsonScalars.str(from, "name") ?: JsonScalars.str(from, "claimedName")
+        return PeerWire.envelope(
+            JsonScalars.str(record, "text").orEmpty(),
+            address,
+            name?.takeIf(PeerWire::attributeSafe) ?: "peer",
+        )
     }
-
-    private fun attribute(value: String): String =
-        value.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;")
 
     private fun note(reason: String) {
         log("[peers] ${LogSafe.str(reason)}")

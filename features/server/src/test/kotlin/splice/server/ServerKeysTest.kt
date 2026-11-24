@@ -2,13 +2,12 @@
 // the way the CLI, the control plane and an admin's key all ask: through the one set of operations they share.
 package splice.server
 
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.Runnable
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -175,27 +174,30 @@ internal class ServerKeysTest {
     @Test
     fun `cancelling a mutation after disk replacement still updates memory and failed writes change nothing`() {
         val file = folder.resolve("keys.json")
-        val directIo = object : CoroutineDispatcher() {
-            override fun dispatch(context: CoroutineContext, block: Runnable) = block.run()
-        }
-        val keys = ServerKeys(file, directIo)
-        val minted = runBlocking { keys.mint(KeyRequest("ada@team.example")) }
-        var dispatches = 0
-        val cancelOnResume = object : CoroutineDispatcher() {
+        var defer = false
+        val pendingIo = ArrayDeque<Runnable>()
+        val io = object : CoroutineDispatcher() {
             override fun dispatch(context: CoroutineContext, block: Runnable) {
-                dispatches += 1
-                if (dispatches == 2) context[Job]?.cancel()
-                block.run()
+                if (defer) pendingIo.addLast(block) else block.run()
             }
         }
-        assertThrows(CancellationException::class.java) {
-            runBlocking { withContext(cancelOnResume) { keys.revoke(minted.row.prefix) } }
+        val keys = ServerKeys(file, io)
+        val minted = runBlocking { keys.mint(KeyRequest("ada@team.example")) }
+        defer = true
+        runBlocking {
+            val revokeJob = launch { keys.revoke(minted.row.prefix) }
+            yield()
+            assertEquals(1, pendingIo.size)
+            pendingIo.removeFirst().run()
+            revokeJob.cancel()
+            revokeJob.join()
+            assertTrue(revokeJob.isCancelled)
         }
-        assertTrue(dispatches >= 2, "cancellation must trigger on resume after disk write")
-        assertNotNull(ServerKeys(file, directIo).list().single().revokedAt)
+        assertNotNull(ServerKeys(file, io).list().single().revokedAt)
         assertNotNull(keys.list().single().revokedAt)
         assertInstanceOf(KeyVerdict.Revoked::class.java, runBlocking { keys.admit(minted.reveal()) })
 
+        defer = false
         val snapshot = keys.list()
         Files.delete(file)
         Files.createDirectories(file.resolve("blocking-entry"))

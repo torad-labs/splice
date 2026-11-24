@@ -15,11 +15,9 @@
 package splice.server.signin
 
 import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
-import io.ktor.server.plugins.origin
 import io.ktor.server.request.httpMethod
 import io.ktor.server.response.respondText
 import kotlinx.serialization.SerialName
@@ -37,17 +35,19 @@ import splice.core.util.LogSink
 import splice.core.wire.HttpStatus
 import splice.http.JsonBody
 import splice.server.KeyApi
-import splice.server.MinuteStarts
 import splice.server.SERVER_ROOT
 import splice.server.ServerAnswer
-import splice.server.caller.ClientAddresses
 import splice.share.Asked
 import splice.share.RefusalVoice
-import java.time.Clock
-import java.util.concurrent.ConcurrentHashMap
 
 /** What a sign-in is checked and minted with, on a server whose `[server.signin]` is set. */
-internal data class SigninParts(val signin: ServerSignin, val issuer: SigninIssuer, val tokens: IdTokens)
+internal data class SigninParts(val signin: ServerSignin, val issuer: SigninIssuer, val tokens: IdTokens) {
+    suspend fun verify(code: String, verifier: String, redirect: String, nonce: String): IdVerdict =
+        when (val traded = issuer.trade(code, verifier, redirect)) {
+            is Asked.Refused -> IdVerdict.Refused(traded.why)
+            is Asked.Had -> tokens.person(traded.value, nonce)
+        }
+}
 
 /** A trade's fields, as the laptop sends them. */
 @Serializable
@@ -62,14 +62,12 @@ private data class Trade(
 internal class SigninRoute(
     private val parts: SigninParts?,
     private val keys: KeyApi,
-    private val addresses: ClientAddresses,
+    private val attempts: SigninAttempts,
     private val voice: RefusalVoice,
     private val log: LogSink,
-    private val clock: Clock = Clock.systemUTC(),
 ) {
     private val jsonBody = JsonBody()
     private val json = Json { ignoreUnknownKeys = true }
-    private val tries = ConcurrentHashMap<String, MinuteStarts>()
     private val deviceShape = Regex("""^[^\p{Cntrl}]{1,$DEVICE_MAX}$""")
 
     /** Whether [path] is one of the sign-in routes, which answer without a key. */
@@ -96,7 +94,7 @@ internal class SigninRoute(
             put("issuer", parts.signin.issuer)
             put("client_id", parts.signin.clientId)
             put("authorization_endpoint", doc.authorizationEndpoint)
-            putJsonArray("scopes") { SCOPES.forEach(::add) }
+            putJsonArray("scopes") { signinScopes.forEach(::add) }
             putJsonArray("domains") { parts.signin.domains.forEach(::add) }
             put("key_days", parts.signin.keyDays)
         }
@@ -105,15 +103,8 @@ internal class SigninRoute(
 
     /** A code traded for a key, or refused. */
     private suspend fun token(call: ApplicationCall, parts: SigninParts) {
-        val forwarded = call.request.headers.getAll(HttpHeaders.XForwardedFor)?.joinToString(",")
-        val address = addresses.of(call.request.origin.remoteAddress, forwarded)
-        val wait = waitFor(address, parts.signin.ratePerMinute)
-        if (wait != null) {
-            call.response.headers.append(HttpHeaders.RetryAfter, wait.toString())
-            val why = "too many sign-ins from this address (rate_per_minute = ${parts.signin.ratePerMinute}); " +
-                "try again in $wait s"
-            return voice.refuse(call, HttpStatus.TOO_MANY_REQUESTS, why)
-        }
+        val address = attempts.address(call)
+        if (!attempts.admit(call, address, parts.signin.ratePerMinute, voice)) return
         when (val minted = signedIn(parts, jsonBody.parse(call))) {
             is ServerAnswer.Done ->
                 call.respondText(minted.body.toString(), ContentType.Application.Json, minted.status)
@@ -125,10 +116,10 @@ internal class SigninRoute(
     /** The key minted for the trade in [body], once the provider takes its code and its ID token checks out. */
     private suspend fun signedIn(parts: SigninParts, body: JsonObject?): ServerAnswer {
         val trade = trade(body) ?: return ServerAnswer.Refused(HttpStatusCode.Unauthorized, TRADE_FIELDS)
-        val person = when (val traded = parts.issuer.trade(trade.code, trade.verifier, trade.redirect)) {
-            is Asked.Refused -> IdVerdict.Refused(traded.why)
-            is Asked.Had -> parts.tokens.person(traded.value, trade.nonce)
+        if (!SigninRedirects.laptop(trade.redirect)) {
+            return ServerAnswer.Refused(HttpStatusCode.Unauthorized, "redirect_uri must be a loopback callback")
         }
+        val person = parts.verify(trade.code, trade.verifier, trade.redirect, trade.nonce)
         return when (person) {
             is IdVerdict.Refused -> ServerAnswer.Refused(HttpStatusCode.Unauthorized, person.why)
             is IdVerdict.Person -> keys.signedIn(person.email, trade.device, parts.signin.keyDays)
@@ -150,21 +141,6 @@ internal class SigninRoute(
             .takeIf { lines.all { it.isNotBlank() && '\n' !in it } && deviceShape.matches(device) }
     }
 
-    /** Counts one more try from [address], and answers how long it must wait when that is past [cap]. */
-    private fun waitFor(address: String, cap: Int): Long? {
-        if (cap <= 0) return null
-        val now = clock.millis()
-        if (tries.size > MAX_TRACKED_ADDRESSES) {
-            tries.entries.removeIf { (_, idle) -> synchronized(idle) { idle.count(now) == 0L } }
-        }
-        val starts = tries.computeIfAbsent(address) { MinuteStarts() }
-        return synchronized(starts) {
-            val wait = starts.waitFor(cap.toLong(), now)
-            if (wait == null) starts.add(now)
-            wait
-        }
-    }
-
     private suspend fun refused(call: ApplicationCall, address: String, why: String) {
         log("[server] a sign-in from ${LogSafe.str(address)} was refused: ${LogSafe.str(why)}\n")
         voice.refuse(call, HttpStatus.UNAUTHORIZED, "sign-in refused: $why")
@@ -173,7 +149,7 @@ internal class SigninRoute(
 
 // The scopes a sign-in asks for: an ID token (openid) that names the person's email (email); profile gives the
 // provider's consent screen the person's own name to show.
-private val SCOPES = listOf("openid", "email", "profile")
+internal val signinScopes = listOf("openid", "email", "profile")
 
 private val CONFIG_PATH = listOf(SERVER_ROOT, "signin")
 private val TOKEN_PATH = CONFIG_PATH + "token"
@@ -185,7 +161,3 @@ private const val NO_SIGNIN = "this server has no sign-in ([server.signin] is no
 // why: a device name is a label a laptop gives itself (its host name and a few letters); 64 characters hold any such
 // label and keep a report's device column readable.
 private const val DEVICE_MAX = 64
-
-// why: a team's laptops and its proxy are a few hundred addresses at most; past this many, the addresses with no
-// sign-in in the last minute are forgotten, so a scan from many addresses cannot grow the map without end.
-private const val MAX_TRACKED_ADDRESSES = 4_096

@@ -81,6 +81,8 @@ tls_cert = "/etc/splice/tls/fullchain.pem"   # or terminate TLS at a proxy:
 tls_key = "/etc/splice/tls/privkey.pem"
 trusted_proxies = ["10.0.0.0/8"]            # X-Forwarded-For / -Proto honoured only from these
 admins = ["ops@team.example"]
+admin_cidrs = ["192.0.2.0/24"]              # optional: empty preserves unrestricted admin addresses
+key_prefix = "spk_"                         # optional: only new keys use this mark
 ```
 
 - Routes on the listener: `GET /health` (open), `GET /` and `GET /<command>/launch` (as share mode serves them),
@@ -92,8 +94,17 @@ admins = ["ops@team.example"]
   `server key revoke-person <email>` (offboarding; prints how many keys it revoked).
 - Control plane (management key, loopback): `POST /api/server/keys`, `GET /api/server/keys`,
   `DELETE /api/server/keys/<prefix>`, `DELETE /api/server/people/<email>/keys`.
-- Admin over the listener (a key whose person is in `admins`): `GET/POST /server/api/keys`,
-  `DELETE /server/api/keys/<prefix>`. A non-admin key is 403.
+- Admin over the listener: `GET/POST /server/api/keys`, `DELETE /server/api/keys/<prefix>` and other
+  admin routes, including metrics, require an admin key and, when `admin_cidrs` is set, a matching client IP.
+  A trusted proxy must identify the client via `X-Forwarded-For`; a missing or invalid client address is denied.
+  The loopback control plane continues to use the management key.
+- To migrate a Splice-format key without sending the secret, an admin can
+  `POST /server/api/keys/import` with `person`, the existing public `prefix`, and the complete key's
+  SHA-256 hex `hash`. Copy any existing expiry or revocation into `expires_at` and `revoked_at` as
+  ISO-8601 timestamps. The response never includes the hash or the key. Existing hashes or prefixes return
+  409, including revoked ones. No external verifier is contacted. A `key_prefix` starts with a letter,
+  ends in `_`, and is up to 24 ASCII letters, digits, hyphens or underscores. Changing it leaves
+  existing keys usable until they expire or are revoked.
 
 ### F2 signin-server and signin-client (`signin.test.ts`, `signin-client.test.ts`)
 
@@ -103,6 +114,7 @@ issuer = "https://accounts.google.com"
 client_id = "…apps.googleusercontent.com"
 client_secret_env = "SPLICE_SIGNIN_SECRET"
 domains = ["team.example"]
+hosted_domain = "team.example"   # optional: also require the verified ID token's hd claim
 key_days = 30
 rate_per_minute = 20
 ```
@@ -111,7 +123,9 @@ rate_per_minute = 20
   scopes, domains. Never the secret.
 - `POST /server/signin/token {code, code_verifier, redirect_uri, nonce, device}` trades the code, verifies the ID
   token (JWKS signature, issuer, audience, expiry, nonce, a verified email in an allowed domain) and mints a key
-  with source `signin`, the device, and an expiry of `key_days`. Every failure is a 401 and mints nothing.
+  with source `signin`, the device, and an expiry of `key_days`. The redirect must be the client's HTTP
+  loopback callback. If `hosted_domain` is set, the signed `hd` claim must also match; a matching email
+  suffix by itself is not enough. Failed token trades mint nothing.
 - Keys are per device. On the same device the old key works until the new key's first request, then stops; other
   devices are untouched. Sign-in is rate-limited per client address (429 with `Retry-After`).
 - On the laptop: `splice login <server>` runs authorization code with PKCE through a loopback redirect and prints
@@ -298,6 +312,41 @@ plan login. The `/<command>/...` routes of the heads that exist keep working bes
   installs and joins with one command.
 - **F16 audit log** of every admin action (who created, revoked or changed what, when), and a **console Server
   page** for keys, people, teams, budgets, upstreams and usage.
+
+### Browser sign-in for dashboard forward auth
+
+Without a browser origin, `GET/HEAD /server/forward-auth` keeps accepting a Splice key as a header or
+the legacy `splice_forward_auth` cookie. For browser sign-in, set an HTTPS origin:
+
+```toml
+[server.forward_auth]
+allow = ["ada@team.example", "ops@team.example"]
+browser_origin = "https://dash.team.example"
+session_seconds = 3600
+email_header = "X-Auth-Request-Email"
+role_header = "X-Auth-Request-Role"  # optional; values are admin or user
+# A distinct web OAuth registration is optional and uses the same issuer and sign-in policy:
+# client_id = "dashboard-web-client"
+# client_secret_env = "SPLICE_DASHBOARD_OIDC_SECRET"
+```
+
+Register `https://dash.team.example/server/forward-auth/callback` with the identity provider. Use a
+separate web client if the laptop OAuth registration only permits loopback redirects. If the named secret
+variable is unset or empty, the listener refuses to start. The browser inherits
+the verified-email domains and the optional hosted-domain check from `[server.signin]`; the dashboard allowlist
+is checked after that. A configured admin CIDR restriction also applies when assigning the dashboard admin role.
+
+Expose `/server/forward-auth/login` and `/server/forward-auth/callback` on that same HTTPS origin
+without applying the forward-auth check to those two routes. Direct unauthenticated browsers to the login
+route with an optional URL-encoded same-origin path `return_to`. Use `/server/forward-auth` as the proxy's
+auth check: pass the browser cookie and a trusted client address, strip incoming identity/role headers,
+and copy them only from a successful auth response. Do not cache auth responses or pass the Splice
+auth cookie to the protected application. Header keys still work, but browser mode replaces the
+legacy key cookie with a signed, expiring, dashboard-only session cookie.
+
+Revoke a browser session from the existing key list (source `browser`) or revoke all keys for the person.
+Keep the identity provider's account policy current so a revoked person cannot sign in again. Restarting
+the server also invalidates browser cookies; their signing key is held only in memory.
 
 ## What stays outside splice
 

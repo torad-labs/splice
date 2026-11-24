@@ -57,6 +57,17 @@ public class KeyApi(
         }
     }
 
+    /** Imports an existing Splice key hash without ever receiving the key. */
+    internal suspend fun importKey(body: JsonObject?, actor: String): ServerAnswer {
+        val asked = KeyImportReader.read(body) ?: return refused(
+            "send a person, a Splice key prefix and its SHA-256 hex hash; expires_at and revoked_at may be UTC times",
+        )
+        val row = keys.importKey(asked)
+            ?: return ServerAnswer.Refused(HttpStatusCode.Conflict, "that key hash or prefix already exists")
+        audit?.record(actor, "key.import", row.person, buildJsonObject { put(KEY_PREFIX_FIELD, row.prefix) })
+        return ServerAnswer.Done(HttpStatusCode.Created, row(row))
+    }
+
     /** [person]'s own key after their sign-in (F2): minted for [device] with the source `signin`, living [days],
      *  and answered with the key, once. */
     internal suspend fun signedIn(person: String, device: String, days: Int): ServerAnswer {
@@ -74,7 +85,7 @@ public class KeyApi(
             "key.create",
             request.person,
             buildJsonObject {
-                put("prefix", minted.row.prefix)
+                put(KEY_PREFIX_FIELD, minted.row.prefix)
                 request.name?.let { put("name", it) }
                 put("source", minted.row.source)
             },
@@ -91,7 +102,7 @@ public class KeyApi(
         val key = keys.revoke(prefix)
             ?: return ServerAnswer.Refused(HttpStatusCode.NotFound, "no key has the prefix ${LogSafe.str(prefix)}")
         log("[server] key ${key.prefix} of ${LogSafe.str(key.person)} revoked\n")
-        audit?.record(actor, "key.revoke", key.person, buildJsonObject { put("prefix", key.prefix) })
+        audit?.record(actor, "key.revoke", key.person, buildJsonObject { put(KEY_PREFIX_FIELD, key.prefix) })
         return done(row(key))
     }
 
@@ -110,7 +121,7 @@ public class KeyApi(
     }
 
     private fun row(key: ServerKey): JsonObject = buildJsonObject {
-        put("prefix", key.prefix)
+        put(KEY_PREFIX_FIELD, key.prefix)
         put(PERSON, key.person)
         put("name", key.name)
         put("source", key.source)
@@ -133,6 +144,8 @@ public class KeyApi(
 
 // why: a key's name is a label an operator reads in a list ("laptop", "ci"); 64 characters hold any such label.
 private const val NAME_MAX = 64
+
+private const val KEY_PREFIX_FIELD = "prefix"
 
 // The field every answer names a person in.
 // A person, as every server answer and query names one.

@@ -33,6 +33,7 @@ internal data class Identity(
     val expiresIn: Long = 3_600,
     /** Signed with a key the JWKS doesn't publish. */
     val foreignKey: Boolean = false,
+    val hostedDomain: String? = null,
 )
 
 internal class StandInIssuer : AutoCloseable {
@@ -130,6 +131,7 @@ internal class StandInIssuer : AutoCloseable {
             put("sub", "sub-${who.email}")
             put("email", who.email)
             put("email_verified", who.verified)
+            who.hostedDomain?.let { put("hd", it) }
             put("nonce", issued.nonce)
             put("iat", now)
             put("exp", now + who.expiresIn)

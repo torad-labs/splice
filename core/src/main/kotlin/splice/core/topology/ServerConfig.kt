@@ -52,6 +52,10 @@ public data class ServerConfig(
     /** `[server.backup]` (F14): durable state snapshots (`keys.json`, `people.json`, `budgets.json`, `ledger.jsonl`,
      *  `audit.jsonl`) written on a schedule and restored fail-closed on a fresh disk. */
     val backup: ServerBackup = ServerBackup(),
+    /** The addresses and prefixes allowed to use the listener's admin privileges. Empty is unrestricted. */
+    @SerialName("admin_cidrs") val adminCidrs: List<String> = emptyList(),
+    /** The mark on newly minted keys. Stored keys keep working when it changes. */
+    @SerialName("key_prefix") val keyPrefix: String = DEFAULT_SERVER_KEY_PREFIX,
 ) {
     /** Whether the file carries a `[server]` table at all, whatever it holds. */
     val declared: Boolean get() = this != ServerConfig()
@@ -94,10 +98,19 @@ public data class ServerClient(
     public val floor: ClientVersion? get() = ClientVersionParser().parse(minimum)
 }
 
-/** `[server.forward_auth]` (F13): who may open internal dashboards behind reverse-proxy `forward_auth`. Admins in
- *  `[server] admins` are always admitted; [allow] lists additional emails (`ada@team.example`) or `@domain` rules. */
+/** `[server.forward_auth]`: dashboard access for admins and the emails or `@domain` rules in [allow]. */
 @Serializable
-public data class ServerForwardAuth(val allow: List<String> = emptyList()) {
+public data class ServerForwardAuth(
+    val allow: List<String> = emptyList(),
+    /** HTTPS origin serving both the protected app and the browser sign-in routes. Null keeps key-only mode. */
+    @SerialName("browser_origin") val browserOrigin: String? = null,
+    @SerialName("session_seconds") val sessionSeconds: Int = DEFAULT_BROWSER_SESSION_SECONDS,
+    @SerialName("email_header") val emailHeader: String = "X-Auth-Request-Email",
+    @SerialName("role_header") val roleHeader: String? = null,
+    /** Optional separate OAuth registration for the browser callback, at the same issuer. */
+    @SerialName("client_id") val clientId: String? = null,
+    @SerialName("client_secret_env") val clientSecretEnv: String? = null,
+) {
     /** Whether [person] (lowercased email) is admitted by [allow] or by being an [isAdmin]. */
     public fun admits(person: String, isAdmin: Boolean): Boolean {
         if (isAdmin) return true
@@ -136,6 +149,8 @@ public data class ServerSignin(
     @SerialName("key_days") val keyDays: Int = DEFAULT_SIGNIN_KEY_DAYS,
     /** Sign-ins one client address may try in any minute; 0 is no cap. */
     @SerialName("rate_per_minute") val ratePerMinute: Int = DEFAULT_SIGNIN_RATE_PER_MINUTE,
+    /** When set, the signed ID token must also carry this exact hosted domain in its `hd` claim. */
+    @SerialName("hosted_domain") val hostedDomain: String? = null,
 ) {
     /** Whether [email], a lowercased one, is in one of [domains]. */
     public fun admits(email: String): Boolean {
@@ -151,6 +166,8 @@ private const val DEFAULT_SIGNIN_KEY_DAYS = 30
 // why: a person signs in a few times a day at most; twenty a minute from one address covers an office behind one NAT
 // all signing in at nine, and holds a script trying codes to a trickle.
 private const val DEFAULT_SIGNIN_RATE_PER_MINUTE = 20
+
+private const val DEFAULT_BROWSER_SESSION_SECONDS = 3_600
 
 /** The listener's TLS material: the certificate chain and the private key, each a PEM file. */
 public data class ServerPem(val cert: Path, val key: Path) {
@@ -187,7 +204,9 @@ public object PersonEmails {
     private val shape = Regex("""^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$""")
 
     /** [text] as the person it names, trimmed and lowercased; null when it is not an email. */
-    public fun read(text: String): String? = text.trim().lowercase().takeIf(shape::matches)
+    public fun read(text: String): String? = text.trim().lowercase().takeIf {
+        shape.matches(it) && it.none(Char::isISOControl)
+    }
 }
 
 /** What a server port collision names as its owner in [Topology.portCollisions]: its own key path. */

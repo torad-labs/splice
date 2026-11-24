@@ -13,6 +13,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import splice.core.topology.DEFAULT_SERVER_KEY_PREFIX
+import splice.core.topology.ServerKeyFormat
 import splice.share.StateFile
 import java.nio.file.Path
 import java.security.SecureRandom
@@ -83,9 +85,10 @@ public class ServerKeys(
     private val io: CoroutineDispatcher,
     private val clock: Clock = Clock.systemUTC(),
     random: SecureRandom = SecureRandom(),
+    keyPrefix: String = DEFAULT_SERVER_KEY_PREFIX,
 ) {
     private val store = StateFile(file, KeyFile.serializer())
-    private val mint = KeyMint(random)
+    private val mint = KeyMint(random, keyPrefix)
     private val mutation = Mutex()
 
     @Volatile
@@ -109,7 +112,8 @@ public class ServerKeys(
     /** Everyone who holds a key the listener would admit now: by the same rule admit() refuses one by. */
     public fun livePeople(): Set<String> {
         val now = clock.millis()
-        return byHash.values.filter { it.refusalAt(now) == null }.mapTo(sortedSetOf()) { it.person }
+        return byHash.values.filter { it.source != BROWSER_SOURCE && it.refusalAt(now) == null }
+            .mapTo(sortedSetOf()) { it.person }
     }
 
     public suspend fun mint(request: KeyRequest): MintedKey = mutation.withLock {
@@ -129,6 +133,18 @@ public class ServerKeys(
         publish(byHash + (row.hash to row))
         MintedKey(key, row)
     }
+
+    /** Imports a hash once. Conflicts include revoked and expired rows, which a repeat import must not revive. */
+    internal suspend fun importKey(asked: KeyImport): ServerKey? = mutation.withLock {
+        val key = asked.row(clock.millis())
+        if (key.hash in byHash || byHash.values.any { it.prefix == key.prefix }) return@withLock null
+        publish(byHash + (key.hash to key))
+        key
+    }
+
+    /** A signed browser cookie only refers to a dashboard session, never to an inference key. */
+    internal fun browserSession(reference: String): ServerKey? =
+        byHash[reference]?.takeIf { it.source == BROWSER_SOURCE && it.refusalAt(clock.millis()) == null }
 
     /** Revokes the key [prefix] names and answers it, as it now stands; null when no key has that prefix. A key
      *  already revoked keeps the moment it was first revoked. */
@@ -152,8 +168,8 @@ public class ServerKeys(
      *  sign-in key's first use supersedes the older live keys of its device before it answers, so the very next
      *  request on one of them is refused. */
     public suspend fun admit(presented: String?): KeyVerdict {
-        val key = presented?.takeIf { it.startsWith(KEY_MARK) }?.let { byHash[mint.hash(it)] }
-            ?: return KeyVerdict.Unknown
+        val key = presented?.takeIf(ServerKeyFormat::validKey)?.let { byHash[mint.hash(it)] }
+            ?.takeUnless { it.source == BROWSER_SOURCE } ?: return KeyVerdict.Unknown
         val now = clock.millis()
         key.refusalAt(now)?.let { return it }
         if (key.lastUsedAt == null && !used.containsKey(key.prefix)) supersedeElders(key)
@@ -183,7 +199,7 @@ public class ServerKeys(
     /** Whether [text] holds a key this server issued, live or not, anywhere in it. What a caller sends beside the key
      *  that admitted it is asked this before any of it leaves the machine: a person's key stays at the server. Each
      *  run with a key's shape is hashed and looked up, as [admit] does, and nothing is marked used. */
-    internal fun heldIn(text: String): Boolean = mint.shapedIn(text).any { mint.hash(it) in byHash }
+    internal fun heldIn(text: String): Boolean = ServerKeyFormat.keysIn(text).any { mint.hash(it) in byHash }
 
     /** Writes when each key was last used, if any was used since the last write and that write is [olderThanMs] old.
      *  The listener asks after a turn; the daemon's stop asks with 0, so nothing is lost at a restart. */
@@ -209,6 +225,8 @@ internal const val OPERATOR_SOURCE: String = "operator"
 
 /** The source of a key a person's own sign-in minted (F2). */
 internal const val SIGNIN_SOURCE: String = "signin"
+
+internal const val BROWSER_SOURCE: String = "browser"
 
 // why: an operator reads "last used" to find the keys nobody uses, in days; a minute of it lost to a crash changes
 // no such answer, and one write a minute is nothing to the disk.

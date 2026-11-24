@@ -124,7 +124,17 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
         "<server>",
         CommandFactory { a -> a.getOrNull(1)?.takeIf { a.size == 2 }?.let(Command::Logout) },
     ),
-    "setup" to CommandRegistration("", CommandFactory.Alone(Command.Setup)),
+    // `setup --update` (Nov 23, 2026): the checkup of an install, asking only about what is new. No other word parses.
+    "setup" to CommandRegistration(
+        "[--update]",
+        CommandFactory { a ->
+            when {
+                a.size == 1 -> Command.Setup()
+                a.size == 2 && a[1] == SETUP_UPDATE_FLAG -> Command.Setup(update = true)
+                else -> null
+            }
+        },
+    ),
     "add" to CommandRegistration(
         "<profile> [--name NAME] [--base-url URL] [--model ID[:WINDOW]]... [--command CMD] " +
             "[--key provider|new] [--live] [--yes]",
@@ -254,3 +264,6 @@ internal class CommandParser {
     /** argv -> Command, or null for an unknown/empty verb (caller prints usage). */
     internal fun parse(args: Array<String>): Command? = verbs[args.firstOrNull()]?.invoke(args)
 }
+
+// `splice setup --update`: offer only what a new release adds.
+private const val SETUP_UPDATE_FLAG = "--update"

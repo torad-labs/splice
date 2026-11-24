@@ -315,6 +315,7 @@ public class Daemon(
         DesktopAppLibrary(
             DesktopAppConfig(statePaths.envReader),
             overrides = DesktopPolicyOverrides(statePaths.desktopPolicyOverridesFile),
+            log = log,
         ),
     )
     private val stopLock = Mutex()

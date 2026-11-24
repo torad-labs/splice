@@ -19,6 +19,7 @@ import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepthProbe
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
+import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
@@ -63,11 +64,12 @@ internal class SetupSignIn(
             ),
         )
         var ok = true
-        for ((key, command) in pending) {
-            if (confirm("Sign in to ${palette.paint(palette.signal, command)} now?", default = true)) {
+        // By the head's key: setup retires the command of each plan it connects, so the command names nothing to run.
+        for ((key, _) in pending) {
+            if (confirm("Sign in to ${palette.paint(palette.signal, key)} now?", default = true)) {
                 if (!loginHead(key)) ok = false
             } else {
-                println("  " + palette.paint(palette.quiet, "skipped; sign in later with: $command login"))
+                println("  " + palette.paint(palette.quiet, "skipped; sign in later with: splice login $key"))
             }
         }
         return ok
@@ -83,42 +85,37 @@ internal class SetupSignIn(
      * stage. An operator who has just finished setup wants ONE thing — what to type — and the
      * previous four-row key/value block gave that answer the same weight as the dashboard URL.
      *
-     * So: the next thing to type, alone, in splice's own tone, surrounded by space. That is the
-     * first head that can launch, the login that makes one launchable, or the setup command when
-     * no plan was selected.
-     * Everything else is a quiet line under it. A head still missing a credential is listed as the
-     * command that finishes it, never as a status, because "needs a key" is not actionable and
-     * `claude-or login` is.
+     * So: the next thing to type, alone, in splice's own tone, surrounded by space. That is [launch], the command that
+     * starts Claude Code on splice's door (`claude-splice` when setup linked it), with or without a plan: the door
+     * works with nothing signed in. Custom head commands are deprecated, so no plan's own command is the hero any more;
+     * each plan whose credential is in place is named by what to type in `claude` for its models (`/model <selector>`).
+     * A plan still missing a credential is listed as the command that finishes it, never as a status, because "needs a
+     * key" is not actionable and `splice login openrouter` is.
      *
      * The block does NOT announce completion. SetupCommand ends on the frame's outro, and the
      * first cut of this method opened with its own "Setup complete." — so the screen said done
      * twice, the way the old "You're set." heading had against "Toolkit ready!".
      */
-    internal fun printNextSteps(topology: Topology) {
+    internal fun printNextSteps(topology: Topology, launch: String = LAUNCH_CLAUDE) {
         // READINESS IS THE PREDICATE `splice status` USES. The first cut asked only whether an
         // OAuth head had its token file, so an api-key head with no key counted as ready — and on a
         // topology that listed it first, the wizard's largest word was a command that fails on
         // launch. A head whose provider is missing is skipped, exactly as status skips it.
         val heads = topology.heads.entries.mapNotNull { (key, head) ->
             val provider = topology.providers[head.provider] ?: return@mapNotNull null
-            (head.claude.command ?: key) to credentialed(key, provider)
+            Triple(key, head, credentialed(key, provider))
         }
-        val ready = heads.filter { it.second }.map { it.first }
-        val pending = heads.filterNot { it.second }.map { "${it.first} login" }
-        val hero = ready.firstOrNull() ?: pending.firstOrNull()
-            ?: if (topology.heads.isEmpty()) "splice setup" else null
+        val ready = heads.filter { it.third }.map { (key, head, _) -> selector(key, head) }
+        val pending = heads.filterNot { it.third }.map { "splice login ${it.first}" }
         println()
-        if (hero != null) {
-            println()
-            println("      " + palette.strong + palette.signal + hero + palette.off)
-            println()
-            println()
+        println()
+        println("      " + palette.strong + palette.signal + launch + palette.off)
+        println()
+        println()
+        if (ready.isNotEmpty()) {
+            println("  " + palette.paint(palette.quiet, "in claude     ") + ready.joinToString("   "))
         }
-        val alsoReady = ready.filterNot { it == hero }
-        if (alsoReady.isNotEmpty()) {
-            println("  " + palette.paint(palette.quiet, "also ready    ") + alsoReady.joinToString("   "))
-        }
-        for (login in pending.filterNot { it == hero }) {
+        for (login in pending) {
             println("  " + palette.paint(palette.quiet, "needs login   ") + palette.paint(palette.signal, login))
         }
         println()
@@ -126,11 +123,14 @@ internal class SetupSignIn(
         // left with the console on Oct 7, 2026.
         // The console came back after that, and nothing on a new install named it (Nov 11, 2026): the installer, this
         // screen and `splice status` all left a person to find `splice console` in the usage line.
-        verb("splice launch claude", "Claude Code on Splice (leaves default claude untouched)")
-        verb("splice launch claude-desktop", "Claude Desktop side-by-side on Splice")
-        verb("splice console", "accounts, models and usage, in a browser")
-        verb("splice status", "see what's running")
-        verb("splice doctor", "anything wrong prints its fix")
+        verbs(
+            LAUNCH_CLAUDE to "Claude Code on Splice (leaves default claude untouched)",
+            "splice launch claude-desktop" to "Claude Desktop side-by-side on Splice",
+            "splice console" to "accounts, models and usage, in a browser",
+            "splice status" to "see what's running",
+            "splice doctor" to "anything wrong prints its fix",
+            "splice setup --update" to "set up what a new release adds",
+        )
         // Nov 12, 2026: the one request the daemon makes that nobody asked it for is said here, with its host and
         // the line that turns it off.
         println()
@@ -140,6 +140,10 @@ internal class SetupSignIn(
         // more row of this list.
         println()
     }
+
+    /** What to type in `claude` for [head]'s models: `/model <its pinned selector>`, or its key with none pinned. */
+    private fun selector(key: String, head: HeadConfig): String =
+        head.pinnedModel.takeIf { it.isNotBlank() }?.let { "/model ${head.discoveryPrefix}$it" } ?: key
 
     /** A head that can launch as-is: the client's own login, or a credential splice can find. */
     private fun credentialed(key: String, provider: ProviderConfig): Boolean =
@@ -151,11 +155,19 @@ internal class SetupSignIn(
         println("  " + palette.paint(palette.quiet, text))
     }
 
-    /** One command and what it is for, the command padded so the descriptions form a column. */
-    private fun verb(command: String, purpose: String) {
-        println("  " + palette.paint(palette.signal, command.padEnd(VERB_W)) + palette.paint(palette.quiet, purpose))
+    /** Each command and what it is for, the commands padded to the longest one plus a gap, so the descriptions form a
+     *  column. Until Nov 23, 2026 the width was a fixed 18, sized for "splice console", and every longer command
+     *  ("splice launch claude-desktop" is 28) ran into its description. */
+    private fun verbs(vararg rows: Pair<String, String>) {
+        val width = rows.maxOf { it.first.length } + VERB_GAP
+        for ((command, purpose) in rows) {
+            println("  " + palette.paint(palette.signal, command.padEnd(width)) + palette.paint(palette.quiet, purpose))
+        }
     }
 }
 
-/** Width of the command column in the closing block; "splice console" is the longest at 14. */
-private const val VERB_W = 18
+/** The spaces between the longest command in the closing block and its description. */
+private const val VERB_GAP = 3
+
+/** The command that starts Claude Code on splice's door, beside the person's own `claude`. */
+internal const val LAUNCH_CLAUDE = "splice launch claude"

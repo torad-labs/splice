@@ -18,6 +18,7 @@ import kotlinx.serialization.json.JsonObject
 import splice.app.desktop.record.DesktopAppRecord
 import splice.client.desktop.DesktopAppConfig
 import splice.core.util.Cancellables
+import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -31,6 +32,8 @@ internal class DesktopAppLibrary(
     private val managedPaths: List<Path> = config.managedFiles,
     /** The Desktop policy values the person set in the console, laid over splice's policy; none when null. */
     private val overrides: DesktopPolicyOverrides? = null,
+    /** Where a profile sync that failed is said: the daemon log, or the command's stderr. */
+    private val log: LogSink = LogSink {},
 ) {
     private val files = DesktopLibraryFiles()
 
@@ -111,7 +114,7 @@ internal class DesktopAppLibrary(
     /** The library of each Claude Desktop started on a config folder of its own beside this one
      *  (DesktopAppConfig.beside). */
     fun beside(): List<DesktopAppLibrary> =
-        config.beside().map { DesktopAppLibrary(it, defaults, profileSync, overrides = overrides) }
+        config.beside().map { DesktopAppLibrary(it, defaults, profileSync, it.managedFiles, overrides, log) }
 
     /** [models] written as the model list of the configuration this library applies, and splice's policy given to it
      *  where it says nothing (DesktopAppConfig.withPolicy), when that configuration points Desktop at [door]; whether
@@ -144,9 +147,15 @@ internal class DesktopAppLibrary(
             ?.let { file to it }
     }
 
+    /** The gateway profile given what the person has in Claude Code and the 1P Desktop (DesktopProfileSync). It never
+     *  stops splice's configuration going in, and a failure is said, with the profile, so a missing server or skill can
+     *  be traced. */
     private fun syncProfileBestEffort() {
         val appData = config.library.parent ?: return
-        Cancellables.runCatchingCancellable { profileSync.syncInto(appData) }
+        Cancellables.runCatchingCancellable { profileSync.syncInto(appData) }.onFailure { failure ->
+            val why = SafeFailureText.render(failure)
+            log("[desktop] $appData was not given your MCP servers, extensions and skills ($why)\n")
+        }
     }
 
     /** splice's configuration [id] written for [door] and [helper], with its policy for Desktop. */

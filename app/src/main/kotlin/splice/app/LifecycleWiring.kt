@@ -4,6 +4,7 @@
 // V4-220 item 4: and the console's upgrade, run in its own user scope.
 package splice.app
 
+import splice.app.capability.CapabilityAftercare
 import splice.app.cli.AdminSupport
 import splice.app.cli.ConfigFixOffer
 import splice.app.provider.local.LocalRowBootFindings
@@ -30,6 +31,7 @@ import splice.lifecycle.upgrade.UpgradeAuto
 import splice.lifecycle.upgrade.UpgradeRuns
 import splice.lifecycle.upgrade.UpgradeVerb
 import splice.lifecycle.upgrade.VersionedRestart
+import splice.lifecycle.upgrade.aftercare.AftercareStep
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -124,6 +126,9 @@ internal object LifecycleWiring {
             VersionedRestart { restart(it, waitForCompactions = false, launchJar = installedJar()) },
             UpgradeUnits(InstallWiring.units(env), InstallWiring.daemonUnits(env)),
             cliUpdateSettings(),
+            // What the new jar does once its upgrade passed: the maintenance and the "action needed" list.
+            CapabilityAftercare(env, AftercareStep { InstallWiring.refreshHub(env) })
+                .aftercare(TerminalOutput(::println)),
         )
     }
 

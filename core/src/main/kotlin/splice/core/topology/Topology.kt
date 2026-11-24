@@ -29,6 +29,8 @@ import splice.core.client.SPLICE_CLIENT_HEADER
 import splice.core.client.SPLICE_WRAPPER_HEADER
 import splice.core.compaction.CompactionConfig
 import splice.core.config.Knob
+import splice.core.harness.HarnessCatalog
+import splice.core.harness.HarnessConfig
 import splice.core.mode.ModeSetting
 import splice.core.model.CatalogWindows
 import splice.core.model.ClientModelPolicy
@@ -64,6 +66,8 @@ public data class Topology(
     val server: ServerConfig = ServerConfig(),
     /** custom-provider (issue #680): the door's own settings, today its named commands. */
     val door: DoorConfig = DoorConfig(),
+    /** Local additions to the shipped harness catalog. The topology editor preserves these as written. */
+    val harnesses: Map<String, HarnessConfig> = emptyMap(),
     /** The harness (docs/specs/harness.md): capabilities splice.toml declares, read apart from the schema decode
      *  (CapabilityToml) and attached once found well-formed. Not part of the canonical tree the console edits. */
     @Transient val capabilities: List<Capability> = emptyList(),
@@ -71,6 +75,8 @@ public data class Topology(
      *  (ModeSettingsReader) and attached once found well-formed, by mode name. */
     @Transient val modes: Map<String, ModeSetting> = emptyMap(),
 ) {
+    public val harnessCatalog: HarnessCatalog get() = HarnessCatalog(harnesses)
+
     /** Resolve a user-supplied head name — the topology key or the installed wrapper command
      *  (starter: head `openrouter`, command `claude-openrouter`) — to matching topology keys. A topology-KEY
      *  match is exact and wins as the sole result; otherwise ALL heads whose wrapper command equals

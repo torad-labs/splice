@@ -37,28 +37,17 @@ private const val MCP_REG_FIELD_HARNESSES = "harnesses"
 private const val MCP_REG_FIELD_ENTRY = "entry"
 private const val MCP_REG_FIELD_SOURCE = "source"
 private const val MCP_REG_FIELD_IMPORTED_AT = "imported_at"
-private const val WIRE_CLAUDE = "claude"
-private const val WIRE_CLAUDE_CODE = "claude-code"
 private const val WIRE_CLAUDE_DESKTOP = "claude-desktop"
-private const val WIRE_AGY = "agy"
-private const val WIRE_CODEX = "codex"
 private const val WIRE_MANUAL = "manual"
 
 private val USERINFO_PATTERN = Regex("(^[A-Za-z][A-Za-z0-9+.-]*://)[^/@]+@")
 
-/** Harnesses that Splice MCP can connect to and synchronize. */
-public enum class McpHarness(public val wire: String, public val displayName: String) {
-    CLAUDE(WIRE_CLAUDE, "Claude Code / Desktop"),
-    AGY(WIRE_AGY, "Antigravity (agy)"),
-    CODEX(WIRE_CODEX, "Codex"),
-}
-
 /** Where a user MCP server definition was imported from. */
 public enum class McpImportSource(public val wire: String) {
-    CLAUDE_CODE(WIRE_CLAUDE_CODE),
+    CLAUDE_CODE(McpHarness.CLAUDE.definition.wire),
     CLAUDE_DESKTOP(WIRE_CLAUDE_DESKTOP),
-    AGY(WIRE_AGY),
-    CODEX(WIRE_CODEX),
+    AGY(McpHarness.AGY.wire),
+    CODEX(McpHarness.CODEX.wire),
     MANUAL(WIRE_MANUAL),
 }
 
@@ -81,18 +70,20 @@ public data class McpRegistrySnapshot(
 
 /** Parsing helpers for harness and source wire names, plus credential-safe URL sanitization. */
 public class McpRegistryNames {
-    public fun harness(wire: String): McpHarness? = when (wire.trim().lowercase()) {
-        WIRE_CLAUDE, WIRE_CLAUDE_CODE, WIRE_CLAUDE_DESKTOP -> McpHarness.CLAUDE
-        WIRE_AGY, "antigravity" -> McpHarness.AGY
-        WIRE_CODEX -> McpHarness.CODEX
-        else -> null
+    public fun harness(wire: String): McpHarness? {
+        val id = wire.trim().lowercase()
+        return if (id == WIRE_CLAUDE_DESKTOP) {
+            McpHarness.CLAUDE
+        } else {
+            McpHarness.entries.firstOrNull { it.wire == id || it.definition.wire == id }
+        }
     }
 
     public fun source(wire: String): McpImportSource? = when (wire.trim().lowercase()) {
-        WIRE_CLAUDE_CODE, WIRE_CLAUDE -> McpImportSource.CLAUDE_CODE
+        McpImportSource.CLAUDE_CODE.wire, McpHarness.CLAUDE.wire -> McpImportSource.CLAUDE_CODE
         WIRE_CLAUDE_DESKTOP, "desktop" -> McpImportSource.CLAUDE_DESKTOP
-        WIRE_AGY, "antigravity" -> McpImportSource.AGY
-        WIRE_CODEX -> McpImportSource.CODEX
+        McpImportSource.AGY.wire, McpHarness.AGY.definition.wire -> McpImportSource.AGY
+        McpImportSource.CODEX.wire -> McpImportSource.CODEX
         WIRE_MANUAL -> McpImportSource.MANUAL
         else -> null
     }

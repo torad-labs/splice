@@ -12,7 +12,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.app.desktop.harness.DesktopHarness
 import splice.app.desktop.harness.FamilyState
 import splice.app.desktop.harness.HARNESS_KEY_ENABLED
 import splice.app.desktop.harness.HARNESS_KEY_FAMILIES
@@ -23,10 +22,11 @@ import splice.app.desktop.harness.HarnessFileRead
 import splice.app.desktop.harness.HarnessSwitch
 import splice.app.desktop.harness.HarnessTarget
 import splice.app.desktop.harness.HarnessWords
+import splice.core.harness.HarnessDefinition
 import splice.core.util.JsonScalars
 
 /** What a PATCH asks of one family: a harness, a switch, or both; null leaves that part as it is. */
-internal data class HarnessEdit(val harness: DesktopHarness?, val enabled: Boolean?)
+internal data class HarnessEdit(val harness: HarnessDefinition?, val enabled: Boolean?)
 
 /** A PATCH body read: the families to change and the ones to put back to the default, or why it is refused. */
 internal sealed class HarnessPatch {
@@ -51,7 +51,7 @@ internal class DesktopHarnessRouteOps {
         val reset = mutableSetOf<HarnessFamily>()
         body.forEach { (key, value) ->
             val family = words.family(key) ?: return@forEach
-            if (value is JsonObject) set[family] = edit(value) else reset += family
+            if (value is JsonObject) set[family] = edit(family, value) else reset += family
         }
         return HarnessPatch.Changes(set, reset)
     }
@@ -142,12 +142,14 @@ internal class DesktopHarnessRouteOps {
     private fun harnessRefusal(family: HarnessFamily, value: JsonElement): String? {
         val named = JsonScalars.str(value).takeIf { (value as? JsonPrimitive)?.isString == true }
             ?: return "harness must be a harness id"
-        if (words.harness(named)?.takeIf { it in family.choices } != null) return null
+        if (family.choices.any { it.wire == named }) return null
         return "`$named` is not a harness ${family.wire} runs on; one of ${family.choices.joinToString { it.wire }}"
     }
 
-    private fun edit(value: JsonObject): HarnessEdit =
-        HarnessEdit(words.harness(JsonScalars.str(value, HARNESS_KEY_HARNESS)), switchOf(value[HARNESS_KEY_ENABLED]))
+    private fun edit(family: HarnessFamily, value: JsonObject): HarnessEdit {
+        val id = JsonScalars.str(value, HARNESS_KEY_HARNESS)
+        return HarnessEdit(family.choices.firstOrNull { it.wire == id }, switchOf(value[HARNESS_KEY_ENABLED]))
+    }
 
     private fun switchOf(element: JsonElement?): Boolean? =
         (element as? JsonPrimitive)?.takeUnless { it.isString }?.booleanOrNull

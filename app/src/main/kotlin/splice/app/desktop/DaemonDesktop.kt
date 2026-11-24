@@ -66,6 +66,7 @@ internal class DaemonDesktop(
         DesktopHarnessFile(statePaths.desktopHarnessesFile),
         topology.providers.mapValues { (key, provider) -> ProviderFamilyRule().of(key, provider) },
         topology.daemon.antigravity,
+        topology.harnessCatalog,
         log,
     )
 

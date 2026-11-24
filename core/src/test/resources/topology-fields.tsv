@@ -45,6 +45,11 @@ door.commands.*.models
 door.commands.*.provider	
 door.selector_aliases	
 door.selector_aliases.*	
+harnesses	
+harnesses.*.argv	
+harnesses.*.description	
+harnesses.*.name	
+harnesses.*.protocol	
 heads	
 heads.*.claude	
 heads.*.claude.command	

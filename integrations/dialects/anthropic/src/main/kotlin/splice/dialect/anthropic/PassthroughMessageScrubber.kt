@@ -92,6 +92,7 @@ internal class PassthroughMessageScrubber(
      *  ToolNameShortener.fullLogged and the translator's two latches. */
     private val droppedLogged = ConcurrentHashMap.newKeySet<String>()
     private val fragments = MessageFragments()
+    private val userContent = PassthroughUserContent()
 
     fun scrubMessages(messages: JsonElement, context: FragmentContextKey? = null): JsonArray {
         val arr = messages as? JsonArray ?: return buildJsonArray { }
@@ -152,7 +153,8 @@ internal class PassthroughMessageScrubber(
         val type = JsonScalars.strOrEmpty(block[TYPE])
         quirks.request.blockAllowlist?.let { if (type !in it) return disallowed(type, block) }
         if (isDropped(type, block)) return null
-        return rebuildBlock(block, type)
+        val rebuilt = rebuildBlock(block, type)
+        return if (type == TYPE_TOOL_RESULT) userContent.toolResult(rebuilt) else rebuilt
     }
 
     /** splice's own notice, thinking with no text (V4-157), or thinking a verifying upstream refuses (V4-455). */

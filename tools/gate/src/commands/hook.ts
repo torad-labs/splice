@@ -43,7 +43,7 @@
 // it is forbidden to sessions.
 //
 // ONE TIER CAN GO UNRUN, AND THE PUSH SAYS SO. On a machine that sends its Gradle runs to another (elsewhere.ts), the
-// hook asks rig, before the Gradle tier starts, whether a machine is there to take it. When none is, the tier is not
+// hook checks for a runner for this platform before the Gradle tier starts. When none is installed, the tier is not
 // started, here or anywhere, and a push whose direct legs are green is sent with the words that Gradle did not run.
 // Its proof is then the pull request's checks, which run the same suites on GitHub, and main takes nothing they have
 // not passed. Nov 21, 2026: a build box that was down held every push for an hour and then refused it, and the answer
@@ -52,8 +52,7 @@
 // that read the commit run there (READS_THE_COMMIT), and every test suite, type check and lint is left to the pull
 // request's checks, named in the verdict. (Nov 21, 2026: with Gradle gone, a push still ran the gate's tests, which
 // start Gradle, the console's, which start a browser, and the release tests on the machine the sessions share.)
-// The question is asked here and not in the slot because the slot that runs is the pushed
-// commit's own (its build tree), and a commit from before this change carries a slot that builds in place.
+// The hook owns remote dispatch: an older pushed commit may still carry a slot that builds in place.
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -69,7 +68,7 @@ import { preparePrePushTree, type PrePushTree, takePrePushTreeNow } from "../lib
 import { type Lane, type LaneOptions, type LaneOutcome, openLane } from "../lib/push-lane.ts";
 import { APP_CHECK, PACKAGED_TEST, packagedTestReason } from "../lib/packaged-worker.ts";
 import { appendPushTiming, type PushTiming, readProfile } from "../lib/prepush-timing.ts";
-import { keptOffThisMachine, noMachineFor } from "../lib/elsewhere.ts";
+import { gradleElsewhere, keptOffThisMachine, noMachineFor } from "../lib/elsewhere.ts";
 import { isoSeconds } from "../lib/slot.ts";
 import { exitStatusOf } from "../lib/status.ts";
 import { confineTo, type ImpactInput, impactClause, impactLines, testArgs, testImpact, type TestImpact } from "../lib/test-impact.ts";
@@ -151,7 +150,7 @@ export interface HookDeps {
   /** Whether another gradle process is live: the evidence a collision needs. The default reads the process list. */
   readonly rivalLive?: () => boolean;
   /** Why no machine is there to take the Gradle tier of the tree at [root], or undefined when the tier can run. The
-   *  default asks rig (elsewhere.ts); a judgement handed its own [gate] and no answer here runs the tier. */
+   *  default checks for the platform runner; a judgement handed its own [gate] and no answer here runs the tier. */
   readonly noMachine?: (root: string) => Promise<string | undefined>;
   /** Whether the builds, checks and tests of the tree at [root] are kept off this machine, so that only the legs that
    *  read the commit run here. The default asks elsewhere.ts; a judgement handed its own [gate] and no answer here
@@ -470,14 +469,27 @@ export function ktlintFullRunReason(changed: readonly string[], catalog?: Catalo
  *  gate's lock. Output is echoed to stderr as it arrives when [echo] is set. [extraOptions] go beside the pre-push options on
  *  every run, a collision's rerun included, and so do the [options] a run is handed. A raised [cancel] sends the slot SIGTERM:
  *  it forwards the signal to gradle's process group and holds the slot until the group is gone (runUnderSlot). */
-/** rig's word for why no machine is there to take the pre-push Gradle tier of the tree at [root] (elsewhere.ts). */
-const absentMachine = (root: string): Promise<string | undefined> =>
-  noMachineFor({ buildRoot: root, label: "pre-push", args: [], env: Bun.env });
+/** Why no platform runner is installed for this build tree. No tree is copied just to ask. */
+const absentMachine = (root: string): string | undefined =>
+  noMachineFor({ buildRoot: root, env: Bun.env });
 /** Whether the tree at [root] has its builds, checks and tests kept off this machine (elsewhere.ts). */
 const keptOffHere = (root: string): boolean => keptOffThisMachine({ buildRoot: root, env: Bun.env });
 
 export function slotRunner(lay: Layout, label: string, echo: boolean, extraOptions: readonly string[] = []): GateRunner {
   return async (tasks, _root, cancel, options = []) => {
+    const args = [
+      ...(label === "pre-push" ? [...PRE_PUSH_GRADLE_OPTIONS, ...extraOptions] : []),
+      ...options,
+      ...tasks,
+    ];
+    let output = "";
+    const log = (text: string): void => {
+      output += text;
+      if (echo) process.stderr.write(text);
+    };
+    const remote = await gradleElsewhere({ buildRoot: lay.buildRoot, label, args, env: spawnEnv({}) }, { cancel, log });
+    if (remote !== undefined) return { status: remote, output };
+
     const jdk = resolveJdk21();
     if ("error" in jdk) throw new Error(jdk.error);
     if (echo) process.stderr.write(`  jdk 21: ${jdk.javaHome} (${jdk.source})\n`);
@@ -488,9 +500,7 @@ export function slotRunner(lay: Layout, label: string, echo: boolean, extraOptio
         "slot",
         label,
         "--",
-        ...(label === "pre-push" ? [...PRE_PUSH_GRADLE_OPTIONS, ...extraOptions] : []),
-        ...options,
-        ...tasks,
+        ...args,
       ],
       {
         cwd: lay.repoRoot,
@@ -499,9 +509,6 @@ export function slotRunner(lay: Layout, label: string, echo: boolean, extraOptio
           // The pre-push tree takes its own lock beside its build root, whatever sha the tree holds: the slot code inside an
           // older tree would pick the checkout's shared lock, and a push would block every builder in the checkout.
           ...(label === "pre-push" ? { GRADLE_SLOT_LOCK: join(lay.buildRoot, ".gradle-slot.lock") } : {}),
-          // The slot inside a tree cut between Nov 21's two changes builds in place unless this asks it to go; a slot
-          // from before or after reads nothing by this name. It goes with the last branch that holds such a tree.
-          ...(label === "pre-push" ? { SPLICE_GRADLE_REMOTE: "1" } : {}),
         }),
         stdout: "pipe",
         stderr: "pipe",
@@ -510,14 +517,10 @@ export function slotRunner(lay: Layout, label: string, echo: boolean, extraOptio
     const stop = () => proc.kill("SIGTERM");
     if (cancel?.aborted) stop();
     else cancel?.addEventListener("abort", stop, { once: true });
-    let output = "";
     const pump = async (stream: ReadableStream<Uint8Array>): Promise<void> => {
       const decoder = new TextDecoder();
-      for await (const chunk of stream) {
-        const text = decoder.decode(chunk, { stream: true });
-        output += text;
-        if (echo) process.stderr.write(text);
-      }
+      for await (const chunk of stream) log(decoder.decode(chunk, { stream: true }));
+      log(decoder.decode());
     };
     await Promise.all([pump(proc.stdout), pump(proc.stderr)]);
     await proc.exited;
@@ -889,9 +892,7 @@ async function judgeIn(
   let judged: Judged | undefined;
   let movedWhile: string[] = [];
   let gradleSeconds: number | null = null;
-  // Whether a machine is there to take the tier, asked while it still waits. It is asked before the last look below, and
-  // nothing awaits between that look and the start: a leg that fails while rig answers is seen by the look, and a
-  // question asked after it started a tier that had just been told to stop.
+  // Check for a runner before the last branch look, so a stop or moved ref cannot start a tier after that look.
   const askMachine = deps.noMachine ?? (deps.gate === undefined ? absentMachine : undefined);
   const unrun = gradlePhase === "waiting" && stoppedFor === undefined && askMachine !== undefined ? await askMachine(root) : undefined;
   // The branch is looked at once more before gradle starts: one that moved while the legs ran fails the push however gradle ends.

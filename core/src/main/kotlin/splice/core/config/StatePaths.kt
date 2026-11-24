@@ -299,6 +299,10 @@ public class StatePaths(
     /** door-default: the hook that answers splice's /login in a `claude` session on the door (DoorLogin). */
     public val doorLoginDir: Path = stateDir.resolve("door-login")
 
+    /** Terminal launch profiles (issue #791): where a `[launch.profiles.<name>]` with no `dir` keeps its Claude folder,
+     *  `<root>/launch-profiles/<name>`, which `splice launch claude --profile <name>` rebuilds before each launch. */
+    public val launchProfilesDir: Path = rootDir.resolve("launch-profiles")
+
     /** V4-174: where a traced head's day files live (`<head>-YYYY-MM-DD.jsonl`), owner-only. ONE
      *  path for the daemon that writes them and the `splice trace` verb that reads them. */
     public val traceDir: Path = stateDir.resolve("trace")

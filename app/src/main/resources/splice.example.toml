@@ -107,14 +107,15 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # retry_after_starting = 30        # Retry-After while starting, and while off with no future until
 #
 # # What a pooled upstream is asked before its health is believed: "health" (the default) asks /health at the
-# # provider's health_seconds; "completion" asks the model to really complete, and needs model. at_start
-# # false holds a member out until its first probe passes; true (the default) serves until one fails.
+# # provider's health_seconds; "completion" asks the model to really complete, and needs model. With a
+# # completion probe, at_start true (the default) holds a member out until its first probe passes; false serves it
+# # at once until a probe fails.
 # [server.probe]
 # kind = "completion"
 # model = "team-model"
 # timeout_seconds = 30
 # every_seconds = 60
-# at_start = false
+# at_start = true
 
 # ── compaction instructions: your text after Claude Code's own summarizer prompt ──
 # Most specific scope wins and REPLACES the others (project+model > project > model > global);

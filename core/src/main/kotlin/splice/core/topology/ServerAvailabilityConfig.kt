@@ -27,7 +27,8 @@ public data class ServerState(
  *  `/health` as before; `completion` asks it to really complete a minimal request for [model] (required then, and
  *  only for the chat-completions dialect pools allow today), which must answer within [timeoutSeconds].
  *  [everySeconds] is how often the completion probe runs; a health probe keeps its provider's `health_seconds`.
- *  [atStart] is whether a member counts as up before its first probe answers: false holds it out until one passes. */
+ *  [atStart] gates a completion probe's members at start: true (the default) holds each out until its first probe
+ *  passes, false serves it from the start as a health probe always does. */
 @Serializable
 public data class ServerProbe(
     val kind: String = "health",

@@ -1,8 +1,9 @@
 // NEW: server mode (docs/specs/server-mode.md, F4). The daemon's pools: one for each provider that lists
 // `[[providers.<p>.upstreams]]`, made the first time a head of that provider is built and kept for the daemon's life,
 // so every head of the provider balances over the same servers and a head rebuilt while the daemon runs keeps what the
-// pool knows. Making a pool starts its health checks: each server is asked `/health` at once and then every
-// `health_seconds`, on its own loop, so one server that hangs holds up no other's reading.
+// pool knows. Making a pool starts its checks: each server is asked at once and then at the check's interval, on its
+// own loop, so one server that hangs holds up no other's reading. What a check asks is `[server.probe]`'s (PoolCheck):
+// `/health` every `health_seconds` by default, or a real completion every `every_seconds`.
 //
 // It also keeps, for every provider a chat head was built for, pool or not, the headers the daemon's own requests to
 // that provider's server carry: server mode relays an OpenAI-style client's requests with them (F4, openai-route).
@@ -13,9 +14,9 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import splice.app.probe.MS_PER_SECOND
 import splice.core.pool.UpstreamPool
 import splice.core.topology.ProviderConfig
+import splice.core.topology.ServerProbe
 import splice.core.topology.UpstreamConfig
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
@@ -23,8 +24,9 @@ import splice.core.util.SafeFailureText
 import splice.upstream.Ticker
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.codemode.ProcessTicker
+import splice.upstream.readiness.ReadinessReading
 import splice.upstream.transport.LocalHttp
-import splice.upstream.transport.LocalHttpReply
+import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
 
 /** The headers a request the daemon itself makes of a provider's server carries (a health check, an OpenAI-style
@@ -35,13 +37,17 @@ internal fun interface ServerHeaders {
     fun now(): Map<String, String>
 }
 
-/** How a health check reaches a server: the JDK client in production (JdkHealthHttp), a scripted one in a test. */
+/** How a check reaches a server: the JDK client in production (JdkHealthHttp), a scripted one in a test. [timeout]
+ *  bounds how long the server may take to answer; null keeps the bound a health check always had. */
 internal fun interface HealthHttp {
-    fun with(headers: Map<String, String>): LocalHttp
+    fun with(headers: Map<String, String>, timeout: Duration?): LocalHttp
+
+    /** A client whose requests keep the bound a health check always had. */
+    fun with(headers: Map<String, String>): LocalHttp = with(headers, null)
 }
 
 internal class UpstreamPools(
-    /** The daemon's own scope, which its stop cancels: the health loops end with it. */
+    /** The daemon's own scope, which its stop cancels: the check loops end with it. */
     private val scope: CoroutineScope,
     private val log: LogSink,
     private val http: HealthHttp,
@@ -52,17 +58,23 @@ internal class UpstreamPools(
     private val order = ConcurrentHashMap<String, Int>()
     private val carried = ConcurrentHashMap<String, ServerHeaders>()
 
+    /** `[server.probe]` as booted, which every pool made from then is checked by. The daemon sets it before it builds
+     *  any head; unset, a pool is checked as server mode always checked one, `/health` with each server up at start. */
+    @Volatile
+    var probe: ServerProbe = ServerProbe()
+
     /** The pool of the provider [key], or null when it lists no upstreams. The first call for a provider makes its
-     *  pool and starts its health checks, which carry [headers]. With a pool or without, the provider's requests
-     *  carry the headers of the last call from then. */
-    fun of(key: String, provider: ProviderConfig, headers: ServerHeaders): UpstreamPool? {
+     *  pool and starts its checks: a health check carries [headers], and a completion probe asks [ready], its
+     *  dialect's question. With a pool or without, the provider's requests carry the headers of the last call from
+     *  then. */
+    fun of(key: String, provider: ProviderConfig, ready: PoolReadiness, headers: ServerHeaders): UpstreamPool? {
         carried[key] = headers
         if (provider.upstreams.isEmpty()) return null
         return pools.computeIfAbsent(key) {
             order[key] = order.size
-            UpstreamPool(key, provider.upstreams, log).also { pool ->
-                val check = HealthCheck(pool, provider.healthSeconds * MS_PER_SECOND, headers)
-                pool.upstreams.forEach { watch(check, it, waitFirst = false) }
+            val check = PoolCheck.Plan(probe).of(provider.healthSeconds, headers, ready)
+            UpstreamPool(key, provider.upstreams, log, startHealthy = check.startHealthy).also { pool ->
+                pool.upstreams.forEach { watch(Watched(pool, check), it, waitFirst = false) }
             }
         }
     }
@@ -80,48 +92,32 @@ internal class UpstreamPools(
      *  interval. A loop that died of a failure no check expects would leave its server's reading frozen, up or down,
      *  so the server reads down from then and the loop is started again: supervision owns that class, as in
      *  LocalRuntimeWatch, and the daemon's stop, which cancels the scope, restarts nothing. */
-    private fun watch(check: HealthCheck, upstream: UpstreamConfig, waitFirst: Boolean) {
+    private fun watch(watched: Watched, upstream: UpstreamConfig, waitFirst: Boolean) {
+        val everyMs = watched.check.everyMs
         val loop = scope.launch(dispatcher) {
-            if (waitFirst && !ticker.awaitTick(check.everyMs)) return@launch
+            if (waitFirst && !ticker.awaitTick(everyMs)) return@launch
             while (isActive) {
-                ask(check, upstream)
-                if (!ticker.awaitTick(check.everyMs)) return@launch
+                ask(watched, upstream)
+                if (!ticker.awaitTick(everyMs)) return@launch
             }
         }
         loop.invokeOnCompletion { cause ->
             if (cause == null || cause is CancellationException) return@invokeOnCompletion
             val why = "its health check stopped (${SafeFailureText.render(cause)})"
-            check.pool.checked(upstream.name, healthy = false, said = why)
-            if (scope.isActive) watch(check, upstream, waitFirst = true)
+            watched.pool.checked(upstream.name, healthy = false, said = why)
+            if (scope.isActive) watch(watched, upstream, waitFirst = true)
         }
     }
 
-    /** One health check of [upstream]. A check that could not be made is read as one that failed. */
-    private fun ask(check: HealthCheck, upstream: UpstreamConfig) {
-        val asked = Cancellables.runCatchingCancellable {
-            http.with(check.headers.now())("GET", upstream.healthUrl, null)
-        }
-        check.found(upstream, asked)
+    /** One check of [upstream]. A check that could not be made is read as one that failed. */
+    private suspend fun ask(watched: Watched, upstream: UpstreamConfig) {
+        val reading = Cancellables.runCatchingCancellable { watched.check.ask(http, upstream) }.fold(
+            onSuccess = { it },
+            onFailure = { ReadinessReading(false, "the check failed: ${SafeFailureText.render(it)}") },
+        )
+        watched.pool.checked(upstream.name, reading.ready, reading.said)
     }
 
-    /** What every server of one pool is checked with: how often, and the headers a check carries. */
-    private class HealthCheck(val pool: UpstreamPool, val everyMs: Long, val headers: ServerHeaders) {
-        /** What asking [upstream] for its health came to: healthy on a 2xx, and not on any other answer or none. A
-         *  check that could not be made reads the server down and says why in the pool's line. */
-        fun found(upstream: UpstreamConfig, asked: Result<LocalHttpReply?>) {
-            val status = asked.fold(onSuccess = { it?.status }, onFailure = { null })
-            val said = asked.fold(
-                onSuccess = { reply -> reply?.let { "HTTP ${it.status}" } ?: "no answer" },
-                onFailure = { "the check failed: ${SafeFailureText.render(it)}" },
-            )
-            pool.checked(upstream.name, status != null && status in OK_FROM until OK_BELOW, said)
-        }
-    }
+    /** One pool, and how its servers are checked. */
+    private data class Watched(val pool: UpstreamPool, val check: PoolCheck)
 }
-
-// The statuses that say a server can take a turn, the 2xx: llama-server answers 200 once its model is loaded and 503
-// before.
-private const val OK_FROM = 200
-
-// The first status past the 2xx: an answer under it, from 200 up, is a healthy server's.
-private const val OK_BELOW = 300

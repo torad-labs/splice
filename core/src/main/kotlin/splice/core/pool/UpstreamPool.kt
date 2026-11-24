@@ -13,8 +13,10 @@
 //     the server's own answer. The server listener asks [UpstreamPool.up] first and refuses the turn itself.
 //
 // A server starts healthy, so a daemon that just booted serves before its first check lands; the first check and the
-// first refused connection correct that within moments. The pool holds no network: what checks health tells it
-// ([UpstreamPool.checked]), and what sends a turn tells it ([UpstreamLease.refused]).
+// first refused connection correct that within moments. Where a completion probe holds each server out until one passes
+// (`[server.probe] at_start`), a server starts down instead, and its first failed check says why in the log. The pool
+// holds no network: what checks health tells it ([UpstreamPool.checked]), and what sends a turn tells it
+// ([UpstreamLease.refused]).
 package splice.core.pool
 
 import splice.core.topology.UpstreamConfig
@@ -30,8 +32,12 @@ public data class UpstreamReading(
 )
 
 /** One server's state, read and changed only under its pool's lock. */
-internal class UpstreamMember(val config: UpstreamConfig) {
-    var healthy: Boolean = true
+internal class UpstreamMember(val config: UpstreamConfig, var healthy: Boolean) {
+    /** Held out from the start and not yet passed a check, so it has never taken a turn. */
+    var held: Boolean = !healthy
+
+    /** Whether a check of it has come back yet. */
+    var asked: Boolean = false
     var inflight: Int = 0
 
     fun reading(provider: String): UpstreamReading =
@@ -43,8 +49,11 @@ public class UpstreamPool(
     public val provider: String,
     upstreams: List<UpstreamConfig>,
     private val log: LogSink,
+    /** Whether a server takes turns before its first check answers: true, as server mode always did, unless a
+     *  completion probe holds each one out until it passes. */
+    startHealthy: Boolean = true,
 ) {
-    private val members = upstreams.map(::UpstreamMember)
+    private val members = upstreams.map { UpstreamMember(it, startHealthy) }
     private val homes = SessionHomes()
 
     /** The servers as the file lists them: their names, and where each is asked for its health. */
@@ -78,11 +87,16 @@ public class UpstreamPool(
     @Synchronized
     public fun checked(name: String, healthy: Boolean, said: String) {
         val member = members.firstOrNull { it.config.name == name } ?: return
+        val first = !member.asked
+        member.asked = true
         if (healthy) {
-            if (!member.healthy) log("[$provider] upstream $name passed its health check; it takes turns again\n")
+            val again = if (member.held) "" else " again"
+            if (!member.healthy) log("[$provider] upstream $name passed its health check; it takes turns$again\n")
             member.healthy = true
+            member.held = false
         } else {
-            down(member, "failed its health check ($said)")
+            // A server held out from the start says why at its first check, as one taken out does when it goes down.
+            down(member, "failed its health check ($said)", loud = member.healthy || member.held && first)
         }
     }
 
@@ -99,8 +113,8 @@ public class UpstreamPool(
     @Synchronized
     internal fun healthy(member: UpstreamMember): Boolean = member.healthy
 
-    private fun down(member: UpstreamMember, why: String) {
-        if (member.healthy) {
+    private fun down(member: UpstreamMember, why: String, loud: Boolean = member.healthy) {
+        if (loud) {
             val others = if (members.any { it !== member && it.healthy }) "the others take its turns" else "none is up"
             log("[$provider] upstream ${member.config.name} $why; $others until it passes a health check\n")
         }

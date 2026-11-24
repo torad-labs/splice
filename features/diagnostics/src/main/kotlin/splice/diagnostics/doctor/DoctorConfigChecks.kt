@@ -118,9 +118,10 @@ internal class DoctorConfigChecks(
     }
 
     /** upgrade-compat (Nov 23, 2026): each value a head holds that its provider should hold for the gateway, which boot
-     *  serves past (TopologyFindings.warnings): WARN, with the verb that moves it. */
+     *  serves past (TopologyFindings.warnings): WARN, with the verb that moves it. The key path goes last, since a
+     *  path ending `_prefix` and then a colon would read as a fix inside the detail. */
     private fun headMoveChecks(topology: Topology): List<DoctorCheck> = TopologyFindings.warnings(topology).map {
-        DoctorCheck(CHECK_TOPOLOGY, CheckStatus.WARN, it.text(), MOVE_FIX, fixKind = FixKind.COMMAND)
+        DoctorCheck(CHECK_TOPOLOGY, CheckStatus.WARN, "${it.message} (${it.path})", MOVE_FIX, fixKind = FixKind.COMMAND)
     }
 
     /** V4-110: a `[daemon].state_dir` the operator wrote but that cannot be resolved to a path. The

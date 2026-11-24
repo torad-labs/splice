@@ -129,13 +129,15 @@ internal class ServerMessagesHeadersTest {
     }
 
     @Test
-    fun `benign text at a registered prefix rides while imported 64-char and mismatched-prefix keys stay here`() {
+    fun `benign text at a registered prefix rides while imported 32-char, 64-char and mismatched keys stay here`() {
         val mode = rig.open(state, listOf(StandInHead(head.address.port)))
         val ola = rig.keyFor("ola@example.com")
         val olaPrefix = ola.substringBeforeLast('_')
+        val key32 = "spk_short032_" + "d".repeat(32)
         val key64 = "team_longer64_" + "b".repeat(64)
         val mismatchedActual = "legacy_actual99_" + "c".repeat(48)
-        for ((prefix, secret) in listOf("team_longer64" to key64, "spk_stored01" to mismatchedActual)) {
+        val imports = listOf("spk_short032" to key32, "team_longer64" to key64, "spk_stored01" to mismatchedActual)
+        for ((prefix, secret) in imports) {
             val digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(secret.toByteArray()))
             val body = buildJsonObject {
                 put("person", "ada@example.com")
@@ -145,15 +147,13 @@ internal class ServerMessagesHeadersTest {
             assertInstanceOf(ServerAnswer.Done::class.java, runBlocking { mode.keyApi.importKey(body, "test") })
         }
         val benign = "${olaPrefix}_${"z".repeat(40)}"
-        assertEquals(200, turn(ola, stream = false, USER to benign, NOTE to "k=$key64;").statusCode())
-        val first = handedOn(from = 0, ola, key64, mismatchedActual)
-        assertEquals(benign, first[USER])
-        assertNull(first[NOTE])
-
-        assertEquals(200, turn(ola, stream = false, USER to "ref=$benign", NOTE to "t=$mismatchedActual").statusCode())
-        val second = handedOn(from = 1, ola, key64, mismatchedActual)
-        assertEquals("ref=$benign", second[USER])
-        assertNull(second[NOTE])
+        val cases = listOf("k=${key32}extraSuffix", "k=${key64}extraSuffix", "t=${mismatchedActual}extraSuffix")
+        cases.forEachIndexed { index, leaked ->
+            assertEquals(200, turn(ola, stream = false, USER to benign, NOTE to leaked).statusCode())
+            val seen = handedOn(from = index, ola, key32, key64, mismatchedActual)
+            assertEquals(benign, seen[USER])
+            assertNull(seen[NOTE])
+        }
     }
 }
 

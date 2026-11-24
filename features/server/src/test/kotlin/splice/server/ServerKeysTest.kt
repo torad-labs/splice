@@ -30,6 +30,10 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
 import java.util.HexFormat
 import kotlin.coroutines.CoroutineContext
 
@@ -163,12 +167,56 @@ internal class ServerKeysTest {
         assertTrue(keys.heldIn(mintedKey))
         assertTrue(keys.heldIn("${mintedKey}extra"))
         assertTrue(keys.heldIn("x-note=$key64; ok"))
-        assertTrue(keys.heldIn("spk_aaaaaaaa_${"x".repeat(37)}$key64"))
+        assertTrue(keys.heldIn("${key64}extraSuffix"))
+        assertTrue(keys.heldIn("spk_aaaaaaaa_${"x".repeat(37)}${key64}tail99"))
         assertTrue(keys.heldIn("Bearer $key32"))
+        assertTrue(keys.heldIn("${key32}extraSuffix"))
+        assertTrue(keys.heldIn("${mismatchedActual}extraSuffix"))
         assertInstanceOf(KeyVerdict.Admitted::class.java, runBlocking { keys.admit(mismatchedActual) })
         assertTrue(keys.heldIn("header=$mismatchedActual;"))
         runBlocking { keys.revoke(minted.row.prefix) }
         assertTrue(keys.heldIn(mintedKey))
+    }
+
+    @Test
+    fun `an older concurrent admission finishing after a newer one keeps the newer lastUsedAt in memory and on disk`() {
+        val file = folder.resolve("keys.json")
+        var nowMs = 5L
+        val clock = object : Clock() {
+            override fun instant(): Instant = Instant.ofEpochMilli(nowMs)
+
+            override fun getZone(): ZoneId = ZoneOffset.UTC
+
+            override fun withZone(zone: ZoneId): Clock = this
+        }
+        var defer = false
+        val pendingIo = ArrayDeque<Runnable>()
+        val io = object : CoroutineDispatcher() {
+            override fun dispatch(context: CoroutineContext, block: Runnable) {
+                if (defer) pendingIo.addLast(block) else block.run()
+            }
+        }
+        val keys = ServerKeys(file, io, clock)
+        runBlocking { keys.mint(KeyRequest("ada@team.example", source = SIGNIN_SOURCE, device = "laptop")) }
+        nowMs = 6L
+        val newer = runBlocking { keys.mint(KeyRequest("ada@team.example", source = SIGNIN_SOURCE, device = "laptop")) }
+
+        nowMs = 10L
+        defer = true
+        runBlocking {
+            val olderAdmission = launch { keys.admit(newer.reveal()) }
+            yield()
+            assertEquals(1, pendingIo.size)
+            pendingIo.removeFirst().run()
+            nowMs = 20L
+            defer = false
+            assertInstanceOf(KeyVerdict.Admitted::class.java, keys.admit(newer.reveal()))
+            assertEquals(20L, keys.list().single { it.prefix == newer.row.prefix }.lastUsedAt)
+            olderAdmission.join()
+        }
+        assertEquals(20L, keys.list().single { it.prefix == newer.row.prefix }.lastUsedAt)
+        runBlocking { keys.keepUse(olderThanMs = 0) }
+        assertEquals(20L, ServerKeys(file, io, clock).list().single { it.prefix == newer.row.prefix }.lastUsedAt)
     }
 
     @Test

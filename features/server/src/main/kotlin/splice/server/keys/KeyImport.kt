@@ -7,6 +7,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.core.topology.PersonEmails
 import splice.core.topology.ServerKeyFormat
+import splice.server.IMPORT_SOURCE
 import splice.server.ServerKey
 import java.time.Instant
 import java.time.format.DateTimeParseException
@@ -23,7 +24,7 @@ internal class KeyImport(
         prefix = prefix,
         hash = hash,
         person = person,
-        source = "import",
+        source = IMPORT_SOURCE,
         createdAt = now,
         expiresAt = expiresAt,
         revokedAt = revokedAt,

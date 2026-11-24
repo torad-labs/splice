@@ -14,6 +14,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import splice.core.topology.DEFAULT_SERVER_KEY_PREFIX
+import splice.core.topology.SERVER_KEY_MINTED_LENGTH
 import splice.core.topology.ServerKeyFormat
 import splice.server.keys.KeyImport
 import splice.server.keys.KeyMint
@@ -104,6 +105,7 @@ public class ServerKeys(
 
     /** When each key last admitted a request since this store was read, by prefix. */
     private val used = ConcurrentHashMap<String, Long>()
+    private val observedSecretLengths = ConcurrentHashMap.newKeySet<Int>()
     private val useVersion = AtomicLong(0L)
 
     @Volatile
@@ -183,12 +185,21 @@ public class ServerKeys(
     public suspend fun admit(presented: String?): KeyVerdict {
         val key = presented?.takeIf(ServerKeyFormat::validKey)?.let { byHash[mint.hash(it)] }
             ?.takeUnless { it.source == BROWSER_SOURCE } ?: return KeyVerdict.Unknown
+        val tailLen = presented.length - presented.lastIndexOf('_') - 1
+        if (tailLen != SERVER_KEY_MINTED_LENGTH) observedSecretLengths.add(tailLen)
         val now = clock.millis()
         key.refusalAt(now)?.let { return it }
         if (key.lastUsedAt == null && !used.containsKey(key.prefix)) supersedeElders(key)
-        used[key.prefix] = now
-        useVersion.incrementAndGet()
+        recordUse(key, now)
         return KeyVerdict.Admitted(key)
+    }
+
+    /** Records [now] against [key] without letting an older admission overwrite a newer timestamp. */
+    private fun recordUse(key: ServerKey, now: Long) {
+        val effective = key.lastUsedAt?.let { maxOf(it, now) } ?: now
+        val latest = used.merge(key.prefix, effective) { prev, current -> maxOf(prev, current) }
+        val advanced = key.lastUsedAt == null || now > key.lastUsedAt
+        if (latest == now && advanced) useVersion.incrementAndGet()
     }
 
     /** Revokes the live sign-in keys of [newer]'s person and device that were minted before it, each marked as
@@ -216,7 +227,10 @@ public class ServerKeys(
     internal fun heldIn(text: String): Boolean {
         val snapshot = byHash
         if (snapshot.isEmpty()) return false
-        return ServerKeyFormat.keysIn(text).any { mint.hash(it) in snapshot }
+        val hasImported = snapshot.values.any { it.source == IMPORT_SOURCE }
+        val knownLengths = if (observedSecretLengths.isEmpty()) emptySet() else observedSecretLengths.toSet()
+        return ServerKeyFormat.keysIn(text, knownLengths, scanVariableLengths = hasImported)
+            .any { mint.hash(it) in snapshot }
     }
 
     /** Writes when each key was last used, if any was used since the last write and that write is [olderThanMs] old.
@@ -242,7 +256,11 @@ public class ServerKeys(
         }
     }
 
-    private fun withUse(key: ServerKey): ServerKey = used[key.prefix]?.let { key.copy(lastUsedAt = it) } ?: key
+    private fun withUse(key: ServerKey): ServerKey {
+        val latest = used[key.prefix] ?: return key
+        val monotonic = key.lastUsedAt?.let { maxOf(it, latest) } ?: latest
+        return if (monotonic == key.lastUsedAt) key else key.copy(lastUsedAt = monotonic)
+    }
 }
 
 /** The source of a key the operator issued, from the CLI, the control plane or an admin's key. */
@@ -252,6 +270,8 @@ internal const val OPERATOR_SOURCE: String = "operator"
 internal const val SIGNIN_SOURCE: String = "signin"
 
 internal const val BROWSER_SOURCE: String = "browser"
+
+internal const val IMPORT_SOURCE: String = "import"
 
 // why: an operator reads "last used" to find the keys nobody uses, in days; a minute of it lost to a crash changes
 // no such answer, and one write a minute is nothing to the disk.

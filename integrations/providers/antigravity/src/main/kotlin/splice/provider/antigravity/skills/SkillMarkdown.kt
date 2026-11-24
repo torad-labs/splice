@@ -39,6 +39,10 @@ internal class SkillMarkdown {
 }
 
 private const val FENCE = "---"
+
+// why: metadata belongs at the top; a missing closing fence must not turn a long body into metadata.
 private const val MAX_FRONTMATTER_LINES = 200
+
+// why: retain ordinary skill instructions while bounding the memory and I/O spent on each Markdown file.
 private const val MAX_MARKDOWN_BYTES = 64 * 1024
 private val LINE_END = Regex("\r\n|\r|\n")

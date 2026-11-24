@@ -16,14 +16,14 @@ internal class SkillRoots(private val cwd: Path, private val env: EnvReader) {
         dir.parent.takeUnless { gitRoot(dir) }
     }.toList()
 
-    fun nativeUnder(dir: Path): Path = dir.resolve(AGENTS_DIR).resolve(SKILLS_DIR)
+    fun nativeUnder(dir: Path): Path = dir.resolve(AGENTS_DIR).resolve(LOCAL_SKILLS_DIR)
 
     fun skillDirs(workspace: List<Path>, config: Path): List<Path> =
-        workspace.flatMap { dir -> listOf(claudeUnder(dir).resolve(SKILLS_DIR), nativeUnder(dir)) } +
-            listOf(config.resolve(SKILLS_DIR), nativeUnder(UserHome.dir(env)))
+        workspace.flatMap { dir -> listOf(claudeUnder(dir).resolve(LOCAL_SKILLS_DIR), nativeUnder(dir)) } +
+            listOf(config.resolve(LOCAL_SKILLS_DIR), nativeUnder(UserHome.dir(env)))
 
     fun commandDirs(workspace: List<Path>, config: Path): List<Path> =
-        workspace.map { claudeUnder(it).resolve(COMMANDS_DIR) } + listOf(config.resolve(COMMANDS_DIR))
+        workspace.map { claudeUnder(it).resolve(LOCAL_COMMANDS_DIR) } + listOf(config.resolve(LOCAL_COMMANDS_DIR))
 
     private fun namedDir(name: String): Path? = env(name)?.takeIf(String::isNotBlank)?.let(Path::of)
 
@@ -47,7 +47,7 @@ internal object SkillPaths {
     }
 }
 
-internal const val SKILLS_DIR = "skills"
+internal const val LOCAL_SKILLS_DIR = "skills"
 private const val AGENTS_DIR = ".agents"
-private const val COMMANDS_DIR = "commands"
+private const val LOCAL_COMMANDS_DIR = "commands"
 private const val GIT_MARKER = ".git"

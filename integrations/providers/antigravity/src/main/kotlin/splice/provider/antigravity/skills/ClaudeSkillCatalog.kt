@@ -30,7 +30,7 @@ internal class ClaudeSkillCatalog(cwd: Path, env: EnvReader, log: LogSink) {
         val workspace = roots.workspace()
         val config = roots.config()
         val skills = roots.skillDirs(workspace, config).map { SkillRoot(it) }
-        val plugin = roots.pluginDir()?.let { SkillRoot(it.resolve(SKILLS_DIR), manifest.disabledIn(it)) }
+        val plugin = roots.pluginDir()?.let { SkillRoot(it.resolve(LOCAL_SKILLS_DIR), manifest.disabledIn(it)) }
         val commands = scanner.commands(roots.commandDirs(workspace, config))
         val all = winners(scanner.skills(skills + listOfNotNull(plugin)) + commands)
         return LocalSkillCatalog(all, all.filter(LocalSkillItem::isSkill).map(LocalSkillItem::name))

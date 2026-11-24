@@ -55,5 +55,7 @@ internal object SkillName {
 
 private const val SKILL_DOC = "SKILL.md"
 private const val COMMAND_EXT = ".md"
+
+// why: a crowded directory must not monopolize the Desktop initialization handshake.
 private const val MAX_ENTRIES_PER_ROOT = 1_000L
 private val NAME_PATTERN = Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")

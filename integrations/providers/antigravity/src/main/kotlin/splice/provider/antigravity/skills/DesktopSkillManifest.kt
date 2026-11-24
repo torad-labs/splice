@@ -26,8 +26,8 @@ internal class DesktopSkillManifest(private val log: LogSink) {
 
     private fun read(file: Path): String? = try {
         SkillPaths.file(file)?.let { real ->
-            val bytes = Files.newInputStream(real).use { it.readNBytes(MAX_MANIFEST_BYTES + 1) }
-            bytes.takeIf { it.size <= MAX_MANIFEST_BYTES }?.decodeToString(throwOnInvalidSequence = true)
+            val bytes = Files.newInputStream(real).use { it.readNBytes(DESKTOP_SKILL_MANIFEST_MAX_BYTES + 1) }
+            bytes.takeIf { it.size <= DESKTOP_SKILL_MANIFEST_MAX_BYTES }?.decodeToString(throwOnInvalidSequence = true)
         }
     } catch (_: IOException) {
         null
@@ -54,5 +54,7 @@ internal class DesktopSkillManifest(private val log: LogSink) {
 }
 
 private const val MANIFEST_FILE = "manifest.json"
-private const val MAX_MANIFEST_BYTES = 512 * 1024
+
+// why: allow large Desktop skill lists without handing unbounded JSON to the parser.
+private const val DESKTOP_SKILL_MANIFEST_MAX_BYTES = 512 * 1024
 private val NAME_FIELDS = listOf("name", "id", "skillId")

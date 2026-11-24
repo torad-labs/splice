@@ -124,7 +124,7 @@ internal class LaunchProfileChecks(
             raw.isBlank() -> "is blank"
             file == null -> SOURCE_RULE
             file.startsWith(folder) -> "is inside the profile's own folder, whose .claude.json is rebuilt from it"
-            file.startsWith(PathProbe.real(home.resolve(GEMINI_DIR))) -> "is inside ~/$GEMINI_DIR"
+            file.startsWith(PathProbe.real(home.resolve(GEMINI_FOLDER))) -> "is inside ~/$GEMINI_FOLDER"
             else -> null
         }
         return why?.let { TopologyFinding("launch.profiles.$name.claude_json", "$it; $SOURCE_HINT") }
@@ -186,7 +186,7 @@ private const val SOURCE_RULE = "must be an absolute file or start with ~/"
 private const val SOURCE_HINT = "name the .claude.json your MCP servers and projects are read from, or remove it"
 
 // Google's tools' own folder under the home.
-private const val GEMINI_DIR = ".gemini"
+private const val GEMINI_FOLDER = ".gemini"
 
 // The folders under the home a profile is never in, nor holds: Claude Code's own, and Google's tools'.
-private val KEPT_OUT = listOf(UserHome.CLAUDE_DIR, GEMINI_DIR)
+private val KEPT_OUT = listOf(UserHome.CLAUDE_DIR, GEMINI_FOLDER)

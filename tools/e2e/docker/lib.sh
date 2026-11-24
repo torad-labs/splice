@@ -38,6 +38,7 @@ resolve_state_dir() {
 }
 
 ARTIFACTS="${ARTIFACTS:-/artifacts}"
+CANDIDATE_JAR="$ARTIFACTS/${SPLICE_E2E_JAR_ASSET:-splice.jar}"
 REPO="${REPO:-/repo}"
 OUT="${OUT:-/out}"
 # Anything carrying a key (a 0.3.2 /launch recipe holds the management key in ANTHROPIC_AUTH_TOKEN) lives here, a
@@ -264,8 +265,9 @@ export_mock_env() { # in the MAIN shell, after read_mock_ports
 
 # ── install from release-style artifacts, exactly as a release install verifies them ───────────
 install_step() { # [artifacts-dir]  (default $ARTIFACTS; the upgrade scenario installs /from first)
-  local art="${1:-$ARTIFACTS}"
-  [ -f "$art/splice.jar" ] || { echo "no $art/splice.jar"; return 1; }
+  local art="${1:-$ARTIFACTS}" jar="$CANDIDATE_JAR"
+  if [ "$art" != "$ARTIFACTS" ]; then jar="$art/splice.jar"; fi
+  [ -f "$jar" ] || { echo "no $jar"; return 1; }
   [ -f "$art/splice-launch" ] || { echo "no $art/splice-launch"; return 1; }
   if [ -f "$art/sha256sums.txt" ]; then
     # --ignore-missing lets a manifest that omits an artifact pass in silence (reproduced in the
@@ -273,7 +275,7 @@ install_step() { # [artifacts-dir]  (default $ARTIFACTS; the upgrade scenario in
     local sums f
     sums="$(cd "$art" && sha256sum -c sha256sums.txt --ignore-missing 2>&1)" || { printf '%s\n' "$sums"; return 1; }
     printf '%s\n' "$sums"
-    for f in splice.jar splice-launch; do
+    for f in "${jar##*/}" splice-launch; do
       printf '%s\n' "$sums" | grep -qx "$f: OK" || { echo "$f is not covered by sha256sums.txt"; return 1; }
     done
   else
@@ -281,7 +283,7 @@ install_step() { # [artifacts-dir]  (default $ARTIFACTS; the upgrade scenario in
   fi
   local installer="$REPO/install.sh"
   [ -f "$art/install.sh" ] && installer="$art/install.sh"
-  SPLICE_JAR="$art/splice.jar" SPLICE_SHIM="$art/splice-launch" bash "$installer" </dev/null || return 1
+  SPLICE_JAR="$jar" SPLICE_SHIM="$art/splice-launch" bash "$installer" </dev/null || return 1
   [ -x "$HOME/.local/bin/splice" ] || { echo "splice command not linked"; return 1; }
   [ -x "$HOME/.local/bin/claudex" ] || { echo "claudex wrapper not linked"; return 1; }
   [ -x "$HOME/.local/bin/claude-mockchat" ] || { echo "claude-mockchat wrapper not linked"; return 1; }

@@ -33,6 +33,8 @@ import java.nio.file.Path
 
 // why: the launch only writes the command; Claude Code is what runs it, so any command will do here
 private const val HELPER = "sed -n 's/^Authorization: Bearer //p' /run/turn-auth-header"
+private const val GATEWAY_KEY = "splice-terminal-fixture"
+private const val WINDOW = 200_000L
 
 class LaunchKeyHelperTest(@param:TempDir private val tmp: Path) {
 
@@ -69,6 +71,29 @@ class LaunchKeyHelperTest(@param:TempDir private val tmp: Path) {
         assertNull(helperOf("claude-splice"), "the client's own login answers this head")
         assertNull(recipe.env["ANTHROPIC_AUTH_TOKEN"])
         assertFalse("ANTHROPIC_AUTH_TOKEN" in recipe.unset)
+    }
+
+    // Upgrade (Nov 24, 2026): a session launched before the head's command moved to the gateway, by 0.6.3 or 0.6.4,
+    // holds no bearer and reads its turn key through the head folder's key helper every time it starts. A launch of
+    // the same command on the gateway took that helper out of the folder, and the saved session then said "Not logged
+    // in". The folder keeps the helper; the new session holds the gateway's key and sets the helper aside.
+    @Test
+    fun `a launch on the gateway leaves the head's helper for the sessions launched before it`() {
+        val before = launch(spec("codex"))
+        val gateway = GatewayAt("http://127.0.0.1:3104/door", GATEWAY_KEY, window = WINDOW, model = "claude-codex--gpt")
+
+        val now = service.launch(
+            spec("codex"),
+            extraArgs = emptyList(),
+            dangerouslySkipPermissions = false,
+            caller = LaunchCaller(gateway = gateway),
+        )
+
+        assertEquals(HELPER, helperOf("codex"), "the session launched before still reads its turn key")
+        assertNull(before.env["ANTHROPIC_AUTH_TOKEN"], "that session holds no other credential")
+        assertEquals(GATEWAY_KEY, now.env["ANTHROPIC_AUTH_TOKEN"], "the new session holds the gateway's key")
+        val overlay = Json.parseToJsonElement(now.argv[now.argv.indexOf("--settings") + 1]).jsonObject
+        assertEquals("", overlay["apiKeyHelper"]?.jsonPrimitive?.content, "and runs no helper beside it")
     }
 
     private fun launch(spec: LaunchSpec): LaunchRecipe =

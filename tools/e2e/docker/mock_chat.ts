@@ -32,6 +32,7 @@
  *  property the docstring requires: Bun.serve serves concurrently, so one held turn does not stop
  *  another head listing its peers.
  */
+import { appendFileSync } from "node:fs";
 import { loads, dumps, obj, num, objGet, isPyObj, type PyValue, type PyObj } from "../../../tools/e2e/src/compat/python-json.ts";
 
 const REPLY_WORDS = ["Hello", " from", " the", " chat", " mock", ".", " 1,", " 2,", " 3", " END"];
@@ -193,6 +194,14 @@ async function handle(req: Request): Promise<Response> {
   const modelValue = objGet(reqObj, "model");
   const model = typeof modelValue === "string" ? modelValue : "mock-chat";
   const stream = Boolean(objGet(reqObj, "stream"));
+  const log = process.env["MOCK_CHAT_LOG"];
+  if (log) {
+    const messages = objGet(reqObj, "messages");
+    const system = (Array.isArray(messages) ? messages : [])
+      .filter((m): m is PyObj => isPyObj(m) && ["system", "developer"].includes(str(objGet(m, "role"))))
+      .map(toolText);
+    appendFileSync(log, JSON.stringify({ model, system }) + "\n");
+  }
   const scen = scenario(raw);
   if (scen === "hold") {
     // AWAIT, never block: this is the whole threading property the docstring asks for.

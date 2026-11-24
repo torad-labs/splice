@@ -1,6 +1,5 @@
-# The docker e2e in CI: a fresh machine (tools/e2e/docker/run.sh) and the upgrade rehearsal from the
-# newest published release that still has its files on GitHub (run.sh --upgrade-from), both offline inside
-# the container against mock upstreams, with the real Claude Code wrapper at the pinned version.
+# The Docker E2E in CI: fresh install, modern CLI upgrade from the CDN, and the pre-0.4 installer upgrade
+# from GitHub. All run offline against in-container mocks, using the pinned real Claude Code.
 #
 # Why this job exists: the fresh-machine e2e was red from 2026-09-22 to 2026-09-24 (a `splice status`
 # format change its assertion never followed) and nobody saw it, because nothing ran it. It runs on
@@ -53,29 +52,34 @@ jobs:
         run: ./gradlew -q :app:shadowJar --no-daemon
       - name: fresh machine
         run: tools/e2e/docker/run.sh --jar app/build/libs/app-all.jar --shim app/src/main/dist/bin/splice-launch
-      # The newest published release that is not this candidate's own version: before a bump the
-      # candidate still says the last release's version, and an upgrade to the same version cannot
-      # replace the daemon (run.sh refuses it), so the rehearsal starts from the release before.
-      # run.sh downloads the old release's files with `gh release download`, and since Oct 31, 2026 a
-      # release's files are on splice.torad.ai/download, not on its GitHub page (notes only), so the
-      # release picked must still carry a splice.jar asset.
-      - name: upgrade rehearsal from the newest other release
+      - name: upgrade rehearsal from the greatest earlier stable release
         if: ${{ !cancelled() }}
         run: |
-          candidate="$(sed -nE 's/^SPLICE_GATEWAY_VERSION="([^"]+)"$/\1/p' app/src/main/dist/bin/splice-launch)"
-          from=""
-          for tag in $(gh release list -R "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 20 \
-            --json tagName --jq '.[].tagName' | grep -vx "v$candidate"); do
-            assets="$(gh release view "$tag" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
-            if grep -qx splice.jar <<<"$assets"; then from="$tag"; break; fi
-          done
-          if [ -z "$candidate" ] || [ -z "$from" ]; then
-            echo "::error::no candidate version ($candidate) or release to upgrade from ($from)"
-            exit 1
-          fi
+          set -euo pipefail
+          shim=app/src/main/dist/bin/splice-launch
+          candidate=$(sed -nE 's/^SPLICE_GATEWAY_VERSION="([^"]+)"$/\1/p' "$shim")
+          [[ $candidate =~ ^([0-9]+\.[0-9]+\.[0-9]+)([-+][0-9A-Za-z.+-]+)?$ ]] ||
+            { echo "::error::invalid candidate gateway version ($candidate)"; exit 1; }
+          core=${BASH_REMATCH[1]}
+          from=$(curl -fsSL https://splice.torad.ai/download/releases.json |
+            jq -er --arg core "$core" '
+              def triplet: split(".") | map(tonumber);
+              ($core | triplet) as $candidate
+              | [ .[]
+                  | select(.draft == false and .prerelease == false)
+                  | .tag_name
+                  | select(type == "string" and
+                      test("^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"))
+                  | {tag: ., v: (ltrimstr("v") | triplet)}
+                  | select(.v < $candidate) ]
+              | max_by(.v) | .tag // error("no stable release older than candidate")
+            ')
           echo "upgrade rehearsal: $from -> $candidate"
           tools/e2e/docker/run.sh --no-build --upgrade-from "$from" \
-            --jar app/build/libs/app-all.jar --shim app/src/main/dist/bin/splice-launch
+            --jar app/build/libs/app-all.jar --shim "$shim"
+      - name: legacy installer upgrade from v0.3.2
+        if: ${{ !cancelled() }}
+        run: tools/e2e/docker/run.sh --no-build --upgrade-from v0.3.2 --jar app/build/libs/app-all.jar --shim app/src/main/dist/bin/splice-launch
       # CHANGELOG 0.4.0 (V4-71, V4-72, V4-73): an Anthropic plan-limit 429 reaches the real Claude Code
       # as the in-band error it retries, no no-wait signal leaks through, and the client sleeps until
       # the upstream's reset and resumes (tools/e2e/docker/plan-limit.sh).

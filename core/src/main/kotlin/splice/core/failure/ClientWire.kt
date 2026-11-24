@@ -213,8 +213,8 @@ private object Kept {
     private fun refusalStatus(why: Decline): Int? = when (why) {
         is Decline.TooLarge, is Decline.Unfit -> HttpStatus.CONTENT_TOO_LARGE
         Decline.ReadTimeout -> HttpStatus.REQUEST_TIMEOUT
-        Decline.NoSharedLogin, Decline.HeapBusy, is Decline.Budget, is Decline.Preflight, is Decline.BadBody,
-        is Decline.UnknownModel, Decline.ForeignHost, Decline.BadLocalKey, Decline.NotLaunched,
+        Decline.NoSharedLogin, Decline.HeapBusy, is Decline.UpstreamsFull, is Decline.Budget, is Decline.Preflight,
+        is Decline.BadBody, is Decline.UnknownModel, Decline.ForeignHost, Decline.BadLocalKey, Decline.NotLaunched,
         is Decline.SpliceKeyAsLogin, Decline.LivenessProbe, is Decline.Untranslatable,
         is Decline.CapabilityRefused, is Decline.CapabilityFailed, is Decline.ModeRefused,
         -> null
@@ -224,10 +224,10 @@ private object Kept {
      *  bound, which the client answers by compacting. */
     private fun refusalRetry(why: Decline): Boolean? = when (why) {
         is Decline.Preflight -> false
-        Decline.NoSharedLogin, is Decline.TooLarge, is Decline.Unfit, Decline.HeapBusy, is Decline.Budget,
-        is Decline.BadBody, Decline.ReadTimeout, is Decline.UnknownModel, Decline.ForeignHost, Decline.BadLocalKey,
-        Decline.NotLaunched, is Decline.SpliceKeyAsLogin, Decline.LivenessProbe, is Decline.Untranslatable,
-        is Decline.CapabilityRefused, is Decline.CapabilityFailed, is Decline.ModeRefused,
+        Decline.NoSharedLogin, is Decline.TooLarge, is Decline.Unfit, Decline.HeapBusy, is Decline.UpstreamsFull,
+        is Decline.Budget, is Decline.BadBody, Decline.ReadTimeout, is Decline.UnknownModel, Decline.ForeignHost,
+        Decline.BadLocalKey, Decline.NotLaunched, is Decline.SpliceKeyAsLogin, Decline.LivenessProbe,
+        is Decline.Untranslatable, is Decline.CapabilityRefused, is Decline.CapabilityFailed, is Decline.ModeRefused,
         -> null
     }
 
@@ -303,7 +303,7 @@ private object OwnTypes {
      *  login here print with no login label (final-design.md section 11, ruling 4). The splice key a session sent
      *  where its provider login belongs stays authentication_error: that credential is the one being refused. */
     private fun declined(why: Decline): ErrorType = when (why) {
-        Decline.HeapBusy -> ErrorType.OVERLOADED
+        Decline.HeapBusy, is Decline.UpstreamsFull -> ErrorType.OVERLOADED
         Decline.BadLocalKey, Decline.NotLaunched, is Decline.SpliceKeyAsLogin -> ErrorType.AUTHENTICATION
         is Decline.TooLarge, is Decline.Unfit, is Decline.Preflight, is Decline.BadBody, Decline.ReadTimeout,
         is Decline.UnknownModel, Decline.LivenessProbe, is Decline.Untranslatable, is Decline.Budget,

@@ -28,20 +28,21 @@ public class PoolWalk(
     // Servers this request left because they took no connection.
     private var left = 0
 
-    /** The server the request goes to now, taken when it is first asked for. A request that asks after it ended
-     *  holds no place: it is counted nowhere, since nothing would ever give its place back. */
+    /** The server the request goes to now, taken when it is first asked for; null when the pool's cap leaves it no
+     *  place, and the request is sent nowhere (UpstreamPool.full). A request that asks after it ended holds no place:
+     *  it is counted nowhere, since nothing would ever give its place back. */
     @Synchronized
-    public fun server(): UpstreamLease = lease ?: pool.lease(preferred, session, turn).also { leased ->
+    public fun server(): UpstreamLease? = lease ?: pool.lease(preferred, session, turn)?.also { leased ->
         taken = leased.name
         if (ended) leased.release() else lease = leased
     }
 
     /** The server the request is on took no connection: it reads down from now and the request's place there is
-     *  given back. True when another server is left to ask, which [server] then names; false once none is up or
-     *  every server was asked. */
+     *  given back. True when another server is left to ask, which [server] then names, or says has no place; false
+     *  once none is up or every server was asked, or the request holds no server to leave. */
     @Synchronized
     public fun moved(): Boolean {
-        val refused = server()
+        val refused = lease ?: return false
         refused.refused()
         refused.release()
         lease = null

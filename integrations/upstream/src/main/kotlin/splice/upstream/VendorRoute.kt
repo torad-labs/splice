@@ -7,12 +7,19 @@
 // replies lives in its own module (ProviderDeviation).
 package splice.upstream
 
+import splice.core.failure.Decline
 import splice.core.turn.Usage
 import splice.upstream.failure.FailedReply
 
 /** One turn's route upstream, from [Provider.route]. The transport and the head say what happened to each request it
  *  routed; which of those means the conversation must leave its route is the vendor's to know. */
 public interface VendorRoute {
+    /** Why the request about to be sent has no place to go, for a vendor that is several servers each taking only so
+     *  many turns at once (server mode's `inflight_per_upstream`, #791): every one that could take it is full, and
+     *  the turn ends with this refusal, sent nowhere. Asked before each attempt, ahead of [target], which a null here
+     *  (the default) has found a place for. */
+    public fun full(): Decline? = null
+
     /** Where the request about to be sent goes, for a vendor that is several servers: the URL of the one this turn
      *  is on now, the same until [unreachable] moves it. Null (the default) sends it to the provider's own URL. */
     public fun target(): String? = null

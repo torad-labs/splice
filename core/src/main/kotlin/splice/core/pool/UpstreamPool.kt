@@ -23,6 +23,7 @@
 // ([UpstreamPool.checked]), and what sends a turn tells it ([UpstreamLease.refused]).
 package splice.core.pool
 
+import splice.core.failure.Decline
 import splice.core.topology.UpstreamConfig
 import splice.core.util.LogSink
 
@@ -94,14 +95,16 @@ public class UpstreamPool(
      *  healthy, the least busy of them all. Under a cap ([reserve]) a server that is full is passed over: a session
      *  whose home is full goes to the least busy healthy server with room and keeps its home, since its prompt is
      *  cached there. A [turn] server mode reserved a place for takes it here; any other lease takes a place only where
-     *  one is left beside the reserved ones. A healthy server chosen for a [session] with no healthy home is where its
-     *  next turn goes. The turn counts as in flight there until the lease is released. */
+     *  one is left beside the reserved ones. Under a cap no lease is ever given on a server that is full: with no place
+     *  left, null, and the turn is sent nowhere ([full] says why to its person). A healthy server chosen for a [session] with no
+     *  healthy home is where its next turn goes. The turn counts as in flight there until the lease is released. */
     @Synchronized
-    public fun lease(preferred: String? = null, session: String? = null, turn: String? = null): UpstreamLease {
+    public fun lease(preferred: String? = null, session: String? = null, turn: String? = null): UpstreamLease? {
         val reserved = turn != null && reservations.remove(turn)
         val healthy = members.filter { it.healthy }
+        val open = open(healthy, reserved) ?: return null
         val home = homes.of(session)?.let { name -> healthy.firstOrNull { it.config.name == name } }
-        val chosen = choose(roomy(healthy, reserved), home, preferred)
+        val chosen = choose(open, home, preferred)
         // A session with no healthy home makes its home where its turn went; one whose home is only full keeps it.
         val moves = home == null && chosen.healthy
         if (session != null && moves) homes.served(session, chosen.config.name)
@@ -109,29 +112,33 @@ public class UpstreamPool(
         return UpstreamLease(this, chosen)
     }
 
-    /** The server of [roomy] a turn goes to: its session's healthy [home] while that one has room, the least busy when
-     *  it is full, and for a turn with no home [preferred] while that one has room, else the least busy; with none
-     *  healthy, the least busy of them all. */
-    private fun choose(roomy: List<UpstreamMember>, home: UpstreamMember?, preferred: String?): UpstreamMember = when {
-        home != null && home in roomy -> home
-        home != null -> roomy.minBy { it.inflight }
-        else -> roomy.firstOrNull { it.config.name == preferred } ?: roomy.ifEmpty { members }.minBy { it.inflight }
+    /** The server of [open] a turn goes to: its session's healthy [home] while that one has room, the least busy when
+     *  it is full, and for a turn with no home [preferred] while that one has room, else the least busy. */
+    private fun choose(open: List<UpstreamMember>, home: UpstreamMember?, preferred: String?): UpstreamMember = when {
+        home != null && home in open -> home
+        home != null -> open.minBy { it.inflight }
+        else -> open.firstOrNull { it.config.name == preferred } ?: open.minBy { it.inflight }
     }
 
-    /** The healthy servers a lease may take under the cap: those under it, for a turn holding a reserved place or
-     *  while a place is left beside the reserved ones. With none, every healthy one: server mode refuses its own turns
-     *  before this, and a turn of this machine's own is not its to refuse. */
-    private fun roomy(healthy: List<UpstreamMember>, reserved: Boolean): List<UpstreamMember> {
-        if (each <= 0) return healthy
-        val open = healthy.filter { it.inflight < each }
-        val spare = reserved || room(healthy) > reservations.size
-        return open.takeIf { spare && it.isNotEmpty() } ?: healthy
+    /** The servers a lease may take: the healthy ones, or with none healthy all of them (whoever sends a turn anyway
+     *  hears the server's own answer). Under a cap only those under it, and only for a lease holding a reserved place
+     *  or while a place is left beside the reserved ones: null when that leaves none, so no lease is given past it. */
+    private fun open(healthy: List<UpstreamMember>, reserved: Boolean): List<UpstreamMember>? {
+        val candidates = healthy.ifEmpty { members }
+        if (each <= 0) return candidates
+        val roomy = candidates.filter { it.inflight < each }
+        val spare = reserved || room(candidates) > reservations.size
+        return roomy.takeIf { spare && it.isNotEmpty() }
     }
 
-    /** How many more turns [healthy] take under the cap, in Long: a cap near Int.MAX_VALUE times the servers would
+    /** What a turn [lease] found no place for is told: every server that could take it holds the cap's number. */
+    @Synchronized
+    public fun full(): Decline.UpstreamsFull = Decline.UpstreamsFull(provider, each)
+
+    /** How many more turns [servers] take under the cap, in Long: a cap near Int.MAX_VALUE times the servers would
      *  wrap negative in Int and leave no room at all. */
-    private fun room(healthy: List<UpstreamMember>): Long =
-        healthy.sumOf { (each - it.inflight).coerceAtLeast(0).toLong() }
+    private fun room(servers: List<UpstreamMember>): Long =
+        servers.sumOf { (each - it.inflight).coerceAtLeast(0).toLong() }
 
     /** What a health check of the server [name] found; [said] is how it answered, for the log. */
     @Synchronized

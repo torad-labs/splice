@@ -10,8 +10,8 @@
 // that event comes. An SSE reader acts on nothing before that line, so the client loses nothing by the wait, and the
 // stream always stands between two events. That is what lets a keepalive go out in a silence the head fell into
 // halfway through an event, and what lets the relay end a stream it must end (its server broke off, fell silent past
-// `stream_idle_seconds`, or closed its connection in the middle of a line) with an error event its client reads, never
-// one glued onto half of the head's. A connection that closed is no proof that its stream ended whole.
+// `stream_idle_seconds`, or closed its connection before an event's blank line came) with an error event its client
+// reads, never one glued onto half of the head's. A connection that closed is no proof that its stream ended whole.
 //
 // Whether a wait has outlasted its time is the relay's clock's to say (RelayClock). The relay asks it twice: for the
 // second a silent head is given before its client's stream is opened (ShareRelay.forward), and for each interval
@@ -114,19 +114,14 @@ internal class QuietWire(private val out: ByteWriteChannel, every: Duration?, pr
         return 0
     }
 
-    /** The head's stream reached its end: true when it ended whole, with what it left past its last blank line
-     *  passed on as it came, closed with the blank line it lacked when that is all it lacked; false when it ended in
-     *  the middle of a line, a stream cut short that no reader could act on, which is then the relay's to end with its
-     *  error event ([error]). */
-    suspend fun end(): Boolean {
-        val tail = held
-        if (tail.isNotEmpty() && tail.last() != LINE_FEED) return false
+    /** The head's stream reached its end: true when it ended whole, at the blank line that ends its last event; false
+     *  when it ended with an event that blank line never came for, a stream cut short of which nothing more is passed
+     *  on: an SSE reader acts on an event only at its blank line. The relay ends that one with its error event
+     *  ([error]). */
+    fun end(): Boolean {
+        val whole = held.all { it == LINE_FEED || it == CARRIAGE_RETURN }
         held = ByteArray(0)
-        if (tail.all { it == LINE_FEED || it == CARRIAGE_RETURN }) return true
-        out.writeFully(tail, 0, tail.size)
-        out.writeFully(byteArrayOf(LINE_FEED), 0, 1)
-        out.flush()
-        return true
+        return whole
     }
 
     /** [event], an error as the stream's client reads one (RefusalVoice.event), which ends a stream that cannot go

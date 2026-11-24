@@ -173,14 +173,32 @@ internal class ServerStreamIdleTest {
     @Test
     fun `a head whose connection closes in the middle of an event ends its client's stream with an error event`() {
         // The head writes a whole word and half of the next event, then closes its connection as if it had ended.
-        opening = START + DELTA + DELTA.take(DELTA.length / 2)
+        val heard = cutAfter(DELTA.take(DELTA.length / 2))
+        // A connection that closed is no proof its stream ended whole: the half event is never passed on as if it had.
+        assertCutShort(heard)
+    }
+
+    @Test
+    fun `an event whose blank line never came before the connection closed is no event, and ends with an error`() {
+        // Every line of the next event is whole, down to its last line end, but the blank line that ends it never came.
+        val heard = cutAfter(DELTA.dropLast(1))
+        assertCutShort(heard)
+    }
+
+    /** A turn whose head writes a whole word and then [unfinished], and closes its connection: what its client hears,
+     *  once it has heard the message's start and the word. */
+    private fun cutAfter(unfinished: String): Hearing {
+        opening = START + DELTA + unfinished
         closing = ""
         val heard = hearing(send(serve(streamIdleSeconds = 0)), workers)
         assertEquals(START, heard.block("the message's start"))
         assertEquals(DELTA, heard.block("the answer's first word"))
         goOn.release()
+        return heard
+    }
 
-        // A connection that closed is no proof its stream ended whole: the half event is never passed on as if it had.
+    /** [heard]'s stream ends with the relay's error event that its head broke off, and nothing after it. */
+    private fun assertCutShort(heard: Hearing) {
         val event = heard.block("the error that ends the cut stream").orEmpty().lines()
         assertEquals("event: error", event.first(), "the cut stream did not end with an error event: $event")
         val message = Json.parseToJsonElement(event[1].removePrefix("data: ")).jsonObject.getValue("error").jsonObject

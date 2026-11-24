@@ -95,7 +95,7 @@ internal class ServerUpstreamsTest {
     fun `the list names each upstream with its provider, address, health and turns in flight`() {
         val mode = serve()
         pool.checked("gpu-2", healthy = false, said = "HTTP 503")
-        val held = pool.lease()
+        val held = checkNotNull(pool.lease())
         val listed = assertInstanceOf(ServerAnswer.Done::class.java, mode.upstreamApi.list()).body
         val rows = listed.getValue("upstreams").jsonArray.map { it.jsonObject }
         assertEquals(

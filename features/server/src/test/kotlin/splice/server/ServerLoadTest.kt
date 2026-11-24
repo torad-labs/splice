@@ -197,7 +197,7 @@ internal class ServerLoadTest {
     fun `turns admitted before any leased never add up past inflight_per_upstream, a lease already taken counted`() {
         serve(rig.config.copy(limits = ServerLimits(inflightPerUpstream = 1)))
         // A turn of this machine's own holds gpu-1, so one place is left, on gpu-2.
-        val own = pool.lease()
+        val own = checkNotNull(pool.lease())
         val inFlight = turnHeld(rig.keyFor("ada@team.example"))
         awaitHeld(turns = 1)
 

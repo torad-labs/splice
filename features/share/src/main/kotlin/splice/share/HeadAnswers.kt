@@ -230,12 +230,13 @@ internal class HeadAnswers(
         wire.error(said(HttpStatus.GATEWAY_TIMEOUT, why))
     }
 
-    /** [answered]'s stream reached the end of its body. One that ended in the middle of a line was cut short, however
-     *  cleanly its connection closed, and its client hears that as the relay's error event, never half an event. */
+    /** [answered]'s stream reached the end of its body. One that ended with an event its blank line never came for was
+     *  cut short, however cleanly its connection closed, and its client hears that as the relay's error event, never
+     *  half an event. */
     private suspend fun ended(answered: Sent.Answered, wire: QuietWire, edited: EditedWire?) {
         val whole = edited?.end() ?: wire.end()
         if (whole) return
-        log("[${speaker.tag}] ${answered.cut}: its stream ended in the middle of an event\n")
+        log("[${speaker.tag}] ${answered.cut}: its stream ended before its last event did\n")
         wire.error(said(HttpStatus.BAD_GATEWAY, answered.cut))
     }
 

@@ -4,6 +4,7 @@
 // when the turn has none left, is the pool's one walk (PoolWalk), which the server listener's OpenAI route takes too.
 package splice.provider.openai
 
+import splice.core.failure.Decline
 import splice.core.pool.PoolWalk
 import splice.core.pool.UpstreamPool
 import splice.core.turn.Usage
@@ -26,7 +27,13 @@ internal class PoolRoute(
 ) : VendorRoute {
     private val walk = PoolWalk(pool, preferred, session, served)
 
-    override fun target(): String = walk.server().url + path
+    override fun full(): Decline? = pool.full().takeIf { walk.server() == null }
+
+    // Asked only after [full] found the turn a place, which it keeps until it moves or ends.
+    override fun target(): String {
+        val server = checkNotNull(walk.server()) { "a pooled turn was sent before it had a place" }
+        return server.url + path
+    }
 
     override fun unreachable(): Reroute = if (walk.moved()) Reroute.MOVED else Reroute.NOWHERE
 

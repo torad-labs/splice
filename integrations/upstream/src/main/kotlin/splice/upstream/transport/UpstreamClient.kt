@@ -30,6 +30,7 @@ package splice.upstream.transport
 import io.ktor.client.HttpClient
 import splice.core.auth.LoginAnswer
 import splice.core.auth.RefreshOutcome
+import splice.core.failure.FailureCause
 import splice.core.failure.FailureEvidence
 import splice.core.usage.PlanLimit
 import splice.core.util.Cancellables
@@ -221,6 +222,10 @@ public class UpstreamClient(
         block: UpstreamHandler<T>,
         answer: LoginAnswer.Granted,
     ): LoopStep<T> {
+        // A vendor whose servers are all full under server mode's cap sends the turn nowhere (VendorRoute.full).
+        ctx.recovery.route?.full()?.let { full ->
+            return LoopStep.Done(UpstreamPost.Ended(TurnDeclined(FailureCause.Splice.Declined(full))))
+        }
         val auth = state.credentials(ctx, answer.credentials, credentialCooldowns, cooldown)
         val cause = state.cooldown.terminalLimit
         // The vendor's body route moves with the place credentials just chose (VendorRoute.body).

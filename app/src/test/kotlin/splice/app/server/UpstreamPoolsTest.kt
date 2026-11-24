@@ -112,7 +112,7 @@ class UpstreamPoolsTest {
             val first = checkNotNull(pools.of("box", box) { emptyMap() })
             val second = checkNotNull(pools.of("box", box) { emptyMap() })
 
-            val turn = first.lease()
+            val turn = checkNotNull(first.lease())
             assertEquals(listOf(1, 0), second.readings().map { it.inflight })
             assertEquals(listOf("gpu-1" to 1, "gpu-2" to 0), rows(pools), "the upstream list has a row for each server")
             turn.release()

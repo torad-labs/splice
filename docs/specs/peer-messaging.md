@@ -579,7 +579,7 @@ wiring are D's, and B and C hand D their constructors.
   `app/.../cli/peer/PeerCommand.kt`, and the `Command.kt` case and parser line. In the daemon boot file
   where mounts are wired, it adds the mount and supervisor lines.
 - **Also owns:** `docs/peers.md`, the user guide, which carries the trust-boundary section verbatim;
-  `CHANGELOG.md`; the README section on what Splice stores, where it adds a row for each peer file;
+  `CHANGELOG.md`; the disk page (`docs/wiki/disk-and-privacy.md`) on what Splice stores, where it adds a row for each peer file;
   and the manager skill, in
   `app/src/main/resources/manager-home/.claude/skills/splice/reference/cli.md` and the manager settings
   deny list.

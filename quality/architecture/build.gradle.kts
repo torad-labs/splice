@@ -207,7 +207,7 @@ tasks.withType<Test>().configureEach {
 // THE LAWS THE WHOLE TREE DECIDES, a task of their own (2026-10-19, the pre-push gate speed-up). Three laws grade files no module owns:
 // ConventionalTypeLawTest reads the contents of every tracked file, ReleaseReadinessLawTest grades the installer, the health files,
 // the workflows, the packaging metadata and the fork record (and walks every source set of every module, lawFixtures and the
-// native source sets included), and DiskWritesLawTest grades README.md. Their inputs are the whole tree, so declared on the one `test`
+// native source sets included), and DiskWritesLawTest grades docs/wiki/disk-and-privacy.md. Their inputs are the whole tree, so declared on the one `test`
 // task they made every edit to any tracked file, a gate script or a CI yaml included, rerun all of the laws (about 100 s) while
 // the other laws, which read the module sources and the few files declared above, had nothing new to say. The three run here, over
 // every tracked file; `test` runs the rest over the inputs it declares above and depends on this task, so `lawSuites`, `check`

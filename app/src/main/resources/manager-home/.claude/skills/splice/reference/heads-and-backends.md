@@ -171,7 +171,7 @@ not sent there (unverified).
    declare the rows yourself.
 5. Claude Code sends tools on every turn, so a model that cannot call tools is no use as a head.
 
-Source: README.md, "Local models" (lines 718-720, "Claude Code needs tools on every turn");
+Source: `docs/wiki/providers-and-accounts.md#local-models`;
 integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughEventRouter.kt (lines 31-49);
 features/models/src/main/kotlin/splice/models/list/ModelsProbe.kt (lines 112-122).
 
@@ -197,8 +197,7 @@ Each recipe below ends with these checks. Steps 3 to 5 need the person's yes.
    ```
 
 Source: app/src/main/kotlin/splice/app/cli/ConfigPreflight.kt; features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorCommand.kt
-(lines 64-67); app/src/main/kotlin/splice/app/cli/auth/KeyCommand.kt; README.md (lines 190-193, keys.toml read on
-every request); app/src/main/kotlin/splice/app/provider/ModelRosters.kt (lines 102-140, the models log line).
+(lines 64-67); app/src/main/kotlin/splice/app/cli/auth/KeyCommand.kt; `docs/wiki/providers-and-accounts.md#credential-locations` (keys.toml is read on every request); app/src/main/kotlin/splice/app/provider/ModelRosters.kt (lines 102-140, the models log line).
 Details of each verb: `cli.md`.
 
 ## 6. Recipes
@@ -227,8 +226,7 @@ Use it for a second account or key, another default model, or other knobs on the
    It is the person's to run.
 4. Verify with section 5.
 
-Source: app/src/main/resources/splice.example.toml (lines 491-501, 571-632); README.md, "A second head on the
-same provider"; features/configuration/src/main/kotlin/splice/configuration/add/AddArgs.kt (usage line).
+Source: app/src/main/resources/splice.example.toml (lines 491-501, 571-632); `docs/wiki/providers-and-accounts.md#a-second-head-on-the-same-provider`; features/configuration/src/main/kotlin/splice/configuration/add/AddArgs.kt (usage line).
 
 ### 6.2 An OpenAI-compatible vendor with an API key (move 1, maybe 3)
 
@@ -317,7 +315,7 @@ features/turns/src/main/kotlin/splice/head/turn/TurnPreparation.kt (lines 234-24
    serves, or a model it says cannot call tools refuses boot while the runtime is up.
 3. Verify with section 5. Here `splice doctor --live` does call the runtime: one streamed tool call per row.
 
-Source: app/src/main/resources/splice.example.toml (lines 242-282); README.md (lines 718-733).
+Source: app/src/main/resources/splice.example.toml (lines 242-282); `docs/wiki/providers-and-accounts.md#local-models`.
 
 ### 6.5 AWS Bedrock, Claude through the Messages endpoint (move 1 and 3)
 

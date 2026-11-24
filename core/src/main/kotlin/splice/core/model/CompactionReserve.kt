@@ -85,7 +85,11 @@ internal object CodexCompactionReserves : CompactionReserveDefaults {
 internal object ClaudeCodeCompactThreshold {
     public fun tokens(clientWindow: Long, outputLimit: Long = CLIENT_MAX_OUTPUT_RESERVE): Long {
         val effective = (clientWindow - minOf(outputLimit, CLIENT_MAX_OUTPUT_RESERVE)).coerceAtLeast(0)
-        return minOf(effective * CLIENT_COMPACT_PERCENT / PERCENT_DENOMINATOR, effective - CLIENT_TAIL_RESERVE)
-            .coerceAtLeast(0)
+        // The percentage taken as quotient and remainder: multiplying first overflows Long for a window
+        // anywhere near its top (a configured one can be), wrapping the product negative so the threshold
+        // coerced to 0 and the counts scaled to nothing. The split is the same floor the product gives.
+        val percent = effective / PERCENT_DENOMINATOR * CLIENT_COMPACT_PERCENT +
+            effective % PERCENT_DENOMINATOR * CLIENT_COMPACT_PERCENT / PERCENT_DENOMINATOR
+        return minOf(percent, effective - CLIENT_TAIL_RESERVE).coerceAtLeast(0)
     }
 }

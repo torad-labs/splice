@@ -4,7 +4,7 @@
 
 Extend what every session can do without touching the client: **modes** give the model tools splice answers and hook the door's moments, **capabilities** run your own work before a turn goes upstream, and **code mode** lets a ChatGPT model run a script of tool calls inside splice. Most of it is off until you switch it on; `ccd_session` and code mode are the exceptions.
 
-[Modes](#modes) · [Turning a mode on and off](#turning-a-mode-on-and-off) · [Door hooks](#door-hooks) · [Modes that ship](#modes-that-ship) · [Capabilities](#capabilities) · [Code mode for ChatGPT](#code-mode-for-chatgpt)
+[Modes](#modes) · [Install an external mode](#install-an-external-mode) · [Turning a mode on and off](#turning-a-mode-on-and-off) · [Door hooks](#door-hooks) · [Modes that ship](#modes-that-ship) · [Capabilities](#capabilities) · [Code mode for ChatGPT](#code-mode-for-chatgpt)
 
 ## Which extension do I want?
 
@@ -18,7 +18,7 @@ Extend what every session can do without touching the client: **modes** give the
 
 ## Modes
 
-A mode is a set of tools splice gives the model of every session on its door, with the guidance for using them and the code that answers them. A mode is a folder under `modes/<name>/` built into splice's jar; there is no runtime plug-in folder, so writing one means building splice from source.
+A mode packages tools, guidance and the code that answers those tools. Built-in modes come from `modes/<name>/` and ship in Splice's JAR. To load a mode without rebuilding Splice, [declare its external JAR](#install-an-external-mode) in `splice.toml`.
 
 | Kind | Who answers a call | What the client sees |
 | --- | --- | --- |
@@ -49,6 +49,21 @@ The manifest's keys, the handler contract (`splice.modes.api.Mode`, `ModeAnswer.
 - **Timing:** a session already running when the mode is turned on sees it only on its next launch; turned off, the server stops answering at once. Claude Desktop's own sessions are not handed the file.
 - **Pages:** a tool whose `tools/<tool>.meta.json` says `{ "ui": { "resourceUri": "ui://<server>/<page>" } }` shows that page in clients that draw MCP Apps. Others show the tool's answer as any tool's result.
 
+## Install an external mode
+
+Add a `[[mods.jar]]` entry in `splice.toml` with a unique archive name, exactly one of `path` or `url`, and the trusted SHA-256 of the exact JAR. Replace the example hash with the publisher's trusted 64-digit hex digest. Relative paths start in `[mods].dir`, which defaults to `mods/` beside the configuration.
+
+```toml
+[[mods.jar]]
+name = "inventory-release"
+path = "inventory.jar"
+sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+```
+
+Run `splice check-config`, then `splice restart`. Both instantiate the pinned code with the daemon account's permissions; pinning verifies the bytes, not their safety. Only configure JARs you trust. The archive name identifies the file; use the manifest's mode name in `[modes.<name>]`.
+
+At boot, a verified URL JAR is [cached by hash](disk-and-privacy.md#settings-and-statistics). It is not auto-updated: to upgrade, change the pin and, if necessary, the URL, then restart. To stop loading the JAR, remove its entry and restart. See the [packaging, path and download requirements](../specs/server-mode.md#external-mode-jars) for details.
+
 ## Turning a mode on and off
 
 The manifest's `on` is the default; `splice.toml` overrides it per mode:
@@ -70,7 +85,7 @@ For a mode and a head, in this order:
 | `on` | boolean | Unset defers to the manifest |
 | `heads` | inline table `{ <head> = true \| false }` | Each head must be one `splice.toml` declares |
 
-Any other key is a finding, and a table naming no mode splice carries is a finding. Per-head switches key on declared heads; a provider served without a head of the same name follows only the every-head `on`.
+Use `server_routes` and `server_admin_only` to [expose a mode on the team listener](team-server-mode.md#mode-routes). An unknown key or a table naming no loaded mode is a finding. Per-head switches key on declared heads; a provider served without a head of the same name follows only the every-head `on`.
 
 | Where | What you can do |
 | --- | --- |

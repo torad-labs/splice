@@ -3,6 +3,7 @@
 package splice.app.control.engine
 
 import io.ktor.http.ContentType
+import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.serverConfig
 import io.ktor.server.engine.EmbeddedServer
@@ -11,6 +12,7 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
 import io.ktor.server.response.respondText
+import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.CoroutineDispatcher
@@ -32,12 +34,19 @@ private const val CONTROL_STOP_TIMEOUT_MS = 500L
 // why: bound for cancelled control calls to unwind while Netty's event loop is still alive (#525).
 private const val CONTROL_CALL_UNWIND_MS = 200L
 
+/** Startup work that only runs on the live control application. */
+internal fun interface PrepareControlApplication {
+    operator fun invoke(app: Application)
+}
+
 internal class ControlEngine(
     private val listen: ControlListen,
     private val guard: ControlGuard,
     private val readings: ControlReadings,
     private val mounts: List<ControlMount>,
+    private val modes: ControlMount,
     private val callDispatcher: CoroutineDispatcher,
+    private val prepare: PrepareControlApplication,
 ) {
     private val callFence = ActiveCallFence()
 
@@ -58,9 +67,10 @@ internal class ControlEngine(
                             callFence.leave(job)
                         }
                     }
+                    prepare(this)
                     routing {
-                        get("/health") { call.respondText(readings.health.json(), ContentType.Application.Json) }
-                        mounts.forEach { it.register(this) }
+                        registerBuiltIns(this)
+                        modes.register(this)
                     }
                 }
             },
@@ -80,6 +90,11 @@ internal class ControlEngine(
             shutdownTimeout = CONTROL_STOP_TIMEOUT_MS
             channelPipelineConfig = { pipeline -> guard.admit(pipeline) }
         }
+    }
+
+    fun registerBuiltIns(route: Route) {
+        route.get("/health") { call.respondText(readings.health.json(), ContentType.Application.Json) }
+        mounts.forEach { it.register(route) }
     }
 
     fun stop(engine: EmbeddedServer<NettyApplicationEngine, *>?) {

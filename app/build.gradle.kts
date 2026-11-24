@@ -90,6 +90,7 @@ dependencies {
         .forEach { implementation(project(it)) }
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.jackson.core)
+    implementation(libs.commons.compress)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.ktor.client.java)
     implementation(libs.ktor.server.core)

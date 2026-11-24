@@ -74,10 +74,12 @@ internal class CountTokens(
 
     /** [estimate] as the same share of the declared window that it is of the model's own, when the gateway handed this
      *  count over with the window its session's client holds, by the factor that scales a turn's usage; a head's own
-     *  count carries none and stays raw. */
+     *  count carries none and stays raw. The window the gateway read off this request rides with the handed one, so
+     *  a row with a selector-owned window (a `[1m]` row) counts against the configured window too. */
     private fun scaled(call: ApplicationCall, model: String, estimate: Long): Long {
-        val window = GatewayTurns.of(call)?.clientWindow?.takeIf { it > 0L } ?: return estimate
-        return (estimate * provider.catalog.usageScale(model, window)).toLong()
+        val turn = GatewayTurns.of(call) ?: return estimate
+        val window = turn.clientWindow?.takeIf { it > 0L } ?: return estimate
+        return (estimate * provider.catalog.usageScale(model, window, turn.requestWindow)).toLong()
     }
 
     /** [body], a `count_tokens` of [call]'s, as another head is asked to count it. */

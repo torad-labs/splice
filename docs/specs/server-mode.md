@@ -88,7 +88,8 @@ key_prefix = "spk_"                         # optional: only new keys use this m
 ```
 
 - Routes on the listener: `GET /health` (open), `GET /` and `GET /<command>/launch` (as share mode serves them),
-  `ANY /<command>/v1/...` for turns, `/server/...` for the server's own API.
+  `ANY /<command>/v1/...` for turns, `/server/...` for the server's own API, and `/server/mod/<name>/...` for the
+  modes splice.toml lets serve here ([Mode routes](#mode-routes)).
 - A key arrives as `x-api-key` or `Authorization: Bearer`. A missing, unknown, revoked or expired key is a 401
   `authentication_error` that never echoes the key, and nothing reaches the upstream.
 - CLI: `splice server key create --person <email> [--name <n>] [--expires <duration>] --json`,
@@ -403,6 +404,53 @@ at_start = true                # hold each member out until its first probe pass
   array), never on the text inside it: one output token can vanish into a reasoning model's thinking. Any other
   answer, or none within `timeout_seconds`, keeps it down, and the log line names the status and shape it saw.
 
+### External mode JARs
+
+Declare each JAR at the top level of `splice.toml`. This works whether or not the team listener is configured.
+
+```toml
+[mods]
+dir = "mods"                         # optional; default: mods/ beside splice.toml
+
+[[mods.jar]]
+name = "inventory-release"
+path = "inventory.jar"
+sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[mods.jar]]
+name = "reports-release"
+url = "https://downloads.example.org/splice/reports-1.2.jar"
+sha256 = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+```
+
+Use a unique `name`, exactly one of `path` or `url`, and the trusted SHA-256 of the exact JAR (64 hex
+digits, either case). Relative paths are confined to `dir`, which is itself relative to the config directory
+unless absolute. An absolute JAR path outside `dir` uses its own parent as the directory boundary.
+Directories cannot be world-writable, a mod directory cannot itself be a symlink, and a JAR symlink cannot
+leave its boundary. Only archives listed explicitly are loaded.
+
+Use the [mode packaging contract](../../modes/README.md#how-splice-finds-a-mode) for the service descriptor,
+mode index, and manifest. The configured `name` identifies the archive, not the modes it contributes.
+Use each manifest's mode name in `[modes.<name>]`. No discovered mode, server, or offered tool name can
+overlap another mode's claim. Compile against splice's mode API and the libraries its types use, such as
+Kotlin serialization JSON. The daemon's classpath always wins; bundle only dependencies it doesn't already
+provide, or relocate private dependencies that need a different version. Don't bundle entries under
+`splice/core/` or `splice/modes/api/`, or reference other JARs in a manifest `Class-Path`.
+A JAR can be at most 32 MiB on disk and 64 MiB expanded.
+
+URL entries use a direct HTTP(S) URL without embedded credentials or redirects. The entire download, including
+the response body, has a ten-second deadline. The daemon downloads into memory,
+checks the pin and the catalog, then writes `<state>/mod-<sha256>.jar` atomically with mode 0600. A matching
+cache works without network access. A bad cache is a finding, not permission to replace it; remove the bad cache
+to fetch the same pin again. To upgrade, set the new trusted pin (and URL, if it changed), then restart.
+Remove the entry and restart to stop loading it; unneeded cached versions can be removed separately.
+
+`splice check-config` verifies pins and discovers modes, even for a cold URL, without writing a cache.
+`splice restart` runs the same checks before stopping the existing daemon. On successful boot splice logs the
+loaded paths and verified pins. Management route ownership is checked when the daemon mounts its control router.
+Only configure JARs you trust with everything the daemon can access. Pinning verifies the chosen bytes;
+the class loader is not a sandbox, and configuration verification instantiates the registered providers too.
+
 ## P2: the laptop side
 
 Drafted checks for these exist and are committed with the P2 plan once P1 has landed.
@@ -486,6 +534,53 @@ What is the server's holds on that *selected provider*, never on the selector th
 
 `[server] commands` serves a provider by its key too (no head needed), except a provider that signs with one person's
 plan login. The `/<command>/...` routes of the heads that exist keep working beside the door, unchanged.
+
+## Mode routes
+
+A mode (modes/README.md) can answer a team's key holders on the same listener, under `/server/mod/<name>/...`. It is
+off until splice.toml turns it on, per mode:
+
+```toml
+[modes.<name>]
+server_routes = true       # key holders reach the mode at /server/mod/<name>/...
+server_admin_only = true   # and only the people `[server] admins` names
+```
+
+- **A key first.** A mod path is never one of the open routes: a missing, unknown, revoked or expired key is the same
+  401 as anywhere else, and no mode is reached.
+- **Who is asking, never the key.** The mode is told the key's person (their email), their team (their own, else their
+  domain's) and whether they are an admin. It is never handed the key, its prefix or its hash, and of the request's
+  headers only `accept`, `content-type` and `user-agent`: `authorization`, `x-api-key` and `cookie` never reach it. It
+  gets the method, the path after `/server/mod/<name>`, the query (the first value of each name) and the body.
+  Headers and query parameters containing server keys or browser session proofs are omitted.
+- **Gates.** A mode that is not carried, or whose `server_routes` is not true, is a 404 `not_found_error`: a key holder
+  cannot tell it from a name no mode has. With `server_admin_only`, a caller must be listed in `[server] admins`
+  and satisfy `admin_cidrs` if set; others get a 403 `permission_error` that says which of the two failed. The
+  daemon loads the mode's settings at startup and checks the loaded settings on each request. Hand-edits to
+  `server_routes` and `server_admin_only` take effect after a daemon restart or when changing a switch for that
+  mode in the console reloads its settings. A console switch, `PUT /api/modes` or `splice setup` writes only `on`
+  and `heads`, preserving the other keys as they are in splice.toml at the time.
+- **Limits.** A body is read up to 1 MiB (past that, 413 `request_too_large`) and for at most 30 seconds (408). A mode
+  that throws is a 500 naming its exception's class and nothing it held; a path it has no answer for is a 404.
+- **Names.** A mode with `server_routes = true` may not be named `server`, `door` or `health`, nor a name
+  `[server] commands` serves at (each entry, and the key and the command of every head an entry names by either):
+  boot and `splice check-config` refuse it at `modes.<name>.server_routes`, so a mode's name never reads as a path
+  the listener answers itself.
+
+A mode answers with `Mode.serve(request)`: its status, content type and body, or null for a path it does not have. Its
+code from built-in and external modes runs in the daemon.
+
+## The Desktop window on a served machine
+
+A splice that also serves Claude Desktop states the windows Desktop gives its Code tab in splice.toml's
+`[desktop]`: `code_window` (200,000 shipped) and `code_window_1m` (1,000,000 shipped, never below `code_window`).
+Desktop sets those windows itself in its Code tab's Claude Code, which divides by them. Discovery's
+`max_input_tokens` stays each provider's real ceiling, never a configured window; Desktop reads that field, but
+where it uses the number is not established (docs/specs/desktop-full.md). splice authors the counts each Desktop
+request reports, so the door scales them by the configured window over the model's own and the Code tab compacts
+where the terminal setup does, even where the two windows differ. A model is advertised to Desktop with a 1M variant
+when its real window reaches `code_window_1m`. The daemon reads the table at start (a restart, and Desktop's next
+launch). The team door's model list is for terminal Claude Code, so it keeps Claude Code's own million as the bar.
 
 ## P3
 

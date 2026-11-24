@@ -1,9 +1,9 @@
 // NEW: (ledger lines 495, 519) owns startup preparation and pending-aware economics and request routes.
 package splice.app.control.usage
 
+import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationStarted
 import io.ktor.server.routing.Route
-import io.ktor.server.routing.application
 import io.ktor.server.routing.get
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.launch
@@ -46,16 +46,20 @@ internal class UsageReadRoutes(
         perf.accounts = names
     }
 
-    fun register(route: Route) {
-        val warmup = UsageReadWarmup(route.application, heads, io, log = log)
+    /** Only a running application warms the read caches; registering routes alone does not. */
+    fun prepare(app: Application) {
+        val warmup = UsageReadWarmup(app, heads, io, log = log)
         perf.preparation = warmup
-        route.application.monitor.subscribe(ApplicationStarted) {
+        app.monitor.subscribe(ApplicationStarted) {
             warmup.start()
             // the first project snapshot decodes every transcript head once; build it now, not on the first read
-            route.application.launch(io) {
+            app.launch(io) {
                 Cancellables.discard(Cancellables.runCatchingBestEffort { perf.projects() }, TAGS_WARM_BEST_EFFORT)
             }
         }
+    }
+
+    fun register(route: Route) {
         route.get("/api/perf/turns") {
             guard.guarded(call) {
                 val observations = performance
@@ -82,7 +86,7 @@ internal class UsageReadRoutes(
             guard.guarded(call) {
                 val result = withContext(io) {
                     if (call.request.headers[USAGE_READ_PENDING_HEADER] == "1") {
-                        economics.economicsJson(warmup)
+                        economics.economicsJson(perf.preparation)
                     } else {
                         economics.economicsJson()
                     }

@@ -10,11 +10,11 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.plugins.origin
 import io.ktor.server.request.httpMethod
 import io.ktor.server.response.respondText
+import splice.core.server.SERVER_ROOT
 import splice.core.topology.ServerConfig
 import splice.core.wire.HTTPS_SCHEME
 import splice.core.wire.HTTP_SCHEME
 import splice.core.wire.HttpStatus
-import splice.server.SERVER_ROOT
 import splice.server.caller.ClientAddresses
 import splice.share.RefusalVoice
 

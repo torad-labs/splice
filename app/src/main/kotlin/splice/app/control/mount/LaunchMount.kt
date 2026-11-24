@@ -5,6 +5,7 @@ package splice.app.control.mount
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
@@ -77,8 +78,10 @@ internal class LaunchMount(
         route.post("/launch/{head}") { guard.guarded(call) { launch(call) } }
         route.post("/hooks/resume/{head}") { guard.guarded(call, Door.SESSION) { resumeHookRoute.resume(call) } }
         route.post("/hooks/foreground/{head}") { guard.guarded(call, Door.SESSION) { foregroundRoute.receive(call) } }
-        speedRoute?.let { speed ->
-            route.post("/hooks/speed/{head}") { guard.guarded(call, Door.SESSION) { speed.speed(call) } }
+        route.post("/hooks/speed/{head}") {
+            guard.guarded(call, Door.SESSION) {
+                speedRoute?.speed(call) ?: call.respond(HttpStatusCode.NotFound)
+            }
         }
         route.get("/api/claude-head") { guard.guarded(call) { claudeHeadRoutes.status(call) } }
         route.post("/api/claude-head/wrap") { guard.guarded(call) { claudeHeadRoutes.wrap(call) } }

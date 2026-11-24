@@ -13,6 +13,7 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.config.TurnKey
 import splice.core.server.ServedTurnBoard
+import splice.core.server.ServerModRoutes
 import splice.core.testing.TestPorts
 import splice.core.topology.ServerAddress
 import splice.core.topology.ServerConfig
@@ -75,6 +76,9 @@ internal class ServerRig(
      *  head's part on it. */
     val board: ServedTurnBoard = ServedTurnBoard()
 
+    /** The modes the daemon would hand `/server/mod/...` to; a test sets them before [open]. */
+    var mods: ServerModRoutes? = null
+
     private var mode: ServerMode? = null
 
     /** Opens [server] as the daemon does, over the machine `gpu-box` and the [heads] it offers. [state] holds the
@@ -94,7 +98,7 @@ internal class ServerRig(
         }
         val serverDir = state.resolve("server")
         ServerBackupStore(server.backup, serverDir, BackupRun(Dispatchers.IO, clock, waiter, log)).restoreIfEmpty(env)
-        val reach = ServerReach(TurnKey(MgmtKey(StatePaths(baseOverride = state))), board, env, gateway)
+        val reach = ServerReach(TurnKey(MgmtKey(StatePaths(baseOverride = state))), board, env, gateway, mods = mods)
         val opened = ServerMode(server, serverDir, Dispatchers.IO, log, clock, upstreams, waiter)
         mode = opened
         opened.open(ServerAddress("127.0.0.1", port), machine, reach, state, signinSecret)

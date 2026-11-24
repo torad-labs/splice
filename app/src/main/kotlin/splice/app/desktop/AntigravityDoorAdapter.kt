@@ -45,7 +45,7 @@ internal class AntigravityDoorAdapter(
         val askedModel = turn.asked ?: upstreamModel
         val stream = JsonScalars.str(body, "stream") == "true"
         val sessionHint = call.request.headers[SESSION_HEADER]
-        directTurn.serve(call, askedModel, stream, turn.clientWindow) { wire ->
+        directTurn.serve(call, askedModel, stream, turn) { wire ->
             val sink = DoorWireSink(wire)
             when (val res = engine.serve(body, upstreamModel, sink, sessionHint)) {
                 is DoorAgyTurnResult.Completed -> DirectTurnOutcome(

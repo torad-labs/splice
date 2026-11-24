@@ -47,7 +47,7 @@ internal class ServerListenerWiring(
         signinSecret: String?,
     ): ServerListener {
         val speaker = RelaySpeaker(RefusalVoice(SERVER_ERROR_PREFIX), SERVER_LOG_TAG)
-        val served = ServedHeads(heads, server.commands)
+        val served = ServedHeads(heads, server)
         stores.metrics.serving(served)
         val parts = ServerParts(
             keys = stores.keys,
@@ -64,8 +64,8 @@ internal class ServerListenerWiring(
         val tls = server.pem(configDir)?.let { PemTls(it).keyStore() }
         val cli = server.signin?.let { signin(it, signinSecret) }
         val browser = browserSignin(cli, reach.env)
-        val identity = ListenerSignins(cli, browser, clock)
-        val requests = ServerRequests(server, parts, tls != null, stores.admin, io, log, identity)
+        val optional = OptionalRoutes(ListenerSignins(cli, browser, clock), reach.mods)
+        val requests = ServerRequests(server, parts, tls != null, stores.admin, io, log, optional)
         return ServerListener(server, tls, parts.limits.load, requests, log)
     }
 

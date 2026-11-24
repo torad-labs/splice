@@ -59,6 +59,12 @@ Splice builds one `model-catalog.json` at daemon startup from the providers it s
 
 `maxEffort` caps Desktop's own low, medium, high, xhigh and max sequence; it cannot express gaps, `minimal` or `ultra`. A visible selector doesn't prove it shows the provider's exact levels: compare it with gateway discovery. Splice republishes the configuration at startup and when credentials or the served roster change. Quit the **whole app**, then reopen it to verify the picker in Chat, Cowork or Code after a sign-in, an added provider or a policy change.
 
+### Code tab context windows
+
+Desktop's Code tab uses a 200,000-token window, or 1,000,000 tokens for a model picked as its 1M variant. Splice scales the usage counts it reports to Desktop so the Code tab compacts relative to the model's own window. Discovery still reports the provider's real ceiling in `max_input_tokens`; compaction follows the scaled counts, not that field.
+
+If your Desktop installation uses different windows, set [`code_window` and `code_window_1m`](configuration-reference.md#desktop-code-tab-windows) to match. A model is offered a 1M variant when its real window reaches `code_window_1m`. Restart the daemon and reopen Desktop after changing these values.
+
 ## Policy, session import and profile sync
 
 The [shipped Desktop policy](../../app/src/main/resources/claude-code-desktop-policy/ccd-policy.json) enables Chat and Cowork, the built-in browser, extensions, projects, scheduled tasks, skills, user-added plugins and marketplaces, local MCP servers and tool search. The workspace can reach every host by default and MCP tool calls may run for 30 minutes. The 3P configuration then takes supported preferences from your Claude Code setup: effort (`effortLevel`), the default permission **mode**, prompt suggestions, and reachable plugin marketplaces. It reads `~/.claude/settings.json`, `settings.local.json` and `plugins/known_marketplaces.json`; it doesn't edit those files to pass along your preferences. GitHub, git and hosted-file marketplaces can carry over; local folders, sparse checkouts and credentialed URLs don't.

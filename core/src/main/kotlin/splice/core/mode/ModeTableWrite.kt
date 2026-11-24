@@ -1,6 +1,8 @@
 // NEW: splice.toml's `[modes.<name>]` table written (modes/README.md, PUT /api/modes/<name>) through the daemon's one
 // splice.toml writer, so the rest of the file and its comments are kept and the write is backed up and locked as every
-// edit is. A table left with no key is removed.
+// edit is. A switch changes only the keys it was asked to, against the table as the file holds it now: every other key
+// (`server_routes`, `server_admin_only`, one this splice does not know) stays as written, so an operator's edit made
+// since the daemon last read the file is never overwritten. A table left with no key is removed.
 package splice.core.mode
 
 import kotlinx.serialization.json.JsonElement
@@ -14,12 +16,16 @@ import splice.core.topology.toml.TomlKeys
 import splice.core.topology.toml.TomlPatch
 import splice.core.topology.toml.TomlTextPatch
 
+/** What a switch changes in one `[modes.<name>]` table: `on` when [setsOn] (to [on]; null clears it), and each head in
+ *  [heads] (null clears it). */
+public data class ModeTableEdit(val setsOn: Boolean, val on: Boolean?, val heads: Map<String, Boolean?> = emptyMap())
+
 public class ModeTableWrite(private val writer: TopologyWriter) {
-    /** Writes mode [name]'s table as [setting]; one with no key removes the table. */
-    public fun write(name: String, setting: ModeSetting): TopologyWriteResult = writer.patched(
+    /** Applies [edit] to mode [name]'s table as splice.toml holds it now; one left with no key is removed. */
+    public fun write(name: String, edit: ModeTableEdit): TopologyWriteResult = writer.patched(
         TomlTextPatch { text ->
             val held = CapabilityToml.split(text, MODE_TABLES).tables.associate { it.name to it.keys }
-            val table = table(setting)
+            val table = edited(held[name] ?: JsonObject(emptyMap()), edit)
             if (name !in held && table != null) {
                 appended(text, name, table)
             } else {
@@ -39,12 +45,20 @@ public class ModeTableWrite(private val writer: TopologyWriter) {
         return text.trimEnd('\n') + "\n\n" + head + body
     }
 
-    private fun table(setting: ModeSetting): JsonObject? {
-        val keys = LinkedHashMap<String, JsonElement>()
-        setting.on?.let { keys[MODE_ON] = JsonPrimitive(it) }
-        if (setting.heads.isNotEmpty()) {
-            keys[MODE_HEADS] = JsonObject(setting.heads.mapValues { JsonPrimitive(it.value) })
+    /** [keys], the table as the file holds it, with [edit] applied and nothing else touched; null once it is empty. */
+    private fun edited(keys: JsonObject, edit: ModeTableEdit): JsonObject? {
+        val table = LinkedHashMap<String, JsonElement>(keys)
+        if (edit.setsOn) set(table, MODE_ON, edit.on)
+        if (edit.heads.isNotEmpty()) {
+            val heads = LinkedHashMap<String, JsonElement>((keys[MODE_HEADS] as? JsonObject).orEmpty())
+            edit.heads.forEach { (head, on) -> set(heads, head, on) }
+            if (heads.isEmpty()) table.remove(MODE_HEADS) else table[MODE_HEADS] = JsonObject(heads)
         }
-        return keys.takeIf { it.isNotEmpty() }?.let(::JsonObject)
+        return table.takeIf { it.isNotEmpty() }?.let(::JsonObject)
+    }
+
+    /** [key] in [into] set to [value], or taken out for null. */
+    private fun set(into: MutableMap<String, JsonElement>, key: String, value: Boolean?) {
+        if (value == null) into.remove(key) else into[key] = JsonPrimitive(value)
     }
 }

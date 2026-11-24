@@ -9,8 +9,11 @@
 package splice.app.desktop.setup
 
 import kotlinx.serialization.json.JsonArray
+import splice.app.desktop.catalog.DesktopLineup
+import splice.app.desktop.catalog.DoorCatalog
 import splice.app.desktop.record.DesktopRecord
 import splice.app.desktop.record.DesktopRecords
+import splice.core.topology.desktop.DesktopConfig
 import splice.core.util.WallClockIso
 import java.time.Instant
 import java.util.UUID
@@ -37,13 +40,20 @@ internal class DesktopAppMode(
     private val records: DesktopRecords,
     private val library: DesktopAppLibrary,
     private val helper: DesktopPrograms,
+    /** splice.toml's `[desktop]`, whose big window is the bar a model's 1M variant is published against. */
+    private val desktop: DesktopConfig = DesktopConfig(),
     private val now: WallClockIso = WallClockIso { Instant.now().toString() },
 ) {
     /** Why splice's configuration can't be put in now, with nothing changed, or null when it can. */
     fun refusal(): String? = library.refusal()
 
+    /** The model list Desktop's configuration is given for [lineup], [first] listed first: the one projection every
+     *  configuration splice writes reads, so `on` and each republish publish the same 1M variants. */
+    fun models(lineup: DesktopLineup, first: String?): JsonArray = DoorCatalog(lineup, desktop).inferenceModels(first)
+
     /** Keep the applied gateway configuration aligned with the provider catalog, and given splice's policy. */
-    fun publish(door: String, models: JsonArray): Boolean = library.publish(door, models)
+    fun publish(door: String, lineup: DesktopLineup, first: String?): Boolean =
+        library.publish(door, models(lineup, first))
 
     /** splice's configuration put in for [door] and applied, and the helper laid. Answers the words for what it now
      *  stands in for: empty, or " It replaces <name> while splice is on; …." with a space before it. */

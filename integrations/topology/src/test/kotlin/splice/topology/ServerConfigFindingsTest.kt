@@ -68,6 +68,33 @@ class ServerConfigFindingsTest {
     }
 
     @Test
+    fun `a mode serving the listener is refused a name the listener answers itself or serves a command at`() {
+        val modes = { names: List<String> -> names.joinToString("") { "[modes.$it]\nserver_routes = true\n" } }
+        val taken = listOf("server", "door", "health", "box")
+        val read = ConfigFindings.read(server() + head() + modes(taken + "harbor"), directory, configDir = directory)
+        val findings = assertInstanceOf(ConfigRead.Refused::class.java, read).findings.map { it.path }
+        assertEquals(taken.map { "modes.$it.server_routes" }, findings.filter { it.endsWith("server_routes") })
+        val off = ConfigFindings.read(server() + head() + "[modes.box]\non = true\n", directory, configDir = directory)
+        assertInstanceOf(ConfigRead.Ready::class.java, off, off.toString())
+        val noServer = ConfigFindings.read(head() + modes(listOf("box")), directory, configDir = directory)
+        assertInstanceOf(ConfigRead.Ready::class.java, noServer, noServer.toString())
+    }
+
+    @Test
+    fun `a mode serving the listener is refused the key of every head the listener serves under a served name`() {
+        // `box` is head box's key and head spare's command: the listener serves both heads, spare also as `spare`.
+        val spare = "[heads.spare]\nprovider = \"box\"\nport = 3191\ndiscovery_prefix = \"claude-spare--\"\n" +
+            "pinned_model = \"team-model\"\n[heads.spare.claude]\ncommand = \"box\"\n"
+        val modes = listOf("box", "spare", "harbor").joinToString("") { "[modes.$it]\nserver_routes = true\n" }
+        val read = ConfigFindings.read(server(commands = "\"box\"") + head() + spare + modes, directory, directory)
+        val findings = assertInstanceOf(ConfigRead.Refused::class.java, read).findings.map { it.path }
+        assertEquals(
+            listOf("modes.box.server_routes", "modes.spare.server_routes"),
+            findings.filter { it.endsWith("server_routes") },
+        )
+    }
+
+    @Test
     fun `a file with no server table is not asked for one`() {
         val read = ConfigFindings.read(head(), directory, configDir = directory)
         assertInstanceOf(ConfigRead.Ready::class.java, read, read.toString())

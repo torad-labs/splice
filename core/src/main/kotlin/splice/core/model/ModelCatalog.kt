@@ -255,22 +255,13 @@ public data class ModelCatalog(
     /** The window the CLIENT will actually use for [id]: `[1m]` and presented rows have
      *  selector-owned windows. A `claude-` id ignores our launch env, but the session's status-line
      *  post reports its actual divisor; before that post, the declared window keeps the old raw
-     *  fallback. Other ids use the per-session launch env when known. */
-    public fun clientContextWindowFor(id: String, sessionWindow: Long? = null): Long = when {
-        oneMillionHint.containsMatchIn(unwrap(id)) -> CLAUDE_CODE_ONE_MILLION
-        // V4-232: a presented row is one the client knows, so its window is the client's table, and
-        // unlike a "claude-" id below we know that number, so the factor is honest rather than 1.0.
-        presented.covers(id) -> CLIENT_TABLE_WINDOW
-        // A Codex discovery wrapper starts with claude- but is not a Claude model from the
-        // client's own table. It gets the client's unknown-model 200k fallback, not this row's W.
-        windows.compactionReserveDefaults != null && id.startsWith(discoveryPrefix) -> CLIENT_TABLE_WINDOW
-        id.startsWith(CLIENT_OWN_ID_PREFIX) -> sessionWindow?.takeIf { it > 0 } ?: contextWindowFor(id)
-        // An env-governed id: the window is whatever THIS session's process was launched with.
-        // [sessionWindow] is that value when the session has told us (ClientWindows, fed by its
-        // status-line posts); a session that has not yet posted is assumed launched with the
-        // pinned row's current window, which is exact for every launch since the last edit.
-        else -> sessionWindow?.takeIf { it > 0 } ?: clientLaunchWindow
-    }
+     *  fallback. Other ids use the per-session launch env when known. [requestWindow] is the window
+     *  a gateway read off THIS request (Desktop's app mode, already weighed against splice.toml's
+     *  `[desktop]` at the door): where one was read it stands in the selector's place, ahead of the
+     *  `[1m]` and presented branches, whose fixed windows are the client's shipped pair the reading
+     *  replaces. No terminal turn carries one, so their order below is untouched. */
+    public fun clientContextWindowFor(id: String, sessionWindow: Long? = null, requestWindow: Long? = null): Long =
+        requestWindow?.takeIf { it > 0 } ?: SelectorWindow(this).of(id, sessionWindow)
 
     /** Multiplier for the three client-visible input buckets. Most providers retain the legacy
      *  client/declared-window ratio. A calibrated Codex row uses the client's actual threshold T(C)
@@ -283,15 +274,16 @@ public data class ModelCatalog(
     public fun envGoverned(id: String): Boolean = !client.open &&
         !oneMillionHint.containsMatchIn(unwrap(id)) && !id.startsWith(CLIENT_OWN_ID_PREFIX) && !presented.covers(id)
 
-    public fun usageScale(id: String, sessionWindow: Long? = null): Double {
+    public fun usageScale(id: String, sessionWindow: Long? = null, requestWindow: Long? = null): Double {
         val declared = contextWindowFor(id)
         // An undeclared [1m] tier still resolves its real window through stripSuffixes. An
         // explicit reserve overrides the provider's default, never the client's selector window.
         // An open head keeps raw counts except for a Claude session with a learned divisor.
         val learnedClaude = id.startsWith(CLIENT_OWN_ID_PREFIX) && !presented.selectorSized(id)
         val client = when {
-            !client.open -> clientContextWindowFor(id, sessionWindow)
-            sessionWindow?.takeIf { it > 0 } != null && learnedClaude -> clientContextWindowFor(id, sessionWindow)
+            !client.open -> clientContextWindowFor(id, sessionWindow, requestWindow)
+            sessionWindow?.takeIf { it > 0 } != null && learnedClaude ->
+                clientContextWindowFor(id, sessionWindow, requestWindow)
             else -> 0L
         }
         if (declared <= 0 || client <= 0) return 1.0
@@ -375,6 +367,27 @@ public data class CatalogWindows(
     /** Provider-supplied empirical reserve; absent preserves the existing window-ratio behavior. */
     val compactionReserveDefaults: CompactionReserveDefaults? = null,
 )
+
+/** The window the client holds for a row of [catalog] with no reading off the request, in the order terminal turns keep
+ *  ([ModelCatalog.clientContextWindowFor] puts a request's own reading ahead of it). */
+private class SelectorWindow(private val catalog: ModelCatalog) {
+    fun of(id: String, sessionWindow: Long?): Long = when {
+        oneMillionHint.containsMatchIn(catalog.unwrap(id)) -> CLAUDE_CODE_ONE_MILLION
+        // V4-232: a presented row is one the client knows, so its window is the client's table, and
+        // unlike a "claude-" id below we know that number, so the factor is honest rather than 1.0.
+        catalog.presented.covers(id) -> CLIENT_TABLE_WINDOW
+        // A Codex discovery wrapper starts with claude- but is not a Claude model from the
+        // client's own table. It gets the client's unknown-model 200k fallback, not this row's W.
+        catalog.windows.compactionReserveDefaults != null && id.startsWith(catalog.discoveryPrefix) ->
+            CLIENT_TABLE_WINDOW
+        id.startsWith(CLIENT_OWN_ID_PREFIX) -> sessionWindow?.takeIf { it > 0 } ?: catalog.contextWindowFor(id)
+        // An env-governed id: the window is whatever THIS session's process was launched with.
+        // [sessionWindow] is that value when the session has told us (ClientWindows, fed by its
+        // status-line posts); a session that has not yet posted is assumed launched with the
+        // pinned row's current window, which is exact for every launch since the last edit.
+        else -> sessionWindow?.takeIf { it > 0 } ?: catalog.clientLaunchWindow
+    }
+}
 
 /** What a [ModelCatalog] declares to the client about which models it may pick. */
 public data class ClientModelPolicy(

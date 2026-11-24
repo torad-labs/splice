@@ -102,6 +102,9 @@ public data class ServerConfig(
 
     /** Whether [person], a lowercased email, administers this server. */
     public fun admin(person: String): Boolean = admins.any { PersonEmails.read(it) == person }
+
+    /** Whether the listener serves the head keyed [key] that runs as [command]: `commands` names it by either. */
+    public fun serves(key: String, command: String): Boolean = command in commands || key in commands
 }
 
 /** `[server.limits]`: what each person may hold, unless `splice server person set` gave them their own. 0 is no cap. */

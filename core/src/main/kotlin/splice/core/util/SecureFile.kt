@@ -150,12 +150,21 @@ public object SecureFile {
         writeAtomic(path, content, OWNER_ONLY)
     }
 
+    /** The same owner-only atomic replacement for binary content. */
+    public fun writeAtomic0600(path: Path, content: ByteArray) {
+        writeAtomic(path, content, OWNER_ONLY)
+    }
+
     /**
      * [writeAtomic0600] for a file that is someone else's and keeps a mode of its own (Claude Code's settings file):
      * [content] is staged owner-only beside [path] and takes [mode] before it is swapped in, so the file is never
      * seen under its name at any other mode.
      */
     public fun writeAtomic(path: Path, content: String, mode: Set<PosixFilePermission>) {
+        writeAtomic(path, content.toByteArray(Charsets.UTF_8), mode)
+    }
+
+    private fun writeAtomic(path: Path, content: ByteArray, mode: Set<PosixFilePermission>) {
         // V4-284: absolute first, so a bare name (SPLICE_CONFIG=splice.toml) has the working directory
         // as its parent instead of null.
         val parent = path.toAbsolutePath().parent
@@ -165,7 +174,7 @@ public object SecureFile {
             // The bytes reach the disk before the name moves, so a power cut leaves the old file or the new one, never an
             // empty one (Oct 13: a cut during splice add could leave an empty splice.toml).
             FileChannel.open(tmp, StandardOpenOption.WRITE).use { channel ->
-                writeAll(channel, content.toByteArray(Charsets.UTF_8))
+                writeAll(channel, content)
                 channel.force(true)
             }
             Cancellables.discard(

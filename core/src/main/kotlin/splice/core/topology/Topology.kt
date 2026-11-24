@@ -44,6 +44,7 @@ import splice.core.model.ModelTierSuffix
 import splice.core.model.PublishedRates
 import splice.core.model.WindowRule
 import splice.core.prompt.SystemPromptMode
+import splice.core.topology.desktop.DesktopConfig
 import splice.core.topology.telemetry.TelemetryConfig
 import splice.core.util.TopologySlotsFailure
 
@@ -77,6 +78,9 @@ public data class Topology(
     public val capabilities: List<Capability> get() = extensions.capabilities
 
     public val modes: Map<String, ModeSetting> get() = extensions.modes
+
+    /** `[desktop]`: the Code-tab windows splice scales Claude Desktop's app-mode counts to (DesktopConfig). */
+    public val desktop: DesktopConfig get() = extensions.desktop
 
     /** Resolve a user-supplied head name — the topology key or the installed wrapper command
      *  (starter: head `openrouter`, command `claude-openrouter`) — to matching topology keys. A topology-KEY

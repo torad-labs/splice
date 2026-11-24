@@ -2,9 +2,12 @@
 // java.util.ServiceLoader, from the META-INF/services entry the splice.mode plugin writes from the manifest's handler.
 package splice.modes.api
 
+import splice.core.server.ModRequest
+import splice.core.server.ModResponse
+
 /** One mode's code: it answers a call of one of its tools, may give the content of a resource its manifest declares,
- *  and may answer management routes under `/api/`. A mode
- *  class has a public no-argument constructor, so the ServiceLoader can make it. */
+ *  may answer management routes under `/api/`, and may answer a team server's key holders under
+ *  `/server/mod/<name>/...`. A mode class has a public no-argument constructor, so the ServiceLoader can make it. */
 public interface Mode {
     /** The answer to [call], a text or an error the model reads. A handler that throws is answered for it:
      *  "mode <name> failed: <exception class>", as an error. */
@@ -16,4 +19,10 @@ public interface Mode {
 
     /** The management routes this mode answers, each a method and an exact path under `/api/`. */
     public val routes: List<ModeRoute> get() = emptyList()
+
+    /** The answer to [request], asked of a team server's listener under `/server/mod/<name>/...` by a key holder, who
+     *  [ModRequest.caller] names; null when this mode has no such path (a 404). Asked only when splice.toml's
+     *  `[modes.<name>] server_routes` is true, and with `server_admin_only` only for an admin. A handler that throws is
+     *  answered for it, 500 "mode <name> failed: <exception class>". */
+    public fun serve(request: ModRequest): ModResponse? = null
 }

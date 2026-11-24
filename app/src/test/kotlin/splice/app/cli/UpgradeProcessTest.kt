@@ -126,6 +126,7 @@ class UpgradeProcessTest {
             put("SPLICE_RELEASE_BASE_URL", release.toUri().toString().trimEnd('/'))
             put("SPLICE_UPGRADE_JAVA", java.toString())
             put("SPLICE_CONTROL_PORT", port.toString())
+            put("SPLICE_CONFIG", tmp.resolve("splice.toml").toString())
         }
         val process = builder.start()
         try {
@@ -169,6 +170,17 @@ class UpgradeProcessTest {
         assertEquals(1, ran.exit, ran.stdout)
         assertTrue(Files.readString(share(tmp, "splice.jar")) != "new-jar", ran.stdout)
         assertTrue(Files.readSymbolicLink(share(tmp, "releases/current")).toString() != NEW_VERSION, ran.stdout)
+    }
+
+    @Test
+    fun `an upgrade can restart with a built-in mode only the new release knows`(@TempDir tmp: Path) {
+        Files.writeString(tmp.resolve("splice.toml"), "[modes.future-builtin]\non = true\n")
+
+        val ran = upgrade(tmp, NEW_VERSION, 0, false, "--to", "v$NEW_VERSION", "--now")
+
+        assertEquals(0, ran.exit, ran.stdout)
+        assertTrue(ran.stdout.contains("serving $NEW_VERSION"), ran.stdout)
+        assertEquals("new-jar", Files.readString(share(tmp, "splice.jar")))
     }
 
     @Test

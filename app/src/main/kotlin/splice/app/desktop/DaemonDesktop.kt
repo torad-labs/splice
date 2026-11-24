@@ -16,7 +16,6 @@ import splice.app.desktop.catalog.CatalogBuild
 import splice.app.desktop.catalog.CatalogFile
 import splice.app.desktop.catalog.DesktopLineup
 import splice.app.desktop.catalog.DesktopProviders
-import splice.app.desktop.catalog.DoorCatalog
 import splice.app.desktop.catalog.PublishedCatalog
 import splice.app.desktop.catalog.SelectorAliases
 import splice.app.desktop.harness.DesktopHarnessFile
@@ -75,7 +74,7 @@ internal class DaemonDesktop(
     )
 
     /** What splice changes in Claude Desktop: its configuration in Desktop's library and the helper that names. */
-    private val app = DesktopAppMode(records, library, DesktopPrograms(statePaths.stateDir))
+    private val app = DesktopAppMode(records, library, DesktopPrograms(statePaths.stateDir), topology.desktop)
 
     /** The terminal's `claude` on this door. */
     val claude = TerminalDoor(topology, statePaths, log, turnKey)
@@ -151,7 +150,7 @@ internal class DaemonDesktop(
         val (lane, terminal) = claude.open(lineups, door, controlPort = controlPort)
         headLane.open(lineups)
         val callers = listOf(DesktopCaller(key, records, log), terminal)
-        val doorway = DesktopDoor(callers, lineups, sessionSpeeds = sessionSpeeds)
+        val doorway = DesktopDoor(callers, lineups, sessionSpeeds = sessionSpeeds, desktop = topology.desktop)
         team.open(lineups, topology)
         network.open(doorway, NetworkCaller(lane, machine), lane, PickerRows(claude::rows), machine)
         opened = DesktopService(doorway, switch, lane, lineups, records)
@@ -214,7 +213,7 @@ internal class DaemonDesktop(
     /** The model list and splice's policy given to every Claude Desktop whose applied configuration points at [door]:
      *  the person's own, and each one run beside it on a config folder of its own. */
     private suspend fun publish(door: String, lineup: DesktopLineup) {
-        val models = DoorCatalog(lineup).inferenceModels(records.get().defaultModel)
+        val models = app.models(lineup, records.get().defaultModel)
         withContext(io) {
             (listOf(library) + library.beside()).forEach { desktop ->
                 Cancellables.runCatchingCancellable { desktop.publish(door, models) }

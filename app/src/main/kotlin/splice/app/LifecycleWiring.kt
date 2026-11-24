@@ -7,6 +7,7 @@ package splice.app
 import splice.app.capability.CapabilityAftercare
 import splice.app.cli.AdminSupport
 import splice.app.cli.ConfigFixOffer
+import splice.app.modes.ModeBoot
 import splice.app.provider.local.LocalRowBootFindings
 import splice.core.GATEWAY_VERSION
 import splice.core.config.RunningJar
@@ -21,6 +22,7 @@ import splice.launch.install.InstallLayout
 import splice.lifecycle.prices.PriceRefresh
 import splice.lifecycle.prices.PriceRefreshSettings
 import splice.lifecycle.restart.ConfigRepair
+import splice.lifecycle.restart.RestartChecks
 import splice.lifecycle.restart.RestartCommand
 import splice.lifecycle.start.DaemonColdStart
 import splice.lifecycle.units.UpgradeUnits
@@ -32,6 +34,8 @@ import splice.lifecycle.upgrade.UpgradeRuns
 import splice.lifecycle.upgrade.UpgradeVerb
 import splice.lifecycle.upgrade.VersionedRestart
 import splice.lifecycle.upgrade.aftercare.AftercareStep
+import splice.topology.BootSettings
+import splice.topology.RetiredSettings
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -43,35 +47,42 @@ internal object LifecycleWiring {
 
     /** The jar an upgrade restarts onto: the install's live jar, which the activation just repointed. The jar this
      *  CLI runs from is the OLD release, so a daemon no unit supervises came back on it (found on a test machine). */
-    fun installedJar(): RunningJar = RunningJar {
+    private fun installedJar(): RunningJar = RunningJar {
         InstallLayout().shareDir(EnvReader(System::getenv)).resolve("splice.jar")
     }
 
     /** [expectedVersion] is what the restarted daemon must report: this CLI's own, or the release an
      *  upgrade just activated. [waitForCompactions] false skips V4-216's wait (`--now`, upgrade).
-     *  [launchJar] is the jar a cold start runs: this build's own unless an upgrade names the live one. */
+     *  An upgrade starts the installed jar and trusts its own mode checks rather than this CLI's catalog. */
     fun restart(
         expectedVersion: String = GATEWAY_VERSION,
         waitForCompactions: Boolean = true,
-        launchJar: RunningJar = jar,
         now: Boolean = false,
         waitAll: Boolean = false,
-    ): Boolean =
-        RestartCommand(
+        target: RestartTarget = RestartTarget.CURRENT_BUILD,
+    ): Boolean {
+        val env = EnvReader(System::getenv)
+        val (launchJar, beside) = when (target) {
+            RestartTarget.CURRENT_BUILD -> jar to ModeBoot().beside(env)
+            RestartTarget.UPGRADE -> installedJar() to BootSettings(RetiredSettings(env))
+        }
+        val command = RestartCommand(
             output,
             errors,
-            EnvReader(System::getenv),
+            env,
             launchJar,
             repair = ConfigRepair { ConfigFixOffer().offer() },
-            runtimes = LocalRowBootFindings(EnvReader(System::getenv)),
-        ).let { command ->
-            val sockets = InstallWiring.listenerSockets(EnvReader(System::getenv))
-            if (sockets == null) {
-                command.restart(expectedVersion, waitForCompactions, now = now, waitAll = waitAll)
-            } else {
-                command.restart(expectedVersion, waitForCompactions, sockets, now = now, waitAll = waitAll)
-            }
+            checks = RestartChecks(beside, LocalRowBootFindings(env)),
+        )
+        val sockets = InstallWiring.listenerSockets(env)
+        return if (sockets == null) {
+            command.restart(expectedVersion, waitForCompactions, now = now, waitAll = waitAll)
+        } else {
+            command.restart(expectedVersion, waitForCompactions, sockets, now = now, waitAll = waitAll)
         }
+    }
+
+    internal enum class RestartTarget { CURRENT_BUILD, UPGRADE }
 
     fun ensureDaemon(port: Int): Boolean =
         DaemonColdStart(output, errors, EnvReader(System::getenv), jar).ensureDaemon(port)
@@ -123,7 +134,7 @@ internal object LifecycleWiring {
             TerminalOutput(System.err::println),
             env,
             // The upgrade waited for every turn itself (or was told --now): no second wait here.
-            VersionedRestart { restart(it, waitForCompactions = false, launchJar = installedJar()) },
+            VersionedRestart { restart(it, waitForCompactions = false, target = RestartTarget.UPGRADE) },
             UpgradeUnits(InstallWiring.units(env), InstallWiring.daemonUnits(env)),
             cliUpdateSettings(),
             // What the new jar does once its upgrade passed: the maintenance and the "action needed" list.

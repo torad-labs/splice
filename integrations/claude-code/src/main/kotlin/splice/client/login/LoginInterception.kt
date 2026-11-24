@@ -132,7 +132,6 @@ internal object LoginInterception {
     fun keySetupAdvertiser(
         configDir: Path,
         spec: TokenCaptureSpec,
-        loginCommand: String,
         hooks: HookInstaller = HookInstaller(),
     ): Map<String, List<JsonObject>> {
         val log = hooks.log
@@ -144,7 +143,7 @@ internal object LoginInterception {
             val script = HookScriptFiles.writeHookScript(
                 configDir,
                 KEYSETUP_HOOK_SH,
-                LoginHookScripts.keySetupScript(spec, loginCommand),
+                LoginHookScripts.keySetupScript(spec),
                 chmod,
             )
             mapOf(

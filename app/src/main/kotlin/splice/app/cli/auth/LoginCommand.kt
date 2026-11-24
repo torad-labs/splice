@@ -35,6 +35,7 @@ import java.nio.file.Paths
 internal class LoginCommand(
     // The flows' lines, which this verb prints to the terminal (LAYOUT-01: the flows no longer do).
     private val output: TerminalOutput = TerminalOutput { println(it) },
+    private val openConsole: ConsoleAccountsOpen = DefaultConsoleAccountsOpen(output),
 ) {
 
     private val codex = LoginCodex()
@@ -45,25 +46,33 @@ internal class LoginCommand(
     private val claudeLabel = ClaudeLoginLabel(output)
     private val claudeCli = ClaudeCliSignIn(output)
 
-    internal suspend fun login(headArg: String?, label: String? = null, discard: Boolean = false): Boolean {
+    internal suspend fun login(
+        headArg: String?,
+        label: String? = null,
+        discard: Boolean = false,
+        openBrowser: Boolean = true,
+    ): Boolean {
+        // Bare `splice login` opens Splice Console's Accounts page, the single place logins are managed.
+        val bare = headArg == null && !hasLabelOptions(label, discard)
+        return if (bare) openConsole(openBrowser) else loginHead(headArg, label, discard)
+    }
+
+    private fun hasLabelOptions(label: String?, discard: Boolean): Boolean = label != null || discard
+
+    private suspend fun loginHead(headArg: String?, label: String?, discard: Boolean): Boolean {
         val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
         val headKey = resolveHeadKey(headArg, topology) ?: return false
-        val providerKey = topology.heads[headKey]?.provider
-        val provider = providerKey?.let { topology.providers[it] }
+        val provider = topology.heads[headKey]?.provider?.let { topology.providers[it] }
         if (provider == null) {
             println("splice: unknown head '$headKey' (heads: ${topology.heads.keys})")
             return false
         }
         // V4-276 + signin-e2e: bare `splice login <claude-head>` signs an account in through Claude Code's own flow;
         // `--label` saves or switches a custom head's login.
-        return if (provider.auth.kind == CLIENT_AUTH_KIND) {
-            if (label == null && !discard) {
-                claudeCli.login(headKey, topology)
-            } else {
-                claudeLabel.login(headKey, topology, label, discard)
-            }
-        } else {
-            signIn(headKey, provider, topology, label)
+        return when {
+            provider.auth.kind != CLIENT_AUTH_KIND -> signIn(headKey, provider, topology, label)
+            hasLabelOptions(label, discard) -> claudeLabel.login(headKey, topology, label, discard)
+            else -> claudeCli.login(headKey, topology)
         }
     }
 

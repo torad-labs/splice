@@ -98,7 +98,39 @@ class PeerCodexHookTest {
             assertEquals("", ran.out)
             assertFalse(ran.err.contains(USAGE), ran.err)
         }
-        assertTrue(absent.err.contains("no Codex thread id"), absent.err)
+        assertTrue(absent.err.contains("no session id"), absent.err)
+        assertFalse(absent.err.contains("Codex"), "stderr must stay harness-neutral: ${absent.err}")
+    }
+
+    @Test
+    fun `camelCase hook payloads with hookEventName and conversationId are parsed identically`(@TempDir dir: Path) {
+        val hits = mutableListOf<Hit>()
+        withDaemon(dir, handler = { exchange ->
+            hits += Hit(
+                exchange.requestMethod,
+                exchange.requestURI.path,
+                exchange.requestURI.query,
+                exchange.requestBody.readBytes().decodeToString(),
+            )
+            if (exchange.requestMethod == "DELETE") "{}".encodeToByteArray() else ATTACHED.encodeToByteArray()
+        }) { env ->
+            val camelStart = buildJsonObject {
+                put("hookEventName", SESSION_START)
+                put("conversationId", THREAD)
+                put("cwd", OTHER)
+            }.toString()
+            val camelEnd = buildJsonObject {
+                put("hookEventName", SESSION_END)
+                put("conversationId", THREAD)
+                put("cwd", OTHER)
+            }.toString()
+            assertQuiet(run(verb(ATTACH), camelStart, env))
+            assertQuiet(run(verb(DETACH), camelEnd, env))
+        }
+        val post = hits.single { it.method == "POST" }
+        assertEquals(THREAD, field(post.body, "thread"))
+        assertEquals(absolute(OTHER), field(post.body, "cwd"))
+        assertEquals("/api/peers/codex/$THREAD", hits.single { it.method == "DELETE" }.path)
     }
 
     @Test
@@ -175,7 +207,8 @@ class PeerCodexHookTest {
         }
         assertEquals(PeerExit.DONE, code)
         assertFalse(read)
-        assertTrue(err.toString().contains("no Codex thread id"), err.toString())
+        assertTrue(err.toString().contains("no session id"), err.toString())
+        assertFalse(err.toString().contains("Codex"), err.toString())
     }
 
     @Test

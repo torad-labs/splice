@@ -19,10 +19,12 @@ internal sealed class WizardAnswer {
 }
 
 /** The wizard's answers beyond plans and launchers: the [local] model step, [share] (`[daemon] mcp_share` and the
- *  optional MCP import and harness sync), the [modes] turned on and whether [autoUpdate] was turned on. */
+ *  optional MCP import and harness sync), [codexHooks] (`~/.codex/hooks.json` peer hooks), the [modes] turned on and
+ *  whether [autoUpdate] was turned on. */
 internal data class SetupExtras(
     val local: Boolean,
     val share: McpSetupAnswer,
     val modes: List<String>,
     val autoUpdate: Boolean,
+    val codexHooks: CodexHooksChoice = CodexHooksChoice(),
 )

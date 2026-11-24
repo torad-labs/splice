@@ -37,6 +37,7 @@ import splice.client.resume.STARTUP_SOURCE
 import splice.client.resume.SessionOwnership
 import splice.client.resume.TRANSCRIPT_SUFFIX
 import splice.client.resume.TranscriptModelRewrite
+import splice.core.client.DOOR_HOOK_KEY
 import splice.core.client.FOREGROUND_OWNER_HEADER
 import splice.core.client.FOREGROUND_OWNER_LENGTH
 import splice.core.client.ForegroundToolActivity
@@ -100,21 +101,34 @@ public class ResumeHookRoute(
     /** The reason nothing was rewritten, or null when the transcript was moved onto the head's model
      *  (or already named it). Internal so the decision is tested without a socket, as SessionsRoutes is. */
     internal fun handle(key: String, body: String, owner: String? = null): String? {
-        val managed = heads.byKey(key)
-        val tree = ownTree(key, managed)
-        val hook = parse(body)?.let { ResumeCall(it) }
-        return when {
-            tree == null ->
-                if (managed == null) "no head is keyed that" else "that head has no launch spec, so no transcript tree"
-            hook == null -> "the body is not a JSON object"
-            hook.source != RESUME_SOURCE && hook.source != STARTUP_SOURCE ->
-                "the hook source is neither a startup nor a resume"
-            !SESSION_ID_SHAPE.matches(hook.sessionId) -> "the session id is not a session id"
-            else -> {
-                started(key, hook, owner)
-                located(managed, tree, hook)
+        val target = resolveTarget(key)
+        if (target is HookTarget.Missing) return target.reason
+        val hook = parse(body)?.let(::ResumeCall) ?: return "the body is not a JSON object"
+        return hook.invalidReason() ?: run {
+            started(key, hook, owner)
+            when (target) {
+                HookTarget.Door -> null
+                is HookTarget.Head -> located(target.managed, target.tree, hook)
+                is HookTarget.Missing -> target.reason
             }
         }
+    }
+
+    private fun resolveTarget(key: String): HookTarget {
+        val managed = heads.byKey(key)
+        if (managed == null && key == DOOR_HOOK_KEY) return HookTarget.Door
+        val tree = ownTree(key, managed)
+        return when {
+            tree != null -> HookTarget.Head(managed, tree)
+            managed == null -> HookTarget.Missing("no head is keyed that")
+            else -> HookTarget.Missing("that head has no launch spec, so no transcript tree")
+        }
+    }
+
+    private sealed class HookTarget {
+        data object Door : HookTarget()
+        data class Head(val managed: LaunchHead?, val tree: Path) : HookTarget()
+        data class Missing(val reason: String) : HookTarget()
     }
 
     /** The tree [key]'s sessions are recorded in: [managed]'s own, or, when no head is keyed that, the own tree of a
@@ -127,16 +141,30 @@ public class ResumeHookRoute(
             foreground?.record(ForegroundToolCall(hook.sessionId, null, ForegroundToolPhase.SESSION_START, it))
         }
         if (hook.source == STARTUP_SOURCE && hook.cwd.isNotBlank()) {
-            starts?.started(key, hook.sessionId, hook.cwd)?.let { log("[teams] ${LogSafe.str(it)}\n") }
+            val bound = if (key == DOOR_HOOK_KEY && hook.provider.isNotBlank()) {
+                starts?.started(hook.provider, hook.sessionId, hook.cwd)
+                    ?: starts?.started(key, hook.sessionId, hook.cwd)
+            } else {
+                starts?.started(key, hook.sessionId, hook.cwd)
+            }
+            bound?.let { log("[teams] ${LogSafe.str(it)}\n") }
         }
     }
 
-    /** The four fields of the hook JSON this route reads, absent ones as empty strings. */
+    /** The fields of the hook JSON this route reads, absent ones as empty strings. */
     private class ResumeCall(hook: JsonObject) {
         val source: String = JsonScalars.str(hook, "source").orEmpty()
         val sessionId: String = JsonScalars.str(hook, "session_id").orEmpty()
         val transcriptPath: String = JsonScalars.str(hook, "transcript_path").orEmpty()
         val cwd: String = JsonScalars.str(hook, "cwd").orEmpty()
+        val provider: String = JsonScalars.str(hook, "provider").orEmpty()
+
+        fun invalidReason(): String? = when {
+            source != RESUME_SOURCE && source != STARTUP_SOURCE ->
+                "the hook source is neither a startup nor a resume"
+            !SESSION_ID_SHAPE.matches(sessionId) -> "the session id is not a session id"
+            else -> null
+        }
     }
 
     /** [hook]'s session recorded in [configDir], and on a resume its transcript moved onto [managed]'s model; a

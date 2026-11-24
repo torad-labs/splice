@@ -17,6 +17,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.client.speed.SpeedHook
+import splice.core.client.DOOR_HOOK_KEY
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
@@ -74,7 +76,7 @@ class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
             "login.sh" to LoginScript(receipt = "/tmp/$HOSTILE_LABEL").hook(),
             "elsewhere.sh" to LoginScript(elsewhere = HOSTILE_LABEL).hook(),
             "capture.sh" to LoginHookScripts.captureHookScript(capture),
-            "keysetup.sh" to LoginHookScripts.keySetupScript(capture, "claude-splice login"),
+            "keysetup.sh" to LoginHookScripts.keySetupScript(capture),
         )
         scripts.forEach { (name, body) ->
             val checked = ProcessBuilder("bash", "-n", write(tmp, name, body).toString()).start()
@@ -169,14 +171,43 @@ class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `the advertiser prints its text unchanged rather than a truncated shell word`() {
+    fun `the advertiser prints its text unchanged and directs to Console Accounts without chat-pasting`() {
         assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
         val capture = TokenCaptureSpec("OPENROUTER_API_KEY", "sk-or-x", HOSTILE_LABEL)
         val ran =
-            run(write(tmp, "advertise.sh", LoginHookScripts.keySetupScript(capture, "claude-splice login")), "", tmp)
+            run(write(tmp, "advertise.sh", LoginHookScripts.keySetupScript(capture)), "", tmp)
         assertEquals(0, ran.exit, ran.err)
         assertTrue(ran.out.contains(HOSTILE_LABEL), "the label must survive the single-quoted word: ${ran.out}")
         assertTrue(ran.out.contains("Then wait."), "the text must not be truncated at the apostrophe: ${ran.out}")
+        assertTrue(ran.out.contains("Splice Console's Accounts page"), ran.out)
+        assertTrue(ran.out.contains("splice console"), ran.out)
+        assertTrue(ran.out.contains("/login"), ran.out)
+        assertTrue(!ran.out.contains("claude-splice login"), "must not advertise <head> login: ${ran.out}")
+        assertTrue(!ran.out.contains("paste your"), "must not advertise pasting keys in chat: ${ran.out}")
+    }
+
+    @Test
+    fun `capture hook blocks a pasted key and points to Console Accounts instead of head login`() {
+        val capture = TokenCaptureSpec("OPENROUTER_API_KEY", "sk-or-[A-Za-z0-9_-]{20,}", "OpenRouter")
+        val script = LoginHookScripts.captureHookScript(capture)
+        assertTrue("Splice Console's Accounts page" in script, script)
+        assertTrue("splice console" in script, script)
+        assertTrue("<head> login" !in script, script)
+    }
+
+    @Test
+    fun `door speed hook fails open for slash fast and blocks slash ultrafast when daemon is offline`() {
+        assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
+        val header = write(tmp, "auth.hdr", "Authorization: Bearer test\n")
+        val body = SpeedHook.script(controlPort = 1, authHeaderFile = header, headKey = DOOR_HOOK_KEY)
+        val script = write(tmp, "door-speed.sh", body)
+
+        val fast = run(script, """{"prompt":"/fast"}""", tmp)
+        assertEquals(0, fast.exit, fast.err)
+        assertEquals("", fast.out, "offline door /fast must fail open so Claude Code's native /fast still works")
+
+        val ultraReason = decision(run(script, """{"prompt":"/ultrafast"}""", tmp))
+        assertTrue("daemon did not answer" in ultraReason, ultraReason)
     }
 
     // The one value that CANNOT be quoted away — it is a bare command word in the generated hook —

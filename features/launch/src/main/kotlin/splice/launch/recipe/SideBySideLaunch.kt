@@ -6,12 +6,13 @@ package splice.launch.recipe
 
 internal class SideBySideLaunch(private val door: ClaudeDoor) {
     /** What runs for [args]: [plain], the door's side-by-side launch, or the profile's, with the arguments Claude Code
-     *  is given; or why nothing runs. */
-    suspend fun start(plain: DoorLaunchSpec, args: List<String>): Started {
+     *  is given; or why nothing runs. [inheritedConfigDir], the launching shell's CLAUDE_CONFIG_DIR, goes to the
+     *  profile's rebuild. */
+    suspend fun start(plain: DoorLaunchSpec, args: List<String>, inheritedConfigDir: String? = null): Started {
         val split = split(args)
         split.problem?.let { return Started.Refused(it) }
         val name = split.profile ?: return Started.Ready(plain, split.rest)
-        return when (val launch = door.launchProfile(name, plain)) {
+        return when (val launch = door.launchProfile(name, plain, inheritedConfigDir)) {
             is ProfileLaunch.Ready -> Started.Ready(launch.spec, split.rest)
             is ProfileLaunch.Refused -> Started.Refused(launch.reason)
         }

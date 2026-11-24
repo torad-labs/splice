@@ -9,8 +9,12 @@ package splice.core.topology
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import splice.core.config.HeadConfigDirs
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
+import splice.core.topology.profile.GEMINI_FOLDER
+import splice.core.topology.profile.PROFILE_STATE_PATH_RULE
+import splice.core.topology.profile.ProfileStatePaths
 import splice.core.util.PathProbe
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -27,6 +31,10 @@ public data class LaunchConfig(
 public data class LaunchProfileConfig(
     /** The profile's own Claude folder; `<splice root>/launch-profiles/<name>` when unset. Never `~/.claude`. */
     val dir: String? = null,
+    /** The `.claude.json` the profile's own is seeded from (MCP servers, projects, onboarding), read and never
+     *  written. Unset: the launching shell's `$CLAUDE_CONFIG_DIR/.claude.json`, where Claude Code keeps it while that
+     *  names a Claude folder of the person's own, else `~/.claude.json`. */
+    @SerialName("claude_json") val claudeJson: String? = null,
     /** Which hooks run: [KEEP_HOOKS_OWN] (the person's settings files' own, no plugin's), [KEEP_HOOKS_ALL] (those and
      *  the kept plugins' own) or [KEEP_HOOKS_NONE]. */
     @SerialName("keep_hooks") val keepHooks: String = KEEP_HOOKS_OWN,
@@ -35,7 +43,7 @@ public data class LaunchProfileConfig(
     @SerialName("drop_hooks") val dropHooks: List<String> = emptyList(),
     /** The plugins the profile loads, by `name@marketplace` or by name; none when empty. */
     @SerialName("keep_plugins") val keepPlugins: List<String> = emptyList(),
-    /** The marked blocks taken out of CLAUDE.md, by marker. */
+    /** Comment, `# BEGIN`, or XML-style blocks taken out of CLAUDE.md, by single-line marker without `<` or `>`. */
     @SerialName("drop_blocks") val dropBlocks: List<String> = emptyList(),
     /** Skills, agents and commands whose names start with one of these are left out. */
     @SerialName("drop_names") val dropNames: List<String> = emptyList(),
@@ -95,7 +103,7 @@ internal class LaunchProfileChecks(
         val each = profiles.flatMap { (name, profile) ->
             listOfNotNull(name(name), dir(name, profile), keepHooks(name, profile)) + entries(name, profile)
         }
-        return each + shared(profiles)
+        return each + sourceFindings(profiles) + shared(profiles)
     }
 
     private fun name(name: String): TopologyFinding? =
@@ -109,6 +117,18 @@ internal class LaunchProfileChecks(
         return why?.let { TopologyFinding("launch.profiles.$name.dir", "$it; name a folder of the profile's own") }
     }
 
+    private fun sourceFindings(profiles: Map<String, LaunchProfileConfig>): List<TopologyFinding> {
+        val named = profiles.filterValues { it.claudeJson != null }
+        if (named.isEmpty()) return emptyList()
+        val headDirs = topology.heads.map { (key, head) -> HeadConfigDirs.of(key, head.claude.configDir, home) }
+        return named.mapNotNull { (name, profile) ->
+            val folder = PathProbe.real(profile.folder(name, home, defaultRoot))
+            val paths = ProfileStatePaths(home, defaultRoot, headDirs, folder)
+            TopologyFinding("launch.profiles.$name.claude_json", "$PROFILE_STATE_PATH_RULE; $SOURCE_HINT")
+                .takeIf { paths.named(requireNotNull(profile.claudeJson)) == null }
+        }
+    }
+
     private fun keepHooks(name: String, profile: LaunchProfileConfig): TopologyFinding? =
         TopologyFinding(
             "launch.profiles.$name.keep_hooks",
@@ -116,7 +136,7 @@ internal class LaunchProfileChecks(
                 "the kept plugins' hooks) or \"$KEEP_HOOKS_NONE\"",
         ).takeUnless { profile.keepHooks in keepHooksWords }
 
-    /** A blank entry in any list, a marker that can't sit on one line of an HTML comment, a name prefix with a `/`. */
+    /** A blank list entry, a multiline or angle-bracketed block marker, or a name prefix with a `/`. */
     private fun entries(name: String, profile: LaunchProfileConfig): List<TopologyFinding> {
         val lists = mapOf(
             "drop_hooks" to profile.dropHooks,
@@ -126,7 +146,7 @@ internal class LaunchProfileChecks(
         )
         val blank = lists.filterValues { list -> list.any(String::isBlank) }.keys
             .map { TopologyFinding("launch.profiles.$name.$it", "has a blank entry; remove it") }
-        val marker = profile.dropBlocks.filter { it.contains('\n') || it.contains(COMMENT_END) }
+        val marker = profile.dropBlocks.filter { marker -> marker.any { it in "\n<>" } }
             .map { TopologyFinding("launch.profiles.$name.drop_blocks", MARKER_RULE) }.distinct()
         val prefix = profile.dropNames.filter { it.contains('/') }
             .map { TopologyFinding("launch.profiles.$name.drop_names", PREFIX_RULE) }.distinct()
@@ -150,13 +170,13 @@ private val profileName = Regex("[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
 private const val PROFILE_NAME_RULE =
     "must be a letter or digit, then up to 63 letters, digits, - or _, since it names a folder and a launch's --profile"
 
-private const val MARKER_RULE = "each marker must fit on one line and hold no -->"
+private const val MARKER_RULE = "each marker must fit on one line and hold no < or >"
 
 private const val PREFIX_RULE = "each prefix is the start of a name, so it holds no /"
 
-private const val COMMENT_END = "-->"
-
 private const val RELATIVE_RULE = "must be an absolute folder or start with ~/"
 
+private const val SOURCE_HINT = "name the .claude.json your MCP servers and projects are read from, or remove it"
+
 // The folders under the home a profile is never in, nor holds: Claude Code's own, and Google's tools'.
-private val KEPT_OUT = listOf(UserHome.CLAUDE_DIR, ".gemini")
+private val KEPT_OUT = listOf(UserHome.CLAUDE_DIR, GEMINI_FOLDER)

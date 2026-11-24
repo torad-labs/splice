@@ -26,11 +26,12 @@ import java.nio.file.Path
 
 /** The sources a profile is rebuilt from: the person's [home], with `~/.claude` and `~/.claude.json` in it, Splice's
  *  MCP user [registry] (server name to entry, as it is at this launch), and the root a profile with no `dir` lives
- *  under. */
+ *  under. [headDirs], every head's Claude folder, are never where the person's `.claude.json` is read from. */
 public class LaunchProfileBuild(
     private val home: Path,
     private val defaultRoot: Path,
     private val registry: JsonObject,
+    private val headDirs: List<Path> = emptyList(),
 ) {
     private val claudeDir = home.resolve(UserHome.CLAUDE_DIR).toAbsolutePath().normalize()
     private val json = Json { prettyPrint = true }
@@ -41,12 +42,24 @@ public class LaunchProfileBuild(
         PathProbe.real(profile.folder(name, home, defaultRoot))
 
     /** Profile [name] rebuilt from [profile], with [doorOwned] (the variables the door sets or takes out) left out of
-     *  its settings' `env`. */
-    public fun build(name: String, profile: LaunchProfileConfig, doorOwned: Set<String>): ProfileBuilt {
+     *  its settings' `env`, for a launch whose shell held [inheritedConfigDir] as CLAUDE_CONFIG_DIR (null while it held
+     *  none), which is where the person's `.claude.json` is read from while it is a Claude folder of theirs. */
+    public fun build(
+        name: String,
+        profile: LaunchProfileConfig,
+        doorOwned: Set<String>,
+        inheritedConfigDir: String? = null,
+    ): ProfileBuilt {
         val folder = folderOf(name, profile)
         return try {
+            val source = ProfileStateSource(home, defaultRoot, headDirs, folder)
+            val state = when (val read = source.read(profile, inheritedConfigDir)) {
+                SettingsRead.Absent -> null
+                is SettingsRead.Held -> read.file
+                is SettingsRead.Unreadable -> return ProfileBuilt.Refused(read.why)
+            }
             ProfileFolder(home).prepare(folder, name, profile)?.let { return ProfileBuilt.Refused(it) }
-            ProfileBuilt.Ready(folder, fill(folder, profile, doorOwned))
+            ProfileBuilt.Ready(folder, fill(folder, profile, doorOwned, state))
         } catch (failure: IOException) {
             refused(name, folder, failure)
         } catch (failure: UncheckedIOException) {
@@ -57,10 +70,15 @@ public class LaunchProfileBuild(
     private fun refused(name: String, folder: Path, failure: Exception): ProfileBuilt =
         ProfileBuilt.Refused("profile $name could not be rebuilt in $folder: ${SafeFailureText.render(failure)}")
 
-    /** Everything the profile carries written into [folder]; what the person should know of it. The settings files are
-     *  read first and written last: a hook event either names is an event in both, and a plugin is enabled only once
-     *  its install is in the profile. */
-    private fun fill(folder: Path, profile: LaunchProfileConfig, doorOwned: Set<String>): List<String> {
+    /** Everything the profile carries written into [folder], its `.claude.json` seeded from [state]; what the person
+     *  should know of it. The settings files are read first and written last: a hook event either names is an event in
+     *  both, and a plugin is enabled only once its install is in the profile. */
+    private fun fill(
+        folder: Path,
+        profile: LaunchProfileConfig,
+        doorOwned: Set<String>,
+        state: JsonObject?,
+    ): List<String> {
         val sources = ClaudeModelLists.settingsFiles.associateWith { settingsOf(it) }
         val settings = ProfileSettings(profile, doorOwned, sources.values.filterNotNull())
         val wanted = sources.values.filterNotNull().flatMap(settings::keptPlugins).toSet()
@@ -69,7 +87,7 @@ public class LaunchProfileBuild(
             settingsFile(folder.resolve(file), source?.let { settings.filtered(it, loaded) })
         }
         val unclosed = instructions(folder, profile)
-        ProfileGlobalConfig(home.resolve(Keys.CLAUDE_JSON), registry).build(folder)
+        ProfileGlobalConfig(state, registry).build(folder)
         val links = ProfileLinks(claudeDir, profile.dropNames).link(folder)
         return unclosed.map { "CLAUDE.md's block \"$it\" opens and never closes, so it is kept" } + links
     }

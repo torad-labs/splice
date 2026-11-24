@@ -6,6 +6,7 @@
 package splice.client.profile
 
 import splice.core.topology.LaunchProfileConfig
+import splice.core.topology.profile.PROFILE_MARK
 import splice.core.util.SecureFile
 import java.io.IOException
 import java.nio.file.Files
@@ -46,8 +47,5 @@ internal class ProfileFolder(private val home: Path) {
         return Files.readString(mark).trim().removePrefix(MARK_TEXT).trim()
     }
 }
-
-/** The file that marks a folder as one splice rebuilds for a profile. */
-internal const val PROFILE_MARK: String = ".splice-profile"
 
 private const val MARK_TEXT = "splice rebuilds this folder before each `splice launch claude --profile` of: "

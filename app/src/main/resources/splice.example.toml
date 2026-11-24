@@ -149,10 +149,11 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # session loads only what the profile keeps. Read at the daemon's start; boot refuses a dir that is ~/.claude itself.
 # [launch.profiles.work]
 # dir = "~/.claude-work"        # default: ~/.splice/launch-profiles/<name>
+# claude_json = "~/.claude/.claude.json"  # MCP servers and projects read from here; default: $CLAUDE_CONFIG_DIR/.claude.json, else ~/.claude.json
 # keep_hooks = "own"            # "own": your settings files' hooks, no plugin's · "all": and kept plugins' · "none"
 # drop_hooks = ["SessionStart", "notify.sh"]  # an event's name drops that event; any other word, hooks whose command holds it
 # keep_plugins = ["code-review@claude-plugins-official"]  # none when empty
-# drop_blocks = ["team-notes"]  # CLAUDE.md blocks: <!-- name --> … <!-- /name --> or # BEGIN name … # END name
+# drop_blocks = ["team-notes"]  # CLAUDE.md blocks: <!-- name --> … <!-- /name -->, # BEGIN name … # END name, or <name …> … </name>
 # drop_names = ["team-", "old"]  # skills, agents and commands whose names start with these are left out
 
 # ── modes: turn a mode on or off, per head, and on a team server (modes/README.md) ──

@@ -61,6 +61,20 @@ class TerminalProfilesTest {
     }
 
     @Test
+    fun `the launching shell's CLAUDE_CONFIG_DIR is where the profile's MCP servers come from`() {
+        Files.createDirectories(home.resolve(".claude"))
+        home.resolve(".claude.json").writeText("""{"mcpServers":{"from-home":{"command":"a"}}}""")
+        home.resolve(".claude/.claude.json").writeText("""{"mcpServers":{"from-dir":{"command":"b"}}}""")
+        val launch = runBlocking { profiles().launch("work", side, home.resolve(".claude").toString()) }
+        assertInstanceOf(ProfileLaunch.Ready::class.java, launch)
+        val state = Json.parseToJsonElement(home.resolve("work/.claude.json").readText()).jsonObject
+        assertEquals(setOf("from-dir"), state.getValue("mcpServers").jsonObject.keys)
+        runBlocking { profiles().launch("work", side) }
+        val plain = Json.parseToJsonElement(home.resolve("work/.claude.json").readText()).jsonObject
+        assertEquals(setOf("from-home"), plain.getValue("mcpServers").jsonObject.keys)
+    }
+
+    @Test
     fun `a profile splice-toml does not declare launches nothing and names the ones it does`() {
         val launch = runBlocking { profiles().launch("nope", side) }
         val reason = assertInstanceOf(ProfileLaunch.Refused::class.java, launch).reason

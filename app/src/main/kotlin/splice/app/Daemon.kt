@@ -492,8 +492,12 @@ public class Daemon(
             // at the END, so a pass that was cut short is finished by the next call, never taken for done.
             headProbes.fenceStarts()
             controlPlane.ownership.fence()
-            // No other machine's turn starts on a head that is about to drain.
+            // No other machine's turn starts on a head that is about to drain. Server mode's drain (#791,
+            // `[server] drain_seconds`) runs here, while the heads still serve the turns it waits for, and what it
+            // spent comes out of the heads' budget, so the whole stop still ends inside Main's cooperative cap.
+            val began = System.nanoTime()
             if (!retired) closeListeners()
+            val listenersMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - began)
 
             // Heads stop in PARALLEL under a phase DEADLINE, then control stops — see
             // [HeadShutdown.stopHeads]. The supervisor scope + stopFailureHandler live there so an
@@ -503,7 +507,8 @@ public class Daemon(
             // stderr to /dev/null.
             headProbes.closeStarts()
             val routes = heads.values.map { it.head } + providers.running()
-            headShutdown.stopHeads(routes, HEAD_STOP_BUDGET_MS, log) { controlPlane.ownership.close() }
+            val headBudgetMs = (HEAD_STOP_BUDGET_MS - listenersMs).coerceAtLeast(0L)
+            headShutdown.stopHeads(routes, headBudgetMs, log) { controlPlane.ownership.close() }
 
             // A daemon that handed over closed these then, before the next daemon opened its own.
             if (!retired) closeBackground()

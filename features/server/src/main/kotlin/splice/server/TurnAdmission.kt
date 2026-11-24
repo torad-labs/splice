@@ -8,6 +8,11 @@
 // every turn is a 500: splice's own failure, never served uncounted (F5). And first, a turn on a command its person
 // may not use is a 403 naming the command, and reaches no head (F12).
 //
+// The server's own caps come after the person's (#791, ServerLoad): a turn past `inflight_total`, or on a provider whose
+// healthy upstreams each hold `inflight_per_upstream`, is answered with `busy_status` and `Retry-After`, and its person's
+// place is given back at once. While the server drains at stop, every turn is a 503 with `Retry-After`, before any
+// other refusal but a command that is down.
+//
 // Both routes open and close a turn here (served), so every turn on either leaves its row in the ledger however it
 // ends: refused, relayed to its end, or left by its client.
 package splice.server
@@ -53,9 +58,9 @@ internal class TurnAdmission(
         return null
     }
 
-    /** The slot [turn] takes, or null with it refused: one past a cap (a minute's tokens first, then the turns in flight
-     *  and a minute's turns), before that one past a budget that blocks, before that one whose provider has no server
-     *  up, before that one splice cannot record, and first one whose command is not running. */
+    /** The slot [turn] takes, or null with it refused: one past a cap ([capped]), before that one past a budget that
+     *  blocks, before that one whose provider has no server up, before that one splice cannot record, before that any
+     *  turn while the server drains (#791), and first one whose command is not running. */
     private suspend fun admitted(call: ApplicationCall, turn: LedgerTurn): TurnSlot? {
         if (!turn.command.running()) {
             // A command of splice's own that is down is splice's failure, never the upstream's (F5).
@@ -65,23 +70,37 @@ internal class TurnAdmission(
         }
         val refused = refusal(turn)
         if (refused != null) {
+            refused.retryAfter?.let { call.response.headers.append(HttpHeaders.RetryAfter, it.toString()) }
             voice.refuse(call, refused.status, refused.why)
             return null
         }
-        val person = turn.key.person
-        return when (val verdict = overTokens(person) ?: parts.limits.begin(person)) {
+        return when (val verdict = capped(turn)) {
             is LimitVerdict.Admitted -> verdict.slot
             is LimitVerdict.Refused -> {
                 call.response.headers.append(HttpHeaders.RetryAfter, verdict.retryAfterSeconds.toString())
-                voice.refuse(call, HttpStatus.TOO_MANY_REQUESTS, verdict.why)
+                voice.refuse(call, verdict.status, verdict.why)
                 null
             }
         }
     }
 
+    /** [turn]'s places under every cap: a minute's tokens first, then its person's turns in flight and a minute's
+     *  turns, then the server's turns in flight (#791). A place taken under one cap is given back at once when a later
+     *  one refuses, so a refused turn holds nothing. */
+    private suspend fun capped(turn: LedgerTurn): LimitVerdict {
+        val person = turn.key.person
+        val own = overTokens(person) ?: parts.limits.begin(person)
+        if (own !is LimitVerdict.Admitted) return own
+        return when (val shared = parts.limits.load.begin(turn.command.key)) {
+            is LimitVerdict.Admitted -> LimitVerdict.Admitted(own.slot.joined(shared.slot))
+            is LimitVerdict.Refused -> shared.also { own.slot.release() }
+        }
+    }
+
     /** Why [turn] is refused before any cap is asked, in the order they are asked, or null when nothing refuses it. */
     private suspend fun refusal(turn: LedgerTurn): Refusal? =
-        parts.books.turns.unwritable(turn)?.let { Refusal(HttpStatus.INTERNAL_SERVER_ERROR, it) }
+        parts.limits.load.drainRefusal()?.let { Refusal(it.status, it.why, it.retryAfterSeconds) }
+            ?: parts.books.turns.unwritable(turn)?.let { Refusal(HttpStatus.INTERNAL_SERVER_ERROR, it) }
             ?: parts.upstreams.noneUp(turn.command.key)?.let { Refusal(HttpStatus.SERVICE_UNAVAILABLE, it) }
             ?: spent(turn.key.person)?.let { Refusal(HttpStatus.BAD_REQUEST, it) }
 
@@ -108,5 +127,5 @@ internal fun interface AdmittedRelay {
     suspend fun relay(turn: LedgerTurn)
 }
 
-/** A turn refused with [status], and why. */
-private data class Refusal(val status: Int, val why: String)
+/** A turn refused with [status], and why; with [retryAfter], the seconds its `Retry-After` names. */
+private data class Refusal(val status: Int, val why: String, val retryAfter: Long? = null)

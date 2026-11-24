@@ -16,6 +16,7 @@ package splice.share
 import io.ktor.utils.io.ByteWriteChannel
 import io.ktor.utils.io.writeFully
 import io.ktor.utils.io.writeStringUtf8
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -39,6 +40,18 @@ public class RelayClock(private val waiter: Waiter = ProcessWaiter()) {
             awaited.onJoin { true }
             passing.onJoin { false }
         }.also { passing.cancel() }
+    }
+
+    /** A timer, started now in [scope], that ends once [ms] have passed. */
+    internal fun timer(scope: CoroutineScope, ms: Long): Job = scope.launch { waiter.wait(ms) }
+
+    /** What [wait] answers, or null when [timer] ends first, which cancels [wait]. */
+    internal suspend fun <T : Any> before(timer: Job, wait: HeadWait<T>): T? = coroutineScope {
+        val pending = async { wait() }
+        select {
+            pending.onAwait { it }
+            timer.onJoin { null }
+        }.also { if (it == null) pending.cancel() }
     }
 }
 
@@ -65,9 +78,12 @@ internal class QuietWire(private val out: ByteWriteChannel, every: Duration?, pr
         }
     }
 
+    /** Whether the stream stands between two events, where one more event may be written. */
+    val between: Boolean get() = lineEnds >= EVENT_END
+
     /** One keepalive now, where the stream stands between two events. */
     suspend fun keepalive() {
-        if (lineEnds < EVENT_END) return
+        if (!between) return
         out.writeStringUtf8(KEEPALIVE)
         out.flush()
     }

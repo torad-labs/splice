@@ -8,25 +8,40 @@ package splice.server
 
 import splice.core.topology.ServerLimits
 import splice.core.topology.ServerTeams
+import splice.core.wire.HttpStatus
+import splice.server.load.ServerLoad
 import java.time.Clock
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** One admitted turn's place among its person's turns in flight, given back once however often [release] is called. */
-internal class TurnSlot(private val use: PersonUse) {
+/** One place an admitted turn holds while it is in flight: among its person's turns, or the server's (ServerLoad).
+ *  Giving it back is what lets the next turn have it. */
+internal fun interface HeldPlace {
+    fun giveBack()
+}
+
+/** One admitted turn's places in flight, every one given back once however often [release] is called. */
+internal class TurnSlot(private val places: List<HeldPlace>) {
     private val released = AtomicBoolean()
 
     fun release() {
-        if (released.compareAndSet(false, true)) use.ended()
+        if (released.compareAndSet(false, true)) places.forEach(HeldPlace::giveBack)
     }
+
+    /** One slot holding this one's places and [other]'s, given back together. Neither is released apart from it. */
+    fun joined(other: TurnSlot): TurnSlot = TurnSlot(places + other.places)
 }
 
 /** What asking to start a turn came to. */
 internal sealed class LimitVerdict {
     class Admitted(val slot: TurnSlot) : LimitVerdict()
 
-    /** Refused: [why] names the cap, and the person may try again in [retryAfterSeconds]. */
-    data class Refused(val why: String, val retryAfterSeconds: Long) : LimitVerdict()
+    /** Refused with [status]: [why] names the cap, and the person may try again in [retryAfterSeconds]. */
+    data class Refused(
+        val why: String,
+        val retryAfterSeconds: Long,
+        val status: Int = HttpStatus.TOO_MANY_REQUESTS,
+    ) : LimitVerdict()
 }
 
 /** One person's turns: how many are in flight, and when each of the last minute's began. */
@@ -53,7 +68,7 @@ internal class PersonUse {
         }
         inflight++
         starts.add(now)
-        return LimitVerdict.Admitted(TurnSlot(this))
+        return LimitVerdict.Admitted(TurnSlot(listOf(HeldPlace(::ended))))
     }
 
     @Synchronized
@@ -73,6 +88,8 @@ internal class PersonLimits(
     /** `[server.teams]`: whose team's commands hold a person with no commands of their own. */
     teams: ServerTeams,
     private val clock: Clock = Clock.systemUTC(),
+    /** What the whole server may hold, everyone's turns together, and its drain at stop (#791). */
+    val load: ServerLoad,
 ) {
     private val uses = ConcurrentHashMap<String, PersonUse>()
 

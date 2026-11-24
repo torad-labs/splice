@@ -228,6 +228,38 @@ every = "1h"
 - The same series go through the operator's OTLP export (`[telemetry.operator]`). These carry person and team by
   design; the operator families described in `docs/observability/exporters.md` stay identity-free.
 
+### Load, streaming and drain (#791, `ServerLoadTest`, `ServerStreamIdleTest`)
+
+A team in front of a small fixed pool of model servers needs the pool's limits held for everyone together, a stream
+that dies mid-answer to end, and a stop that lets turns finish. Each is a setting, off by default:
+
+```toml
+[server]
+stream_idle_seconds = 0      # 0: a silent answer is waited on however long
+drain_seconds = 0            # 0: the listener's one second of grace at stop; at most 45
+
+[server.limits]
+inflight_total = 0           # the whole server's turns in flight at once; 0: no cap
+inflight_per_upstream = 0    # each server of a provider with upstreams; 0: no cap
+busy_status = 429            # or 503
+busy_retry_after = 5         # seconds
+busy_message = ""            # blank: splice's own sentence naming the cap
+```
+
+- A turn past `inflight_total`, or on a provider whose healthy upstreams each hold `inflight_per_upstream`, is
+  refused at once with `busy_status`, `Retry-After: busy_retry_after` and `busy_message` or a sentence naming the
+  cap. These caps are asked after the person's own, and a turn they refuse gives its person's slot back at once. One
+  slot holds both places, so a turn's end and its client's hang-up each give both back, once.
+- `drain_seconds`: from a stop's first moment every new turn is a 503 with `Retry-After` and `GET /health` answers 503
+  `{"status":"draining"}`; the stop waits up to that long for the server's turns in flight to end, then closes the
+  listener. The drain is spent before the heads' own stop budget, which shrinks by what it took, so the daemon's whole
+  stop stays inside its cooperative cap; hence the 45-second ceiling, a boot finding past it.
+- `stream_idle_seconds`: a streamed answer silent that long after its last word is hung up on at the upstream, and the
+  stream ends with an error event (504 in the ledger), on the Messages route and the OpenAI route alike, never with an
+  ending. The wait for the first word is a prefill and is not timed (`keepalive_seconds` covers it); a keepalive
+  comment, a `ping` event and splice's own wait notice are no word. Off by default: idle is a probe, never an error,
+  and only the operator knows how long their models think in silence.
+
 ## P2: the laptop side
 
 Drafted checks for these exist and are committed with the P2 plan once P1 has landed.

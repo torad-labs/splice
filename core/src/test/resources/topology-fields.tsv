@@ -237,6 +237,7 @@ server.client
 server.client.download_url	
 server.client.minimum	
 server.commands	
+server.drain_seconds	
 server.export	
 server.export.access_key_env	
 server.export.endpoint	
@@ -249,7 +250,12 @@ server.forward_auth
 server.forward_auth.allow	
 server.keepalive_seconds	
 server.limits	
+server.limits.busy_message	
+server.limits.busy_retry_after	
+server.limits.busy_status	
 server.limits.inflight_per_person	
+server.limits.inflight_per_upstream	
+server.limits.inflight_total	
 server.limits.rpm_per_person	
 server.limits.tpm_per_person	
 server.listen	
@@ -264,6 +270,7 @@ server.signin.domains
 server.signin.issuer	
 server.signin.key_days	
 server.signin.rate_per_minute	
+server.stream_idle_seconds	
 server.teams	
 server.teams.by_domain	
 server.teams.by_domain.*	

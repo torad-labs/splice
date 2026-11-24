@@ -64,6 +64,8 @@ internal class OpenAiRoute(
     log: LogSink,
     /** How often a streamed completion's client is sent a keepalive while its answer is silent; null sends none. */
     private val keepalive: Duration?,
+    /** How long a streamed completion may fall silent after its first chunk before it is ended; 0: however long. */
+    private val streamIdleMs: Long = 0L,
 ) {
     /** How this route refuses, the 401 of a request that names it included. */
     val voice = RefusalVoice(SERVER_ERROR_PREFIX, RefusalShape.OPENAI)
@@ -134,7 +136,8 @@ internal class OpenAiRoute(
         val lookup = api.model?.let { ModelLookup(it, asked.head.command) }
         // Only an answer asked for as a stream is kept alive: a comment has no place in any other body.
         val whole = lookup ?: chat.whole
-        val ask = OutwardAsk(chat.body, headers, chat.stream, whole, keepalive?.takeIf { chat.stream != null })
+        val every = keepalive?.takeIf { chat.stream != null }
+        val ask = OutwardAsk(chat.body, headers, chat.stream, whole, every, streamIdleMs)
         val path = api.path + bound.query(paths.query(call))
         val preferred = parts.people.of(asked.key.person).preferred
         val way = ProviderWay(asked.head, path, asked.server.base, parts.upstreams, preferred)

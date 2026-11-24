@@ -13,7 +13,6 @@ import splice.core.client.ClientVersionParser
 import splice.core.client.OUTDATED_IN_CONVERSATION
 import splice.core.client.SPLICE_CLIENT_HEADER
 import splice.core.topology.toml.TomlKeys
-import splice.core.wire.HttpStatus
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -117,10 +116,10 @@ public data class ServerLimits(
     /** Turns each server of a provider that is several (`[[providers.<p>.upstreams]]`) may have in flight at once: a
      *  turn is refused while every healthy one holds this many (#791). */
     @SerialName("inflight_per_upstream") val inflightPerUpstream: Int = 0,
-    /** The status a turn refused by [inflightTotal] or [inflightPerUpstream] is answered with: 429 (the default, which
-     *  Claude Code and the OpenAI SDKs back off and retry on) or 503 (the server is full, which a load balancer reads as
-     *  "try another"). */
-    @SerialName("busy_status") val busyStatus: Int = HttpStatus.TOO_MANY_REQUESTS,
+    /** The status a turn refused by [inflightTotal] or [inflightPerUpstream] is answered with: 429 (null, the default,
+     *  which Claude Code and the OpenAI SDKs back off and retry on) or 503 (the server is full, which a load balancer
+     *  reads as "try another"). */
+    @SerialName("busy_status") val busyStatus: Int? = null,
     /** The seconds that refusal's `Retry-After` names. */
     @SerialName("busy_retry_after") val busyRetryAfter: Int = DEFAULT_BUSY_RETRY_AFTER,
     /** The sentence that refusal says in place of splice's own; blank says splice's. */

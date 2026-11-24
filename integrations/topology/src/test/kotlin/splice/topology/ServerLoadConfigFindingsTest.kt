@@ -5,6 +5,7 @@ package splice.topology
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -67,7 +68,7 @@ class ServerLoadConfigFindingsTest {
         assertEquals(120, server.streamIdleSeconds)
         assertEquals(30, server.drainSeconds)
         val plain = assertInstanceOf(ConfigRead.Ready::class.java, ConfigFindings.read(server() + head(), directory))
-        assertEquals(429, plain.topology.server.limits.busyStatus, "a server that sets no busy_status answers 429")
+        assertNull(plain.topology.server.limits.busyStatus, "a server that sets no busy_status gets splice's own 429")
         val idle = plain.topology.server.streamIdleSeconds
         assertEquals(0, idle, "a silent stream is ended though the operator asked for no deadline")
     }

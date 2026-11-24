@@ -138,7 +138,7 @@ internal class ServerChecks(
             TopologyFinding("$SERVER_LIMITS.inflight_total", rule).takeIf { limits.inflightTotal < 0 },
             TopologyFinding("$SERVER_LIMITS.inflight_per_upstream", rule).takeIf { limits.inflightPerUpstream < 0 },
             TopologyFinding("$SERVER_LIMITS.busy_status", "must be ${busy.joinToString(" or ")}")
-                .takeIf { limits.busyStatus !in busy },
+                .takeIf { limits.busyStatus?.let { it !in busy } == true },
             TopologyFinding("$SERVER_LIMITS.busy_retry_after", "must be 0 or a number of seconds")
                 .takeIf { limits.busyRetryAfter < 0 },
             // The server's own waits, each a number of seconds where 0 turns it off.

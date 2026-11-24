@@ -108,5 +108,9 @@ internal class ServerLoad(private val limits: ServerLimits, private val upstream
 
     /** A turn refused for a cap of the server's, as `[server.limits]` says such a refusal is answered. */
     private fun busy(why: String): LimitVerdict.Refused =
-        LimitVerdict.Refused(limits.busyMessage.ifBlank { why }, limits.busyRetryAfter.toLong(), limits.busyStatus)
+        LimitVerdict.Refused(
+            limits.busyMessage.ifBlank { why },
+            limits.busyRetryAfter.toLong(),
+            limits.busyStatus ?: HttpStatus.TOO_MANY_REQUESTS,
+        )
 }

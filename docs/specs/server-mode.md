@@ -268,6 +268,66 @@ Read separate meter lines with `splice server usage report --format json`: each 
 in `provider` and `source: "external"`. Their costs contribute to `fixed_usd` and `actual_usd`, not the token
 charges or per-person budgets. The history is in `[server.backup]` snapshots, not the per-turn usage export.
 
+### External upstream state (`[server.state]`)
+
+The box behind the server often knows before splice does whether it can take a turn: a model still loading, a GPU
+rented only for set hours, a maintenance window. `[server.state]` lets the operator's own automation say so, and
+the server believes it over its own health checks: a member can answer `/health` while the state says off, and it
+takes no turns.
+
+```toml
+[server.state]
+file = "/run/box/state"        # exactly one source: file, url or command
+# url = "http://box.lan:8080/state"
+# command = ["/usr/local/bin/box-state"]
+every_seconds = 5              # how often the source is read again
+message_starting = "Upstream is starting; retry shortly."
+message_off = "Upstream is off until {until}."
+retry_after_starting = 30
+```
+
+- The source is read every `every_seconds`: a file's contents, a `GET` of `url`, or the standard output of
+  `command`, run as its argv stands with no shell. A relative `file` is read beside `splice.toml`. A table that
+  names no source, or more than one, refuses boot beside every other finding; no table reads no signal.
+- What the source says is one of two forms. Plain text is a single line: `up`, `starting`, `off`, or
+  `off until <RFC3339>`, as in `off until 2026-11-24T17:00:00Z`. JSON names the same states with room for more:
+  `{"state": "up" | "starting" | "off", "until": "<RFC3339>", "message": "<words for the refused turn>"}` where
+  `until` and `message` are each optional and `message`, when present, is the refusal's words in place of the
+  configured ones.
+- `up` serves as before. `starting` and `off` refuse every turn at the door with a 503 before anything reaches the
+  upstream, in the route's own error shape, carrying `message_starting` or `message_off` (`{until}` is replaced by
+  the `until` the source named). The refusal's `Retry-After` is `retry_after_starting` while starting; while off
+  until a future `until` it is the seconds remaining until then, never less than one; while off with an `until`
+  absent or already past it falls back to `retry_after_starting`.
+- The signal is the server's, not a pool's: it holds for a pooled provider and for a provider on a single
+  `base_url` alike, on the Messages, door and OpenAI routes. The current state is shown beside the pooled
+  upstreams in `GET /api/server/upstreams`, including on a server with no pooled provider at all.
+
+### The readiness probe (`[server.probe]`)
+
+`/health` proves a model server's process answers; it does not prove the model behind it can still complete a
+request, which is what a pool member is believed for. `[server.probe]` chooses the question every pooled upstream
+is asked:
+
+```toml
+[server.probe]
+kind = "completion"            # "health" (the default) or "completion"
+model = "team-model"           # required for a completion probe
+timeout_seconds = 30
+every_seconds = 60
+at_start = false
+```
+
+- `kind = "health"` keeps today's check: `GET /health` beside the member's API root, a 2xx is up, asked at its
+  provider's `health_seconds` as before.
+- `kind = "completion"` asks the member to really complete a minimal request for `model` every `every_seconds`,
+  and counts it up only on a well-formed completion answer within `timeout_seconds`. It currently covers the
+  chat-completions dialect, the only one pools allow, so a member whose model is wedged behind a healthy process
+  stops taking turns until a completion succeeds again.
+- `at_start` is whether a member counts as up before its first probe answers. It defaults to `true`, today's
+  behaviour: a just-booted daemon serves at once and a member leaves only when a probe fails. Set it `false` to
+  hold every member out until a probe passes, which is the gate worth having with a completion probe.
+
 ## P2: the laptop side
 
 Drafted checks for these exist and are committed with the P2 plan once P1 has landed.

@@ -2,7 +2,8 @@
 // carries on a machine that is a team's front door: where it listens, which commands it serves, the PEM files it speaks
 // TLS from, the proxies whose word on a client's address it takes, who administers it, what each person may hold at
 // once, how often a silent stream is kept alive (F4), the oldest splice a laptop may run (F9), the identity provider a
-// person signs in with (F2), and the collector Claude Code's own telemetry is relayed to (F8). A file with no
+// person signs in with (F2), the collector Claude Code's own telemetry is relayed to (F8), the external signal that
+// says whether the upstream is up, starting or off, and how pooled upstreams are probed for readiness. A file with no
 // `[server]` decodes to the defaults, which serve nothing.
 package splice.core.topology
 
@@ -10,6 +11,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import splice.core.client.ClientVersion
 import splice.core.client.ClientVersionParser
+import java.net.URI
+import java.net.URISyntaxException
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -56,6 +59,10 @@ public data class ServerConfig(
     @SerialName("metrics_prefix") val metricsPrefix: String = DEFAULT_SERVER_METRICS_PREFIX,
     /** External hourly meters by stable name. An empty table starts no probes. */
     @SerialName("cost_meters") val costMeters: Map<String, ServerCostMeter> = emptyMap(),
+    /** `[server.state]`: the external signal that says whether the upstream is up, starting or off; null reads none. */
+    val state: ServerState? = null,
+    /** `[server.probe]`: how a pooled upstream earns its turns, and whether it holds any before its first probe. */
+    val probe: ServerProbe = ServerProbe(),
 ) {
     /** Whether the file carries a `[server]` table at all, whatever it holds. */
     val declared: Boolean get() = this != ServerConfig()
@@ -150,6 +157,40 @@ public data class ServerCostMeter(
     val argv: List<String>? = null,
 )
 
+/** `[server.state]`: one external source the operator's own automation keeps current, saying whether the upstream
+ *  behind this server is up, starting or off, read every [everySeconds]. Exactly one of [file], [url] and [command]
+ *  names the source; a table naming none reads nothing and refuses boot, tuning keys alone included. [messageStarting]
+ *  and [messageOff] are the words a refused turn carries (a source may bring its own); `{until}` in [messageOff] is
+ *  where the time the upstream is off until goes. [retryAfterStarting] is the `Retry-After` a turn refused while the
+ *  upstream is starting carries, and the one an off signal with no future `until` falls back to. */
+@Serializable
+public data class ServerState(
+    /** A file holding the state, as plain text (`up`, `starting`, `off`, `off until <RFC3339>`) or JSON. */
+    val file: String? = null,
+    /** An http(s) URL a GET reads the state from, in the same plain-text or JSON form as [file]. */
+    val url: String? = null,
+    /** A command run as its argv stands, its standard output read as the state, in the same form as [file]. */
+    val command: List<String>? = null,
+    @SerialName("every_seconds") val everySeconds: Int = 5,
+    @SerialName("message_starting") val messageStarting: String = "Upstream is starting; retry shortly.",
+    @SerialName("message_off") val messageOff: String = "Upstream is off until {until}.",
+    @SerialName("retry_after_starting") val retryAfterStarting: Int = 30,
+)
+
+/** `[server.probe]`: what a pooled upstream is asked before its health is believed. [kind] `health` asks its
+ *  `/health` as before; `completion` asks it to really complete a minimal request for [model] (required then, and
+ *  only for the chat-completions dialect pools allow today), which must answer within [timeoutSeconds].
+ *  [everySeconds] is how often the completion probe runs; a health probe keeps its provider's `health_seconds`.
+ *  [atStart] is whether a member counts as up before its first probe answers: false holds it out until one passes. */
+@Serializable
+public data class ServerProbe(
+    val kind: String = "health",
+    val model: String? = null,
+    @SerialName("timeout_seconds") val timeoutSeconds: Int = 30,
+    @SerialName("every_seconds") val everySeconds: Int = 60,
+    @SerialName("at_start") val atStart: Boolean = true,
+)
+
 /** `[server.signin]` (F2): the OpenID Connect provider a team member signs in with, the client this server is
  *  registered there as, the email domains it admits, how long a key minted by a sign-in lives, and how many sign-ins
  *  one address may try in a minute. */
@@ -217,6 +258,19 @@ public object PersonEmails {
 
     /** [text] as the person it names, trimmed and lowercased; null when it is not an email. */
     public fun read(text: String): String? = text.trim().lowercase().takeIf(shape::matches)
+}
+
+/** Reads a web address an operator names in `[server]`: an http(s) URL with a host. */
+internal object WebUrls {
+    /** [text] as a URI when it is an http(s) URL with a host, or null. */
+    fun read(text: String): URI? {
+        val uri = try {
+            URI(text)
+        } catch (_: URISyntaxException) {
+            null
+        }
+        return uri?.takeIf { it.host != null && it.scheme in setOf("http", "https") }
+    }
 }
 
 /** What a server port collision names as its owner in [Topology.portCollisions]: its own key path. */

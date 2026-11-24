@@ -9,8 +9,6 @@ package splice.core.topology
 import splice.core.listen.IpLiterals
 import splice.core.topology.metering.ServerMeteringChecks
 import splice.core.util.LoopbackOverride
-import java.net.URI
-import java.net.URISyntaxException
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -23,7 +21,8 @@ internal class ServerChecks(
 
     fun findings(): List<TopologyFinding> = if (server.declared) {
         listen() + exclusive() + commands() + tls() + people() + limits() + client() + signin() + telemetry() +
-            ServerLedgerChecks(server).findings() + ServerMeteringChecks(topology).findings()
+            ServerLedgerChecks(server).findings() + ServerAvailabilityChecks(server).findings() +
+            ServerMeteringChecks(topology).findings()
     } else {
         emptyList()
     }
@@ -150,7 +149,7 @@ internal class ServerChecks(
             TopologyFinding(
                 "$SERVER_TABLE.client.download_url",
                 "must be an http(s) URL, as in \"https://releases.team.example/splice\"",
-            ).takeIf { server.client.downloadUrl?.let { url -> webUrl(url.trim()) == null } == true },
+            ).takeIf { server.client.downloadUrl?.let { url -> WebUrls.read(url.trim()) == null } == true },
             TopologyFinding(
                 "$SERVER_TABLE.forward_auth.allow",
                 "each entry must be an email or @domain, as in \"ada@team.example\" or \"@team.example\"",
@@ -163,7 +162,8 @@ internal class ServerChecks(
         val telemetry = server.telemetry ?: return emptyList()
         val why = "must be the operator's OTLP/HTTP collector, as in \"http://otel.lan:4318\""
         return listOfNotNull(
-            TopologyFinding("$SERVER_TABLE.telemetry.forward_to", why).takeIf { webUrl(telemetry.collector) == null },
+            TopologyFinding("$SERVER_TABLE.telemetry.forward_to", why)
+                .takeIf { WebUrls.read(telemetry.collector) == null },
         )
     }
 
@@ -192,7 +192,7 @@ internal class ServerChecks(
 
     /** What is wrong with [named] as the issuer: no http(s) URL, or one that is not https off this machine. */
     private fun issuer(named: String): String? {
-        val issuer = webUrl(named.trim())
+        val issuer = WebUrls.read(named.trim())
         return when {
             issuer == null ->
                 "must be the identity provider's issuer URL, as in \"https://accounts.google.com\""
@@ -200,16 +200,6 @@ internal class ServerChecks(
                 "must be https: the codes a laptop trades and the keys they mint would cross the network in the clear"
             else -> null
         }
-    }
-
-    /** [text] as a URI when it is an http(s) URL with a host, or null. */
-    private fun webUrl(text: String): URI? {
-        val uri = try {
-            URI(text)
-        } catch (_: URISyntaxException) {
-            null
-        }
-        return uri?.takeIf { it.host != null && it.scheme in setOf("http", "https") }
     }
 }
 

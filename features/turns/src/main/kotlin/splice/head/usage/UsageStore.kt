@@ -44,7 +44,7 @@ internal class UsageWriteLock
 
 /** 5h output-token window + ratelimit header persistence — the HUD contract files. */
 public class UsageStore(
-    usageFile: Path,
+    private val usageFile: Path,
     ratelimitFile: Path,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     log: LogSink = LogSink(DaemonLog::write),
@@ -102,7 +102,7 @@ public class UsageStore(
     public fun appendOutputTokens(outputTokens: Long) {
         if (frozen) return
         if (ring.appendOutputTokens(clock(), outputTokens)) {
-            CoalescedFlush.scheduleCoalesced(USAGE_FLUSH_DELAY_MS, writeScheduled) { flushScheduled() }
+            CoalescedFlush.scheduleCoalesced(USAGE_FLUSH_DELAY_MS, writeScheduled, usageFile) { flushScheduled() }
         }
     }
 
@@ -143,7 +143,7 @@ public class UsageStore(
         ringFile.persistSnapshot(snapshot, version)
         writeScheduled.set(false)
         if (ring.isDirtierThan(ringFile.persistedVersion)) {
-            CoalescedFlush.scheduleCoalesced(USAGE_FLUSH_DELAY_MS, writeScheduled) { flushScheduled() }
+            CoalescedFlush.scheduleCoalesced(USAGE_FLUSH_DELAY_MS, writeScheduled, usageFile) { flushScheduled() }
         }
     }
 }
@@ -188,7 +188,7 @@ internal class ProviderAnswers(
         }
         latest.accumulateAndGet(answer) { current, _ -> newest(current, answer) }
         dirty.set(true)
-        CoalescedFlush.scheduleCoalesced(USAGE_FLUSH_DELAY_MS, scheduled) { flush() }
+        CoalescedFlush.scheduleCoalesced(USAGE_FLUSH_DELAY_MS, scheduled, file.ratelimitFile) { flush() }
     }
 
     fun flush() {
@@ -199,7 +199,7 @@ internal class ProviderAnswers(
             } finally {
                 scheduled.set(false)
                 if (dirty.get() && !failureLogged) {
-                    CoalescedFlush.scheduleCoalesced(USAGE_FLUSH_DELAY_MS, scheduled) { flush() }
+                    CoalescedFlush.scheduleCoalesced(USAGE_FLUSH_DELAY_MS, scheduled, file.ratelimitFile) { flush() }
                 }
             }
         }

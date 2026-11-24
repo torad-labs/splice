@@ -57,7 +57,7 @@ internal class HistoryPrune(private val log: LogSink = LogSink(DaemonLog::write)
         if (!AsyncFileIo.awaitDirectory(stateDir)) stop("pending turn-statistics writes did not settle")
         val ready = CountDownLatch(1)
         val result = AtomicReference<Result<Unit>?>(null)
-        val queued = AsyncFileIo.submit {
+        val queued = AsyncFileIo.submit(owner = stateDir) {
             try {
                 result.set(Cancellables.runCatchingCancellable { sweep(momentMs, stateDir, archiveDir) })
             } finally {

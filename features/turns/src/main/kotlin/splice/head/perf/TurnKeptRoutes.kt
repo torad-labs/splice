@@ -67,7 +67,7 @@ public class TurnKeptRoutes(
     private fun deleteAfterWrites(source: StatePaths): Int {
         val ready = CountDownLatch(1)
         val result = AtomicReference<Result<Int>?>(null)
-        val queued = AsyncFileIo.submit {
+        val queued = AsyncFileIo.submit(owner = source.stateDir) {
             try {
                 result.set(Cancellables.runCatchingCancellable { remove(source) })
             } finally {

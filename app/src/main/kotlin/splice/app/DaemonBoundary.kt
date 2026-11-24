@@ -218,7 +218,7 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
             // Decided when the line is logged, not when the lane writes it: a boot line queued before the
             // daemon came up still reaches the boot log (V4-353).
             val echo = echoToStderr()
-            AsyncFileIo.submit { log.append(line, echo) }
+            AsyncFileIo.submit(owner = logsDir) { log.append(line, echo) }
         }
         // A drop episode is written by the lane's own worker, straight to the file: submitting it would meet the
         // full lane that dropped the work.

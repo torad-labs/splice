@@ -4,18 +4,20 @@
 // module that happened to be its first caller. The 1s usage delay is now a parameter.
 package splice.core.util
 
+import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * CAS-guarded debounce: [flag] gates a single in-flight [flush] submission, scheduled [delayMs]
- * out on the bounded file-I/O lane. Rolling [flag] back when [AsyncFileIo.submit] rejects is the
- * load-bearing subtlety here — a missed rollback wedges the lane forever (review 2026-07-22
+ * out on the bounded file-I/O lane. [owner] is the file or folder the flush writes, which is how a cleanup of
+ * the folder holding it knows to wait for the flush (see [AsyncFileIo.submit]). Rolling [flag] back when
+ * [AsyncFileIo.submit] rejects is the load-bearing subtlety here — a missed rollback wedges the lane forever (review 2026-07-22
  * round 3, originally in splice.head.usage.UsageStore).
  */
 public object CoalescedFlush {
-    public fun scheduleCoalesced(delayMs: Long, flag: AtomicBoolean, flush: FileIoTask) {
+    public fun scheduleCoalesced(delayMs: Long, flag: AtomicBoolean, owner: Path, flush: FileIoTask) {
         if (!flag.compareAndSet(false, true)) return
-        if (!AsyncFileIo.submit(delayMs, flush)) {
+        if (!AsyncFileIo.submit(delayMs, owner, flush)) {
             flag.set(false)
         }
     }

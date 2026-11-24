@@ -18,7 +18,7 @@ import java.nio.file.Path
 /** The ratelimit file: direct-read classification + atomic write. No lock — the caller
  *  ([RateLimitStore]) owns the writeLock it shares with [UsageRingFile]. */
 internal class RateLimitFile(
-    private val ratelimitFile: Path,
+    val ratelimitFile: Path,
     private val log: LogSink = LogSink(DaemonLog::write),
 ) {
     private val json = Json { ignoreUnknownKeys = true }

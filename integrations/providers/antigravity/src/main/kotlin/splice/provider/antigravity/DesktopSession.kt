@@ -15,19 +15,21 @@ import splice.provider.antigravity.skills.SkillInvocation
 import splice.provider.antigravity.skills.SkillShelf
 import java.util.UUID
 
-/** Builds [DesktopParts] once the session id is known (either from Desktop's flags or agy's `session/new`). */
-internal fun interface PartsFactory {
+/** What a Desktop session has from its start, before agy opens: its local [skills] and Desktop's [out]; and the
+ *  [DesktopParts] it builds once the session id is known (either from Desktop's flags or agy's `session/new`). */
+internal interface PartsFactory {
+    val skills: SkillShelf
+    val out: DesktopOut
     fun build(sessionId: String): DesktopParts
 }
 
-/** The parts of a Desktop session that outlive its turns; [skills] holds its local skills as they stand now. */
+/** The parts of a Desktop session that outlive its turns. */
 internal data class DesktopParts(
     val frames: DesktopFrames,
     val out: DesktopOut,
     val transcript: ClaudeTranscript,
     val record: ClaudeSessionRecord,
     val look: SessionLook,
-    val skills: SkillShelf,
 )
 
 /** Desktop session driven on agy via [coordinator] and [mcpState]; [clock] times turns. */
@@ -64,9 +66,14 @@ internal class DesktopSession(
     private var agyCommands: List<AgyCommand> = emptyList()
 
     override val agy: AgySession? get() = session
-    override val commands: List<AgyCommand>
-        get() = lists.mergeCommands(agyCommands, parts?.skills?.current?.commands.orEmpty())
+    override val skills: SkillShelf get() = partsFactory.skills
+    override val commands: List<AgyCommand> get() = lists.mergeCommands(agyCommands, skills.current.commands)
     override val nativeCommands: Set<String> get() = agyCommands.mapTo(HashSet(), AgyCommand::name)
+
+    /** The session's frames; before agy opens, frames under the id Desktop gave, which a control answer (naming no
+     *  session) is all they build. */
+    override val frames: DesktopFrames
+        get() = parts?.frames ?: DesktopFrames(claude.sessionId ?: claude.resume.orEmpty())
 
     /** True once Desktop asked to switch to a non-Antigravity model, so the launch pipe hands off to Claude Code. */
     var switchingOut: Boolean = false
@@ -97,7 +104,7 @@ internal class DesktopSession(
                     JsonScalars.str(message, "request_id").orEmpty(),
                     message["request"] as? JsonObject ?: JsonObject(emptyMap()),
                 )
-                if (reply != null) checkNotNull(parts).out(reply)
+                if (reply != null) (parts?.out ?: partsFactory.out)(reply)
             }
             "control_response" -> {
                 val resp = message["response"] as? JsonObject
@@ -218,7 +225,7 @@ internal class DesktopSession(
         if (prompts.isEmpty()) begin(p)
         val handoff = pendingHandoff
         pendingHandoff = null
-        val prompt = session?.prompt(invocation.expand(content, p.skills.current.commands, nativeCommands), handoff)
+        val prompt = session?.prompt(invocation.expand(content, skills.current.commands, nativeCommands), handoff)
         if (prompt != null) {
             prompts += prompt
             return
@@ -246,7 +253,7 @@ internal class DesktopSession(
      *  MCP servers. */
     private fun current(p: DesktopParts): SessionLook = (look ?: p.look).copy(
         commands = commands,
-        skills = p.skills.current.skillNames,
+        skills = skills.current.skillNames,
         mcpServers = mcpState.initServers(),
     )
 

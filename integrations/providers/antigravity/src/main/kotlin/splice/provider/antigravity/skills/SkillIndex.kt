@@ -1,8 +1,8 @@
 // NEW: desktop-antigravity (ACP skills). The bounded skill index a new agy session gets through
 // `_meta.antigravity.systemPrompt.append`: the name, a one-line description and the SKILL.md path of each local skill
 // agy does not discover by itself, so agy reads a skill when a task calls for it and loads nothing otherwise. Skills
-// under an `.agents/skills` folder in the workspace walk are agy's own and are left out. The index never carries
-// Desktop's system prompt.
+// found in an `.agents/skills` folder of the workspace walk are agy's own and are left out, even when their entry
+// links elsewhere. The index never carries Desktop's system prompt.
 package splice.provider.antigravity.skills
 
 import java.nio.file.Path
@@ -26,9 +26,9 @@ internal class SkillIndex {
         return lines.joinToString("\n")
     }
 
-    /** Whether agy lists [skill] itself: it lies under one of agy's own skill folders. */
-    private fun agyFinds(skill: LocalSkillItem, nativeRoots: List<Path>): Boolean =
-        nativeRoots.any { root -> skill.file.startsWith(root) }
+    /** Whether agy lists [skill] itself: it was found in one of agy's own skill folders. Where the folder's entry
+     *  links to doesn't matter, since agy finds it by the entry. */
+    private fun agyFinds(skill: LocalSkillItem, nativeRoots: List<Path>): Boolean = skill.root in nativeRoots
 
     private fun line(skill: LocalSkillItem): String {
         val summary = skill.description.replace(WHITESPACE, " ").trim()

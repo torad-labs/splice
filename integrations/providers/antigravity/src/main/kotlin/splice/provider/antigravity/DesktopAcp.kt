@@ -107,7 +107,12 @@ public class DesktopAcp(
             val envTarget = CoordinatorEnv(claude, STRICT_MCP_CONFIG in args, cwd, env, log, skills.index())
             val chan = CoordinatorIo(started, hello, helloFailure, lines, deferredLines, scope)
             val coordinator = AgyMcpCoordinator(envTarget, chan, mcpState, bridge)
-            val factory = PartsFactory { id -> parts(id, claude, out, skills) }
+            val factory = object : PartsFactory {
+                override val skills = skills
+                override val out = out
+
+                override fun build(sessionId: String) = parts(sessionId, claude, out)
+            }
             val session = DesktopSession(claude, factory, coordinator, mcpState, bridge, clock, target.hooks)
             try {
                 loop(session, lines, deferredLines, started)
@@ -125,7 +130,7 @@ public class DesktopAcp(
         }
     }
 
-    private fun parts(id: String, claude: ClaudeArgs, out: DesktopOut, skills: SkillShelf): DesktopParts {
+    private fun parts(id: String, claude: ClaudeArgs, out: DesktopOut): DesktopParts {
         val config = env(DESKTOP_CONFIG_VARIABLE)?.takeIf(String::isNotBlank)?.let(Path::of) ?: UserHome.claudeDir(env)
         val version = claude.version
         val entrypoint = env(ENTRYPOINT_VARIABLE) ?: ENTRYPOINT
@@ -137,7 +142,6 @@ public class DesktopAcp(
             ClaudeTranscript(config, TranscriptOwner(id, folder, version, entrypoint), clock),
             ClaudeSessionRecord(config, facts, clock, log),
             SessionLook(folder, claude.model.orEmpty(), claude.permissionMode, emptyList(), version),
-            skills,
         )
     }
 

@@ -15,24 +15,25 @@ internal class SkillScanner(private val log: LogSink) {
         roots.asSequence()
             .mapNotNull { root -> SkillPaths.directory(root.path)?.let { root.copy(path = it) } }
             .distinctBy(SkillRoot::path)
-            .flatMap { root -> children(root.path).asSequence().mapNotNull { skill(it, root.disabled) } }
+            .flatMap { root -> children(root.path).asSequence().mapNotNull { skill(it, root) } }
 
     fun commands(roots: List<Path>): Sequence<LocalSkillItem> =
         roots.asSequence().mapNotNull(SkillPaths::directory).distinct()
-            .flatMap { dir -> children(dir).asSequence().mapNotNull(::command) }
+            .flatMap { dir -> children(dir).asSequence().mapNotNull { command(it, dir) } }
 
-    private fun skill(child: Path, disabled: Set<String>): LocalSkillItem? {
+    private fun skill(child: Path, root: SkillRoot): LocalSkillItem? {
+        val disabled = root.disabled
         val name = SkillName.valid(child.fileName.toString())?.takeUnless(disabled::contains) ?: return null
         val folder = SkillPaths.directory(child) ?: return null
         return SkillPaths.file(folder.resolve(SKILL_DOC))
-            ?.let { frontmatter.readItem(it, name, folder) }
+            ?.let { frontmatter.readItem(it, name, folder, root.path) }
             ?.takeUnless { it.name in disabled }
     }
 
-    private fun command(child: Path): LocalSkillItem? {
+    private fun command(child: Path, root: Path): LocalSkillItem? {
         val leaf = child.fileName.toString().takeIf { it.endsWith(COMMAND_EXT) } ?: return null
         val name = SkillName.valid(leaf.removeSuffix(COMMAND_EXT)) ?: return null
-        return SkillPaths.file(child)?.let { frontmatter.readItem(it, name, folder = null) }
+        return SkillPaths.file(child)?.let { frontmatter.readItem(it, name, folder = null, root = root) }
     }
 
     private fun children(dir: Path): List<Path> = try {

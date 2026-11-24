@@ -5,7 +5,7 @@ import java.nio.file.Path
 internal class SkillFrontmatter {
     private val markdown = SkillMarkdown()
 
-    fun readItem(file: Path, fallbackName: String, folder: Path?): LocalSkillItem? {
+    fun readItem(file: Path, fallbackName: String, folder: Path?, root: Path): LocalSkillItem? {
         val document = markdown.read(file)
         val front = document.frontmatter
         if (scalar(front, "user-invocable").equals("false", ignoreCase = true)) return null
@@ -13,10 +13,10 @@ internal class SkillFrontmatter {
             name = SkillName.valid(scalar(front, "name")) ?: fallbackName,
             description = scalar(front, "description").ifBlank { bodyDescription(document.body) },
             hint = scalar(front, "argument-hint"),
-            isSkill = folder != null,
             body = document.body,
             file = file,
             folder = folder,
+            root = root,
         )
     }
 

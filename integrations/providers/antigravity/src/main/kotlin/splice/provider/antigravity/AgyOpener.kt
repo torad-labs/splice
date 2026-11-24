@@ -9,6 +9,8 @@ package splice.provider.antigravity
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 
@@ -55,9 +57,10 @@ internal class AgyOpener(
         val capabilities = hello.result["agentCapabilities"] as? JsonObject
         val prompts = capabilities?.get("promptCapabilities") as? JsonObject
         val antigravity = (capabilities?.get("_meta") as? JsonObject)?.get("antigravity") as? JsonObject
-        val systemPrompt = antigravity?.get("systemPrompt") as? JsonObject
+        val append = (antigravity?.get("systemPrompt") as? JsonObject)?.get("append") as? JsonPrimitive
         val images = JsonScalars.str(prompts, "image") == "true"
-        return AgyHello(images, JsonScalars.str(systemPrompt, "append") == "true") to null
+        // Only a JSON `true` offers it: a string, `false` or nothing leaves agy's system prompt alone.
+        return AgyHello(images, append?.takeUnless { it.isString }?.booleanOrNull == true) to null
     }
 
     /** Opens [resume] or a new session with [mcpServers]; if agy refuses the MCP servers, logs [serverNames] and

@@ -4,16 +4,21 @@ import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import java.nio.file.Path
 
-/** A discovered command or skill, including its bounded Markdown and canonical source. */
+/** A discovered command or skill, including its bounded Markdown and canonical source: [file] and [folder] are real
+ *  paths, and [root] is the real path of the skills or commands folder it was found in, whatever its own entry links
+ *  to (which is how agy, finding it in that folder, sees it). */
 internal data class LocalSkillItem(
     val name: String,
     val description: String,
     val hint: String,
-    val isSkill: Boolean,
     val body: String,
     val file: Path,
     val folder: Path?,
-)
+    val root: Path,
+) {
+    /** A skill is a folder with a SKILL.md; a command is a single Markdown file. */
+    val isSkill: Boolean get() = folder != null
+}
 
 /** Discovered local slash commands and skills for one ACP session. */
 internal data class LocalSkillCatalog(

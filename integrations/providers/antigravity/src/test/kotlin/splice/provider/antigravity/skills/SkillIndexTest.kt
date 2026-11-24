@@ -15,7 +15,7 @@ internal class SkillIndexTest {
         val catalog = catalogOf(
             skill("mine", "Mine", Path.of("/home/me/.claude/skills/mine")),
             skill("theirs", "Theirs", native.resolve("theirs")),
-            LocalSkillItem("cmd", "A command", "", false, "", Path.of("/home/me/.claude/commands/cmd.md"), null),
+            command("cmd", "A command", Path.of("/home/me/.claude/commands")),
         )
         val index = checkNotNull(SkillIndex().of(catalog, listOf(native)))
         assertEquals(listOf(HEADER, "- mine: Mine (/home/me/.claude/skills/mine/SKILL.md)"), index.lines())
@@ -38,7 +38,10 @@ internal class SkillIndexTest {
         LocalSkillCatalog(items.toList(), items.filter { it.isSkill }.map { it.name })
 
     private fun skill(name: String, description: String, folder: Path) =
-        LocalSkillItem(name, description, "", true, "Body", folder.resolve("SKILL.md"), folder)
+        LocalSkillItem(name, description, "", "Body", folder.resolve("SKILL.md"), folder, folder.parent)
+
+    private fun command(name: String, description: String, root: Path) =
+        LocalSkillItem(name, description, "", "Body", root.resolve("$name.md"), null, root)
 }
 
 private const val HEADER =

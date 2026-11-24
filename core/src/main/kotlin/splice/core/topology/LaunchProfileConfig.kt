@@ -27,6 +27,10 @@ public data class LaunchConfig(
 public data class LaunchProfileConfig(
     /** The profile's own Claude folder; `<splice root>/launch-profiles/<name>` when unset. Never `~/.claude`. */
     val dir: String? = null,
+    /** The `.claude.json` the profile's own is seeded from (MCP servers, projects, onboarding), read and never
+     *  written. Unset: the launching shell's `$CLAUDE_CONFIG_DIR/.claude.json`, where Claude Code keeps it while that
+     *  names a Claude folder of the person's own, else `~/.claude.json`. */
+    @SerialName("claude_json") val claudeJson: String? = null,
     /** Which hooks run: [KEEP_HOOKS_OWN] (the person's settings files' own, no plugin's), [KEEP_HOOKS_ALL] (those and
      *  the kept plugins' own) or [KEEP_HOOKS_NONE]. */
     @SerialName("keep_hooks") val keepHooks: String = KEEP_HOOKS_OWN,
@@ -95,7 +99,8 @@ internal class LaunchProfileChecks(
         val each = profiles.flatMap { (name, profile) ->
             listOfNotNull(name(name), dir(name, profile), keepHooks(name, profile)) + entries(name, profile)
         }
-        return each + shared(profiles)
+        val sources = profiles.mapNotNull { (name, profile) -> claudeJson(name, profile) }
+        return each + sources + shared(profiles)
     }
 
     private fun name(name: String): TopologyFinding? =
@@ -108,6 +113,26 @@ internal class LaunchProfileChecks(
         val why = if (raw != null && !folder.isAbsolute) RELATIVE_RULE else profile.refusal(folder, home)
         return why?.let { TopologyFinding("launch.profiles.$name.dir", "$it; name a folder of the profile's own") }
     }
+
+    /** A `claude_json` that is blank or relative, or sits in the profile's own folder (whose `.claude.json` is rebuilt
+     *  from it, so the person's servers would be gone after one launch) or in `~/.gemini`. */
+    private fun claudeJson(name: String, profile: LaunchProfileConfig): TopologyFinding? {
+        val raw = profile.claudeJson ?: return null
+        val file = sourceFile(raw)
+        val folder = PathProbe.real(profile.folder(name, home, defaultRoot))
+        val why = when {
+            raw.isBlank() -> "is blank"
+            file == null -> SOURCE_RULE
+            file.startsWith(folder) -> "is inside the profile's own folder, whose .claude.json is rebuilt from it"
+            file.startsWith(PathProbe.real(home.resolve(GEMINI_DIR))) -> "is inside ~/$GEMINI_DIR"
+            else -> null
+        }
+        return why?.let { TopologyFinding("launch.profiles.$name.claude_json", "$it; $SOURCE_HINT") }
+    }
+
+    /** The file [raw] names, through every link on the way; null unless it is absolute or starts with `~/`. */
+    private fun sourceFile(raw: String): Path? =
+        UserHome.declared(raw, home)?.takeIf { raw != HOME_MARK && it.isAbsolute }?.let(PathProbe::real)
 
     private fun keepHooks(name: String, profile: LaunchProfileConfig): TopologyFinding? =
         TopologyFinding(
@@ -156,5 +181,12 @@ private const val PREFIX_RULE = "each prefix is the start of a name, so it holds
 
 private const val RELATIVE_RULE = "must be an absolute folder or start with ~/"
 
+private const val SOURCE_RULE = "must be an absolute file or start with ~/"
+
+private const val SOURCE_HINT = "name the .claude.json your MCP servers and projects are read from, or remove it"
+
+// Google's tools' own folder under the home.
+private const val GEMINI_DIR = ".gemini"
+
 // The folders under the home a profile is never in, nor holds: Claude Code's own, and Google's tools'.
-private val KEPT_OUT = listOf(UserHome.CLAUDE_DIR, ".gemini")
+private val KEPT_OUT = listOf(UserHome.CLAUDE_DIR, GEMINI_DIR)

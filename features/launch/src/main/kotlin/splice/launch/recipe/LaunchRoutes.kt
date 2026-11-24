@@ -134,7 +134,7 @@ public class LaunchRoutes(
         // terminal launch profiles (issue #791): `splice launch claude [--profile <name>]` takes its own words out of
         // what Claude Code is given, and runs in the profile's folder when it names one
         val side = service.door?.takeIf { key == CLAUDE_SPLICE_COMMAND }?.let(::SideBySideLaunch)
-        val ready = when (val started = side?.start(plain, received.extraArgs)) {
+        val ready = when (val started = side?.start(plain, received.extraArgs, received.inheritedConfigDir)) {
             is SideBySideLaunch.Started.Refused -> return refuse(call, key, started.reason, HttpStatusCode.BadRequest)
             is SideBySideLaunch.Started.Ready -> started
             null -> SideBySideLaunch.Started.Ready(plain, received.extraArgs)

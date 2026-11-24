@@ -96,6 +96,7 @@ heads.*.system_prompt_file
 heads.*.system_prompt_mode	append,replace,strip
 launch	
 launch.profiles	
+launch.profiles.*.claude_json	
 launch.profiles.*.dir	
 launch.profiles.*.drop_blocks	
 launch.profiles.*.drop_hooks	

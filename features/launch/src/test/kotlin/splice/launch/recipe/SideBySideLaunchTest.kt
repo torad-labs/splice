@@ -25,22 +25,31 @@ class SideBySideLaunchTest {
         window = SESSION_WINDOW,
     )
 
+    /** The CLAUDE_CONFIG_DIR each profile launch was handed, in order. */
+    private val inherited = mutableListOf<String?>()
+
     /** A door that knows profile `work`, in /profiles/work. */
     private val door = object : ClaudeDoor {
         override suspend fun launch(): DoorLaunchSpec = side
 
-        override suspend fun launchProfile(name: String, side: DoorLaunchSpec): ProfileLaunch =
-            if (name != "work") {
+        override suspend fun launchProfile(
+            name: String,
+            side: DoorLaunchSpec,
+            inheritedConfigDir: String?,
+        ): ProfileLaunch {
+            inherited += inheritedConfigDir
+            return if (name != "work") {
                 ProfileLaunch.Refused("splice: no launch profile named '$name'")
             } else {
                 ProfileLaunch.Ready(side.copy(env = side.env + ("CLAUDE_CONFIG_DIR" to "/profiles/work")))
             }
+        }
 
         override fun onDoor(): Boolean = true
     }
 
-    private fun start(vararg args: String, plain: DoorLaunchSpec = side) =
-        runBlocking { SideBySideLaunch(door).start(plain, args.toList()) }
+    private fun start(vararg args: String, plain: DoorLaunchSpec = side, configDir: String? = null) =
+        runBlocking { SideBySideLaunch(door).start(plain, args.toList(), configDir) }
 
     @Test
     fun `--profile and --profile= name the profile, and Claude Code gets the rest in order`() {
@@ -49,6 +58,13 @@ class SideBySideLaunchTest {
             assertEquals(listOf("-c", "hi"), ready.args)
             assertEquals("/profiles/work", ready.spec.env["CLAUDE_CONFIG_DIR"])
         }
+    }
+
+    @Test
+    fun `the launching shell's CLAUDE_CONFIG_DIR reaches the profile's rebuild as it was given`() {
+        start("--profile", "work", configDir = "/home/me/.claude")
+        start("--profile", "work")
+        assertEquals(listOf("/home/me/.claude", null), inherited)
     }
 
     @Test

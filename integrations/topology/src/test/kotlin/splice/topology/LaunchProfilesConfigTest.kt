@@ -27,6 +27,7 @@ class LaunchProfilesConfigTest {
         val toml = """
             [launch.profiles.work]
             dir = "~/.claude-work"
+            claude_json = "~/.claude/.claude.json"
             keep_hooks = "all"
             drop_hooks = ["SessionStart", "notify.sh"]
             keep_plugins = ["code-review@official"]
@@ -36,6 +37,7 @@ class LaunchProfilesConfigTest {
         val ready = assertInstanceOf(ConfigRead.Ready::class.java, read(toml))
         val expected = LaunchProfileConfig(
             dir = "~/.claude-work",
+            claudeJson = "~/.claude/.claude.json",
             keepHooks = KEEP_HOOKS_ALL,
             dropHooks = listOf("SessionStart", "notify.sh"),
             keepPlugins = listOf("code-review@official"),
@@ -101,6 +103,28 @@ class LaunchProfilesConfigTest {
         for (marker in listOf("<tag", "tag>", "line\\nbreak")) {
             val toml = "[launch.profiles.work]\ndrop_blocks = [\"$marker\"]\n"
             assertEquals(listOf("launch.profiles.work.drop_blocks"), refusedAt(toml), marker)
+        }
+    }
+
+    @Test
+    fun `a claude_json that is blank, relative, in the profile's own folder or in ~-gemini refuses boot`() {
+        val blankOrRelative = listOf("", " ", "~", "state.json", "./x/.claude.json")
+        val kept = listOf("~/.claude-work/.claude.json", "~/.claude-work/sub/x.json", "~/.gemini/.claude.json")
+        val refused = blankOrRelative + kept
+        for (file in refused) {
+            val toml = "[launch.profiles.work]\ndir = \"~/.claude-work\"\nclaude_json = \"$file\"\n"
+            assertEquals(listOf("launch.profiles.work.claude_json"), refusedAt(toml), "claude_json = \"$file\"")
+        }
+        val atRoot = "[launch.profiles.lean]\nclaude_json = \"~/.splice/launch-profiles/lean/.claude.json\"\n"
+        assertEquals(listOf("launch.profiles.lean.claude_json"), refusedAt(atRoot))
+    }
+
+    @Test
+    fun `a claude_json that is absolute or starts with ~- is accepted, ~-claude's own included`() {
+        val absolute = home.resolve("state/.claude.json").toString()
+        for (file in listOf(absolute, "~/.claude/.claude.json", "~/.claude.json")) {
+            val toml = "[launch.profiles.work]\nclaude_json = \"$file\"\n"
+            assertInstanceOf(ConfigRead.Ready::class.java, read(toml), file)
         }
     }
 

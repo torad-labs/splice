@@ -161,6 +161,41 @@ class LaunchTeamServerTest(@param:TempDir private val tmp: Path) {
         assertNull(launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "the last drop-in set telemetry again")
     }
 
+    // #791: a `null` or blank value is no setting, in the first file Claude Code reads as in any later one.
+    @Test
+    fun `a null or blank telemetry value sets no telemetry, in the first managed file as in a later one`() {
+        val relayed = spec(TeamServerLaunch(LaunchTelemetry(RELAY, OTEL_HELPER)))
+        val platformFile = platform().resolve("managed-settings.json")
+        Files.createDirectories(platform())
+        Files.writeString(platformFile, """{"env":{"OTEL_METRICS_EXPORTER":null,"CLAUDE_CODE_ENABLE_TELEMETRY":" "}}""")
+        assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "the first file's values are unset")
+        Files.writeString(platformFile, """{"otelHeadersHelper":"","env":{}}""")
+        assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "a blank helper is no helper")
+        Files.createDirectories(tree())
+        Files.writeString(tree().resolve("remote-settings.json"), """{"env":{"OTEL_LOGS_EXPORTER":null}}""")
+        assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "nor in remote settings")
+    }
+
+    // #791: Claude Code reads one managed source, the remote settings when there are any, and never merges the
+    // platform's files under them, so a helper the platform sets does not stand once remote settings replace it.
+    @Test
+    fun `remote settings replace the platform's managed settings rather than adding to them`() {
+        val relayed = spec(TeamServerLaunch(LaunchTelemetry(RELAY, OTEL_HELPER)))
+        val dropIns = platform().resolve("managed-settings.d")
+        Files.createDirectories(dropIns)
+        Files.writeString(dropIns.resolve("10-otel.json"), """{"otelHeadersHelper":"corp-helper"}""")
+        assertNull(launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "the platform's helper stands alone")
+        Files.createDirectories(tree())
+        val remote = tree().resolve("remote-settings.json")
+        Files.writeString(remote, """{"permissions":{"deny":[]}}""")
+        assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "remote settings omit the helper")
+        assertEquals(OTEL_HELPER, settings()["otelHeadersHelper"]?.jsonPrimitive?.content)
+        Files.writeString(remote, "{}")
+        assertNull(launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "empty remote settings leave the platform's")
+        Files.writeString(remote, """{"env":{"CLAUDE_CODE_ENABLE_TELEMETRY":"1"}}""")
+        assertNull(launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "remote settings set telemetry of their own")
+    }
+
     @Test
     fun `a managed settings file that is malformed, not an object or unreadable sets nothing`() {
         val relayed = spec(TeamServerLaunch(LaunchTelemetry(RELAY, OTEL_HELPER)))

@@ -4,7 +4,8 @@
 // once its quotes and spaces are gone, that shadows one of the listener's own routes or a name a served head answers to
 // (its head key or its command), or that stands for nothing a head here serves. A provider served with no head is
 // served at the team's door alone, so an alias reaches it as "door". Each is a boot finding beside every other, naming
-// its key.
+// its key. No alias stands for one of the listener's own routes either, even where a head's command is so named: the
+// listener answers that segment itself and never reaches the head.
 package splice.core.topology
 
 import splice.core.topology.toml.TomlKeys
@@ -68,8 +69,11 @@ internal class ServerRoutingChecks(private val topology: Topology) {
         else -> null
     }
 
-    /** Why the alias [prefix] cannot stand for [target]; null when [target] is the door or a served head. */
+    /** Why the alias [prefix] cannot stand for [target]; null when [target] is the door or a served head that
+     *  is no route of the listener's own. */
     private fun stands(prefix: String, target: String): String? = when {
+        target in RESERVED ->
+            "'$prefix' stands for '$target', one of the listener's own routes, which no head is served at"
         target == DOOR_SEGMENT || target in headNames -> null
         target in server.commands ->
             "'$prefix' stands for '$target', a provider served with no head, which is served at the team's door " +
@@ -79,7 +83,7 @@ internal class ServerRoutingChecks(private val topology: Topology) {
     }
 }
 
-// The listener's own first segments, which no alias may take.
+// The listener's own first segments, which no alias may take or stand for.
 private val RESERVED = setOf("server", "health")
 
 // What `[server.client] outdated_status` may say: 200 in the conversation, or a refusal Claude Code shows.

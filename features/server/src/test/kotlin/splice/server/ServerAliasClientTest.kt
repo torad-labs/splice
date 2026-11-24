@@ -156,7 +156,7 @@ internal class ServerAliasClientTest {
     }
 
     @Test
-    fun `a check-in body past its cap is refused 413 and an oversized or overlong version 400, keeping nothing`() {
+    fun `a check-in past its cap is refused 413, and an overlong or unquoted version 400, keeping nothing`() {
         val rig = serve { it.copy(client = ServerClient(MINIMUM, checkin = true, outdatedStatus = 400)) }
         val key = rig.keyFor("ola@example.com")
         val huge = """{"version":"0.9.0","pad":"${"x".repeat(8 * 1024)}"}"""
@@ -166,6 +166,9 @@ internal class ServerAliasClientTest {
         assertEquals(400, rig.ask("/server/client/checkin", key, longNumber).statusCode())
         val manyParts = """{"version":"${List(60) { "1" }.joinToString(".")}"}"""
         assertEquals(400, rig.ask("/server/client/checkin", key, manyParts).statusCode())
+        for (unquoted in listOf("""{"version":0.9.3}""", """{"version":0.9}""", """{version:"0.9.3"}""")) {
+            assertEquals(400, rig.ask("/server/client/checkin", key, unquoted).statusCode(), unquoted)
+        }
         assertEquals(200, rig.ask("/v1/chat/completions", key, CHAT).statusCode(), "no refused check-in was kept")
     }
 

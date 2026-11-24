@@ -3,19 +3,22 @@
 // platform's `managed-settings.json` and, beside it, the `managed-settings.d` folder whose `*.json` drop-ins Claude Code
 // merges over it in filename order, skipping hidden files; and the `remote-settings.json` Claude Code keeps in a config
 // tree for settings the organisation sends it. `splice claude check`, `splice desktop wrapper`, the MCP plan and a
-// launch's telemetry decision all read those paths from here. Where the platform's files, merged as Claude Code merges
-// them (a later drop-in's value replacing or, with `null`, clearing an earlier one's), or `remote-settings.json` set
-// telemetry of their own, a launch adds none of splice's: the organisation's collector stays the one the session reports
-// to (#791 widened that read from `remote-settings.json` alone). A file that is absent or can't be read sets nothing, as
-// Claude Code itself reads it. A macOS configuration profile (`com.anthropic.claudecode`) or a Windows registry policy
-// (`HKLM\SOFTWARE\Policies\ClaudeCode`) is not read here.
+// launch's telemetry decision all read those paths from here. Claude Code uses one managed source and never merges two:
+// `remote-settings.json` when it sets anything, the platform's files otherwise, merged as Claude Code merges them (a
+// later drop-in's value replacing or, with `null`, clearing an earlier one's). Where that source sets telemetry of its
+// own (a `null` or blank value sets nothing), a launch adds none of splice's: the organisation's collector stays the
+// one the session reports to (#791 widened that read from `remote-settings.json` alone). A file that is absent or
+// can't be read sets nothing, as Claude Code itself reads it. A macOS configuration profile (`com.anthropic.claudecode`)
+// or a Windows registry policy (`HKLM\SOFTWARE\Policies\ClaudeCode`) is not read here.
 package splice.client
 
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -45,17 +48,23 @@ public class ManagedSettings(
     public fun sources(): List<Path> = listOf(file) + dropIns()
 
     /** Whether the managed settings that reach a session of the tree at [configDir] set telemetry: the switch, any
-     *  OpenTelemetry variable in their `env`, or a headers helper of their own, in the platform's files as they merge
-     *  ([effective]) or in the tree's `remote-settings.json`. */
-    public fun setsTelemetry(configDir: Path): Boolean =
-        telemetry(effective()) || read(configDir.resolve(REMOTE_SETTINGS))?.let(::telemetry) == true
+     *  OpenTelemetry variable in their `env`, or a headers helper of their own, in the one source that is [active]. */
+    public fun setsTelemetry(configDir: Path): Boolean = telemetry(active(configDir))
+
+    /** The one managed source that reaches a session of the tree at [configDir], as Claude Code picks it: the tree's
+     *  `remote-settings.json` when it is an object with any key, and the platform's files as they merge
+     *  ([effective]) otherwise. Claude Code never merges the two, so nothing of the platform's rides along under it. */
+    private fun active(configDir: Path): JsonObject =
+        read(configDir.resolve(REMOTE_SETTINGS))?.takeIf { it.isNotEmpty() } ?: effective()
 
     /** The platform's managed settings as Claude Code merges its files ([sources]), each over the ones before it: a
      *  later file's value for a key replaces an earlier one, a list joins the earlier one's, an object such as `env`
-     *  merges key by key, and a key a later file sets to `null` is no longer set. A file that is absent, unreadable or no object adds nothing. */
-    private fun effective(): JsonObject = sources().mapNotNull(::read).fold(JsonObject(emptyMap()), ::merged)
+     *  merges key by key, and a key a later file sets to `null` is no longer set. A file that is absent, unreadable
+     *  or no object adds nothing. */
+    private fun effective(): JsonObject = sources().mapNotNull(::read).fold(EMPTY, ::merged)
 
-    /** [over] laid on [under], key by key. */
+    /** [over] laid on [under], key by key: a `null` in [over] at any depth, the first file's own included, sets
+     *  nothing. */
     private fun merged(under: JsonObject, over: JsonObject): JsonObject {
         val keys = under.keys + over.keys
         val laid = keys.mapNotNull { key ->
@@ -63,7 +72,7 @@ public class ManagedSettings(
             val below = under[key]
             when {
                 value is JsonNull -> null
-                value is JsonObject && below is JsonObject -> key to merged(below, value)
+                value is JsonObject -> key to merged(below as? JsonObject ?: EMPTY, value)
                 value is JsonArray && below is JsonArray -> key to JsonArray((below + value).distinct())
                 else -> key to value
             }
@@ -84,10 +93,15 @@ public class ManagedSettings(
         }
     }
 
+    /** Whether [managed] sets telemetry; a key whose value is blank sets nothing, as an unset one does. */
     private fun telemetry(managed: JsonObject): Boolean {
-        val env = (managed[MANAGED_ENV] as? JsonObject).orEmpty().keys
-        return Keys.OTEL_HEADERS_HELPER in managed || env.any { it == TELEMETRY_SWITCH || it.startsWith(OTEL_PREFIX) }
+        val env = (managed[MANAGED_ENV] as? JsonObject).orEmpty().filterValues(::sets).keys
+        val helper = managed[Keys.OTEL_HEADERS_HELPER]?.let(::sets) == true
+        return helper || env.any { it == TELEMETRY_SWITCH || it.startsWith(OTEL_PREFIX) }
     }
+
+    private fun sets(value: JsonElement): Boolean =
+        value !is JsonNull && (value !is JsonPrimitive || value.content.isNotBlank())
 
     private fun read(file: Path): JsonObject? = try {
         Json.parseToJsonElement(Files.readString(file)) as? JsonObject
@@ -115,3 +129,5 @@ public const val TELEMETRY_SWITCH: String = "CLAUDE_CODE_ENABLE_TELEMETRY"
 
 // Every OpenTelemetry variable, the exporters and the endpoint among them, starts so.
 private const val OTEL_PREFIX = "OTEL_"
+
+private val EMPTY = JsonObject(emptyMap())

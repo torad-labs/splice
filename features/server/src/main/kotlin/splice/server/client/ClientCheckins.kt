@@ -42,11 +42,12 @@ internal class ClientCheckins(private val client: ServerClient, private val voic
     fun of(person: String): ClientVersion? = latest[person]
 
     /** Keeps the version [call]'s body reports for [key]'s person, or refuses a body that names none: 413 for one past
-     *  [CHECKIN_BODY_BYTES], 400 for one that is no `{"version"}` naming a version. */
+     *  [CHECKIN_BODY_BYTES], 400 for one that is no strict JSON `{"version"}` whose string names a version. */
     suspend fun answer(call: ApplicationCall, key: ServerKey) {
         val sent = bodies.read(call, CHECKIN_BODY_BYTES, CHECKIN_READ_MS) ?: return
-        val named = JsonScalars.str(JsonScalars.objectOrNull(Json, sent.decodeToString()), VERSION_FIELD)
-        val version = versions.parse(named)
+        val named = JsonScalars.objectOrNull(Json, sent.decodeToString())?.get(VERSION_FIELD)
+        // why: the version is a JSON string; `{"version":0.9.3}` is a number literal whose text would read as one.
+        val version = versions.parse(JsonScalars.strIfString(named))
             ?: return voice.refuse(call, HttpStatus.BAD_REQUEST, "a check-in is {\"version\": \"0.10.0\"}")
         latest[key.person] = version
         val floor = client.floor

@@ -334,6 +334,19 @@ class ServerConfigFindingsTest {
         assertTrue("'/v1' is written more than once" in twice.single().message, twice.toString())
     }
 
+    // #791: the listener answers `/server/...` and `/health` itself, so an alias standing for a head whose command or key
+    // is so named would never reach that head.
+    @Test
+    fun `an alias may not stand for one of the listener's own routes, even where a served head is so named`() {
+        for (name in listOf("server", "health")) {
+            val named = head().replace("command = \"claude-team\"", "command = \"$name\"")
+            val found = refused(server("[server.aliases]\n\"/v1\" = \"$name\"", commands = "\"$name\"") + named)
+            val reserved = found.single { it.path == "server.aliases" }
+            assertTrue("'/v1' stands for '$name'" in reserved.message, found.toString())
+            assertTrue("listener's own routes" in reserved.message, reserved.message)
+        }
+    }
+
     @Test
     fun `server backup accepts folder or signed S3 target and refuses malformed target or missing keys`() {
         val good = """

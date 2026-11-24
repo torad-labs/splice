@@ -156,6 +156,39 @@ internal class ServerAliasClientTest {
     }
 
     @Test
+    fun `a check-in body past its cap is refused 413 and an oversized or overlong version 400, keeping nothing`() {
+        val rig = serve { it.copy(client = ServerClient(MINIMUM, checkin = true, outdatedStatus = 400)) }
+        val key = rig.keyFor("ola@example.com")
+        val huge = """{"version":"0.9.0","pad":"${"x".repeat(8 * 1024)}"}"""
+        val tooLarge = rig.ask("/server/client/checkin", key, huge)
+        assertEquals(413, tooLarge.statusCode(), tooLarge.body())
+        val longNumber = """{"version":"0.${"9".repeat(40)}"}"""
+        assertEquals(400, rig.ask("/server/client/checkin", key, longNumber).statusCode())
+        val manyParts = """{"version":"${List(60) { "1" }.joinToString(".")}"}"""
+        assertEquals(400, rig.ask("/server/client/checkin", key, manyParts).statusCode())
+        assertEquals(200, rig.ask("/v1/chat/completions", key, CHAT).statusCode(), "no refused check-in was kept")
+    }
+
+    // The operator's words reach the head in a header, which carries visible ASCII alone; the notice is encoded on the
+    // way and the head reads it back as written.
+    @Test
+    fun `a notice in Portuguese is the answer to an older laptop's Messages turn at the alias and at its own path`() {
+        val words = "Atualize o cliente — versão {version}; mínimo {minimum}."
+        val rig = serve { it.copy(client = ServerClient(MINIMUM, outdatedMessage = words)) }
+        val key = rig.keyFor("ola@example.com")
+        val old = listOf(SPLICE_CLIENT_HEADER to "0.9.3", "anthropic-version" to "1")
+        val expected = "Atualize o cliente — versão 0.9.3; mínimo $MINIMUM."
+        for (path in listOf("/v1/messages", "/claude-team/v1/messages")) {
+            val turn = rig.ask(path, key, TURN, old)
+            assertEquals(200, turn.statusCode(), turn.body())
+            assertEquals(expected, text(turn))
+        }
+        val chat = rig.ask("/v1/chat/completions", key, CHAT, old)
+        assertEquals(expected, chatText(chat))
+        assertTrue(box.asked.isEmpty())
+    }
+
+    @Test
     fun `without checkin set the check-in path is no route`() {
         val rig = serve { it.copy(client = ServerClient(MINIMUM)) }
         val key = rig.keyFor("ola@example.com")
@@ -177,6 +210,7 @@ internal class ServerAliasClientTest {
 
 private const val MINIMUM = "0.10.0"
 private const val LAUNCHER_HEADER = "x-team-launcher"
+
 // why: ktoml hands a quoted key back with its quotes, so the alias is written as splice.toml has it.
 private const val V1_ALIAS = "\"/v1\""
 private const val TURN = """{"model":"m","messages":[]}"""

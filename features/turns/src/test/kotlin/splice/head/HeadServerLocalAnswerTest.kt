@@ -15,6 +15,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
@@ -31,6 +32,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.SERVED_NOTICE_HEADER
+import splice.core.turn.ServedNoticeText
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.dialect.responses.ReasoningSettings
@@ -186,6 +188,24 @@ class HeadServerLocalAnswerTest {
             assertTrue(json.contains("\"stop_reason\":\"end_turn\""), json)
             assertEquals(before, mock.upstreamBodies.size, "no upstream turn may happen for a notice")
         }
+
+    // #791: an operator's notice in any language reaches the head percent-encoded, and is answered as it was written.
+    @Test
+    fun `a notice the listener encoded is answered in its own words, accents and dashes included`() = runBlocking {
+        val before = mock.upstreamBodies.size
+        val notice = "Atualize o cliente — versão 0.9.3."
+        val ask = """{"model":"claude-codex--gpt-5.6-sol","stream":false,"max_tokens":64,""" +
+            """"messages":[{"role":"user","content":"fix it"}]}"""
+        val json = client.post("http://127.0.0.1:$port/v1/messages") {
+            header("Content-Type", "application/json")
+            header(SERVED_NOTICE_HEADER, ServedNoticeText().encode(notice))
+            setBody(ask)
+        }.bodyAsText()
+        val said = Json.parseToJsonElement(json).jsonObject.getValue("content").jsonArray
+            .map { it.jsonObject["text"]?.jsonPrimitive?.content.orEmpty() }
+        assertTrue(notice in said, json)
+        assertEquals(before, mock.upstreamBodies.size, "no upstream turn may happen for a notice")
+    }
 
     @Test
     fun `the non-stream side query gets the same answer as one JSON body`() = runBlocking {

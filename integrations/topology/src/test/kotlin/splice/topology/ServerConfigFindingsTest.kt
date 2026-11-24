@@ -313,6 +313,27 @@ class ServerConfigFindingsTest {
         }
     }
 
+    // #791: the listener serves a head at its command and at its head key alike, and a provider with no head only at
+    // the door, so boot judges an alias by the same names the listener answers to.
+    @Test
+    fun `an alias may not take a served head's key, stand for a headless provider, or be written twice`() {
+        val shadow = refused(server("[server.aliases]\n\"/box\" = \"door\"") + head()).single()
+        assertTrue("'/box'" in shadow.message && "already a path" in shadow.message, shadow.message)
+
+        val byKey = server("[server.aliases]\n\"/v1\" = \"box\"") + head()
+        assertInstanceOf(ConfigRead.Ready::class.java, ConfigFindings.read(byKey, directory, configDir = directory))
+
+        val headless = head().substringBefore("[heads.box]")
+        val provider = refused(server("[server.aliases]\n\"/v1\" = \"box\"", commands = "\"box\"") + headless).single()
+        assertTrue("no head" in provider.message && "\"door\"" in provider.message, provider.message)
+        val atDoor = server("[server.aliases]\n\"/v1\" = \"door\"", commands = "\"box\"") + headless
+        assertInstanceOf(ConfigRead.Ready::class.java, ConfigFindings.read(atDoor, directory, configDir = directory))
+
+        val twice = refused(server("[server.aliases]\n\"/v1\" = \"claude-team\"\n\" /v1\" = \"door\"") + head())
+        assertEquals(1, twice.size, twice.toString())
+        assertTrue("'/v1' is written more than once" in twice.single().message, twice.toString())
+    }
+
     @Test
     fun `server backup accepts folder or signed S3 target and refuses malformed target or missing keys`() {
         val good = """

@@ -3,13 +3,18 @@
 // platform's `managed-settings.json` and, beside it, the `managed-settings.d` folder whose `*.json` drop-ins Claude Code
 // merges over it in filename order, skipping hidden files; and the `remote-settings.json` Claude Code keeps in a config
 // tree for settings the organisation sends it. `splice claude check`, `splice desktop wrapper`, the MCP plan and a
-// launch's telemetry decision all read those paths from here. Where any of the files sets telemetry of its own, a launch
-// adds none of splice's: the organisation's collector stays the one the session reports to (#791 widened that read from
-// `remote-settings.json` alone). A file that is absent or can't be read sets nothing, as Claude Code itself reads it.
+// launch's telemetry decision all read those paths from here. Where the platform's files, merged as Claude Code merges
+// them (a later drop-in's value replacing or, with `null`, clearing an earlier one's), or `remote-settings.json` set
+// telemetry of their own, a launch adds none of splice's: the organisation's collector stays the one the session reports
+// to (#791 widened that read from `remote-settings.json` alone). A file that is absent or can't be read sets nothing, as
+// Claude Code itself reads it. A macOS configuration profile (`com.anthropic.claudecode`) or a Windows registry policy
+// (`HKLM\SOFTWARE\Policies\ClaudeCode`) is not read here.
 package splice.client
 
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import java.io.IOException
 import java.nio.file.Files
@@ -40,12 +45,31 @@ public class ManagedSettings(
     public fun sources(): List<Path> = listOf(file) + dropIns()
 
     /** Whether the managed settings that reach a session of the tree at [configDir] set telemetry: the switch, any
-     *  OpenTelemetry variable in their `env`, or a headers helper of their own, in any one of their files. */
+     *  OpenTelemetry variable in their `env`, or a headers helper of their own, in the platform's files as they merge
+     *  ([effective]) or in the tree's `remote-settings.json`. */
     public fun setsTelemetry(configDir: Path): Boolean =
-        // why: a Path is an Iterable of its own names, so the one file goes in a list of its own, never added bare.
-        (sources() + listOf(configDir.resolve(REMOTE_SETTINGS))).any { file ->
-            read(file)?.let(::telemetry) == true
+        telemetry(effective()) || read(configDir.resolve(REMOTE_SETTINGS))?.let(::telemetry) == true
+
+    /** The platform's managed settings as Claude Code merges its files ([sources]), each over the ones before it: a
+     *  later file's value for a key replaces an earlier one, a list joins the earlier one's, an object such as `env`
+     *  merges key by key, and a key a later file sets to `null` is no longer set. A file that is absent, unreadable or no object adds nothing. */
+    private fun effective(): JsonObject = sources().mapNotNull(::read).fold(JsonObject(emptyMap()), ::merged)
+
+    /** [over] laid on [under], key by key. */
+    private fun merged(under: JsonObject, over: JsonObject): JsonObject {
+        val keys = under.keys + over.keys
+        val laid = keys.mapNotNull { key ->
+            val value = if (key in over) over.getValue(key) else under.getValue(key)
+            val below = under[key]
+            when {
+                value is JsonNull -> null
+                value is JsonObject && below is JsonObject -> key to merged(below, value)
+                value is JsonArray && below is JsonArray -> key to JsonArray((below + value).distinct())
+                else -> key to value
+            }
         }
+        return JsonObject(laid.toMap())
+    }
 
     private fun dropIns(): List<Path> {
         val folder = platform.resolve(MANAGED_DROP_IN_DIR)

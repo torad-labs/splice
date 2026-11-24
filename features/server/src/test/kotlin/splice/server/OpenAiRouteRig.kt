@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import splice.core.topology.ServerConfig
 import splice.core.topology.ServerLimits
 import splice.core.turn.SERVED_NOTICE_HEADER
+import splice.core.turn.ServedNoticeText
 import splice.core.util.LogSink
 import splice.share.StreamEdit
 import splice.upstream.Waiter
@@ -195,7 +196,8 @@ internal class OpenAiRig(
             exchange.use {
                 it.requestBody.use { body -> body.readBytes() }
                 // A turn handed on with the minimum client's notice is answered with it, as a head answers one.
-                val said = it.requestHeaders.getFirst(SERVED_NOTICE_HEADER) ?: "from the head"
+                val sent = it.requestHeaders.getFirst(SERVED_NOTICE_HEADER)
+                val said = sent?.let(ServedNoticeText()::decode) ?: "from the head"
                 val (status, answer) = when (it.requestURI.path) {
                     "/v1/models" -> 200 to HEAD_MODELS
                     "/v1/messages" -> 200 to """{"type":"message","content":[{"type":"text","text":${quoted(said)}}]}"""

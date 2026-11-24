@@ -145,6 +145,22 @@ class LaunchTeamServerTest(@param:TempDir private val tmp: Path) {
         assertEquals(RELAY, endpoint, "only visible *.json files are drop-ins")
     }
 
+    // #791: the files merge as Claude Code merges them, so a later drop-in that clears a telemetry key leaves it unset.
+    @Test
+    fun `a later drop-in that clears an earlier file's telemetry key leaves the relay on`() {
+        val relayed = spec(TeamServerLaunch(LaunchTelemetry(RELAY, OTEL_HELPER)))
+        val dropIns = platform().resolve("managed-settings.d")
+        Files.createDirectories(dropIns)
+        Files.writeString(platform().resolve("managed-settings.json"), """{"otelHeadersHelper":"corp-helper"}""")
+        Files.writeString(dropIns.resolve("10-otel.json"), """{"env":{"OTEL_METRICS_EXPORTER":"otlp","KEEP":"1"}}""")
+        Files.writeString(dropIns.resolve("20-off.json"), """{"otelHeadersHelper":null,"env":{"KEEP":"2"}}""")
+        assertNull(launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "10-otel's variable still stands under 20-off")
+        Files.writeString(dropIns.resolve("30-off.json"), """{"env":{"OTEL_METRICS_EXPORTER":null}}""")
+        assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "every telemetry key was cleared")
+        Files.writeString(dropIns.resolve("40-on.json"), """{"env":{"CLAUDE_CODE_ENABLE_TELEMETRY":"1"}}""")
+        assertNull(launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "the last drop-in set telemetry again")
+    }
+
     @Test
     fun `a managed settings file that is malformed, not an object or unreadable sets nothing`() {
         val relayed = spec(TeamServerLaunch(LaunchTelemetry(RELAY, OTEL_HELPER)))

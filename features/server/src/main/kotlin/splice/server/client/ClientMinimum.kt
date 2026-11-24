@@ -17,11 +17,13 @@ import splice.core.client.ClientVersionParser
 import splice.core.topology.OUTDATED_IN_CONVERSATION
 import splice.core.topology.ServerClient
 import splice.core.turn.SERVED_NOTICE_HEADER
+import splice.core.turn.ServedNoticeText
 import splice.share.RefusalVoice
 
 internal class ClientMinimum(private val client: ServerClient, private val checkins: ClientCheckins) {
     private val versions = ClientVersionParser()
     private val floor = client.floor
+    private val noticeText = ServedNoticeText()
 
     /** What [call]'s laptop, [person]'s, is told in place of an answer when its splice is older than the minimum;
      *  else null. */
@@ -39,8 +41,9 @@ internal class ClientMinimum(private val client: ServerClient, private val check
         return own.replace(VERSION_SLOT, runs.wire).replace(MINIMUM_SLOT, floor.wire)
     }
 
-    /** The header a head is handed [told] in, to answer the turn with it in the conversation. */
-    fun notice(told: String): Map<String, String> = mapOf(SERVED_NOTICE_HEADER to told)
+    /** The header a head is handed [told] in, to answer the turn with it in the conversation, its text encoded so
+     *  any language crosses an HTTP header (ServedNoticeText). */
+    fun notice(told: String): Map<String, String> = mapOf(SERVED_NOTICE_HEADER to noticeText.encode(told))
 
     /** Refuses [call] in [voice] with [told] when an older laptop's turn is refused rather than answered in the
      *  conversation; false, with nothing answered, when it is answered. */

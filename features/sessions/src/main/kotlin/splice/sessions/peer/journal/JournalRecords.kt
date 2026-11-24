@@ -27,7 +27,9 @@ internal object JournalRecords {
         encodeDefaults = true
     }
 
-    /** Who a record is from, and how it was checked: `registered` when the address named a live registry record. */
+    /** Who a record is from, and how it was checked: `registered` when the address named a live registry record.
+     *  [address] takes receipts; [replyTo], present only when the message's envelope named another address, takes
+     *  replies. */
     @Serializable
     data class Sender(
         val name: String? = null,
@@ -35,6 +37,7 @@ internal object JournalRecords {
         val address: String? = null,
         val claimedName: String? = null,
         val check: String,
+        val replyTo: String? = null,
     )
 
     @Serializable
@@ -99,13 +102,15 @@ internal object JournalRecords {
         val detail: String?,
     )
 
-    /** A message to journal: what the sender claimed, how the connection was authenticated, and the text. */
+    /** A message to journal: what the sender claimed, how the connection was authenticated, the text, and the
+     *  address its envelope names for a reply. */
     data class MessageEntry(
         val id: String,
         val from: SenderCheck,
         val auth: String?,
         val text: String,
         val bytes: Int,
+        val replyTo: String? = null,
     )
 
     /** A receipt that came back for one of this peer's sends. */
@@ -142,7 +147,7 @@ internal object JournalRecords {
             seq = seq,
             at = at,
             id = entry.id,
-            from = sender(entry.from),
+            from = sender(entry.from).copy(replyTo = entry.replyTo?.takeIf { it != entry.from.address }),
             auth = entry.auth,
             text = entry.text,
             bytes = entry.bytes,

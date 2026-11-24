@@ -179,6 +179,8 @@ An invalid table refuses boot, with every finding listed. A catalog entry routes
 
 Splice registers Claude Code it launches against the owning process, attaches native Codex threads through the session-start hook, and uses the Desktop ACP translator's inbox for Antigravity. To register the local ACP harness in the example above, run `splice desktop acp --harness local-agent` with the `.peer` table in place.
 
+When a Claude Code session sends through Splice, the recipient sees the session's own address, so a reply lands in that conversation, and receipts come back to a hidden return socket that `peer_status` and `splice peer status` read.
+
 The registration belongs to the running process, not the catalog entry, and retires when the owner exits. The ACP inbox is also bound to the Desktop session ID and reports delivery when the prompt is admitted, not when the turn finishes. To deliver outside the ACP inbox, use `command` with an absolute executable and argv in `deliver_cmd`, or `webhook` with an HTTP loopback `webhook_url`. See the [configuration reference](configuration-reference.md#door-launch-profiles-local-harnesses-and-lan-sharing) for the fields and the [peer messaging spec](../specs/peer-messaging.md#harness-peers) for delivery and receipt semantics.
 
 Outside a turn, use `splice peer list --json` to find registrations, `splice peer send --as <name> --json <to> <text>` to send, and `splice peer status --as <name> --json <msgId>` to look up the outcome and any receipt.

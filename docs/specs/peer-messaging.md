@@ -32,10 +32,12 @@ released by owner retirement when the process exits. The ACP inbox is additional
 bound to the actual Desktop session ID. Catalog listing alone does not create an identity.
 
 - `acp` uses the translator inbox and reports delivery only after ACP prompt admission.
-- `native-cc-socks` receives on the owning process's published socket. Splice CLI
-  and MCP sends advertise a journal-backed return address so returned receipts
-  are visible in peer status. The return socket is not listed as another session.
-  Socket submission is `accepted`, not delivery.
+- `native-cc-socks` receives on the owning process's published socket. A Splice CLI
+  or MCP send from it carries two addresses. The frame's `from` is a journal-backed
+  return socket, so returned receipts are visible in peer status. The envelope's
+  `from`, the only address the recipient's model reads, is the session's own socket,
+  so a reply reaches the sending conversation. The return socket is not listed as
+  another session. Socket submission is `accepted`, not delivery.
 - `codex-app-server` queues through the existing Codex peer journal. A started
   thread turn produces `delivered`, a refusal is unavailable, and a lost turn
   reply is `unconfirmed`: the turn may already have started and is not retried.
@@ -151,6 +153,10 @@ output is shut down and the connection closed.
 - **`from` and `from-name`.** For a peer send, `from` is `uds:` plus the sending peer's helper socket, and
   `from-name` is the peer's registered name. Both come from `PeerStore` and the running helper, never from
   the HTTP body. A console note keeps today's shape: no `from`, and `from-name="the splice console"`.
+- **Receipts and replies.** Claude Code sends receipts to the frame's `from`, and its model replies to the
+  envelope's `from` (Facts). For every peer the two are the same socket, except a Claude Code peer: its
+  frame's `from` is its return helper, whose journal `peer status` reads, and its envelope's `from` is its
+  session's own `messagingSocketPath`, the inbox its conversation reads.
 - **Defusing.** Every `<` that begins `<cross-session-message` or `</cross-session-message` in the text,
   case-insensitive and with optional whitespace after `<` and `/`, becomes `<\`. That generalizes today's
   closing-tag rule to the opening tag too, so a text can neither close its envelope nor fake a second one.
@@ -192,8 +198,10 @@ the normal case: it sends one only for `held`, `expired` or `dropped`. A peer se
   one. If it always does, a follow-up can make the token required.
 - **`type:"user"` frames.** The text is the envelope body if the content matches
   `^<cross-session-message\b([^>]*)>\n([\s\S]*)\n</cross-session-message>$`, and otherwise the whole
-  content. The claimed address is the frame's `from`, or else the envelope's `from` attribute. The claimed
-  name is the envelope's `from-name`.
+  content. The claimed address is the frame's `from`, or else the envelope's `from` attribute; receipts go
+  there. The reply address is the envelope's `from`, or else the frame's; a helper that shows the message to
+  a model (Codex, the ACP translator) puts this one in the envelope it builds. The claimed name is the
+  envelope's `from-name`.
 - **The sender as journaled.** The claimed address is looked up among the live registry records by
   `messagingSocketPath`, with procStart checked as `SessionRegistry` already does. On a hit, the sender is
   recorded as `{name: record.name, sessionId, address, check:"registered"}`. On a miss, it is
@@ -314,6 +322,9 @@ There is one JSON object per line, appended and flushed with `force(true)` befor
 {"v":1,"seq":19,"at":…,"kind":"webhook","ref":17,"outcome":"pushed|failed","httpStatus":204,"attempts":1,"detail":null}
 ```
 
+- **`replyTo`.** A message's `from` carries `replyTo` only when the envelope named another address than the
+  frame (1.3), as a Claude Code peer's sends do. Receipts go to `address`; a reply goes to `replyTo` when it
+  is there.
 - **Rotation.** At 50 MiB, `journal.jsonl` is renamed to `journal.1.jsonl`, replacing any older one, and a
   new file starts with the next seq.
 - **Readers** see both files, and the order is by `seq`.
@@ -478,7 +489,7 @@ C's `InboxHandler`. Connections are handled on a bounded pool of 4. A connection
   more than 300 s from its own clock. The optional bearer exists so a grokbot-style receiver, which checks
   only a bearer, works unchanged.
 - **The body:**
-  `{"v":1,"peer":"gary","seq":17,"id":"<msg_id>","at":<ms>,"from":{"name","sessionId","address","claimedName","check"},"auth":"token"|"none","text":"…"}`.
+  `{"v":1,"peer":"gary","seq":17,"id":"<msg_id>","at":<ms>,"from":{"name","sessionId","address","claimedName","check","replyTo"?},"auth":"token"|"none","text":"…"}`.
   The test push sends the same shape with `"test":true`, a seq of 0, the id `"webhook-test"`, the text
   `"splice webhook test"`, a `from` naming the peer itself with `check:"unregistered"`, and no `auth`.
   `auth` is the journal's own (1.3 and 2.3): `token` when the sender presented the socket's `peerToken`, `none`
@@ -544,11 +555,16 @@ Exit codes 0, 1 and 2 keep their meaning across the CLI (`Cli.kt:17`, `:29`, `:7
 public enum class DeliveryStatus(public val wire: String) { HELD("held"), DENIED("denied"), EXPIRED("expired"),
     DELIVERED("delivered"), REFUSED("refused"), DROPPED("dropped") }
 
-/** Who a frame Splice writes is from: the peer's helper socket and its registered name. Built only from PeerStore. */
-public data class PeerSender(val socket: String, val name: String) { public val address: String get() = "uds:$socket" }
+/** Who a frame Splice writes is from: the peer's helper socket and its registered name. Built only from PeerStore.
+ *  socket is the frame's `from` (receipts); replySocket is the envelope's `from` (replies). */
+public data class PeerSender(val socket: String, val name: String, val replySocket: String = socket) {
+    public val address: String get() = "uds:$socket"
+    public val replyAddress: String get() = "uds:$replySocket"
+}
 
 public sealed class InboundFrame {
-    public data class Message(val msgId: String?, val claimedAddress: String?, val claimedName: String?, val text: String) : InboundFrame()
+    public data class Message(val msgId: String?, val claimedAddress: String?, val claimedName: String?, val text: String,
+        val sessionId: String? = null, val replyAddress: String? = claimedAddress) : InboundFrame()
     public data class Receipt(val origMsgId: String?, val status: DeliveryStatus, val detail: String?, val claimedAddress: String?) : InboundFrame()
 }
 

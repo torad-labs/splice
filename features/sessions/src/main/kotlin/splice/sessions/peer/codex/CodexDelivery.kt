@@ -112,10 +112,12 @@ public class CodexDelivery(
         return null
     }
 
-    /** The text as a Claude Code session reads a peer message: who sent it, then the text. */
+    /** The text as a Claude Code session reads a peer message: who sent it, then the text. The address is the one a
+     *  reply goes to, which for a Claude Code sender is its session and not the return helper its receipts go to. */
     private fun envelope(record: JsonObject): String {
         val from = record["from"] as? JsonObject
-        val address = JsonScalars.str(from, "address")?.takeIf(PeerWire::attributeSafe)
+        val address = (JsonScalars.str(from, "replyTo") ?: JsonScalars.str(from, "address"))
+            ?.takeIf(PeerWire::attributeSafe)
         val name = JsonScalars.str(from, "name") ?: JsonScalars.str(from, "claimedName")
         return PeerWire.envelope(
             JsonScalars.str(record, "text").orEmpty(),

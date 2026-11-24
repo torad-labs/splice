@@ -17,9 +17,11 @@ import io.ktor.http.contentType
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -65,6 +67,7 @@ import splice.sessions.peer.helper.HelperSetup
 import splice.sessions.peer.helper.HelperStart
 import splice.sessions.peer.helper.PeerHelper
 import splice.sessions.peer.helper.PeerSockets
+import splice.sessions.peer.helper.SocketBind
 import splice.sessions.peer.journal.PeerInbox
 import splice.sessions.peer.journal.PeerJournal
 import splice.sessions.peer.owner.PeerOwnerProcesses
@@ -79,6 +82,8 @@ import splice.sessions.registry.SessionSource
 import splice.sessions.registry.SessionStatus
 import splice.upstream.memory.JvmHeap
 import java.net.InetSocketAddress
+import java.nio.channels.Channels
+import java.nio.channels.ServerSocketChannel
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
@@ -268,7 +273,7 @@ class PeerNativeInboxRouteTest {
             val pid = ProcessHandle.current().pid()
             val receiptSocket = sockets.pathFor(pid)
             val outbox = RecordingOutbox()
-            val fixture = toolFixture(dir, HarnessCatalog(), outbox, receiptSocket.toString())
+            val fixture = toolFixture(dir, HarnessCatalog(), outbox, FixtureSockets(receipt = receiptSocket.toString()))
             application { routing { fixture.mount.register(this) } }
             val key = fixture.register(client, "caller-peer", "claude-code")
             val registryDir = dir.resolve("registry")
@@ -306,6 +311,90 @@ class PeerNativeInboxRouteTest {
                 helper.close()
             }
         }
+
+    @Test
+    fun `a reply to a native Claude sender reaches its session while its receipt shows in peer_status`(
+        @TempDir dir: Path,
+    ) = testApplication {
+        val pid = ProcessHandle.current().pid()
+        val paths = ReplySockets(dir, pid)
+        val registryDir = dir.resolve("registry")
+        val wire = PeerNoteSocket(Dispatchers.IO, registryDirs = listOf(registryDir))
+        val fixture = toolFixture(dir, HarnessCatalog(), wire, paths.fixture)
+        application { routing { fixture.mount.register(this) } }
+        val key = fixture.register(client, "caller-peer", "claude-code")
+        val helper = startReturnHelper(dir, registryDir, paths.sockets)
+        val journal = PeerJournal(helper.files.dir, log)
+        val inbox = PeerInbox(journal, wire, PeerSender(paths.receipt.toString(), "caller-peer"), log)
+        val session = bound(paths.sockets, paths.session)
+        val recipient = bound(paths.sockets, paths.recipient)
+        try {
+            coroutineScope {
+                val server = launch { helper.server(inbox, emptyTargets(), Dispatchers.IO, paths.user).serve() }
+                try {
+                    val read = async { oneFrame(recipient) }
+                    val args = """{"to":"${fixture.codexName}","text":"hello","id":"reply-id"}"""
+                    assertEquals("queued", JsonScalars.str(tool(client, key, "send_peer_message", args), "status"))
+                    val frame = read.await()
+                    val shown = Regex("^<cross-session-message from=\"([^\"]+)\"").find(content(frame))?.groupValues
+                    assertEquals("uds:${paths.session}", shown?.get(1), content(frame))
+                    val receiptTo = JsonScalars.str(frame, "from").orEmpty()
+                    assertTrue(wire.receipt(receiptTo, "reply-id", DeliveryStatus.HELD, "waiting", paths.walk))
+                    withTimeout(5_000) { while (journal.receiptFor("reply-id") == null) delay(RECEIPT_POLL_MS) }
+                    val status = tool(client, key, "peer_status", """{"msgId":"reply-id"}""")
+                    assertEquals("held", JsonScalars.str(status.getValue("receipt").jsonObject, "status"))
+                    val arrived = async { oneFrame(session) }
+                    val replyTo = sessionRecord("caller-id", "source", pid, paths.session.toString())
+                    assertInstanceOf(SendOutcome.Submitted::class.java, wire.send(replyTo, "the reply", paths.walk))
+                    assertTrue("\nthe reply\n" in content(arrived.await()))
+                } finally {
+                    server.cancel()
+                }
+            }
+        } finally {
+            session.close()
+            recipient.close()
+            helper.close()
+        }
+    }
+
+    /** The sockets a Claude Code peer's send touches: its return helper's, its session's own, its recipient's. */
+    private class ReplySockets(dir: Path, pid: Long) {
+        val user: String = System.getProperty("user.name")
+        val sockets = PeerSockets(dir, null, user)
+        val receipt: Path = sockets.pathFor(pid)
+        val session: Path = receipt.resolveSibling("caller-$pid.sock")
+        val recipient: Path = receipt.resolveSibling("walk-$pid.sock")
+        val walk = PeerSender(recipient.toString(), "walk-a")
+        val fixture = FixtureSockets(receipt.toString(), session.toString(), recipient.toString())
+    }
+
+    /** The return helper's socket and the two sessions' inboxes a fixture's registry names. */
+    private data class FixtureSockets(
+        val receipt: String = "/tmp/cc-socks/return.sock",
+        val caller: String = "/tmp/cc-socks/caller.sock",
+        val codex: String = "/tmp/cc-socks/codex.sock",
+    )
+
+    /** What a frame's recipient model reads: its message content, envelope and all. */
+    private fun content(frame: JsonObject): String =
+        frame.getValue("message").jsonObject.getValue("content").jsonPrimitive.content
+
+    private fun bound(sockets: PeerSockets, socket: Path): ServerSocketChannel =
+        assertInstanceOf(SocketBind.Bound::class.java, sockets.bind(socket)).channel
+
+    /** The last frame one sender wrote to [server] before it closed its side. */
+    private suspend fun oneFrame(server: ServerSocketChannel): JsonObject = withTimeout(5_000) {
+        val bytes = runInterruptible(Dispatchers.IO) {
+            server.accept().use { Channels.newInputStream(it).readAllBytes() }
+        }
+        Json.parseToJsonElement(bytes.decodeToString().trim().lines().last()).jsonObject
+    }
+
+    private fun emptyTargets() = PeerTargets(object : SessionSource {
+        override fun read(): List<SessionRecord> = emptyList()
+        override fun list(): SessionListing = SessionListing(read())
+    })
 
     private fun startReturnHelper(dir: Path, registryDir: Path, sockets: PeerSockets): BoundHelper {
         val setup = HelperSetup(
@@ -377,15 +466,15 @@ class PeerNativeInboxRouteTest {
     private suspend fun toolFixture(
         dir: Path,
         catalog: HarnessCatalog,
-        outbox: RecordingOutbox = RecordingOutbox(),
-        receiptSocket: String = "/tmp/cc-socks/return.sock",
+        outbox: PeerOutbox = RecordingOutbox(),
+        sockets: FixtureSockets = FixtureSockets(),
     ): ToolFixture {
         val owner = checkNotNull(PeerOwnerProcesses().capture(ProcessHandle.current().pid()))
-        val caller = sessionRecord("caller-id", "source", owner.pid, "/tmp/cc-socks/caller.sock")
+        val caller = sessionRecord("caller-id", "source", owner.pid, sockets.caller)
         val bound = caller.copy(process = caller.process.copy(procStart = owner.procStart))
         val thread = "b58750d1-4092-48ae-a943-f503581362b7"
         val name = "codex-$thread"
-        val codex = sessionRecord(thread, name, owner.pid + 1, "/tmp/cc-socks/codex.sock")
+        val codex = sessionRecord(thread, name, owner.pid + 1, sockets.codex)
         val store = PeerStore(dir.resolve("settings"))
         store.attachCodex(CodexRequest(CodexBinding(thread, dir.toString(), null), dir.toString()))
         val key = MgmtKey(StatePaths(baseOverride = dir.resolve("control")))
@@ -394,7 +483,7 @@ class PeerNativeInboxRouteTest {
 
             override fun list(): SessionListing = SessionListing(read())
         }
-        val services = PeerServices(RecordingHelpers(receiptSocket), PeerMailbox(store, dir.resolve("state"), log))
+        val services = PeerServices(RecordingHelpers(sockets.receipt), PeerMailbox(store, dir.resolve("state"), log))
         val parts = PeerParts(store, registry, outbox, PeerServiceSource { services }, log, catalog)
         val parent = ProcessHandle.current().parent().orElseThrow().pid()
         val fallbackOwner = checkNotNull(PeerOwnerProcesses().capture(parent))

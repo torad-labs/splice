@@ -110,20 +110,22 @@ internal class PeerSendRoute(
         if (wait is SendAllowance.Wait) {
             return PeerReplies.refuse(HttpStatusCode.TooManyRequests, "over the send rate", wait.seconds)
         }
-        val socket = senderSocket(config)
-        return if (socket == null) {
+        val sender = sender(config)
+        return if (sender == null) {
             PeerReplies.unavailable(HttpStatusCode.ServiceUnavailable, HELPER_NOT_RUNNING)
         } else {
-            val sender = PeerSender(socket = socket, name = config.name)
             submit(config, sending, HarnessPeerMessage(target, sending.text, sender, sending.request.id, local))
         }
     }
 
-    private suspend fun senderSocket(config: PeerConfig): String? {
+    /** A Claude Code peer's receipts go to its return helper's journal, and its replies to its session's own inbox,
+     *  which is the only one its conversation reads; every other peer takes both on one socket. */
+    private suspend fun sender(config: PeerConfig): PeerSender? {
         val name = config.name
-        if (name !in store.nativeInboxes) return parts.helpers?.running(name)?.socket
-        val nativeSocket = drivers.ownerRecord(name)?.process?.messagingSocketPath ?: return null
-        return if (store.inboxRouting.usesReturnHelper(name)) receiptSocket(name) else nativeSocket
+        if (name !in store.nativeInboxes) return parts.helpers?.running(name)?.socket?.let { PeerSender(it, name) }
+        val inbox = drivers.ownerRecord(name)?.process?.messagingSocketPath ?: return null
+        val receipts = if (store.inboxRouting.usesReturnHelper(name)) receiptSocket(name) else inbox
+        return receipts?.let { PeerSender(it, name, replySocket = inbox) }
     }
 
     private suspend fun receiptSocket(name: String): String? {

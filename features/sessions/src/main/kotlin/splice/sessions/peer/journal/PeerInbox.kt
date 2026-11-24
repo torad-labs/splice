@@ -114,7 +114,7 @@ public class PeerInbox(
         return when {
             !limits.admit(frame.claimedAddress) -> Verdict(DeliveryStatus.REFUSED, PEER_DETAIL_RATE)
             bytes > PEER_INBOUND_TEXT_BYTES -> Verdict(DeliveryStatus.REFUSED, PEER_DETAIL_SIZE)
-            else -> journaled(JournalRecords.MessageEntry(id, sender, auth, frame.text, bytes))
+            else -> journaled(JournalRecords.MessageEntry(id, sender, auth, frame.text, bytes, frame.replyAddress))
         }
     }
 

@@ -58,7 +58,7 @@ internal class LocalPeerDelivery(private val io: CoroutineDispatcher) : HarnessP
     }
 
     private fun handOff(message: HarnessPeerMessage, binding: LocalPeerBinding): SendOutcome {
-        val address = message.sender.address.takeIf(PeerWire::attributeSafe)
+        val address = message.sender.replyAddress.takeIf(PeerWire::attributeSafe)
         val framed = PeerWire.envelope(message.text, address, message.sender.name)
         val id = message.id ?: UUID.randomUUID().toString()
         return when (binding.config.driver) {

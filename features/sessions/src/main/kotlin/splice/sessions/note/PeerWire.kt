@@ -118,7 +118,8 @@ public object PeerWire {
         put("token", token)
     }.toString() + "\n"
 
-    /** A peer's message to the session [sessionId], from [sender]: `from` and `from-name` both come from the sender. */
+    /** A peer's message to the session [sessionId], from [sender]: `from` and `from-name` both come from the sender.
+     *  The frame's `from` takes the receipts and the envelope's `from` takes the replies (spec, Facts). */
     internal fun encodeMessage(msgId: String, sessionId: String?, text: String, sender: PeerSender): String =
         buildJsonObject {
             put("msgV", WIRE_VERSION)
@@ -131,7 +132,7 @@ public object PeerWire {
                 "message",
                 buildJsonObject {
                     put("role", "user")
-                    put("content", JsonPrimitive(envelope(text, sender.address, sender.name)))
+                    put("content", JsonPrimitive(envelope(text, sender.replyAddress, sender.name)))
                 },
             )
         }.toString() + "\n"
@@ -186,12 +187,14 @@ public object PeerWire {
     private fun message(obj: JsonObject): InboundFrame.Message? {
         val content = contentText((obj["message"] as? JsonObject)?.get("content")) ?: return null
         val envelope = unwrap(content)
+        val from = JsonScalars.str(obj, "from")
         return InboundFrame.Message(
             msgId = JsonScalars.str(obj, "msg_id"),
-            claimedAddress = JsonScalars.str(obj, "from") ?: envelope.fromAddress,
+            claimedAddress = from ?: envelope.fromAddress,
             claimedName = envelope.fromName,
             text = envelope.text,
             sessionId = JsonScalars.str(obj, "session_id"),
+            replyAddress = envelope.fromAddress ?: from,
         )
     }
 

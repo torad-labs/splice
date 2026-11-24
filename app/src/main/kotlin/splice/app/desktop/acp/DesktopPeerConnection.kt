@@ -187,7 +187,7 @@ internal class DesktopPeerConnection(
     }
 
     private fun wrapEnvelope(frame: InboundFrame.Message): String {
-        val address = frame.claimedAddress?.takeIf(PeerWire::attributeSafe)
+        val address = frame.replyAddress?.takeIf(PeerWire::attributeSafe)
         val name = frame.claimedName?.takeIf(PeerWire::attributeSafe) ?: ACP_PEER_DEFAULT_SENDER
         return PeerWire.envelope(frame.text, address, name)
     }

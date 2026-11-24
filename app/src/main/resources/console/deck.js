@@ -383,9 +383,9 @@ window.Deck = (() => {
   function meter(u, color) { const m = h('span', 'meter'), i = h('i'); i.style.setProperty('--u', Math.min(1, u)); if (color) m.style.setProperty('--pc', color); m.append(i); m.set = v => i.style.setProperty('--u', Math.min(1, v)); return m; }
 
   /* ---------- settings: a value is picked, never typed, and its row says what the change did ----------
-     choice(options, value, onPick, { label, max }): options [{ v, label, sub? }]. Up to `max` (5) options are a
-       segmented track whose thumb slides to the pick; more are one button that opens a menu. Returns the element with
-       .set(v) (no onPick) and .value().
+     choice(options, value, onPick, { label, max, empty }): options [{ v, label, sub? }]. Up to `max` (5) options are a
+       segmented track whose thumb slides to the pick; more are one button that opens a menu, which says `empty` (Not set)
+       while no option is the value. Returns the element with .set(v) (no onPick) and .value().
      notch(stops, value, onPick, { label, format, marks }): stops [{ v, label }] in order, drawn as dots on a line with
        their labels under it; the thumb snaps to a stop (press a dot, drag, or the arrow keys). A value that is not a
        stop is placed where it falls. marks [{ at, word, c, show }] are facts drawn on the same line (this week's
@@ -403,7 +403,7 @@ window.Deck = (() => {
       const b = h('button', 'pickbtn press'); b.type = 'button';
       const word = h('span', 'pickbtn-v'), chev = h('span', 'pickbtn-chev'); chev.innerHTML = ICON.chev;
       b.append(word, chev);
-      const paint = () => { const x = options.find(x => x.v === cur); word.textContent = x ? x.label : String(cur); };
+      const paint = () => { const x = options.find(x => x.v === cur); word.textContent = x ? x.label : cur == null ? (o.empty || 'Not set') : String(cur); };
       b.addEventListener('click', () => openMenu(b, options.map(x => ({ label: x.label, sub: x.sub, checked: x.v === cur, run: () => { if (x.v === cur) return; cur = x.v; paint(); onPick && onPick(x.v); } })), 'down'));
       if (o.label) b.setAttribute('aria-label', o.label);
       paint(); b.set = v => { cur = v; paint(); }; Object.defineProperty(b, "value", { value: () => cur, configurable: true });

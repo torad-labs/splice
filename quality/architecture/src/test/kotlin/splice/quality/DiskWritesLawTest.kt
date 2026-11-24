@@ -338,6 +338,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/desktop/setup/DesktopAppLibrary.kt" to mapOf(".writeText(" to 1),
     "app/src/main/kotlin/splice/app/desktop/setup/DesktopLibraryFiles.kt" to
         mapOf("writeAtomic(" to 1, "writeAtomic0600(" to 1),
+    // The Desktop policy values set in the console, in the desktop-policy-overrides.json README row.
+    "app/src/main/kotlin/splice/app/desktop/setup/DesktopPolicyOverrides.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/desktop/setup/DesktopPrograms.kt" to mapOf("writeAtomic(" to 3),
     // An extension or skill copied whole into Desktop's gateway profile: staged beside it, then moved into place.
     "app/src/main/kotlin/splice/app/desktop/setup/DesktopTreeCopy.kt" to

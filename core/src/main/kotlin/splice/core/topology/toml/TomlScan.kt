@@ -158,3 +158,18 @@ internal class TomlScan(private val text: String) {
 
     private fun lineEnd(from: Int): Int = text.indexOf('\n', from).let { if (it < 0) text.length else it + 1 }
 }
+
+/** The line each table and key of a TOML file the loader already parsed begins on, read statement by statement
+ *  (TomlScan): a line inside a multi-line string is text, so a `[heads.one]` in a prompt's example is never that
+ *  table, nor a `port = 1` in it that key. */
+public class TomlLines(private val text: String) {
+    private val entries = TomlScan(text).entries()
+
+    /** The line (1-based) that assigns [path], a dotted key's segments included, else the header of the table [path]
+     *  sits in, else null. */
+    public fun of(path: List<String>): Int? {
+        val found = entries.firstOrNull { it.kind == TomlKind.KEY && it.path == path }
+            ?: entries.firstOrNull { it.kind == TomlKind.TABLE && it.path == path.dropLast(1) }
+        return found?.let { entry -> text.substring(0, entry.start).count { it == '\n' } + 1 }
+    }
+}

@@ -21,6 +21,7 @@ import io.ktor.http.URLDecodeException
 import io.ktor.http.decodeURLQueryComponent
 import io.ktor.server.application.ApplicationCall
 import splice.core.util.LogSink
+import splice.server.web.BrowserCookieWire
 import splice.share.OutwardHeaders
 
 internal class ProviderBound(private val keys: ServerKeys, private val log: LogSink) {
@@ -37,29 +38,39 @@ internal class ProviderBound(private val keys: ServerKeys, private val log: LogS
      *  one of this server's keys. Empty when nothing is left. */
     fun query(sent: String): String {
         val parameters = sent.removePrefix("?").split('&')
-        val free = parameters.filterNot { keys.heldIn(it) || keys.heldIn(decoded(it)) }
+        val free = parameters.filterNot { credentialIn(it) || credentialIn(decoded(it)) }
         if (free.size == parameters.size) return sent
         // A parameter's name is the caller's own text and may be the key itself, so the log names none.
         val left = parameters.size - free.size
-        log("[server] did not forward $left parameter(s) of a query: each carried one of this server's keys\n")
+        log("[server] did not forward $left parameter(s) of a query: each carried a server credential\n")
         return free.joinToString("&").takeIf(String::isNotEmpty)?.let { "?$it" }.orEmpty()
     }
 
     /** The headers among [names], lowercase, in which [call] sent one of this server's keys, anywhere in a value.
      *  None of them goes on, and the log names each and never what it held. */
     fun keyed(call: ApplicationCall, names: List<String>): Set<String> {
-        val keyed = names.filter { name -> call.request.headers.getAll(name).orEmpty().any(keys::heldIn) }
+        val keyed = credentialHeaders(call, names)
         if (keyed.isNotEmpty()) {
-            log("[server] did not forward ${keyed.joinToString()}: it carried one of this server's keys\n")
+            log("[server] did not forward ${keyed.joinToString()}: it carried a server credential\n")
         }
-        return keyed.toSet()
+        return keyed
     }
+
+    /** The team door does not know the provider's header allowlist yet. Do not log client-chosen header names. */
+    fun withheld(call: ApplicationCall): Set<String> =
+        credentialHeaders(call, call.request.headers.names().map(String::lowercase))
+
+    private fun credentialHeaders(call: ApplicationCall, names: List<String>): Set<String> = names.filterTo(
+        linkedSetOf(),
+    ) { name -> call.request.headers.getAll(name).orEmpty().any(::credentialIn) }
 
     /** The headers among [names] that [call] sent and that hold none of this server's keys, by lowercase name. */
     private fun keyFree(call: ApplicationCall, names: List<String>): Set<String> {
         val sent = names.filter { name -> call.request.headers.getAll(name).orEmpty().any(String::isNotBlank) }
         return sent.toSet() - keyed(call, sent)
     }
+
+    private fun credentialIn(text: String): Boolean = keys.heldIn(text) || BrowserCookieWire.heldIn(text)
 
     private fun decoded(parameter: String): String = try {
         parameter.decodeURLQueryComponent()

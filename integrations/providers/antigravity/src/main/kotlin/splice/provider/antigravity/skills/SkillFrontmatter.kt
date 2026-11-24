@@ -42,17 +42,27 @@ internal class SkillFrontmatter(private val log: LogSink) {
 
     /** [key]'s value. A quoted scalar keeps a `#` inside its quotes and drops what follows the closing quote; a plain
      *  one ends at a YAML comment (see [plain]); a block scalar (`>`, `|`, a comment allowed after the indicator)
-     *  keeps its lines whole. */
+     *  keeps its lines whole. An empty `key:` takes its value from the first indented line below it, read the same
+     *  way. */
     private fun scalar(front: List<String>, key: String): String {
-        val index = front.indexOfFirst { it.startsWith("$key:") }
-        if (index < 0) return ""
-        val inline = front[index].substringAfter(':').trim()
+        val keyAt = front.indexOfFirst { it.startsWith("$key:") }
+        if (keyAt < 0) return ""
+        val index = valueStart(front, keyAt)
+        val inline = if (index == keyAt) front[keyAt].substringAfter(':').trim() else front[index].trim()
         val quote = inline.firstOrNull()?.takeIf { it == '\'' || it == '"' }
         return when {
             quote != null -> folded(inline, front, index).let { unquote(it, quote) ?: it }
             uncommented(inline) in BLOCK_MARKERS -> folded("", front, index)
             else -> plain(sequenceOf(inline) + continuation(front, index))
         }
+    }
+
+    /** The line the value of the key at [keyAt] starts on: that line, or for an empty `key:` (a comment aside) the
+     *  first non-blank indented line below it, when there is one. */
+    private fun valueStart(front: List<String>, keyAt: Int): Int {
+        if (uncommented(front[keyAt].substringAfter(':')).isNotEmpty()) return keyAt
+        val below = continuation(front, keyAt).indexOfFirst { it.isNotBlank() }
+        return if (below < 0) keyAt else keyAt + 1 + below
     }
 
     /** A plain scalar's [lines] folded with spaces, each cut at its comment; a line that carried one ends it. */
@@ -66,10 +76,10 @@ internal class SkillFrontmatter(private val log: LogSink) {
         return parts.joinToString(" ")
     }
 
-    /** [line] without its YAML comment: a `#` at its start or after whitespace begins one, while a `#` inside a word
-     *  (`C#`, `a#b`) is text. Trimmed. */
+    /** [line] without its YAML comment: a `#` at its start or after a space or tab begins one, while a `#` inside a
+     *  word (`C#`, `a#b`) or after another space character (a no-break space) is text. Trimmed. */
     private fun uncommented(line: String): String {
-        val at = line.indices.firstOrNull { line[it] == '#' && (it == 0 || line[it - 1].isWhitespace()) }
+        val at = line.indices.firstOrNull { line[it] == '#' && (it == 0 || line[it - 1] in COMMENT_SPACE) }
         return (if (at == null) line else line.substring(0, at)).trim()
     }
 
@@ -105,6 +115,9 @@ internal class SkillFrontmatter(private val log: LogSink) {
 }
 
 private val BLOCK_MARKERS = setOf(">", ">-", ">+", "|", "|-", "|+")
+
+/** YAML's white space before a comment's `#`: a space or a tab, never a no-break space. */
+private val COMMENT_SPACE = setOf(' ', '\t')
 private val HEADING_PREFIX = Regex("^#{1,6}(?:\\s+|$)")
 
 // why: autocomplete needs a short summary even when the first paragraph is one very long line.

@@ -105,6 +105,38 @@ internal class SkillParsingTest {
         assertEquals(SkillUse(byUser = true, byModel = true), empty.use)
     }
 
+    @Test
+    fun `a value on the line below an empty key is read as quoted, block or plain where it starts`() {
+        val item = skill(
+            """
+            ---
+            name:
+              moved # the folder name stays out of it
+            description:  # the value follows
+              "Use # here,
+              then more" # after quote
+            argument-hint:
+              '<it''s>'
+            user-invocable:
+              "fAlSe" # model only
+            disable-model-invocation:
+              'TrUe'
+            ---
+            Body
+            """.trimIndent(),
+        )
+        assertEquals("moved", item.name)
+        assertEquals("Use # here, then more", item.description)
+        assertEquals("<it's>", item.hint)
+        assertEquals(SkillUse(byUser = false, byModel = false), item.use)
+    }
+
+    @Test
+    fun `only a space or tab before a hash starts a comment`() {
+        val item = skill("---\ndescription: Keep #reference\targument-free\t# tab comment\n---\nBody\n")
+        assertEquals("Keep #reference\targument-free", item.description)
+    }
+
     private fun skill(markdown: String): LocalSkillItem {
         val project = Files.createDirectories(tmp.resolve("project"))
         Files.createDirectory(project.resolve(".git"))

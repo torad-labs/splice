@@ -118,6 +118,7 @@ internal class TeamDoor : TeamGateway {
                     meta.keepaliveMs,
                     meta.streamIdleMs,
                 ),
+                withheldHeaders = meta.withheldHeaders,
             )
             if (counting) route.provider.countTokens(call, turn) else route.provider.serve(call, turn)
         }

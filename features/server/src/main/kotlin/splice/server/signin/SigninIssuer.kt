@@ -75,8 +75,9 @@ internal class SigninIssuer(
                 JsonScalars.str(read, "token_endpoint").orEmpty(),
                 JsonScalars.str(read, "jwks_uri").orEmpty(),
             )
-            if (listOf(found.authorizationEndpoint, found.tokenEndpoint, found.jwksUri).any(String::isBlank)) {
-                Asked.Refused("$issuer$DISCOVERY_PATH is not an OpenID Connect discovery document")
+            val endpoints = listOf(found.authorizationEndpoint, found.tokenEndpoint, found.jwksUri)
+            if (endpoints.any { SigninRedirects.provider(it, issuer) == null }) {
+                Asked.Refused("the identity provider's discovery did not supply safe OpenID Connect endpoints")
             } else {
                 doc = found
                 Asked.Had(found)
@@ -112,7 +113,7 @@ internal class SigninIssuer(
     }
 
     private suspend fun posted(endpoint: String, form: String): Asked<HttpResponse<String>> {
-        val request = request(endpoint) ?: return unaskable(endpoint)
+        val request = request(endpoint) ?: return unaskable()
         return send(
             request.header("content-type", "application/x-www-form-urlencoded")
                 .header("accept", "application/json")
@@ -121,14 +122,13 @@ internal class SigninIssuer(
         )
     }
 
-    /** The ID token in the provider's [answered] trade, or why there is none, naming at most its OAuth error code. */
+    /** The provider's error body is not trusted to keep the code or client secret out of a refusal. */
     private fun idToken(answered: HttpResponse<String>): Asked<String> {
         val body = JsonScalars.objectOrNull(json, answered.body())
         val token = JsonScalars.str(body, "id_token")
-        val named = JsonScalars.str(body, "error")?.takeIf { it.matches(OAUTH_ERROR_CODE) }?.let { " ($it)" }
         return when {
             answered.statusCode() != HttpStatus.OK -> Asked.Refused(
-                "the identity provider refused the code (HTTP ${answered.statusCode()}${named.orEmpty()})",
+                "the identity provider refused the code (HTTP ${answered.statusCode()})",
             )
             token == null -> Asked.Refused("the identity provider sent no ID token")
             else -> Asked.Had(token)
@@ -162,13 +162,13 @@ internal class SigninIssuer(
     }
 
     private suspend fun get(uri: String): Asked<String> {
-        val request = request(uri) ?: return unaskable(uri)
+        val request = request(uri) ?: return unaskable()
         return when (val sent = send(request.GET().build())) {
             is Asked.Refused -> sent
             is Asked.Had -> if (sent.value.statusCode() == HttpStatus.OK) {
                 Asked.Had(sent.value.body())
             } else {
-                Asked.Refused("$uri answered HTTP ${sent.value.statusCode()}")
+                Asked.Refused("the identity provider answered HTTP ${sent.value.statusCode()}")
             }
         }
     }
@@ -180,8 +180,8 @@ internal class SigninIssuer(
         null
     }
 
-    private fun unaskable(uri: String): Asked.Refused =
-        Asked.Refused("the identity provider names $uri, which is not an address the server can ask")
+    private fun unaskable(): Asked.Refused =
+        Asked.Refused("the identity provider did not supply an address the server can ask")
 
     private suspend fun send(request: HttpRequest): Asked<HttpResponse<String>> {
         val sent = withContext(io) {
@@ -198,9 +198,6 @@ internal class SigninIssuer(
 }
 
 private const val DISCOVERY_PATH = "/.well-known/openid-configuration"
-
-// An OAuth error code is a short word of letters and underscores (RFC 6749 5.2); anything else is not repeated.
-private val OAUTH_ERROR_CODE = Regex("^[a-z_]{1,40}$")
 
 // why: the provider is a large service on the internet; five seconds to connect says one that is down while the
 // person still waits at the laptop.

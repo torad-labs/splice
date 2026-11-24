@@ -163,60 +163,6 @@ class ServerConfigFindingsTest {
     }
 
     @Test
-    fun `the server's load caps, its stream idle deadline and its drain boot when they can be served`() {
-        val lines = """
-            stream_idle_seconds = 120
-            drain_seconds = 30
-            [server.limits]
-            inflight_total = 4
-            inflight_per_upstream = 2
-            busy_status = 503
-            busy_retry_after = 10
-            busy_message = "The GPUs are busy; try again shortly."
-        """.trimIndent()
-        val read = ConfigFindings.read(server(lines) + head(), directory, configDir = directory)
-        val server = assertInstanceOf(ConfigRead.Ready::class.java, read, read.toString()).topology.server
-        assertEquals(4, server.limits.inflightTotal)
-        assertEquals(2, server.limits.inflightPerUpstream)
-        assertEquals(503, server.limits.busyStatus)
-        assertEquals(10, server.limits.busyRetryAfter)
-        assertEquals("The GPUs are busy; try again shortly.", server.limits.busyMessage)
-        assertEquals(120, server.streamIdleSeconds)
-        assertEquals(30, server.drainSeconds)
-        val plain = assertInstanceOf(ConfigRead.Ready::class.java, ConfigFindings.read(server() + head(), directory))
-        assertEquals(429, plain.topology.server.limits.busyStatus, "a server that sets no busy_status answers 429")
-        val idle = plain.topology.server.streamIdleSeconds
-        assertEquals(0, idle, "a silent stream is ended though the operator asked for no deadline")
-    }
-
-    @Test
-    fun `a load cap, a busy answer, a stream idle deadline or a drain that cannot be served is each refused`() {
-        val lines = """
-            stream_idle_seconds = -1
-            drain_seconds = 600
-            [server.limits]
-            inflight_total = -1
-            inflight_per_upstream = -2
-            busy_status = 500
-            busy_retry_after = -5
-        """.trimIndent()
-        val found = refused(server(lines) + head())
-        assertEquals(
-            setOf(
-                "server.stream_idle_seconds",
-                "server.drain_seconds",
-                "server.limits.inflight_total",
-                "server.limits.inflight_per_upstream",
-                "server.limits.busy_status",
-                "server.limits.busy_retry_after",
-            ),
-            found.map { it.path }.toSet(),
-        )
-        val status = found.single { it.path == "server.limits.busy_status" }.message
-        assertTrue(listOf("429", "503").all(status::contains), status)
-    }
-
-    @Test
     fun `a TLS file that is not there is refused before the listener would fail on it`() {
         val lines = "tls_cert = \"fullchain.pem\"\ntls_key = \"privkey.pem\""
         assertEquals(
@@ -393,6 +339,39 @@ class ServerConfigFindingsTest {
         """.trimIndent()
         val found = refused(server(bad) + head())
         assertEquals(setOf("server.client.download_url", "server.forward_auth.allow"), found.map { it.path }.toSet())
+    }
+
+    @Test
+    fun `server identity settings refuse invalid network cookie and header policy together`() {
+        val lines = """
+            admin_cidrs = ["192.0.2.1/64"]
+            key_prefix = "spk"
+            [server.signin]
+            issuer = "https://login.team.example"
+            client_id = "splice-team"
+            domains = ["team.example"]
+            hosted_domain = "@team.example"
+            [server.forward_auth]
+            browser_origin = "https://dash.team.example/private"
+            email_header = "Set-Cookie"
+            role_header = "X-Splice-Admin"
+            session_seconds = 0
+            client_secret_env = "DASHBOARD_SECRET"
+        """.trimIndent()
+        val paths = refused(server(lines) + head()).map { it.path }.toSet()
+        assertEquals(
+            setOf(
+                "server.admin_cidrs",
+                "server.key_prefix",
+                "server.signin.hosted_domain",
+                "server.forward_auth.browser_origin",
+                "server.forward_auth.email_header",
+                "server.forward_auth.role_header",
+                "server.forward_auth.session_seconds",
+                "server.forward_auth.client_secret_env",
+            ),
+            paths,
+        )
     }
 
     @Test

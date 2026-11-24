@@ -139,7 +139,7 @@ internal class ConfigFixSession(
     private fun fixInFile(finding: TopologyFinding): Boolean? {
         val line = finding.line
         val editable = line?.takeIf { assignmentAt(it) != null }
-        val offers = FixOffers(finding, editable != null)
+        val offers = FixOffers(finding, editable != null) { move -> MoveFix(check, checked).candidate(move, line) }
         showMenu(line, offers)
         return when (val answer = prompter.ask("> ")?.trim()?.lowercase()) {
             "e" -> edit(line)
@@ -152,7 +152,7 @@ internal class ConfigFixSession(
     /** A change to the file the person chose from [offers], or false when the answer is not one that is on offer. */
     private fun changed(answer: String, offers: FixOffers, line: Int?): Boolean = when {
         answer !in offers.letters -> false
-        answer == "m" -> moveValue(requireNotNull(offers.move), line)
+        answer == "m" -> moveValue(requireNotNull(offers.move), requireNotNull(offers.moved))
         line == null -> false
         answer == "d" -> removeLine(line)
         else -> setValue(line)
@@ -165,7 +165,13 @@ internal class ConfigFixSession(
 
     private fun showMenu(line: Int?, offers: FixOffers) {
         val choices = listOfNotNull(
-            offers.move?.let { "[m] move it to [${it.table}], where the gateway reads it" },
+            offers.move?.let { move ->
+                if (move.companions.isEmpty()) {
+                    "[m] move it to [${move.table}], where the gateway reads it"
+                } else {
+                    "[m] move ${move.named} to [${move.table}] together, where the gateway reads them as one"
+                }
+            },
             "[d] remove the line".takeIf { offers.removable },
             "[v] set a new value".takeIf { offers.settable },
         )
@@ -182,16 +188,12 @@ internal class ConfigFixSession(
         ?.takeIf { it.contains('=') && !it.trimStart().startsWith("#") }
         ?.substringBefore('=')?.trim()
 
-    /** [move]'s value put where the gateway reads it, and, unless the head keeps it, taken off its line, while the file
-     *  still holds the bytes the finding came from ([rewrite]). */
-    private fun moveValue(move: GatewayMove, line: Int?): Boolean {
-        val moved = MoveFix(check, checked).candidate(move, line)
-        if (moved == null) {
-            output.line("  that value cannot be moved here without risking splice.toml; edit it, or move it yourself")
-            return false
-        }
+    /** [move]'s value put where the gateway reads it, and, unless the head keeps it, taken off its line, as the file
+     *  [moved] that was worked out before the move was offered, while the file still holds the bytes the finding came
+     *  from ([rewrite]). */
+    private fun moveValue(move: GatewayMove, moved: List<String>): Boolean {
         backupOnce()
-        output.line("moving ${move.key} to [${move.table}]")
+        output.line("moving ${move.named} to [${move.table}]")
         rewrite { moved }
         return true
     }
@@ -226,7 +228,8 @@ internal class ConfigFixSession(
     /** [change] applied to the file under the lock the console's and `splice add`'s saves take, and only while the
      *  file still holds the bytes the finding came from: a save that moved a line while he typed would put this
      *  edit on another setting, so nothing is written, and the findings are read again from what is there now. An
-     *  edit one of them had prepared from the older bytes is refused at its own re-read instead. */
+     *  edit one of them had prepared from the older bytes is refused at its own re-read instead. The file keeps the
+     *  line ends it was written with, `\r\n` or `\n`. */
     private inline fun rewrite(change: (List<String>) -> List<String>) {
         backupOnce()
         TopologyFileLock.held(file) {
@@ -235,7 +238,8 @@ internal class ConfigFixSession(
                 output.line("${file.fileName} changed meanwhile; nothing was written, and its findings are read again")
             } else {
                 val lines = now.lines().let { if (now.endsWith("\n")) it.dropLast(1) else it }
-                SecureFile.writeAtomic0600(file, change(lines).joinToString("\n", postfix = "\n"))
+                val end = if (now.contains("\r\n")) "\r\n" else "\n"
+                SecureFile.writeAtomic0600(file, change(lines).joinToString(end, postfix = end))
             }
         }
     }

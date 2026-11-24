@@ -24,7 +24,8 @@ internal class ServerChecks(
 
     fun findings(): List<TopologyFinding> = if (server.declared) {
         listen() + exclusive() + commands() + tls() + people() + limits() + client() + signin() + telemetry() +
-            ServerLedgerChecks(server).findings() + ServerMeteringChecks(topology).findings()
+            ServerIdentityChecks(server).findings() + ServerLedgerChecks(server).findings() +
+            ServerMeteringChecks(topology).findings()
     } else {
         emptyList()
     }
@@ -151,27 +152,14 @@ internal class ServerChecks(
         )
     }
 
-    /** F9, F13 & F15: minimum version, http(s) download URL, and forward_auth allowlist entries. */
-    private fun client(): List<TopologyFinding> {
-        val domainShape = Regex("""^@[^@\s.]+(\.[^@\s.]+)+$""")
-        val auth = server.forwardAuth
-        val authValid = auth == null || auth.allow.all { entry ->
-            val trimmed = entry.trim()
-            PersonEmails.read(trimmed) != null || domainShape.matches(trimmed)
-        }
-        return listOfNotNull(
-            TopologyFinding("$SERVER_TABLE.client.minimum", "must be a splice version, as in \"0.10.0\"")
-                .takeIf { server.client.minimum != null && server.client.floor == null },
-            TopologyFinding(
-                "$SERVER_TABLE.client.download_url",
-                "must be an http(s) URL, as in \"https://releases.team.example/splice\"",
-            ).takeIf { server.client.downloadUrl?.let { url -> webUrl(url.trim()) == null } == true },
-            TopologyFinding(
-                "$SERVER_TABLE.forward_auth.allow",
-                "each entry must be an email or @domain, as in \"ada@team.example\" or \"@team.example\"",
-            ).takeUnless { authValid },
-        )
-    }
+    private fun client(): List<TopologyFinding> = listOfNotNull(
+        TopologyFinding("$SERVER_TABLE.client.minimum", "must be a splice version, as in \"0.10.0\"")
+            .takeIf { server.client.minimum != null && server.client.floor == null },
+        TopologyFinding(
+            "$SERVER_TABLE.client.download_url",
+            "must be an http(s) URL, as in \"https://releases.team.example/splice\"",
+        ).takeIf { server.client.downloadUrl?.let { url -> webUrl(url.trim()) == null } == true },
+    )
 
     /** F8: a relay forwards to a collector, named by its http(s) URL. */
     private fun telemetry(): List<TopologyFinding> {

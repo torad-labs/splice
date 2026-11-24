@@ -224,13 +224,23 @@ public data class TopologyFinding(
 
 /** Where a value goes to when a finding is fixed by moving it: [key] in the table [table] (both spelled as TOML), with
  *  [value] as written there, or, when it is null, the value of the line the finding names. [keepsSource] leaves that
- *  line where it is; every other move takes it out of where it was. */
+ *  line where it is; every other move takes it out of where it was. [companions] are keys of that line's table that
+ *  move with it, each with the value on its own line: a head's standing prompt is text, file and mode together
+ *  (HeadFallbacks), and half of it on the provider would serve another prompt and leave the rest a new warning. */
 public data class GatewayMove(
     val table: String,
     val key: String,
     val value: String?,
     val keepsSource: Boolean,
-)
+    val companions: List<String> = emptyList(),
+) {
+    /** Every key the move puts in [table]: [key], then its [companions]. */
+    val keys: List<String> get() = listOf(key) + companions
+
+    /** [keys] as a person reads them: `a`, `a and b`, `a, b and c`. */
+    val named: String
+        get() = keys.dropLast(1).joinToString(", ").let { if (it.isEmpty()) key else "$it and ${keys.last()}" }
+}
 
 /** What a write did. A refusal is a value, never a throw: the route answers it as findings. */
 public sealed class TopologyWriteResult {

@@ -455,6 +455,12 @@ off, as the TOML key above does, and once you set it, it decides in the key's pl
 effect when the daemon starts again. The whole map, prefix by prefix, is kept in `~/.splice/state/desktop-harnesses.json`
 for a Desktop session launcher to read; splice's own launcher runs GPT sessions on Claude Code whichever you choose.
 
+The harness catalog includes Claude Code, Codex and Antigravity. To list an additional local ACP harness, add a
+`[harnesses.<id>]` table to `splice.toml` with `name`, optional `description`, `protocol = "acp"`, and `argv`
+starting with an absolute executable path. Edit this table in the file, not through the console. The daemon
+validates it at startup and publishes only the ID, name and description in the version-1 Desktop map. Listing
+a harness does not route models to it, change the console's choices, or register a peer.
+
 `splice desktop off` takes out exactly what `on` put in: splice's configuration and its library entry, and the
 credential program; a configuration you had applied before (or applied in Desktop since) is applied again, and a library
 folder splice made is removed. `splice uninstall --all` does the same. A managed configuration

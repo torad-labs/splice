@@ -8,6 +8,7 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -35,6 +36,9 @@ internal class McpMount(
     private val hub = host.hub?.let(::McpHubRoutes)
     private val access = McpAccessRoutes(guard.mcpAccessKey)
     private val harnesses = harnessesOverride ?: statePaths?.let { McpHarnessRoutes(it, log = log) }
+
+    /** Shared mutex serializing `/api/mcp/harnesses/{import,sync}` with daemon background auto-sync. */
+    internal val harnessSyncLock: Mutex? get() = harnesses?.mutation
 
     override fun register(route: Route) {
         route.get("/api/mcp") { guard.guarded(call) { ControlReplies.respond(call, status()) } }

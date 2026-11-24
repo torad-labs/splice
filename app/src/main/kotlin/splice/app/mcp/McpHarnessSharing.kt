@@ -37,7 +37,7 @@ internal class McpHarnessSharing(
 
     fun endpointPrefix(): String {
         val useFront = seams.frontLive.live(paths.stateDir, MCP_HUB_FRONT_PORT)
-        val port = if (useFront) MCP_HUB_FRONT_PORT else AdminSupport.controlPort(env)
+        val port = if (useFront) MCP_HUB_FRONT_PORT else seams.controlPortOverride ?: AdminSupport.controlPort(env)
         return "http://127.0.0.1:$port/mcp/"
     }
 

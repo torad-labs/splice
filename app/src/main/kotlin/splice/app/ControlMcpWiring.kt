@@ -3,8 +3,12 @@
 // four values the console and /health read once the host is built. ControlPlane holds one and asks it at start.
 package splice.app
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.sync.Mutex
 import splice.app.control.McpServiceRefresh
 import splice.app.control.api.McpHubVerdict
+import splice.app.mcp.McpHarnessAutoSync
+import splice.app.mcp.McpHarnessSyncSeams
 import splice.app.mcp.TempleMcpStartup
 import splice.app.modes.ModeMcp
 import splice.app.modes.ModesNow
@@ -22,6 +26,8 @@ import splice.control.mcp.McpIdleBudget
 import splice.control.mcp.McpRequestBudget
 import splice.control.mcp.McpServerCeiling
 import splice.core.config.Knob
+import splice.core.config.StateDirOrigin
+import splice.core.config.UserHome
 import splice.core.mcp.McpToolResultStore
 import splice.launch.LaunchSpec
 import splice.upstream.codemode.ProcessDispatchers
@@ -113,6 +119,27 @@ internal class ControlMcpWiring(
     fun services(host: McpHost, home: Path): McpServiceRefresh = McpServiceRefresh {
         val frontPort = MCP_HUB_FRONT_PORT.takeIf { hubLive.live() }
         TempleMcpStartup(statePaths, log).refresh(host, home, frontPort)
+    }
+
+    /** Refreshes registered MCP services and starts opt-in background harness sync once the control port is bound. */
+    suspend fun onControlBound(
+        services: McpServiceRefresh,
+        scope: CoroutineScope,
+        home: Path,
+        controlPort: Int,
+        syncLock: Mutex? = null,
+    ) {
+        services.refresh()
+        val syncHome = if (statePaths.origin == StateDirOrigin.OVERRIDE) home else UserHome.dir(statePaths.envReader)
+        val seams = McpHarnessSyncSeams(controlPortOverride = controlPort.takeIf { it > 0 })
+        McpHarnessAutoSync(
+            home = syncHome,
+            paths = statePaths,
+            env = statePaths.envReader,
+            log = log,
+            seams = seams,
+            syncLock = syncLock ?: Mutex(),
+        ).watch(scope)
     }
 
     /** V4-110: the shared MCP host's four lifecycle values, each a READER over the knob layer (daemon-global)

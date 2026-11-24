@@ -1,5 +1,7 @@
 // Writes Splice MCP servers into Antigravity's `~/.gemini/config/mcp_config.json` atomically (0600),
-// backing up the existing file first and preserving all unrelated keys and agy-only servers.
+// backing up the existing file first, tracking Splice-managed server names in `<state>/agy-mcp-managed.json`
+// so removed servers are pruned cleanly, removing demonstrably dead entries, and preserving valid
+// unrelated keys and user-authored agy-only servers.
 package splice.app.mcp
 
 import kotlinx.serialization.json.Json
@@ -14,6 +16,7 @@ import splice.core.config.StatePaths
 import splice.core.mcp.MCP_BACKUP_HASH_CHARS
 import splice.core.topology.TopologyFileTarget
 import splice.core.util.JsonScalars
+import splice.core.util.LogSink
 import splice.core.util.SecureFile
 import java.io.IOException
 import java.nio.file.Files
@@ -25,27 +28,52 @@ private const val AGY_BACKUP_DIR = "mcp-sync-backups"
 private const val AGY_SERVERS_KEY = "mcpServers"
 
 /** Syncs Splice MCP entries into Antigravity's `mcp_config.json` in agy's native `serverUrl`/`headers` shape. */
-internal class AgyMcpConfigWriter(private val paths: StatePaths) {
+internal class AgyMcpConfigWriter(
+    private val paths: StatePaths,
+    private val staleEntries: AgyMcpStaleEntries = AgyMcpStaleEntries(),
+    private val log: LogSink = LogSink {},
+) {
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
         prettyPrint = true
     }
+    private val managedState = AgyMcpManagedState(paths)
+    private val urlAuth = McpUrlAuthNormalizer()
+    private val normalizer = McpEntryNormalizer()
 
     /** Writes [entries] (canonical Splice-planned JSON entries) into [configFile]. Returns true when modified. */
-    fun sync(configFile: Path, entries: Map<String, JsonObject>): Boolean {
-        if (entries.isEmpty()) return false
+    fun sync(configFile: Path, entries: Map<String, JsonObject>, pruneStale: Boolean = true): Boolean {
+        val encodedEntries = encodeAll(entries)
+        val previouslyManaged = managedState.read()
         val target = TopologyFileTarget.of(configFile)
         val existingText = readExisting(target)
+        if (existingText == null && encodedEntries.isEmpty()) {
+            if (previouslyManaged.isNotEmpty()) managedState.write(emptySet())
+            return false
+        }
         val root = parseExisting(existingText)
         val currentServers = (root[AGY_SERVERS_KEY] as? JsonObject).orEmpty()
-        val (mergedServers, changed) = mergeEntries(currentServers, entries)
-        if (!changed && existingText != null) return false
+        val (mergedServers, changed) = mergeEntries(currentServers, encodedEntries, previouslyManaged, pruneStale)
+        val nextManaged = encodedEntries.keys
+        if (!changed && existingText != null) {
+            if (nextManaged != previouslyManaged) managedState.write(nextManaged)
+            return false
+        }
         val updatedRoot = buildUpdatedRoot(root, mergedServers)
         val rendered = json.encodeToString(JsonObject.serializer(), updatedRoot) + "\n"
         if (existingText != null) backup(existingText)
         SecureFile.writeAtomic0600(target, rendered)
+        managedState.write(nextManaged)
         return true
+    }
+
+    private fun encodeAll(entries: Map<String, JsonObject>): Map<String, JsonObject> {
+        val out = LinkedHashMap<String, JsonObject>()
+        entries.entries.sortedBy { it.key }.forEach { (name, canonical) ->
+            encodeForAgy(canonical)?.let { out[name] = it }
+        }
+        return out
     }
 
     private fun parseExisting(existingText: String?): JsonObject {
@@ -56,18 +84,66 @@ internal class AgyMcpConfigWriter(private val paths: StatePaths) {
 
     private fun mergeEntries(
         currentServers: Map<String, JsonElement>,
-        entries: Map<String, JsonObject>,
+        encodedEntries: Map<String, JsonObject>,
+        previouslyManaged: Set<String>,
+        pruneStale: Boolean,
     ): Pair<Map<String, JsonElement>, Boolean> {
         val merged = LinkedHashMap<String, JsonElement>(currentServers)
+        val removed = pruneUnwanted(merged, encodedEntries.keys, previouslyManaged, pruneStale)
+        val upserted = upsertEntries(merged, encodedEntries)
+        return merged to (removed || upserted)
+    }
+
+    private fun pruneUnwanted(
+        merged: MutableMap<String, JsonElement>,
+        activeNames: Set<String>,
+        previouslyManaged: Set<String>,
+        pruneStale: Boolean,
+    ): Boolean {
+        val removedManaged = mutableListOf<String>()
+        val prunedDead = mutableListOf<String>()
+        val candidates = merged.entries.filter { it.key !in activeNames }.toList()
+        candidates.forEach { (name, element) ->
+            val dead = classifyRemoval(name, element as? JsonObject, previouslyManaged, pruneStale) ?: return@forEach
+            merged.remove(name)
+            if (dead) prunedDead += name else removedManaged += name
+        }
+        if (removedManaged.isNotEmpty()) {
+            log("[mcp-sync] agy: removed ${removedManaged.sorted().joinToString(", ")}\n")
+        }
+        if (prunedDead.isNotEmpty()) {
+            log("[mcp-sync] agy: pruned stale entries ${prunedDead.sorted().joinToString(", ")}\n")
+        }
+        return removedManaged.isNotEmpty() || prunedDead.isNotEmpty()
+    }
+
+    /** Returns false for a removed Splice-managed entry, true for a dead entry, or null to preserve. */
+    private fun classifyRemoval(
+        name: String,
+        obj: JsonObject?,
+        previouslyManaged: Set<String>,
+        pruneStale: Boolean,
+    ): Boolean? {
+        val wasManaged = name in previouslyManaged || (obj != null && normalizer.isSpliceLoopbackEntry(obj))
+        return when {
+            wasManaged -> false
+            pruneStale && obj != null && staleEntries.isDead(name, obj) -> true
+            else -> null
+        }
+    }
+
+    private fun upsertEntries(
+        merged: MutableMap<String, JsonElement>,
+        encodedEntries: Map<String, JsonObject>,
+    ): Boolean {
         var changed = false
-        entries.entries.sortedBy { it.key }.forEach { (name, canonical) ->
-            val encoded = encodeForAgy(canonical)
-            if (encoded != null && merged[name] != encoded) {
+        encodedEntries.forEach { (name, encoded) ->
+            if (merged[name] != encoded) {
                 merged[name] = encoded
                 changed = true
             }
         }
-        return merged to changed
+        return changed
     }
 
     private fun buildUpdatedRoot(root: JsonObject, mergedServers: Map<String, JsonElement>): JsonObject =
@@ -89,15 +165,17 @@ internal class AgyMcpConfigWriter(private val paths: StatePaths) {
         }
     }
 
-    private fun encodeHttp(url: String, headers: JsonObject?): JsonObject = buildJsonObject {
-        put("disabled", false)
-        val cleanHeaders = stringMap(headers)
-        if (cleanHeaders.isNotEmpty()) {
-            putJsonObject("headers") {
-                cleanHeaders.entries.sortedBy { it.key }.forEach { (k, v) -> put(k, v) }
+    private fun encodeHttp(url: String, headers: JsonObject?): JsonObject {
+        val normalized = urlAuth.normalize(url, stringMap(headers))
+        return buildJsonObject {
+            put("disabled", false)
+            if (normalized.headers.isNotEmpty()) {
+                putJsonObject("headers") {
+                    normalized.headers.entries.sortedBy { it.key }.forEach { (k, v) -> put(k, v) }
+                }
             }
+            put("serverUrl", normalized.url)
         }
-        put("serverUrl", url)
     }
 
     private fun encodeStdio(command: String, canonical: JsonObject): JsonObject = buildJsonObject {

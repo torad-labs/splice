@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "default_harness": "claude-code",
+  "harnesses": [
+    {
+      "id": "claude-code",
+      "name": "Claude Code (Splice)",
+      "description": "Claude Code started through Splice's gateway, on the model the session picked"
+    },
+    {
+      "id": "codex",
+      "name": "Codex CLI",
+      "description": "OpenAI's Codex CLI, started by a session launcher that reads Splice's harness map"
+    },
+    {
+      "id": "antigravity",
+      "name": "Antigravity",
+      "description": "Google's agy, started through `splice desktop acp` in place of Claude Code"
+    }
+  ],
+  "families": [
+    {"family": "openai", "harness": "codex", "enabled": true, "set_by": "console"},
+    {"family": "antigravity", "harness": "antigravity", "enabled": false, "set_by": "splice.toml"}
+  ],
+  "switches": [
+    {"prefix": "claude-codex--", "provider": "codex", "family": "openai", "harness": "codex", "enabled": true},
+    {"prefix": "claude-oai--", "provider": "codex", "family": "openai", "harness": "codex", "enabled": true},
+    {"prefix": "claude-grok--", "provider": "grok", "family": null, "harness": "claude-code", "enabled": true},
+    {"prefix": "claude-xai--", "provider": "grok", "family": null, "harness": "claude-code", "enabled": true},
+    {"prefix": "claude-antigravity--", "provider": "antigravity", "family": "antigravity", "harness": "antigravity", "enabled": false}
+  ]
+}

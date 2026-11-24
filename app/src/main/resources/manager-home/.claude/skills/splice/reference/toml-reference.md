@@ -412,16 +412,17 @@ declare refuses the launch and lists the ones it does. Read at the daemon's star
 
 | field | type | default | effect |
 |---|---|---|---|
-| `dir` | string | `~/.splice/launch-profiles/<name>` | the profile's folder, absolute or `~/…`. Boot refuses `~/.claude`, a folder inside it or one holding it, and two profiles on one folder; a launch refuses a folder that holds files without splice's `.splice-profile` mark, or whose mark names another profile |
+| `dir` | string | `~/.splice/launch-profiles/<name>` | the profile's folder, absolute or `~/…`, read through every link. Boot refuses `~/.claude` or `~/.gemini`, a folder inside either or one holding either, and two profiles that reach one folder; a launch refuses a folder that holds files without splice's `.splice-profile` mark, or whose mark names another profile |
 | `keep_hooks` | `"own"`, `"all"` or `"none"` | `"own"` | `own`: the hooks in your `settings.json` / `settings.local.json`, and no plugin's; `all`: those and the kept plugins' own; `none`: none |
 | `drop_hooks` | array of strings | empty | taken out of the kept hooks: a hook event's name (`"SessionStart"`, `"Stop"`) drops that event's hooks and nothing else; any other word drops every settings hook whose `command` holds it |
-| `keep_plugins` | array of strings | empty | the plugins loaded, by `name@marketplace` or by name, among those you enabled; every other is written disabled. Each kept plugin is installed in the profile as links to your install, without its `hooks/` and manifest `hooks` unless `keep_hooks = "all"` |
+| `keep_plugins` | array of strings | empty | the plugins loaded, by `name@marketplace` or by name, among those you enabled and whose install the profile can carry; every other is written disabled. Each kept plugin is installed in the profile as links to your install, without its `hooks/` and manifest `hooks` unless `keep_hooks = "all"` |
 | `drop_blocks` | array of strings | empty | marked blocks taken out of `CLAUDE.md`: from a line `<!-- name -->`, `<!-- BEGIN name -->` or `# BEGIN name` to a line `<!-- /name -->`, `<!-- END name -->` or `# END name`, both included, each marker alone on its line. A block that never closes is kept and said at launch |
 | `drop_names` | array of strings | empty | skills, agents and commands whose file names start with one of these get no link in the profile |
 
 The folder holds `settings.json`, `settings.local.json` and `CLAUDE.md` (each removed while yours is absent),
 `.claude.json` (what Claude Code writes there is kept; what it lacks is seeded from your `~/.claude.json` without its
-Claude login; `mcpServers` is rebuilt each launch from yours over Splice's MCP registry), `plugins/`, one link per kept
+Claude login; no model list rides in either, neither `availableModels`, `modelPicker`, `modelOverrides`,
+`enforceAvailableModels`, the tier variables nor `additionalModelOptionsCache`; `mcpServers` is rebuilt each launch from yours over Splice's MCP registry), `plugins/`, one link per kept
 entry in `skills/`, `agents/` and `commands/` (stale links from earlier launches are removed; a file of the profile's
 own is kept and said), and `projects` and `sessions` linked to `~/.claude`'s so `--resume` sees every session.
 

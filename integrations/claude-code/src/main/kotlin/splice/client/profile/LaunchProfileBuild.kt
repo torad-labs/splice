@@ -16,6 +16,7 @@ import splice.client.desktop.SettingsRead
 import splice.core.config.UserHome
 import splice.core.topology.KEEP_HOOKS_ALL
 import splice.core.topology.LaunchProfileConfig
+import splice.core.util.PathProbe
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.io.IOException
@@ -34,12 +35,17 @@ public class LaunchProfileBuild(
     private val claudeDir = home.resolve(UserHome.CLAUDE_DIR).toAbsolutePath().normalize()
     private val json = Json { prettyPrint = true }
 
+    /** Where profile [name] is rebuilt: its folder with every link on the way resolved, so two names that reach one
+     *  folder are one folder, and every write lands where the checks looked. */
+    public fun folderOf(name: String, profile: LaunchProfileConfig): Path =
+        PathProbe.real(profile.folder(name, home, defaultRoot))
+
     /** Profile [name] rebuilt from [profile], with [doorOwned] (the variables the door sets or takes out) left out of
      *  its settings' `env`. */
     public fun build(name: String, profile: LaunchProfileConfig, doorOwned: Set<String>): ProfileBuilt {
-        val folder = profile.folder(name, home, defaultRoot).toAbsolutePath().normalize()
+        val folder = folderOf(name, profile)
         return try {
-            ProfileFolder(claudeDir).prepare(folder, name)?.let { return ProfileBuilt.Refused(it) }
+            ProfileFolder(home).prepare(folder, name, profile)?.let { return ProfileBuilt.Refused(it) }
             ProfileBuilt.Ready(folder, fill(folder, profile, doorOwned))
         } catch (failure: IOException) {
             refused(name, folder, failure)
@@ -51,32 +57,38 @@ public class LaunchProfileBuild(
     private fun refused(name: String, folder: Path, failure: Exception): ProfileBuilt =
         ProfileBuilt.Refused("profile $name could not be rebuilt in $folder: ${SafeFailureText.render(failure)}")
 
-    /** Everything the profile carries written into [folder]; what the person should know of it. */
+    /** Everything the profile carries written into [folder]; what the person should know of it. The settings files are
+     *  read first and written last: a hook event either names is an event in both, and a plugin is enabled only once
+     *  its install is in the profile. */
     private fun fill(folder: Path, profile: LaunchProfileConfig, doorOwned: Set<String>): List<String> {
-        val settings = ProfileSettings(profile, doorOwned)
-        val kept = ClaudeModelLists.settingsFiles.flatMap { file -> settingsFile(folder, file, settings) }.toSet()
-        ProfilePlugins(claudeDir, withHooks = profile.keepHooks == KEEP_HOOKS_ALL).build(folder, kept)
+        val sources = ClaudeModelLists.settingsFiles.associateWith { settingsOf(it) }
+        val settings = ProfileSettings(profile, doorOwned, sources.values.filterNotNull())
+        val wanted = sources.values.filterNotNull().flatMap(settings::keptPlugins).toSet()
+        val loaded = ProfilePlugins(claudeDir, withHooks = profile.keepHooks == KEEP_HOOKS_ALL).build(folder, wanted)
+        sources.forEach { (file, source) ->
+            settingsFile(folder.resolve(file), source?.let { settings.filtered(it, loaded) })
+        }
         val unclosed = instructions(folder, profile)
         ProfileGlobalConfig(home.resolve(Keys.CLAUDE_JSON), registry).build(folder)
         val links = ProfileLinks(claudeDir, profile.dropNames).link(folder)
         return unclosed.map { "CLAUDE.md's block \"$it\" opens and never closes, so it is kept" } + links
     }
 
-    /** `<folder>/<file>` rebuilt from `~/.claude/<file>`, or taken away while that is not there; the plugins it keeps.
-     *  A file that is there and can't be read stops the launch, so nothing it would have dropped slips through. */
-    private fun settingsFile(folder: Path, file: String, settings: ProfileSettings): Set<String> {
-        val target = folder.resolve(file)
-        return when (val read = DesktopSettingsRead(claudeDir.resolve(file)).read()) {
-            SettingsRead.Absent -> {
-                Files.deleteIfExists(target)
-                emptySet()
-            }
+    /** `~/.claude/<file>`; null while it is not there. A file that is there and can't be read stops the launch, so
+     *  nothing it would have dropped slips through. */
+    private fun settingsOf(file: String): JsonObject? =
+        when (val read = DesktopSettingsRead(claudeDir.resolve(file)).read()) {
+            SettingsRead.Absent -> null
             is SettingsRead.Unreadable -> throw IOException(read.why)
-            is SettingsRead.Held -> {
-                val filtered = settings.filtered(read.file)
-                SecureFile.writeAtomic0600(target, json.encodeToString(JsonElement.serializer(), filtered))
-                settings.keptPlugins(read.file)
-            }
+            is SettingsRead.Held -> read.file
+        }
+
+    /** [target] holding [filtered], or taken away while the person has no such file. */
+    private fun settingsFile(target: Path, filtered: JsonObject?) {
+        if (filtered == null) {
+            Files.deleteIfExists(target)
+        } else {
+            SecureFile.writeAtomic0600(target, json.encodeToString(JsonElement.serializer(), filtered))
         }
     }
 

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.config.UserHome
 import splice.core.topology.KEEP_HOOKS_ALL
 import splice.core.topology.LaunchProfileConfig
+import java.nio.file.Files
 import java.nio.file.Path
 
 class LaunchProfilesConfigTest {
@@ -107,5 +108,27 @@ class LaunchProfilesConfigTest {
         assertEquals(listOf("launch.profiles.a.dir", "launch.profiles.b.dir"), refusedAt(clash))
         val apart = "[launch.profiles.x]\n[launch.profiles.y]\ndir = \"~/launch-profiles/x\"\n"
         assertInstanceOf(ConfigRead.Ready::class.java, read(apart))
+    }
+
+    @Test
+    fun `a dir that is ~-gemini, inside it or holds it refuses boot`() {
+        for (dir in listOf("~/.gemini", "~/.gemini/work")) {
+            assertEquals(listOf("launch.profiles.work.dir"), refusedAt("[launch.profiles.work]\ndir = \"$dir\"\n"), dir)
+        }
+    }
+
+    @Test
+    fun `two profiles that reach one folder through a link refuse boot at both`() {
+        Files.createDirectories(home.resolve("real"))
+        Files.createSymbolicLink(home.resolve("alias"), home.resolve("real"))
+        val toml = "[launch.profiles.a]\ndir = \"~/real\"\n[launch.profiles.b]\ndir = \"~/alias\"\n"
+        assertEquals(listOf("launch.profiles.a.dir", "launch.profiles.b.dir"), refusedAt(toml))
+    }
+
+    @Test
+    fun `a profile with no dir is checked under the state root daemon state_dir names`() {
+        val toml = "[daemon]\nstate_dir = \"~/st/state\"\n" +
+            "[launch.profiles.a]\ndir = \"~/st/launch-profiles/b\"\n[launch.profiles.b]\n"
+        assertEquals(listOf("launch.profiles.a.dir", "launch.profiles.b.dir"), refusedAt(toml))
     }
 }

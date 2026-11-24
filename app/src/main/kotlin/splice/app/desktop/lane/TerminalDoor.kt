@@ -61,11 +61,9 @@ internal class TerminalDoor(
     /** Side-by-side launch (`splice launch claude` / `claude-splice`); always on the door once [open] has run. */
     override suspend fun launchSideBySide(): DoorLaunchSpec? = launched?.launchSideBySide()
 
-    /** `splice launch claude --profile <name>`: the side-by-side launch over the profile's folder, rebuilt first. */
-    override suspend fun launchProfile(name: String): ProfileLaunch {
-        val side = launched?.launchSideBySide() ?: return ProfileLaunch.Refused(DOOR_CLOSED)
-        return profiles.launch(name, side)
-    }
+    /** `splice launch claude --profile <name>`: [side], the side-by-side launch as the route extended it, over the
+     *  profile's folder, rebuilt first. */
+    override suspend fun launchProfile(name: String, side: DoorLaunchSpec): ProfileLaunch = profiles.launch(name, side)
 
     /** A launch of `[door.commands.<name>]` on the door; null for a name splice.toml gives no door command, and before
      *  [open]. */
@@ -89,6 +87,3 @@ internal class TerminalDoor(
 
 // What the terminal's key starts with, so it is told from Desktop's at a glance.
 private const val TERMINAL_KEY_PREFIX = "splice-terminal-"
-
-// What a profile's launch is told before the door has opened.
-private const val DOOR_CLOSED = "splice: the door is not open yet; try again in a moment"

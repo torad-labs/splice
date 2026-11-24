@@ -26,7 +26,10 @@ import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
 class LaunchProfileBuildTest {
-    @TempDir lateinit var home: Path
+    @TempDir lateinit var tmp: Path
+
+    /** The test's home as it really is: a profile's folder is where its links lead (macOS keeps temp under a link). */
+    private val home: Path get() = tmp.toRealPath()
 
     private val claude: Path get() = home.resolve(".claude")
     private val folder: Path get() = home.resolve("profile")
@@ -327,6 +330,8 @@ class LaunchProfileBuildTest {
         val installed = json(folder.resolve("plugins/installed_plugins.json")).getValue("plugins").jsonObject
         assertEquals(emptySet<String>(), installed.keys)
         assertFalse(Files.exists(folder.resolve("plugins/escape")))
+        val enabled = json(folder.resolve("settings.json")).getValue("enabledPlugins").jsonObject
+        assertEquals(JsonPrimitive(false), enabled.getValue("kept@market"), "a plugin not installed is not enabled")
     }
 
     @Test
@@ -345,6 +350,81 @@ class LaunchProfileBuildTest {
         build(profile)
         val manifest = json(mirror.resolve(".claude-plugin/plugin.json"))
         assertEquals("new", manifest.getValue("description").jsonPrimitive.content, "a changed plugin is rebuilt")
+    }
+
+    @Test
+    fun `~-gemini, an empty one included, or a folder inside it is never a profile's`() {
+        person()
+        Files.createDirectories(home.resolve(".gemini"))
+        for (dir in listOf(home.resolve(".gemini"), home.resolve(".gemini/profile"))) {
+            val built = build(LaunchProfileConfig(dir = dir.toString()))
+            assertInstanceOf(ProfileBuilt.Refused::class.java, built, dir.toString())
+        }
+        assertEquals(emptyList<String>(), names(home.resolve(".gemini")), "nothing is written in ~/.gemini")
+    }
+
+    @Test
+    fun `a link planted in the plugin cache never carries a mirror out of the profile`() {
+        person()
+        val profile = LaunchProfileConfig(keepPlugins = listOf("kept"))
+        build(profile)
+        val outside = home.resolve("outside")
+        Files.createDirectories(outside)
+        val market = folder.resolve("plugins/cache/market")
+        ProfileTree().clear(market)
+        Files.createSymbolicLink(market, outside)
+        build(profile.copy(keepHooks = "all"))
+        assertEquals(emptyList<String>(), names(outside), "nothing is written through the link")
+        val installed = json(folder.resolve("plugins/installed_plugins.json")).getValue("plugins").jsonObject
+        val at = installedAt(installed, "kept@market")
+        assertTrue(at.toRealPath().startsWith(folder), at.toString())
+    }
+
+    @Test
+    fun `a manifest folder reached through a link is filtered like any other`() {
+        person()
+        val manifests = home.resolve("manifests")
+        write(manifests.resolve("plugin.json"), """{"name":"kept","hooks":{"Stop":[]}}""")
+        ProfileTree().clear(install("kept").resolve(".claude-plugin"))
+        Files.createSymbolicLink(install("kept").resolve(".claude-plugin"), manifests)
+        build(LaunchProfileConfig(keepPlugins = listOf("kept")))
+        val installed = json(folder.resolve("plugins/installed_plugins.json")).getValue("plugins").jsonObject
+        val manifestDir = installedAt(installed, "kept@market").resolve(".claude-plugin")
+        assertFalse(Files.isSymbolicLink(manifestDir), "the folder is the profile's own, filtered")
+        assertNull(json(manifestDir.resolve("plugin.json"))["hooks"])
+    }
+
+    @Test
+    fun `no model list or picker cache rides into a profile`() {
+        person()
+        write(
+            claude.resolve("settings.json"),
+            """{"theme":"dark","availableModels":["a"],"enforceAvailableModels":true,"modelPicker":{},
+               "modelOverrides":{},"env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":"x","KEEP":"1"}}""",
+        )
+        write(home.resolve(".claude.json"), """{"additionalModelOptionsCache":[{"value":"x"}],"theme":"dark"}""")
+        build(LaunchProfileConfig())
+        val settings = json(folder.resolve("settings.json"))
+        assertEquals(setOf("theme", "env"), settings.keys)
+        assertEquals(setOf("KEEP"), settings.getValue("env").jsonObject.keys)
+        assertNull(json(folder.resolve(".claude.json"))["additionalModelOptionsCache"])
+    }
+
+    @Test
+    fun `an event one settings file names is an event in the other, so its word drops nothing there`() {
+        person()
+        write(
+            claude.resolve("settings.json"),
+            """{"hooks":{"WorktreeCreate":[{"hooks":[{"type":"command","command":"make-tree.sh"}]}]}}""",
+        )
+        write(
+            claude.resolve("settings.local.json"),
+            """{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"guard-WorktreeCreate.sh"}]}]}}""",
+        )
+        build(LaunchProfileConfig(dropHooks = listOf("WorktreeCreate")))
+        assertNull(json(folder.resolve("settings.json"))["hooks"])
+        val local = json(folder.resolve("settings.local.json")).getValue("hooks").jsonObject
+        assertEquals(setOf("PreToolUse"), local.keys)
     }
 
     private fun names(dir: Path): List<String> =

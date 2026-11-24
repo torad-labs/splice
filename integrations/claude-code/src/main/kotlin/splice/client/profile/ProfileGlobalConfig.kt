@@ -3,12 +3,14 @@
 // earlier sessions of the profile is kept, what it lacks is seeded from the person's own file (onboarding, folder
 // trust, each project's settings), and `mcpServers` is rebuilt at every launch: the person's own servers, and Splice's
 // MCP user registry's where the person has none of that name. A Claude login is never carried: the door's key is the
-// session's. The file can hold servers' keys, so it is written owner-only, and no value in it is ever said.
+// session's. Nor is a picker cache (additionalModelOptionsCache): the gateway's /v1/models is the one list. The
+// file can hold servers' keys, so it is written owner-only, and no value in it is ever said.
 package splice.client.profile
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import splice.client.ClaudeModelLists
 import splice.client.Keys
 import splice.client.desktop.DesktopSettingsRead
 import splice.client.desktop.SettingsRead
@@ -29,7 +31,7 @@ internal class ProfileGlobalConfig(
         val file = folder.resolve(Keys.CLAUDE_JSON)
         val own = read(file).orEmpty()
         val yours = read(personal).orEmpty().filterKeys { it !in NEVER_CARRIED }
-        val seeded = yours.filterKeys { it !in own } + own
+        val seeded = (yours.filterKeys { it !in own } + own).filterKeys { it != ClaudeModelLists.STATE_CACHE }
         val projects = JsonObject(objectAt(yours, Keys.PROJECTS) + objectAt(own, Keys.PROJECTS))
         val servers = JsonObject(registry + objectAt(yours, Keys.MCP_SERVERS))
         val built = JsonObject(seeded + (Keys.PROJECTS to projects) + (Keys.MCP_SERVERS to servers))

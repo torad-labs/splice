@@ -26,7 +26,10 @@ import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
 class TerminalProfilesTest {
-    @TempDir lateinit var home: Path
+    @TempDir lateinit var tmp: Path
+
+    /** The test's home as it really is: a profile's folder is where its links lead (macOS keeps temp under a link). */
+    private val home: Path get() = tmp.toRealPath()
 
     private val side = DoorLaunchSpec(
         env = mapOf("ANTHROPIC_BASE_URL" to "http://127.0.0.1:3096/door", "ANTHROPIC_MODEL" to "m"),
@@ -52,6 +55,7 @@ class TerminalProfilesTest {
         assertEquals(home.resolve("work").toString(), spec.env["CLAUDE_CONFIG_DIR"])
         assertFalse("CLAUDE_CONFIG_DIR" in spec.unset)
         assertEquals(side.overlay, spec.overlay)
+        assertEquals(side.window, spec.window, "the door's own values ride through")
         val env = Json.parseToJsonElement(home.resolve("work/settings.json").readText()).jsonObject.getValue("env")
         assertEquals(setOf("KEEP"), env.jsonObject.keys, "the door's own variables stay the door's")
     }
@@ -75,6 +79,26 @@ class TerminalProfilesTest {
         val folder = home.resolve("work")
         assertEquals(home.resolve(".claude/skills/mine"), Files.readSymbolicLink(folder.resolve("skills/mine")))
         assertTrue(folder.resolve("settings.json").readText().contains("dark"))
+    }
+
+    @Test
+    fun `two profiles whose dirs reach one folder through a link never rebuild it both`() {
+        Files.createDirectories(home.resolve(".claude"))
+        Files.createDirectories(home.resolve("shared"))
+        Files.createSymbolicLink(home.resolve("alias"), home.resolve("shared"))
+        val declared = mapOf(
+            "a" to LaunchProfileConfig(dir = home.resolve("shared").toString()),
+            "b" to LaunchProfileConfig(dir = home.resolve("alias").toString()),
+        )
+        val registry = McpUserRegistry(StatePaths(home.resolve("state")))
+        val profiles = TerminalProfiles(declared, home, home.resolve("root"), registry, Dispatchers.IO)
+        val names = (1..PARALLEL_LAUNCHES).map { if (it % 2 == 0) "a" else "b" }
+        val launches = runBlocking(Dispatchers.IO) {
+            names.map { name -> async { name to profiles.launch(name, side) } }.awaitAll()
+        }
+        val readyBy = launches.groupBy({ it.first }, { it.second is ProfileLaunch.Ready })
+        val outcome = readyBy.mapValues { (_, ready) -> ready.distinct() }
+        assertEquals(setOf(listOf(true), listOf(false)), outcome.values.toSet(), launches.toString())
     }
 }
 

@@ -29,19 +29,18 @@ class SideBySideLaunchTest {
     private val door = object : ClaudeDoor {
         override suspend fun launch(): DoorLaunchSpec = side
 
-        override suspend fun launchProfile(name: String): ProfileLaunch =
+        override suspend fun launchProfile(name: String, side: DoorLaunchSpec): ProfileLaunch =
             if (name != "work") {
                 ProfileLaunch.Refused("splice: no launch profile named '$name'")
             } else {
-                ProfileLaunch.Ready(
-                    side.copy(env = side.env + ("CLAUDE_CONFIG_DIR" to "/profiles/work")),
-                )
+                ProfileLaunch.Ready(side.copy(env = side.env + ("CLAUDE_CONFIG_DIR" to "/profiles/work")))
             }
 
         override fun onDoor(): Boolean = true
     }
 
-    private fun start(vararg args: String) = runBlocking { SideBySideLaunch(door).start(side, args.toList()) }
+    private fun start(vararg args: String, plain: DoorLaunchSpec = side) =
+        runBlocking { SideBySideLaunch(door).start(plain, args.toList()) }
 
     @Test
     fun `--profile and --profile= name the profile, and Claude Code gets the rest in order`() {
@@ -83,7 +82,21 @@ class SideBySideLaunchTest {
         assertFalse("CLAUDE_CONFIG_DIR" in launched.unset, launched.unset.toString())
         assertFalse("--profile" in launched.argv, launched.argv.toString())
     }
+
+    @Test
+    fun `a profile's launch keeps the wall, timers and window the route gave the door's launch`() {
+        val extended = side.copy(wallMs = EXTENDED_WALL_MS)
+        val ready = assertInstanceOf(
+            SideBySideLaunch.Started.Ready::class.java,
+            start("--profile", "work", plain = extended),
+        )
+        assertEquals(EXTENDED_WALL_MS, ready.spec.wallMs)
+        assertEquals(SESSION_WINDOW, ready.spec.window)
+    }
 }
 
 // why: any window does here; this is the one a door session declares by default, 200k tokens.
 private const val SESSION_WINDOW = 200_000L
+
+// why: a head's 15-minute wall, longer than the door's own, as the route extends a launch to outlive it.
+private const val EXTENDED_WALL_MS = 900_000L

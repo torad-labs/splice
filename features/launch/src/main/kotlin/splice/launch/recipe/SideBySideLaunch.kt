@@ -11,7 +11,7 @@ internal class SideBySideLaunch(private val door: ClaudeDoor) {
         val split = split(args)
         split.problem?.let { return Started.Refused(it) }
         val name = split.profile ?: return Started.Ready(plain, split.rest)
-        return when (val launch = door.launchProfile(name)) {
+        return when (val launch = door.launchProfile(name, plain)) {
             is ProfileLaunch.Ready -> Started.Ready(launch.spec, split.rest)
             is ProfileLaunch.Refused -> Started.Refused(launch.reason)
         }

@@ -15,6 +15,7 @@ import splice.core.topology.LaunchProfileConfig
 import splice.launch.recipe.DoorLaunchSpec
 import splice.launch.recipe.ProfileLaunch
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 
 internal class TerminalProfiles(
     private val profiles: Map<String, LaunchProfileConfig>,
@@ -26,15 +27,18 @@ internal class TerminalProfiles(
     /** Where a rebuild's file work runs, off the request's own thread. */
     private val io: CoroutineDispatcher,
 ) {
-    /** One lock per profile: two launches of one profile rebuild its folder one after the other, never at once. */
-    private val rebuilding = profiles.mapValues { Mutex() }
+    /** One lock per folder, by where it really is: two launches that rebuild one folder, of one profile or of two whose
+     *  dirs reach it through a link, run one after the other, its ownership check and mark included. */
+    private val rebuilding = ConcurrentHashMap<Path, Mutex>()
 
     /** [side], the door's side-by-side launch, moved into profile [name]'s folder once it is rebuilt. */
     suspend fun launch(name: String, side: DoorLaunchSpec): ProfileLaunch {
         val profile = profiles[name] ?: return ProfileLaunch.Refused(unknown(name))
         val owned = side.env.keys + side.unset
-        val built = rebuilding.getValue(name).withLock {
-            withContext(io) { LaunchProfileBuild(home, root, registry.entries()).build(name, profile, owned) }
+        val build = withContext(io) { LaunchProfileBuild(home, root, registry.entries()) }
+        val folder = withContext(io) { build.folderOf(name, profile) }
+        val built = rebuilding.computeIfAbsent(folder) { Mutex() }.withLock {
+            withContext(io) { build.build(name, profile, owned) }
         }
         return when (built) {
             is ProfileBuilt.Refused -> ProfileLaunch.Refused("splice: ${built.reason}")

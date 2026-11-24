@@ -24,8 +24,9 @@ internal class ProfilePlugins(
 ) {
     private val json = Json { prettyPrint = true }
 
-    /** [folder]'s `plugins/` brought to the plugins [kept], by id. */
-    fun build(folder: Path, kept: Set<String>) {
+    /** [folder]'s `plugins/` brought to the plugins [kept], by id; the ids of those installed there. A plugin with no
+     *  install record the cache can take is not installed, and so is not enabled either. */
+    fun build(folder: Path, kept: Set<String>): Set<String> {
         val plugins = folder.resolve(PLUGINS_DIR)
         if (Files.isSymbolicLink(plugins)) Files.delete(plugins)
         val staging = plugins.resolve(STAGING)
@@ -44,6 +45,7 @@ internal class ProfilePlugins(
         val listed = installed?.let { JsonObject(it + (PLUGIN_RECORDS to JsonObject(records))) }
         carry(plugins.resolve(INSTALLED_PLUGINS_JSON), listed)
         carry(plugins.resolve(KNOWN_MARKETPLACES_JSON), read(yours.resolve(KNOWN_MARKETPLACES_JSON)))
+        return records.keys
     }
 
     private fun read(file: Path): JsonObject? = (DesktopSettingsRead(file).read() as? SettingsRead.Held)?.file

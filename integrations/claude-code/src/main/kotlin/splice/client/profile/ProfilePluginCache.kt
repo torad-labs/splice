@@ -16,7 +16,9 @@ import splice.client.desktop.SettingsRead
 import splice.client.mcp.CLAUDE_PLUGIN_DIR
 import splice.client.mcp.PLUGIN_JSON_FILE
 import splice.core.util.JsonScalars
+import splice.core.util.PathProbe
 import splice.core.util.SecureFile
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
@@ -55,8 +57,8 @@ internal class ProfilePluginCache(
 
     /** The mirrors an earlier launch made that this one no longer keeps, taken away. */
     fun dropUnkept() {
-        before.keys.filter { it !in placed }.map { Paths.get(it) }.filter { it.startsWith(cache) && it != cache }
-            .forEach(ProfileTree(maxEntries)::clear)
+        val gone = before.keys.filter { it !in placed }.map { Paths.get(it) }
+        gone.filter { it.startsWith(cache) && it != cache && inside(it) }.forEach(ProfileTree(maxEntries)::clear)
     }
 
     /** [target] a mirror of [source]: left as it is while it mirrors the same thing, rebuilt and swapped in
@@ -71,10 +73,10 @@ internal class ProfilePluginCache(
 
     /** [target] rebuilt from [source] aside, then moved into place whole; the one it replaces taken away after. */
     private fun place(source: Path, target: Path) {
-        Files.createDirectories(staging)
+        within(staging)
         val built = Files.createTempDirectory(staging, MIRROR_PREFIX)
         fill(source, built)
-        Files.createDirectories(target.parent)
+        within(target.parent)
         val old = staging.resolve("${built.fileName}$OLD_SUFFIX")
             .takeIf { Files.exists(target, LinkOption.NOFOLLOW_LINKS) }
             ?.also { Files.move(target, it, StandardCopyOption.ATOMIC_MOVE) }
@@ -82,14 +84,34 @@ internal class ProfilePluginCache(
         old?.let(ProfileTree(maxEntries)::clear)
     }
 
+    /** [dir] made a real folder in the profile's plugins folder: a link on the way, which could lead out of it, is
+     *  taken away as a link, and a folder that still resolves outside is refused before anything is written there. */
+    private fun within(dir: Path) {
+        val root = plugins()
+        var at = root
+        root.relativize(dir).forEach { part ->
+            at = at.resolve(part)
+            if (Files.isSymbolicLink(at)) Files.delete(at)
+        }
+        Files.createDirectories(dir)
+        if (!inside(dir)) throw IOException("$dir leads out of the profile; nothing is written there")
+    }
+
+    /** Whether [path] resolves inside the profile's plugins folder. */
+    private fun inside(path: Path): Boolean = PathProbe.real(path).startsWith(PathProbe.real(plugins()))
+
+    private fun plugins(): Path = cache.parent
+
     /** [target], links to [source]'s entries, without the plugin's hooks unless they ride. */
     private fun fill(source: Path, target: Path) {
         entries(source).forEach { entry ->
             val name = entry.fileName.toString()
             when {
                 name == Keys.HOOKS && !withHooks -> Unit
-                name == CLAUDE_PLUGIN_DIR && !withHooks && Files.isDirectory(entry, LinkOption.NOFOLLOW_LINKS) ->
-                    manifest(entry, target.resolve(name))
+                // the manifest folder is filtered however it is reached, a link to one included; one that is no folder
+                // is left out, since its hooks could not be taken out of it
+                name == CLAUDE_PLUGIN_DIR && !withHooks ->
+                    if (Files.isDirectory(entry)) manifest(entry, target.resolve(name))
                 else -> Files.createSymbolicLink(target.resolve(name), entry)
             }
         }

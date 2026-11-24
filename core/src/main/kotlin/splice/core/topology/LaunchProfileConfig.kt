@@ -11,6 +11,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
+import splice.core.util.PathProbe
 import java.nio.file.Path
 import java.nio.file.Paths
 
@@ -50,6 +51,18 @@ public data class LaunchProfileConfig(
         }
         return Paths.get(expanded).normalize()
     }
+
+    /** Why [folder] can never be a profile's: it is, sits inside or holds a folder splice never writes, `~/.claude`
+     *  (which a profile is rebuilt from) or `~/.gemini` (Google's tools' own), each compared through every link on the
+     *  way; null when it may be one. */
+    public fun refusal(folder: Path, home: Path): String? {
+        val where = PathProbe.real(folder)
+        val kept = KEPT_OUT.firstOrNull { name ->
+            val root = PathProbe.real(home.resolve(name))
+            where.startsWith(root) || root.startsWith(where)
+        }
+        return kept?.let { "is ~/$it, inside it or holds it, and a profile never writes there" }
+    }
 }
 
 /** [LaunchProfileConfig.keepHooks]: the hooks the person's settings files declare, and no plugin's. The default. */
@@ -69,10 +82,13 @@ private const val HOME_MARK = "~"
 internal class LaunchProfileChecks(
     private val topology: Topology,
     private val home: Path = UserHome.dir(),
-    /** Where a profile with no `dir` lives: the same root the launch builds it under. */
-    private val defaultRoot: Path = StatePaths(homeDir = home).launchProfilesDir,
+    /** Where a profile with no `dir` lives: the root the launch builds it under, in the state `[daemon] state_dir`
+     *  names when it names one. */
+    private val defaultRoot: Path = (
+        topology.daemon.stateDir?.takeIf(String::isNotBlank)?.let { UserHome.declared(it, home) }
+            ?.let { StatePaths(baseOverride = it) } ?: StatePaths(homeDir = home)
+        ).launchProfilesDir,
 ) {
-    private val claudeDir = home.resolve(UserHome.CLAUDE_DIR).normalize()
 
     fun findings(): List<TopologyFinding> {
         val profiles = topology.launch.profiles
@@ -85,17 +101,11 @@ internal class LaunchProfileChecks(
     private fun name(name: String): TopologyFinding? =
         TopologyFinding("launch.profiles.$name", PROFILE_NAME_RULE).takeUnless { profileName.matches(name) }
 
-    /** A `dir` that is relative, or is, holds or sits inside `~/.claude`. */
+    /** A `dir` that is relative, or is, holds or sits inside a folder no profile may be in. */
     private fun dir(name: String, profile: LaunchProfileConfig): TopologyFinding? {
         val raw = profile.dir?.takeIf(String::isNotBlank)
         val folder = profile.folder(name, home, defaultRoot)
-        val why = when {
-            raw != null && !folder.isAbsolute -> "must be an absolute folder or start with ~/"
-            folder == claudeDir -> "is ~/.claude itself, which a profile is rebuilt from and never written to"
-            folder.startsWith(claudeDir) -> "is inside ~/.claude, which a profile is rebuilt from and never written to"
-            claudeDir.startsWith(folder) -> "holds ~/.claude, which a profile is rebuilt from and never written to"
-            else -> null
-        }
+        val why = if (raw != null && !folder.isAbsolute) RELATIVE_RULE else profile.refusal(folder, home)
         return why?.let { TopologyFinding("launch.profiles.$name.dir", "$it; name a folder of the profile's own") }
     }
 
@@ -123,9 +133,10 @@ internal class LaunchProfileChecks(
         return blank + marker + prefix
     }
 
-    /** Two profiles over one folder would rebuild each other's. */
+    /** Two profiles over one folder would rebuild each other's. One folder is one folder however it is reached, a
+     *  link included. */
     private fun shared(profiles: Map<String, LaunchProfileConfig>): List<TopologyFinding> =
-        profiles.entries.groupBy { (name, profile) -> profile.folder(name, home, defaultRoot) }
+        profiles.entries.groupBy { (name, profile) -> PathProbe.real(profile.folder(name, home, defaultRoot)) }
             .values.filter { it.size > 1 }
             .flatMap { same -> same.map { it.key } }
             .map { TopologyFinding("launch.profiles.$it.dir", "is another profile's folder too; give each its own") }
@@ -144,3 +155,8 @@ private const val MARKER_RULE = "each marker must fit on one line and hold no --
 private const val PREFIX_RULE = "each prefix is the start of a name, so it holds no /"
 
 private const val COMMENT_END = "-->"
+
+private const val RELATIVE_RULE = "must be an absolute folder or start with ~/"
+
+// The folders under the home a profile is never in, nor holds: Claude Code's own, and Google's tools'.
+private val KEPT_OUT = listOf(UserHome.CLAUDE_DIR, ".gemini")

@@ -11,29 +11,25 @@ A peak here is the memory high-water mark of the run's own processes (cgroup `me
 
 ## Where gradle runs
 
-With `rig` on PATH, the gradle slot sends a run to another of your machines (`tools/gate/src/lib/elsewhere.ts`): the
-pre-push Gradle tier, `gate run`, and any build, test or check a `./gradlew` asks for, since the root wrapper runs every
-one through the slot. A run goes to a machine of this one's system (a Linux machine's runs go to Linux machines), so
-its verdict is the one it would have here. The fat jar is built there too, on any of your machines, packing every
-platform's code-mode engine (`-Psplice.allPlatforms=true`) so that it runs on the machine it comes back to, and rig brings
-`app/build/libs/app-all.jar` back once the build passes. When no machine has room, the slot asks again every 30 s for as long as it would wait for its lock
-(`GRADLE_SLOT_WAIT_S`), then fails with 75; it never builds here in its place. A run stays here on CI, when a task makes
-another file this machine reads, and when `SPLICE_GRADLE_HERE=1` is set for a run that needs this machine. Nothing
-has to be set for a run to go: `rig` on PATH is what sends it.
+With `on-box` or `on-mac` on PATH, the Gradle slot sends runs off-host. Linux uses `on-box` and macOS uses
+`on-mac`; before Gradle starts the slot verifies the remote OS and architecture. The runner copies the current
+tree, serializes runs in its remote checkout, and needs Bun and JDK 21 there. Pre-push sends the clean pushed
+commit, not the live checkout. Do not put credentials in the tree you send to a build runner.
 
-The pre-push Gradle tier does not wait for a machine that is not there. The hook asks rig before the tier starts,
-and when rig says no machine of this system exists or answers, the tier is not started and the hook sends the push
-on its direct legs, saying that Gradle did not run (`PRE-PUSH: SENT, GRADLE NOT RUN`, and `sent:gradle-unrun` in the
-timing record). The pull request's checks run the same suites on GitHub, and main takes nothing they have not
-passed. A machine that is only busy is waited for.
+A standalone fat-jar build can use either platform (preferring the Mac). Unless you choose otherwise with
+`-Psplice.allPlatforms`, it packs every platform's code-mode engine. The slot streams
+`app/build/libs/app-all.jar` back before releasing the remote checkout and replaces the local jar only after
+the build and transfer succeed. CI and machines without either runner build in place. With a runner installed,
+tasks that need a local path or make an artifact the slot cannot return require an explicit `SPLICE_GRADLE_HERE=1`.
 
-With `rig` on PATH the hook runs none of its other builds, checks and tests on this machine either. Only the legs that
-read the commit run here: its title and attribution, the no-Python wall, the rule walls, the secret-scan allowlist,
-the module law and whether the hub's binaries are there. Every test suite, the type checks, the dependency audit and
-the Kotlin lint are not started; the hook names them (`PRE-PUSH: SENT, n CHECK(S) NOT RUN`, and `sent:legs-unrun` or
-`sent:gradle-legs-unrun` in the timing record) and the pull request's checks run them. To run a suite before a push,
-send it to another machine yourself (`rig remote run -- bun test ./tools/console/*.test.ts`), or set
-`SPLICE_GRADLE_HERE=1` for a push that this machine must judge whole.
+If the other platform's runner is installed but the matching runner is missing, pre-push reports
+`PRE-PUSH: SENT, GRADLE NOT RUN` and leaves that tier to the pull request's checks. An installed runner's failed
+connection, setup, or Gradle command fails the push; there is no local fallback. A busy runner waits for its
+checkout lock.
+
+On a machine with a runner, pre-push runs only the legs that read the commit. It names the remaining checks
+(`PRE-PUSH: SENT, n CHECK(S) NOT RUN`) and leaves them to the pull request's checks. To check before a push,
+run the relevant suite off-host yourself, for example `on-mac bun test tools/console`.
 
 ## The pre-push gate
 

@@ -587,6 +587,50 @@ describe("pre-push stops a gradle run whose push cannot pass, and records how lo
     expect(typeof lines[0]?.gradleS).toBe("number");
   });
 
+  test("pre-push checks the clean pushed tip through the supported runner, even when its slot predates it", async () => {
+    const root = oneModule();
+    const bin = dir("splice-hook-runner-");
+    // The obsolete CLI is still installed; asking it to run anything off-host is a usage error.
+    writeFileSync(join(bin, "rig"), "#!/bin/sh\nexit 64\n", { mode: 0o755 });
+    for (const runner of ["on-box", "on-mac"]) {
+      writeFileSync(join(bin, runner), '#!/bin/sh\nexec "$@"\n', { mode: 0o755 });
+    }
+    writeFile(root, "tools/gate/index.ts", `
+      if (Bun.env.SPLICE_GRADLE_HERE !== "1") process.exit(64);
+      if (!process.argv.includes(":core:check")) process.exit(65);
+      if (!(await Bun.file(${JSON.stringify(TARGET)}).text()).includes("class Probe")) process.exit(66);
+      console.log("BUILD SUCCESSFUL");
+    `);
+    git(root, ["add", "tools/gate/index.ts"]);
+    commit(root, "fix(test): judge this pushed tree");
+    writeFile(root, TARGET, "class DirtyCheckout\n");
+
+    const legs: Leg[] = [
+      { task: "gateRules", command: ["/usr/bin/true"], on: "push", inputs: ["**/*.kt"] },
+      { task: "gateTests", command: ["/usr/bin/false"], on: "push", inputs: ["**/*.kt"] },
+    ];
+    const path = Bun.env.PATH;
+    const ci = Bun.env.CI;
+    const here = Bun.env.SPLICE_GRADLE_HERE;
+    try {
+      Bun.env.PATH = `${bin}:${path ?? ""}`;
+      delete Bun.env.CI;
+      delete Bun.env.SPLICE_GRADLE_HERE;
+      const lines: PushTiming[] = [];
+      const { result, text } = await captured(() =>
+        prePush(lay(root), pushOf(root, head(root)), { openRun: () => null, legs, timings: (line) => void lines.push(line) }),
+      );
+      expect({ result, text }).toMatchObject({ result: 0, text: expect.stringContaining("PRE-PUSH: SENT, 1 CHECK(S) NOT RUN") });
+      expect(text).toContain("1 direct leg(s) and gradle");
+      expect(lines.map((line) => line.verdict)).toEqual(["sent:legs-unrun"]);
+    } finally {
+      for (const [key, value] of Object.entries({ PATH: path, CI: ci, SPLICE_GRADLE_HERE: here })) {
+        if (value === undefined) delete Bun.env[key];
+        else Bun.env[key] = value;
+      }
+    }
+  });
+
   test("a push whose gradle tier no machine could take is sent, and says gradle did not run", async () => {
     const root = oneModule();
     const lines: PushTiming[] = [];

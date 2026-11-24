@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -12,6 +13,10 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.DaemonProcess
 import splice.app.cli.CONFIG_REFUSED_EXIT
 import splice.app.cli.ConfigPreflight
+import splice.core.server.ModAnswer
+import splice.core.server.ModCaller
+import splice.core.server.ModRequest
+import splice.core.server.ModResponse
 import splice.core.util.EnvReader
 import splice.core.util.TopologyRefusal
 import splice.modes.api.Mode
@@ -29,19 +34,31 @@ import java.util.jar.JarOutputStream
 
 class ExternalModesTest {
     @Test
-    fun `a pinned jar loads its own mode alongside the shipped catalog`(@TempDir root: Path) {
+    fun `a pinned jar can serve alongside the shipped catalog with custom Desktop windows`(@TempDir root: Path) {
         val fixture = ModFixture(root)
         val bytes = modJar()
         fixture.store("demo.jar", bytes)
         fixture.config(
-            modRow("Demo release", "path", "demo.jar", pin(bytes).uppercase()) + "\n[modes.demo]\non = true",
+            modRow("Demo release", "path", "demo.jar", pin(bytes).uppercase()) +
+                """
+                [modes.demo]
+                on = true
+                server_routes = true
+                [desktop]
+                code_window = 320000
+                """.trimIndent(),
         )
 
         assertEquals(0, fixture.preflight().first)
         val start = DaemonProcess().prepare(fixture.env)
-        val mode = requireNotNull(start.boot.modes.catalog.mode("demo"))
-        assertEquals("from the pinned archive", mode.handler.resource("ui://demo"))
+        val topology = start.loaded.topology
+        assertEquals(320_000L, topology.desktop.codeWindow)
         assertNotNull(start.boot.modes.catalog.mode("template"))
+        val modes = DaemonModes(start.boot.modes.catalog, topology.modes, topology.heads.keys.toList(), fixture.state)
+        val caller = ModCaller("ada@team.example", "core", false)
+        val request = ModRequest("GET", listOf("demo"), caller, emptyMap(), emptyMap(), ByteArray(0))
+        val answer = assertInstanceOf(ModAnswer.Answered::class.java, ModeServerRoutes(modes).answer("demo", request))
+        assertEquals("from the pinned archive", answer.response?.text())
     }
 
     @Test
@@ -121,21 +138,32 @@ class ExternalModesTest {
     }
 
     @Test
-    fun `discovered names cannot shadow a shipped or another external mode`(@TempDir root: Path) {
+    fun `boot reports duplicate mode names, reserved routes and invalid Desktop windows together`(@TempDir root: Path) {
         val fixture = ModFixture(root)
         val shipped = modJar(name = "template")
         val first = modJar()
         val second = modJar(message = "another archive")
+        val reserved = modJar(name = "door")
         val path = fixture.store("shipped.jar", shipped)
         fixture.store("one.jar", first)
         fixture.store("two.jar", second)
+        fixture.store("door.jar", reserved)
         fixture.config(
             modRow("release A", "path", path.toString(), pin(shipped)) +
                 modRow("release B", "path", "one.jar", pin(first)) +
-                modRow("release C", "path", "two.jar", pin(second)),
+                modRow("release C", "path", "two.jar", pin(second)) +
+                modRow("release D", "path", "door.jar", pin(reserved)) +
+                "[modes.door]\nserver_routes = true\n[desktop]\ncode_window = 0",
         )
-        fixture.assertRefuses("mods.jar[1]", "mode name 'template' is already provided")
-        fixture.assertRefuses("mods.jar[3]", "mode name 'demo' is already provided")
+        fixture.assertRefuses(
+            "mods.jar[1]",
+            "mode name 'template' is already provided",
+            "mods.jar[3]",
+            "mode name 'demo' is already provided",
+            "modes.door.server_routes",
+            "the server's listener already answers that name",
+            "desktop.code_window",
+        )
     }
 
     @Test
@@ -252,4 +280,8 @@ class PinnedDemoMode : Mode {
 
     override fun resource(uri: String): String? =
         javaClass.getResourceAsStream("/pinned-demo.txt")?.use { it.readBytes().decodeToString() }
+
+    override fun serve(request: ModRequest): ModResponse? = resource("ui://demo")
+        ?.takeIf { request.method == "GET" && request.path == listOf("demo") }
+        ?.let { ModResponse(200, "text/plain", it.toByteArray()) }
 }

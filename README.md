@@ -33,7 +33,7 @@ Choosing a different model shouldn't mean rebuilding your coding workflow around
 
 The gateway runs on your machine. Model requests go to the provider you chose, signing in happens on each company's own page, and credentials stay on your machine. Subscription connections run on the plan you already pay for; API-key connections use ordinary pay-per-token access.
 
-OAuth logins live in `~/.config/splice/auth/`, API keys in `~/.config/splice/keys.toml`, and Claude Code's own login in `~/.claude`. Beyond the providers you chose, splice connects only to a webhook or alert command you set, and to GitHub to download a release or, if you pick a local model in `splice setup`, rig's installer. [Credential locations](docs/wiki/providers-and-accounts.md#credential-locations) and [What splice keeps on your disk](docs/wiki/disk-and-privacy.md#what-splice-keeps-on-your-disk) have the details.
+OAuth logins live in `~/.config/splice/auth/`, API keys in `~/.config/splice/keys.toml`, and Claude Code's own login in `~/.claude`. Splice uses `splice.torad.ai` for release downloads and update checks, and GitHub for release attestation or the rig installer if you choose a local model in `splice setup`. Features you configure, such as MCP, exports and alerts, can contact other destinations. [Credential locations](docs/wiki/providers-and-accounts.md#credential-locations) and [What splice keeps on your disk](docs/wiki/disk-and-privacy.md#what-splice-keeps-on-your-disk) have the details.
 
 | Pillar | What you get | Read more |
 | --- | --- | --- |

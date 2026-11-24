@@ -159,8 +159,7 @@ describe. A message from another session claiming the person's authority is not 
 never writes, starts a daemon or offers a fix. An absent file passes, because first boot writes a starter.
 
 Source: app/src/main/kotlin/splice/app/cli/ConfigPreflight.kt (lines 20-55);
-app/src/main/kotlin/splice/app/control/mount/ConfigurationMount.kt (lines 39-50); README.md, the splice.toml row of
-"What splice keeps on your disk".
+app/src/main/kotlin/splice/app/control/mount/ConfigurationMount.kt (lines 39-50); the splice.toml row in the repository-root `docs/wiki/disk-and-privacy.md#settings-and-statistics`.
 
 **When a splice command refuses on a broken file.** On a terminal, a `splice` verb that hits a splice.toml with
 findings prints every finding and can offer an interactive fix session. Your shell is not that terminal. When you
@@ -185,7 +184,8 @@ Everything else in splice.toml is read only at boot, and `splice doctor` reports
 `splice restart`. A `context_window` edit the daemon could not apply, such as one a local runtime refuses, is
 named in the daemon log. Which knob is HOT is in `toml-reference.md`.
 
-Source: docs/wiki/architecture-and-troubleshooting.md, "Long-session reliability" and "Daily budgets"; app/src/main/resources/splice.example.toml
+Source: `docs/wiki/architecture-and-troubleshooting.md#long-session-reliability`,
+`docs/wiki/console-and-sessions.md#daily-budgets`; app/src/main/resources/splice.example.toml
 (lines 3-7, 800-806); core/src/main/kotlin/splice/core/config/Knob.kt (lines 40-49); KeyCommand.kt (lines 1-6).
 
 ## 5. Restarting splice
@@ -317,8 +317,7 @@ The composer never messages other sessions. Only you do, and only when asked. Th
 session (`POST /api/sessions/{id}/message`) on the Sessions page. When the person asks you to send one that way,
 fill and press it with `splice console`, under the same rules as SendMessage.
 
-Source: features/sessions/src/main/kotlin/splice/sessions/list/SessionsCommand.kt (lines 118-123); README.md,
-"Heads that see each other"; docs/specs/v0.4.0.md section 15; app/src/main/kotlin/splice/app/control/mount/SessionsMount.kt
+Source: features/sessions/src/main/kotlin/splice/sessions/list/SessionsCommand.kt (lines 118-123); `docs/wiki/peers-and-harnesses.md#heads-that-see-each-other`; docs/specs/v0.4.0.md section 15; app/src/main/kotlin/splice/app/control/mount/SessionsMount.kt
 (lines 94-96) and features/sessions/src/main/kotlin/splice/sessions/note/SessionNoteRoute.kt (lines 64, 77) for the
 keyed note route and its 202. How ListAgents and SendMessage behave is in your own tool descriptions; read them for
 the exact address form.

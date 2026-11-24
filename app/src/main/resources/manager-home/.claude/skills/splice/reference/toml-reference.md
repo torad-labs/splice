@@ -564,4 +564,4 @@ features/harness/src/main/kotlin/splice/harness/; docs/specs/harness.md.
 | retries and timeouts | the retry and timeout knobs, section 4 | `reliability-mcp-install.md` |
 | updates | `[daemon] update_channel`, `auto_update` | `reliability-mcp-install.md` |
 
-Source: README.md (lines 274-291, budgets; lines 342-437, accounts); docs/specs/web-console.md (line 521, Teams in state).
+Source: `docs/wiki/console-and-sessions.md#daily-budgets`, `docs/wiki/providers-and-accounts.md#account-pools`; docs/specs/web-console.md (line 521, Teams in state).

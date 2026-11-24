@@ -168,7 +168,7 @@ Source: `models.js:13-14,139-187,270-330,429-466,654-707,768-916,1096`, `setting
 - `splice login`, `splice key set`, `splice add` are the person's to run. Give the exact command, wait.
 - Never read, print or copy these files. Name a key by its variable. `splice status` and `splice doctor` show presence only.
 
-Source: `docs/wiki/providers-and-accounts.md` "Credential locations", "Troubleshooting"; `app/.../cli/auth/LoginCommand.kt:38-176`.
+Source: `docs/wiki/providers-and-accounts.md#credential-locations`, `docs/wiki/architecture-and-troubleshooting.md#troubleshooting`; `app/.../cli/auth/LoginCommand.kt:38-176`.
 
 ### More than one account per provider (the pool)
 
@@ -207,7 +207,8 @@ Source: `docs/wiki/providers-and-accounts.md` "More than one ChatGPT, Grok, Kimi
 "Why is claude-grok out of quota?" Run `splice status` and `splice sessions` for the account rows, then say which account is out
 and when it resets. A head with one account has no pool: the fix is a second login or the reset.
 
-Source: `docs/wiki/providers-and-accounts.md` "More than one ChatGPT, Grok, Kimi or Muse account", "Plan usage in Claude Code"; `docs/specs/v0.4.0.md`
+Source: `docs/wiki/providers-and-accounts.md#more-than-one-chatgpt-grok-kimi-or-muse-account`,
+`docs/wiki/console-and-sessions.md#plan-usage-in-claude-code`; `docs/specs/v0.4.0.md`
 section 11 (Superseded 2026-10-03; Deviations 2026-10-10); repo `CLAUDE.md` "Code rules"; `accounts.js:369-376,801-828`.
 
 ### Pins, Claude accounts, budgets
@@ -226,7 +227,8 @@ section 11 (Superseded 2026-10-03; Deviations 2026-10-10); repo `CLAUDE.md` "Cod
   turn until midnight; a running turn finishes; a Compare send is refused too). Plan-account turns do not count; an unpriced model
   counts as unpriced, so the day can read low. Stored in `budgets.json`, applies within a second.
 
-Source: `docs/wiki/providers-and-accounts.md` "Pin a head or a session to an account", "More than one Claude login on claude", "Daily budgets";
+Source: `docs/wiki/providers-and-accounts.md#pin-a-head-or-a-session-to-an-account`,
+`docs/wiki/providers-and-accounts.md#more-than-one-claude-login-on-claude`, `docs/wiki/console-and-sessions.md#daily-budgets`;
 `app/.../auth/claude/ClaudeAccountFolders.kt:1-30`; `accounts.js:451-533,645-659,1183-1191`.
 
 ## Models and routing
@@ -423,8 +425,8 @@ Source: `docs/specs/v0.4.0.md` section 14, `features/sessions/.../http/TeamStart
   Retention windows and "Delete now" are on Settings, Your data; deleting cannot be undone, so send the person there.
 
 Source: `usage.js:17-19,125,204,215-216,250-304,306-472`, `requests.js:125-137,736`, `kit.js:248-251,599`, `perf-heads.js:49-73,181`,
-`compare.js:12,123-126,346-377`, `docs/wiki/console-and-sessions.md` "Plan usage in Claude Code", "Projects and Compare", "Content from your sessions, kept with
-nothing turned on"; `docs/specs/v0.4.0.md` sections 9, 11, 14.
+`compare.js:12,123-126,346-377`, `docs/wiki/console-and-sessions.md#plan-usage-in-claude-code`,
+`docs/wiki/console-and-sessions.md#projects-and-compare-models`, `docs/wiki/disk-and-privacy.md#content-from-your-sessions-kept-with-nothing-turned-on`; `docs/specs/v0.4.0.md` sections 9, 11, 14.
 
 ## The splice manager (you)
 
@@ -473,14 +475,14 @@ Source: `docs/specs/v0.4.0.md` section 15, `docs/wiki/console-and-sessions.md` "
 
 | Doc | Claim | What the code shows |
 |---|---|---|
-| `docs/wiki/providers-and-accounts.md` "Sign in to a ChatGPT account" | No page shows an email address | A login is named by the chosen name, else the provider-proved email, else a plan word and number (`AccountNaming.kt:49-58`; `v0.4.0.md` Superseded 2026-10-15). Account ids are never shown |
+| `docs/wiki/providers-and-accounts.md#sign-in-to-a-chatgpt-account-from-the-console-or-the-terminal` | No page shows an email address | A login is named by the chosen name, else the provider-proved email, else a plan word and number (`AccountNaming.kt:49-58`; `v0.4.0.md` Superseded 2026-10-15). Account ids are never shown |
 | `docs/specs/web-console.md` 2.6, 4.5, 2.12 | A Claude head holds no pool; no manual switch or doctor route | Claude heads have pools of splice-owned folders (`ClaudeAccountFolders.kt`); `POST /api/auth/{head}/switch` (`accounts.js:1189`) and `/api/doctor` (`models.js:75`) exist |
 | `docs/specs/web-console.md` 2.11, 2.12 | A `dashboard` verb; "only sizes and token counts are recorded" | `splice console` replaced `dashboard`; bodies are recorded by default |
 | `docs/specs/v0.4.0.md` section 9 | Six pages in the top bar | Eight (Deviation 2026-10-13) |
 | `docs/specs/v0.4.0.md` section 11 | Lowest seven-day use; return to the primary after reset | Soonest reset; stays until a limit (Superseded 2026-10-03) |
 | `AGENTS.md` | Pinned model rides `ANTHROPIC_CUSTOM_MODEL_OPTION` | No such variable in the code; the launch sets `ANTHROPIC_MODEL` (`LaunchModelEnvironment.kt:16`) |
 | `ModelCatalog.kt` header | Picker uses wrapped discovery ids | Picker rows are the materialized roster, bare ids (`LaunchService.kt:1-12`) |
-| `docs/wiki/peers-and-harnesses.md` "Heads that see each other" | A team is created with `PUT /api/teams` | That is the route; the person uses the Teams page's "New team" |
+| `docs/wiki/peers-and-harnesses.md#teams` | A team is created with `PUT /api/teams` | That is the route; the person uses the Teams page's "New team" |
 | `LogsCommand.kt` header | A missing log is empty output | Prints `[logs unavailable: ...]` |
 | `docs/specs/web-console.md` 4.14 | "one of the three hot knobs" | `Knob.kt:14-28` names dozens of LIVE knobs (skill-core counted 39; not recounted here) |
 

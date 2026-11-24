@@ -70,7 +70,9 @@ self-hosted servers on `[providers.<key>]`:
 | `picker` | Shows or hides the provider in the door's picker; a head's own `picker` wins. |
 
 `splice add provider <file|https-url> [--check]` installs a published definition, checked exactly as boot checks
-`splice.toml`; `--check` stops after checking. It is not listed in `splice add --help`. A door command of your own is
+`splice.toml`; `--check` validates the schema and merge, not whether the definition is safe. Install a provider with
+`auth.kind = "command"` only if you trust its command as a shell script: it runs with the daemon user's permissions.
+This verb is not listed in `splice add --help`. A door command of your own is
 `[door.commands.<name>]` with `provider = "<key>"`. The full grammar is in
 [docs/specs/custom-provider.md](../specs/custom-provider.md).
 

@@ -202,7 +202,13 @@ splice uninstall          # same as splice uninstall --all
 splice uninstall claudex  # one head's command only
 ```
 
-`splice uninstall` removes every command link Splice made in `~/.local/bin` (your own `claude` stays), and on Linux stops, disables and removes Splice's systemd user units. It also takes Splice's `/login` out of `~/.claude` and puts Claude Desktop back as it was before `splice desktop on`. It leaves the jar, your topology, keys, sign-ins and state on disk, so reinstalling is the install one-liner again (or `splice install` to re-link the commands of an install still on disk) and everything comes back as it was. To remove the data too, see [Clean uninstall](disk-and-privacy.md#clean-uninstall).
+`splice uninstall` removes every command link Splice made in `~/.local/bin` (your own `claude` stays), and on Linux stops, disables and removes Splice's systemd user units. It also takes Splice's `/login` out of `~/.claude` and puts Claude Desktop back as it was before `splice desktop on`. It leaves the jar, your topology, keys, sign-ins and state on disk, so you can run the install one-liner again. To re-link a default install still on disk without downloading it again, run:
+
+```bash
+SPLICE_HEAD=splice ~/.local/share/splice/splice-launch install
+```
+
+To remove the data too, see [Clean uninstall](disk-and-privacy.md#clean-uninstall).
 
 ## Related pages
 

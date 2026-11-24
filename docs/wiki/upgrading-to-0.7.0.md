@@ -154,7 +154,7 @@ flowchart TD
 
 | What you'll notice | Who it affects | What to do |
 | --- | --- | --- |
-| Head-held provider values are **warnings**, not refusals. (The first "Upgrading" bullet in the CHANGELOG says they stop the daemon; the code warns.) | Every 0.6.4 file with `[heads.*]` | Optionally `splice check-config --fix` |
+| Head-held provider values are **warnings**, not refusals. | Every 0.6.4 file with `[heads.*]` | Optionally `splice check-config --fix` |
 | Restart and upgrade **don't wait for compactions** by default, except where a restart would cut them | Scripts that relied on the full wait | Add `--wait` (or `?wait=1` on `POST /api/daemon/restart`) |
 | Bare `splice login` opens the console's **Accounts** page; `--no-browser` prints its address | Scripts that ran bare `splice login` | Name the head: `splice login <head>` |
 | `splice setup` no longer wraps plain `claude`; an existing wrap stays | New setups | Use `splice launch claude` beside it, or keep the wrap |
@@ -319,13 +319,13 @@ splice can now write `~/.codex/hooks.json` (or `$CODEX_HOME/hooks.json`) itself:
 
 ### Team Server Mode
 
-**What changed.** Nothing breaks for a 0.6.4 team server: existing `[server]` tables boot unchanged, and every `spk_…` key keeps working. 0.7.0 adds:
+**What changed.** Existing `[server]` keys are still supported, and every `spk_…` key keeps working. If `splice check-config` reports that a served head command matches another provider's key, rename either the command or the provider key before starting 0.7.0. 0.7.0 adds:
 
 - **The team door.** The keyed listener answers `POST /door/v1/messages`, `POST /door/v1/messages/count_tokens` and `GET /door/v1/models` with a person's key. Allowlists, caps, budgets and the ledger apply to the provider the model resolves to. `[server] commands` may name a provider key. The `/<command>/` routes keep working beside the door.
 - **Keys.** `[server] key_prefix` (default `"spk_"`) brands new keys. The server **admits** secrets of 32 to 128 characters, and minted keys stay 40. `POST /server/api/keys/import` imports a key from its SHA-256 hash without the secret ever traveling. Key-shaped text in headers and query strings is hash-checked, and only real server keys are withheld from upstream. A gateway turn never forwards the caller's own credential.
 - **`admin_cidrs`** restricts the listener's admin routes to the listed addresses.
 - **Forward auth.** `[server.forward_auth]` makes `/server/forward-auth` a reverse proxy's auth check for your dashboards. With `browser_origin`, browsers sign in through `[server.signin]`'s OIDC and get signed `__Host-` cookies. A server restart ends every browser session. `[server.signin] hosted_domain` adds a Workspace domain check.
-- **Client distribution.** `[server.client] download_url` lets a new laptop join with `curl -fsSL https://<server>/server/install | sh`. The server serves only the bootstrap script; the release files live at your URL.
+- **Client distribution.** `[server.client] download_url` lets a new laptop join through the [HTTPS bootstrap](team-server-mode.md#client-distribution). The server serves only the bootstrap script; the release files live at your HTTPS URL.
 - **Audit log.** Every admin action goes to `<state>/server/audit.jsonl`. Read it with `splice server audit [--tail N] [--json]`.
 - **Durable state snapshots.** `[server.backup]` snapshots keys, people, budgets, the ledger, the audit log and cost-meter intervals to a folder or an S3-compatible bucket, and restores them on a fresh disk. `splice server backup --now` takes one at once.
 - **The console's Server page** mints and revokes keys, sets people, teams and budgets, shows usage and the audit log, and triggers a backup.
@@ -417,20 +417,22 @@ splice upgrade --rollback     # also takes --wait or --now; never --to
 
 ### Before you roll back
 
-0.6.4 rejects every key 0.7.0 added, and it can't undo what 0.7.0 laid down. On 0.7.0, in this order:
+Save a copy of your current `splice.toml` and have your pre-upgrade copy ready to restore before running the rollback. If `check-config --fix` changed the file during the upgrade, its first backup may be in `<state>/config-backups/` (normally `~/.splice/state/config-backups/`).
+
+0.6.4 cannot undo what 0.7.0 laid down. While still on 0.7.0, run:
 
 ```bash
 splice claude restore --all     # 0.6.4 has no restore verb; retired heads would stay removed
 splice desktop off              # 0.6.4 can't remove the third-party configuration or its helpers
 ```
 
-Then make `splice.toml` 0.6.4-shaped. You don't need to check the result yourself: the rollback runs 0.6.4's own check first and changes nothing if it refuses. The simplest way is to put back the copy `check-config --fix` saved in `<state>/config-backups/` (by default `~/.splice/state/config-backups/`) before its first change. Otherwise remove every 0.7.0-only key in the table below, and put any value `--fix` moved to a provider back on its head. Then:
+Restore the pre-upgrade `splice.toml`. If you don't have it, use the table below to remove 0.7.0-only settings and put any value `--fix` moved to a provider back on its head. The rollback runs 0.6.4's own configuration check before it changes anything:
 
 ```bash
 splice upgrade --rollback
 ```
 
-Checked against the published 0.6.4 jar's `check-config` (exit 3 for every row except the first):
+Compatibility with the 0.6.4 configuration schema (the rollback prints the exact findings for your file):
 
 | 0.7.0-only content in `splice.toml` | 0.6.4 says |
 | --- | --- |
@@ -444,7 +446,10 @@ Checked against the published 0.6.4 jar's `check-config` (exit 3 for every row e
 | `[launch.profiles.<name>]` | "the file cannot be decoded" |
 | `[harnesses.<id>]` | "the file cannot be decoded" |
 | `[modes.<name>]` | "the file cannot be decoded" |
-| `[server]` `admin_cidrs`, `key_prefix`, `metrics_prefix`; `[server.client] download_url`; `[server.signin] hosted_domain` | `server.<name> … is not a splice.toml setting` |
+| `[server]` `admin_cidrs`, `key_prefix`, `metrics_prefix`, `drain_seconds`, `stream_idle_seconds`; `[server.signin] hosted_domain` | `server.<name> … is not a splice.toml setting` |
+| `[server.limits]` `inflight_total`, `inflight_per_upstream`, `busy_status`, `busy_retry_after`, `busy_message` | Unknown settings; remove these keys, not the whole table |
+| `[server.client]` `download_url`, `version_header`, `outdated_status`, `outdated_message`, `checkin` | Unknown settings; remove these keys, not the whole table |
+| `[server.aliases]` | Unsupported table; remove it entirely |
 | `[server.forward_auth]`, `[server.backup]`, `[server.telemetry]` (and its `identity_attributes`), `[server.cost_meters.<name>]` | "the file cannot be decoded" |
 
 "The file cannot be decoded" names no line, so search for the table yourself.

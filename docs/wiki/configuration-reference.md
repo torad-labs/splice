@@ -356,14 +356,14 @@ instructions = "Keep failing test names and their error messages."
 |---|---|---|---|
 | `listen` | string | `""` | Listener as `host:port`. |
 | `commands` | string array | empty | Commands exposed to server-key holders, by head's command or provider key. |
-| `tls_cert`, `tls_key` | string | unset | Chain and private key PEM, both or neither; relative to config dir. |
+| `tls_cert`, `tls_key` | string | unset | PEM certificate chain and unencrypted PKCS#8 PEM private key, both or neither; relative to config dir. |
 | `trusted_proxies` | string array | empty | Addresses/CIDRs whose forwarded client address is trusted. |
 | `admins` | string array | empty | Admin email identities. |
 | `admin_cidrs` | string array | empty (unrestricted) | Address/CIDR restriction on admin privilege. |
 | `keepalive_seconds` | integer | 0 | Server streamed-turn SSE keepalive interval; 0 sends none. |
 | `drain_seconds` | integer | 0 | At stop, refuse keyed requests with 503, answer `/health` `draining`, and give turns in flight up to this many seconds (45 at most). |
 | `stream_idle_seconds` | integer | 0 | End a streamed answer silent this long after its last word with an error event; 0 never times it. |
-| `aliases` | map of strings | empty | `[server.aliases]`: a one-segment path (`"/v1"`) read as a served command or `door`. |
+| `aliases` | map of strings | empty | `[server.aliases]`: a one-segment path (`"/v1"`) targeting a served head by key or command, or `"door"`. Use `"door"` for a provider served without a head; its provider key is not a valid alias target. |
 | `key_prefix` | string | `spk_` | Prefix for newly minted keys only. |
 | `metrics_prefix` | string | `splice_server_` | Literal prefix of all server Prometheus series. |
 | `limits`, `reference`, `teams`, `export`, `budgets`, `client`, `signin`, `telemetry`, `forward_auth`, `backup` | table | as below | Server controls. |
@@ -385,7 +385,7 @@ instructions = "Keep failing test names and their error messages."
 | `[server.client]` | `version_header` | string / `x-splice-client` | Header the client version is read from. |
 | `[server.client]` | `outdated_status`, `outdated_message` | 200, 400 or 426 / 200; string / unset | How an outdated client is answered. |
 | `[server.client]` | `checkin` | boolean / false | Accept `POST /server/client/checkin` version reports. |
-| `[server.client]` | `download_url` | string / unset | HTTP(S) base URL advertised to install/update clients. |
+| `[server.client]` | `download_url` | string / unset | HTTPS release base URL advertised to install/update clients; all redirects must stay on HTTPS. See [Client distribution](team-server-mode.md#client-distribution). |
 | `[server.signin]` | `issuer` | string / `""` | OIDC issuer URL (must be configured to enable sign-in). |
 | `[server.signin]` | `client_id` | string / `""` | OIDC app ID. |
 | `[server.signin]` | `client_secret_env` | string / unset | Variable holding OIDC secret, not the secret itself. |

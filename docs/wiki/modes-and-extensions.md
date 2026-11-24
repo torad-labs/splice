@@ -128,8 +128,14 @@ sequenceDiagram
   D-->>C: answer
 ```
 
-- **Who answers.** Without a `worker`, the mode's handler answers in-process and implements `ModeHooks` (`hook(call)`, `Pass` by default). `worker.kind = "http"` posts the call as JSON and reads one JSON line back; `auth_env` names a variable whose key is sent as `Authorization: Bearer`. `worker.kind = "mcp"` (with `server` and `tool`) calls a tool the MCP hub serves.
-- **The wire.** Out-of-process workers receive `moment`, `session` and `body`, and answer `{"answer": "pass"}`, or `context` / `model` / `refuse` / `rewrite` / `replace` / `continue` with `text`, `model`, `reason` or `body`. An unreadable answer is `pass`; an answer its moment doesn't take is logged and ignored.
+- **Who answers.** Without a `worker`, the mode's handler answers in-process and implements `ModeHooks` (`hook(call)`, `Pass` by default). `worker.kind = "http"` posts the call as JSON and reads an HTTP 200 JSONL response; `auth_env` names a variable whose key is sent as `Authorization: Bearer`. `worker.kind = "mcp"` (with `server` and `tool`) calls a tool the MCP hub serves.
+- **The wire.** Out-of-process workers receive `moment`, `session` and `body`. An MCP tool returns `{"answer":"pass"}` in its result text, or `context` / `model` / `refuse` / `rewrite` / `replace` / `continue` with `text`, `model`, `reason` or `body`. An HTTP worker puts that same JSON answer in the `text` field of a `result` line:
+
+  ```json
+  {"type":"result","text":"{\"answer\":\"pass\"}"}
+  ```
+
+  Malformed outer JSONL lines are worker failures governed by `on_failure`. Unreadable inner answer text is treated as `pass`; an answer its moment doesn't take is logged and ignored.
 - **Time and failure.** Each hook has its own time limit. One that errs or runs out of time lets the turn go on and says so in splice's log, unless `on_failure = "closed"`.
 - **Order.** Every mode's hooks of one moment run in `order`, ties by mode name. Each mode's switches turn its hooks off with it.
 - **Kept.** What a session-start hook adds or chooses is recorded before the turn goes upstream and placed again byte for byte on every later request of the session, so the prompt cache keeps hitting. A compaction that replaces the first message ends it.

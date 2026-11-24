@@ -36,7 +36,7 @@ listen = "0.0.0.0:3443"
 commands = ["claude-team"]
 tls_cert = "/etc/splice/tls/fullchain.pem"   # both, or neither when a proxy in front of it speaks TLS
 tls_key = "/etc/splice/tls/privkey.pem"
-trusted_proxies = ["10.0.0.0/8"]             # the proxies whose X-Forwarded-For names the client
+trusted_proxies = ["192.0.2.10"]             # replace with your proxy's address; omit without a proxy
 admins = ["ops@team.example"]
 keepalive_seconds = 10                       # keeps a streamed turn's connection alive through a long prefill
 
@@ -57,7 +57,7 @@ forward_to = "http://otel.team.example:4318" # your OTLP/HTTP collector; each pe
 | --- | --- | --- |
 | `listen` | `""` (off) | `host:port`; there is no implicit port |
 | `commands` | empty | What key holders may use: a head's command or a provider key |
-| `tls_cert`, `tls_key` | unset | PEM chain and key, both or neither; relative to the config folder |
+| `tls_cert`, `tls_key` | unset | PEM certificate chain and unencrypted PKCS#8 PEM private key, both or neither; relative to the config folder |
 | `trusted_proxies` | empty | Addresses or CIDRs whose `X-Forwarded-*` headers are trusted |
 | `admins` | empty | Admin emails |
 | `admin_cidrs` | empty (unrestricted) | Where admin routes may be reached from ([below](#admin-addresses-and-the-audit-log)) |
@@ -66,6 +66,12 @@ forward_to = "http://otel.team.example:4318" # your OTLP/HTTP collector; each pe
 | `metrics_prefix` | `splice_server_` | Prefix of every Prometheus series ([below](#prometheus-metrics)) |
 
 Every key, including `[server.limits]`, `[server.budgets]`, `[server.teams]`, `[server.reference]` and `[server.export]`, is in the [Configuration Reference](configuration-reference.md#server-mode).
+
+If your existing key is in another format, convert it to an unencrypted PKCS#8 PEM in a new, owner-only file, then point `tls_key` at that file:
+
+```bash
+(umask 077; openssl pkcs8 -topk8 -nocrypt -in original.pem -out splice-key.pem)
+```
 
 ### What refuses to start
 
@@ -123,10 +129,16 @@ A client that cannot change its base path, such as an OpenAI tool fixed on `/v1`
 ```toml
 [server.aliases]
 "/v1" = "claude-team"   # /v1/chat/completions, /v1/models, /v1/messages and /v1/messages/count_tokens are claude-team's
-# "/v1" = "door"        # or the team's door, /door/v1/...
 ```
 
-The path is read as the one it stands for before anything judges it, so the key, the caps, the allowlist and the minimum client hold at `/v1/...` exactly as at `/claude-team/v1/...`. An alias is one path segment after a `/`, names a command `[server] commands` lists or `door`, and cannot be `/server`, `/health`, `/door` or a served command's own name; boot refuses any other.
+The path is read as the one it stands for before anything judges it, so the key, the caps, the allowlist and the minimum client hold at `/v1/...` exactly as at `/claude-team/v1/...`. An alias is one path segment after a `/` and cannot be `/server`, `/health`, `/door` or a served head's own key or command. It targets a served head by key or command, or `door`. A provider key served without a head has no per-command routes and is not a valid target. For a provider-only deployment, use:
+
+```toml
+[server.aliases]
+"/v1" = "door"
+```
+
+The door serves Messages, token counts and model discovery, not OpenAI `/v1/chat/completions`.
 
 A person is a lowercased email. Their team comes from `[server.teams] by_domain` unless `splice server person set <email> --team <team>` sets one. `person set` with an empty `--upstream ""` takes the upstream preference back.
 
@@ -201,13 +213,15 @@ minimum = "0.7.0"
 download_url = "https://releases.team.example/splice"
 ```
 
-With `download_url` set (an http(s) base that hosts `install.sh`, `sha256sums.txt` and the release files `install.sh` downloads), a new laptop joins with one line:
+Set `download_url` to an HTTPS base hosting `install.sh`, `sha256sums.txt` and the release files. Serve `/server/install` over HTTPS as well, and require HTTPS at every redirect on both paths: the laptop executes the downloaded installer before checksums or attestation can protect it. A new laptop joins with one line:
 
 ```bash
-curl -fsSL https://gateway.team.example:3443/server/install | sh
+curl -fsSL --proto "=https" --proto-redir "=https" https://gateway.team.example:3443/server/install | sh
 ```
 
 `GET /server/install` needs no key and returns a POSIX `sh` script that sets `SPLICE_RELEASE_BASE_URL`, sets `SPLICE_VERSION` to the minimum when there is one, runs the installer from the download URL, and then runs `splice remote add <this server>`. The server hosts no binaries itself, and in `install.sh` the base URL takes precedence over `SPLICE_VERSION`, so the version a laptop gets is what the base URL serves. Without `download_url` the route is a 404 "client distribution is not configured on this server". `download_url` is also advertised in the profile.
+
+If a reverse proxy terminates TLS, keep the plaintext listener reachable only by that proxy and list only the proxy in `trusted_proxies`. Have the proxy overwrite `X-Forwarded-Proto` with `https` and `X-Forwarded-Host` with the public hostname (and port if nonstandard). Otherwise the bootstrap can generate an `http://` origin for `splice remote add`.
 
 ## The team door
 

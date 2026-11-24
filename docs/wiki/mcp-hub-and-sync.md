@@ -238,7 +238,7 @@ Desktop on the gateway profile gets every MCP server splice gives its harnesses.
 
 - A stdio server Desktop can start is added where missing.
 - A server splice hosts, or one reached at an http(s) URL, becomes an entry whose `command` is `~/.splice/state/desktop-mcp` and whose `args` is `[<name>]`. That program runs `splice mcp stdio <name>`, a stdio-to-HTTP bridge.
-- splice keeps those bridge entries current at every sync and removes them when the server is gone. No address, header or key is ever written into Desktop's config, and your own and first-party Desktop entries are never replaced.
+- splice keeps those bridge entries current at every sync and removes them when the server is gone. Bridge entries contain only the local bridge path and server name, not the upstream address, headers or credentials. Direct stdio and migrated entries may retain existing URLs or credentials. Splice does not replace your own or first-party Desktop entries.
 
 This runs at `splice desktop on`, each time the daemon publishes the Desktop configuration, and at `splice mcp sync --to claude`. Quit and reopen Desktop to pick up new servers. See [Claude Desktop](claude-desktop.md).
 

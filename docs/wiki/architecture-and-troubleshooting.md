@@ -145,7 +145,7 @@ The daemon is Kotlin; the launch shim is POSIX `sh` and `curl`. The legacy `serv
 Reasons to walk away:
 
 - **One tested Claude Code version per release.** The launch handshake checks the daemon's version. Doctor and the status line report when Claude Code is newer than the version tested with that release.
-- **A team server that is only starting.** One Splice can [serve a team](team-server-mode.md) on keys it issues, over TLS, with per-person caps, but there is no sign-in, budget, usage ledger or per-person metric yet, and it serves only heads that sign with an API key or a self-hosted provider, never a person's plan login. A team that needs those today should run a gateway built for that job (LiteLLM, for example).
+- **No shared subscription logins.** Team server mode serves API-key or self-hosted providers, not a person's plan login. See [Team server mode](team-server-mode.md) to enable sign-in, budgets, the usage ledger and per-person metrics.
 - **A JVM daemon.** Java 21 is a hard dependency. The daemon has no fixed heap ceiling: its heap may grow to 75% of RAM, and G1 is tuned to keep committed memory close to the live data. The JVM options live in one place, `SPLICE_JVM_OPTS` in the `splice-launch` launcher, which every daemon start runs through; set that variable to override them.
 - **A one-person project.** The release gates are strict: every release is checksummed, provenance-attested, and installed hermetically in CI before it ships. One person maintains the project.
 

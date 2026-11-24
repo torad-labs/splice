@@ -67,11 +67,10 @@
   it comes alive and then rests, and what a page shows is redrawn only when it changed.
 
 ### Upgrading
-- **A value only a head holds stops the daemon from starting, and the fix session offers the move.** A head's
-  window, tier models, standing prompt, an older selector prefix or an override that its provider does not say the
-  same way is a finding that names it, since the gateway would serve the provider without it. The interactive fix
-  session moves the value to the provider's table; nothing is moved silently. A head's pin, and its display and trace
-  settings, stay with the head.
+- **Head-only provider settings warn but do not block startup.** Splice names a head's window, tier models,
+  standing prompt, older selector prefix or override when its provider does not say the same thing. The gateway
+  serves the provider without those head-only settings. `splice check-config --fix` offers to move them to the
+  provider's table; nothing is moved silently. A head's pin and its display and trace settings stay with the head.
 - **A setting changed for one command on the console is written where splice reads it.** A setting a turn is served
   by (how many requests at once, the retry and reasoning settings) is its provider's, so every command on that
   provider runs with it, and the answer names them. A display or trace setting stays the command's own.

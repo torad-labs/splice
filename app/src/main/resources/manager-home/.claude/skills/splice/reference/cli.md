@@ -350,7 +350,7 @@ one. The flow depends on the provider's auth kind:
 head while any of its sessions runs.
 
 Source: `app/.../cli/auth/LoginCommand.kt:38-176`, `ClaudeLoginLabel.kt:30-45`, `CommandParser.kt` (login grammar),
-`docs/wiki/providers-and-accounts.md` "More than one Claude login". Accounts and pools: accounts-sessions-console.md.
+`docs/wiki/providers-and-accounts.md#more-than-one-claude-login-on-claude`. Accounts and pools: accounts-sessions-console.md.
 
 ### key set | list | unset
 
@@ -367,7 +367,7 @@ the next request, no restart. An environment variable of the same name in the da
 store. `list` prints variable names only, never values. You do not run any `key` form: you give the person the
 command and the variable name from `splice.toml` (`auth.env`, or `<KEY>_API_KEY` by default).
 
-Source: `app/.../cli/auth/KeyCommand.kt:60-170`, `docs/wiki/getting-started.md` "API-key starter".
+Source: `app/.../cli/auth/KeyCommand.kt:60-170`, `docs/wiki/getting-started.md#api-key-starter-openrouter`.
 
 ### rotate-key
 
@@ -412,7 +412,8 @@ This verb is the quickest route for any head a profile covers. For an endpoint w
 heads-and-backends.md. It changes `splice.toml`, so it is the person's, not yours.
 
 Source: `features/configuration/.../add/AddArgs.kt`, `AddProfileCatalog.kt` (profile names), `AddCommand.kt:1-60`,
-`docs/wiki/getting-started.md` "Subscription setup" and "A second head on the same provider".
+`docs/wiki/getting-started.md#subscription-setup-chatgpt-grok-kimi-or-muse` and
+`docs/wiki/providers-and-accounts.md#a-second-head-on-the-same-provider`.
 
 ### install and uninstall
 

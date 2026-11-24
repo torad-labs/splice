@@ -39,11 +39,13 @@ public class HeadFallbacks(private val topology: Topology) {
     }
 
     /** The standing prompt as one value, text, file and mode together, so a head's `replace` never lands on a prompt the
-     *  provider wrote, and a provider that says any of the three keeps all three of its own. */
+     *  provider wrote, and a provider that says any of the three keeps all three of its own. Heads agree on the prompt
+     *  they are served: one that says `append` and one that leaves its mode unsaid serve the same text the same way. */
     private fun prompt(provider: ProviderConfig, heads: List<HeadConfig>): Prompt {
         val own = Prompt(provider.systemPrompt, provider.systemPromptFile, provider.systemPromptMode)
         if (own.said) return own
-        val said = heads.map { Prompt(it.systemPrompt, it.systemPromptFile, it.systemPromptMode) }.filter(Prompt::said)
+        val said = heads.map { Prompt(it.systemPrompt, it.systemPromptFile, it.systemPromptMode).served }
+            .filter(Prompt::said)
         return agreed(said) ?: own
     }
 
@@ -62,5 +64,9 @@ public class HeadFallbacks(private val topology: Topology) {
     /** A standing prompt as a table writes it. */
     private data class Prompt(val text: String?, val file: String?, val mode: SystemPromptMode?) {
         val said: Boolean get() = text != null || file != null || mode != null
+
+        /** As a head is served it: a text or file whose mode is unsaid is appended (HeadConfig.systemPromptFor). */
+        val served: Prompt
+            get() = if (mode == null && said) copy(mode = SystemPromptMode.APPEND) else this
     }
 }

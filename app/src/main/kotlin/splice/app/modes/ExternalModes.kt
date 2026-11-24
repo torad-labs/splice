@@ -1,8 +1,8 @@
 package splice.app.modes
 
-import splice.core.topology.ModJar
-import splice.core.topology.ModsConfig
 import splice.core.topology.TopologyFinding
+import splice.core.topology.mods.ModJar
+import splice.core.topology.mods.ModsConfig
 import splice.core.util.Cancellables
 import splice.core.util.LogSafe
 import splice.core.util.LogSink

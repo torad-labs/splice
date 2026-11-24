@@ -44,6 +44,7 @@ import splice.core.model.ModelTierSuffix
 import splice.core.model.PublishedRates
 import splice.core.model.WindowRule
 import splice.core.prompt.SystemPromptMode
+import splice.core.topology.desktop.DesktopConfig
 import splice.core.topology.telemetry.TelemetryConfig
 import splice.core.util.TopologySlotsFailure
 

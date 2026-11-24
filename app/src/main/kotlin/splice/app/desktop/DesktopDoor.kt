@@ -27,7 +27,7 @@ import splice.client.desktop.DesktopAppWindow
 import splice.client.desktop.GatewayDiscovery
 import splice.core.client.SESSION_HEADER
 import splice.core.speed.SessionSpeeds
-import splice.core.topology.DesktopConfig
+import splice.core.topology.desktop.DesktopConfig
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.util.WallClock

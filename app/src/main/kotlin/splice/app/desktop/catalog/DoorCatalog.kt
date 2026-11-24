@@ -22,7 +22,7 @@ import splice.client.desktop.DoorPickerRow
 import splice.client.models.AnthropicTiers
 import splice.core.model.CLAUDE_CODE_ONE_MILLION
 import splice.core.model.ModelTierSuffix
-import splice.core.topology.DesktopConfig
+import splice.core.topology.desktop.DesktopConfig
 import splice.core.usage.QuotaFullWindow
 
 /** One catalog model as the door serves it now: its provider's facts ([fact]), the provider a turn on it runs on

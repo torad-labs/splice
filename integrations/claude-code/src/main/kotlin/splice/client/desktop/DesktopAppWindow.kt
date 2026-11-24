@@ -8,7 +8,7 @@
 // ones this install's Desktop gives, so scaling follows the window Desktop actually sets here.
 package splice.client.desktop
 
-import splice.core.topology.DesktopConfig
+import splice.core.topology.desktop.DesktopConfig
 
 public class DesktopAppWindow(private val desktop: DesktopConfig = DesktopConfig()) {
     /** Whether a request carrying [header] (its [APP_MODE_HEADER]) is one of Claude Desktop's in app mode. */

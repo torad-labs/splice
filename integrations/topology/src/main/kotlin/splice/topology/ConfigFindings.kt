@@ -14,13 +14,13 @@ import splice.core.mode.FoundModes
 import splice.core.mode.ModeSettingsReader
 import splice.core.model.HeadDiscoveredModels
 import splice.core.topology.Dialect
-import splice.core.topology.ModsConfig
 import splice.core.topology.Topology
 import splice.core.topology.TopologyExtensions
 import splice.core.topology.TopologyFinding
 import splice.core.topology.TopologyFindings
 import splice.core.topology.TopologyRuleViolation
 import splice.core.topology.gateway.ServingBoundMove
+import splice.core.topology.mods.ModsConfig
 import splice.core.topology.toml.TomlLines
 import splice.core.util.SafeFailureText
 import splice.core.util.TopologyTypeFailure

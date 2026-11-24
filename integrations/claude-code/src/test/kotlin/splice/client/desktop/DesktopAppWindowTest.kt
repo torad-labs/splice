@@ -5,7 +5,7 @@ package splice.client.desktop
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
-import splice.core.topology.DesktopConfig
+import splice.core.topology.desktop.DesktopConfig
 
 class DesktopAppWindowTest {
     private val app = "app"

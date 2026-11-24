@@ -1,4 +1,6 @@
-package splice.core.topology
+package splice.core.topology.mods
+
+import splice.core.topology.TopologyFinding
 
 /** Pinned mode archives declared outside the canonical topology schema. */
 public data class ModsConfig(

@@ -34,7 +34,7 @@ import splice.client.models.AnthropicTiers
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.topology.ChatEffortVocabularyConfig
-import splice.core.topology.DesktopConfig
+import splice.core.topology.desktop.DesktopConfig
 import splice.core.usage.QuotaFull
 import splice.head.GatewayTurn
 import splice.usage.quota.HeadUsageSource

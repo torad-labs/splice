@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.topology.DesktopConfig
+import splice.core.topology.desktop.DesktopConfig
 import java.nio.file.Path
 
 class DesktopWindowConfigTest {

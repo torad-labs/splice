@@ -9,7 +9,7 @@
 // so each wrong value is a finding of its own at its key path, all listed at once, and it rides the topology
 // through TopologyExtensions rather than widening Topology. The values are read as whole numbers here and
 // checked here, so a bad one never hides the rest behind a decode error.
-package splice.core.topology
+package splice.core.topology.desktop
 
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -19,6 +19,7 @@ import kotlinx.serialization.json.longOrNull
 import splice.core.capability.TomlValueRead
 import splice.core.model.CLAUDE_CODE_ONE_MILLION
 import splice.core.model.CLIENT_TABLE_WINDOW
+import splice.core.topology.TopologyFinding
 import splice.core.topology.toml.TomlKind
 import splice.core.topology.toml.TomlScan
 

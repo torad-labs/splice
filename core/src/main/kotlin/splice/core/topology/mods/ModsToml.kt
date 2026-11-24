@@ -1,10 +1,11 @@
-package splice.core.topology.toml
+package splice.core.topology.mods
 
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.capability.TomlValueRead
-import splice.core.topology.ModJar
-import splice.core.topology.ModsConfig
 import splice.core.topology.TopologyFinding
+import splice.core.topology.toml.TomlEntry
+import splice.core.topology.toml.TomlKind
+import splice.core.topology.toml.TomlScan
 
 /** Reads and blanks the mod tables in place, leaving line numbers of all other settings alone. */
 public class ModsToml(private val text: String) {

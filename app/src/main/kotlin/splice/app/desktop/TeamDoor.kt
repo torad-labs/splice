@@ -15,8 +15,8 @@ import splice.app.desktop.catalog.DesktopProviders
 import splice.app.desktop.catalog.DoorCatalog
 import splice.app.provider.ServedProvider
 import splice.core.client.SESSION_HEADER
-import splice.core.topology.DesktopConfig
 import splice.core.topology.Topology
+import splice.core.topology.desktop.DesktopConfig
 import splice.core.turn.TERMINAL_DOOR
 import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus

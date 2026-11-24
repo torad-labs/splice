@@ -16,6 +16,8 @@ import splice.core.capability.Capability
 import splice.core.mode.ModeSetting
 import splice.core.model.ReadableIds
 import splice.core.prompt.SystemPromptMode
+import splice.core.topology.desktop.DesktopConfig
+import splice.core.topology.mods.ModsConfig
 
 /** Operator-defined capability, mode, `[mods]` and `[desktop]` tables. The loader parses them separately
  *  from the canonical TOML tree that the console edits and attaches them together once well-formed. */

@@ -2,11 +2,11 @@ package splice.topology
 
 import splice.core.capability.CapabilityDeclarations
 import splice.core.capability.CapabilityToml
-import splice.core.topology.DesktopConfig
-import splice.core.topology.DesktopToml
 import splice.core.topology.Dialect
 import splice.core.topology.Topology
-import splice.core.topology.toml.ModsToml
+import splice.core.topology.desktop.DesktopConfig
+import splice.core.topology.desktop.DesktopToml
+import splice.core.topology.mods.ModsToml
 import splice.core.util.TopologyRefusal
 
 /** Settings parsed outside the canonical schema, split once the same way for boot and plain reads. */

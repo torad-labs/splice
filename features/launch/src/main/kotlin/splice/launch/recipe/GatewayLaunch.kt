@@ -50,10 +50,13 @@ internal class GatewayLaunch(private val owners: LaunchOwners = LaunchOwners(Sta
         if (at == null) LaunchAliasSlots.of(spec) else emptyList()
 
     /** What [spec]'s head sets on the gateway [at]: [own], everything else its launch carries (with no tiers), less its
-     *  own address, bearer, model and windows, and gateway mode with the head's model and the gateway's window. */
+     *  own address, bearer, model and windows, and gateway mode with the head's model and the head's own window, the
+     *  one its turns name to the gateway (LaunchModelEnvironment.windowHeader), as 0.6.4 launched it; the gateway's
+     *  for a head that has none. */
     fun env(own: Map<String, String>, spec: LaunchSpec, at: GatewayAt): Map<String, String> {
         val model = at.model ?: spec.models.pinnedSelector
-        return own - OWN_ROUTE + mode.env(at.base, at.key, model) + (WINDOW to at.window.toString())
+        val window = spec.models.contextWindow.takeIf { it > 0L } ?: at.window
+        return own - OWN_ROUTE + mode.env(at.base, at.key, model) + (WINDOW to window.toString())
     }
 
     /** The session the launcher [launch] becomes recorded as [head]'s on the gateway [at], before it starts, so

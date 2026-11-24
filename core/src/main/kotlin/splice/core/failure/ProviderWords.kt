@@ -115,7 +115,10 @@ public object ProviderWordsFilter {
         val dropped = DROP.fold(sentence) { text, rule -> rule.replace(text, " ") }
         if (DUMP.containsMatchIn(dropped)) return null
         val tidy = SPACE_BEFORE_MARK.replace(EMPTY_PARENS.replace(SPACES.replace(dropped, " "), ""), "$1").trim()
-        val body = COLON_CLAUSE.replace(tidy.trimEnd(':', ' '), ", ").trimEnd('.', '!', '?', ',', ';', ':', '-', ' ')
+        val trimmed = tidy.trimStart(',', ';', ':', '-', ' ').trimEnd(':', ' ')
+        val body = COLON_CLAUSE.replace(trimmed, ", ")
+            .trimStart(',', ';', ':', '-', ' ')
+            .trimEnd('.', '!', '?', ',', ';', ':', '-', ' ')
         return body.takeIf { it.any(Char::isLetter) }
     }
 

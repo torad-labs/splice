@@ -261,6 +261,22 @@ class ProviderWordsFilterPropertyTest {
     }
 
     @Test
+    fun `dropping a leading field path or id leaves no orphan punctuation`() {
+        assertEquals(
+            "content cannot be empty if is_error is true.",
+            words("messages.184.content.0.content: content cannot be empty if is_error is true"),
+        )
+        assertEquals(
+            "Invalid signature in thinking block.",
+            words("messages.1.content.0: Invalid signature in thinking block"),
+        )
+        assertEquals(
+            "Invalid prompt.",
+            words("(request_id: 49d5cc56-b2b7-42ed-8485-ac06076e79d4): Invalid prompt"),
+        )
+    }
+
+    @Test
     fun `DeepSeek's 402 of Oct 24 yields Insufficient Balance with its request id dropped`() {
         // The journal, Oct 24, claude-deepseek: the error.message of
         // {"error":{"message":"Insufficient Balance (request_id: 49d5cc56-b2b7-42ed-8485-ac06076e79d4)",

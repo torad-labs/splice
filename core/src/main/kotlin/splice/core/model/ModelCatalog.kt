@@ -111,6 +111,12 @@ public data class ExtraWindow(
 public object ModelServeWindows {
     public fun forRow(catalog: ModelCatalog, id: String): Long {
         val current = catalog.live()
+        return knownCeilingFor(current, id) ?: current.contextWindowFor(id)
+    }
+
+    /** A published or explicitly configured maximum, not the client's compaction target. */
+    public fun knownCeilingFor(catalog: ModelCatalog, id: String): Long? {
+        val current = catalog.live()
         val raw = current.unwrap(id)
         val canonical = current.stripSuffixes(id)
         for (spelling in listOf(raw, canonical)) {
@@ -119,13 +125,13 @@ public object ModelServeWindows {
             if (extra != null || row != null) {
                 val published = row?.maxContextWindow
                     ?: current.models.lastOrNull { current.unwrap(it.id) == canonical }?.maxContextWindow
-                return extra?.maxContextWindow ?: published ?: current.contextWindowFor(id)
+                return extra?.maxContextWindow ?: published
             }
         }
         // The target's suffix-stripped map is associate-last-wins, with extras over picker rows.
         val extra = current.windows.extraWindows.lastOrNull { current.stripSuffixes(it.id) == canonical }
         val row = current.models.lastOrNull { current.stripSuffixes(it.id) == canonical }
-        return extra?.maxContextWindow ?: row?.maxContextWindow ?: current.contextWindowFor(id)
+        return extra?.maxContextWindow ?: row?.maxContextWindow
     }
 }
 

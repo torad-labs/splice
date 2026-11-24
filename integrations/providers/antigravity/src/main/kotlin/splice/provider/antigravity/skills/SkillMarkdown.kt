@@ -64,6 +64,8 @@ private val CLOSING_FENCES = setOf(FENCE, "...")
 
 // why: discovery needs only the header and a short local menu summary, not the whole body.
 private const val MAX_METADATA_BYTES = 16 * 1024
+
+// why: a missing closing fence must not turn a long body into metadata.
 private const val MAX_FRONTMATTER_LINES = 200
 
 // why: match Claude Code's plugin skill limit while bounding the memory and I/O spent on invocation.

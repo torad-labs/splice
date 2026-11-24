@@ -19,6 +19,7 @@ import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.core.pool.UpstreamPool
 import splice.core.testing.TestPorts
+import splice.core.topology.ServerConfig
 import splice.core.topology.UpstreamConfig
 import splice.core.util.LogSink
 import splice.upstream.Waiter
@@ -53,8 +54,8 @@ internal class ServerOpenAiKeepaliveTest {
         upstreams: HeadUpstreams = alone,
         waiter: Waiter = clock,
     ): Pair<OpenAiRig, String> {
-        val waits = RigWaits(keepaliveSeconds = keepaliveSeconds, waiter = waiter)
-        val rig = OpenAiRig(state, upstreams, waits = waits).also { opened = it }
+        val kept: (ServerConfig) -> ServerConfig = { it.copy(keepaliveSeconds = keepaliveSeconds) }
+        val rig = OpenAiRig(state, upstreams, waiter = waiter, configured = kept).also { opened = it }
         return rig to rig.keyFor("ola@example.com")
     }
 

@@ -236,6 +236,8 @@ remote.*.window
 server	
 server.admin_cidrs	
 server.admins	
+server.aliases	
+server.aliases.*	
 server.backup	
 server.backup.access_key_env	
 server.backup.endpoint	
@@ -248,8 +250,12 @@ server.budgets
 server.budgets.action	
 server.budgets.person_daily_usd	
 server.client	
+server.client.checkin	
 server.client.download_url	
 server.client.minimum	
+server.client.outdated_message	
+server.client.outdated_status	
+server.client.version_header	
 server.commands	
 server.cost_meters	
 server.cost_meters.*.argv	

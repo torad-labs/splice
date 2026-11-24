@@ -9,6 +9,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.topology.ServerConfig
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -35,7 +36,8 @@ internal class ServerOpenAiStreamIdleTest {
 
     @Test
     fun `a first chunk that only names the role is no word, so the prefill behind it is never timed`() {
-        val rig = OpenAiRig(state, alone, waits = RigWaits(streamIdleSeconds = 30, waiter = clock)).also { opened = it }
+        val idle: (ServerConfig) -> ServerConfig = { it.copy(streamIdleSeconds = 30) }
+        val rig = OpenAiRig(state, alone, waiter = clock, configured = idle).also { opened = it }
         box.events = listOf(ROLE_EVENT, WORD_EVENT, USAGE_EVENT, DONE_EVENT)
         val prefill = CountDownLatch(1).also { box.afterFirst = it }
         // Every wait the relay asks for ends at once, as if the prefill had lasted any length of time.

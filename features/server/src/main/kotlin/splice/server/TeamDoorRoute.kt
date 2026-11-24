@@ -12,6 +12,7 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.httpMethod
 import splice.core.topology.ServerConfig
 import splice.core.wire.HttpStatus
+import splice.server.client.ClientMinimum
 import splice.server.ledger.ROUTE_MESSAGES
 import splice.share.HEAD_API_ROOT
 import splice.share.RefusalVoice
@@ -50,13 +51,16 @@ internal class TeamDoorRoute(
         }
     }
 
-    /** A turn: one of the person's slots, or refused; an older laptop's is answered in the conversation and takes none
-     *  (F9). */
+    /** A turn: one of the person's slots, or refused; an older laptop's is answered in the conversation, or refused
+     *  with `[server.client] outdated_status`, and takes none (F9). */
     private suspend fun turn(call: ApplicationCall, key: ServerKey, gateway: TeamGateway) {
         val routed = gateway.routed(call, voice, counting = false, served()) ?: return
-        val notice = minimum.told(call)
+        val notice = minimum.told(call, key.person)
         val withheld = bound.withheld(call)
-        if (notice != null) return routed.serve(TeamTurnMeta(notice = notice, withheldHeaders = withheld))
+        if (notice != null) {
+            if (minimum.refused(call, voice, notice)) return
+            return routed.serve(TeamTurnMeta(notice = notice, withheldHeaders = withheld))
+        }
         val provider = ProviderCommand(routed.provider, routed.names)
         admission.served(call, key, provider, ROUTE_MESSAGES) { turn ->
             val preferred = parts.people.of(key.person).preferred

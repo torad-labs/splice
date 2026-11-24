@@ -22,6 +22,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import splice.client.Keys
+import splice.client.ManagedSettings
 import splice.client.RealPathOrSelf
 import splice.core.config.StatePaths
 import splice.core.mcp.McpUserRegistry
@@ -29,7 +30,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 private const val PLAN_LOCAL_SETTINGS = "settings.local.json"
-private const val PLAN_MANAGED_SETTINGS = "/etc/claude-code/managed-settings.json"
 private const val PLAN_ENABLED_PLUGINS = "enabledPlugins"
 private const val PLAN_FOLDER_DISABLED = "disabledMcpServers"
 private const val PLAN_FOLDER_TRUSTED = "hasTrustDialogAccepted"
@@ -41,7 +41,7 @@ private const val TURNED_OFF_HERE = "turned off for this folder in /mcp"
 /** [home] is the user's home folder: the vanilla config home `~/.claude` keeps its `.claude.json` there. */
 public class McpLaunchPlanner(
     private val home: Path,
-    private val managedSettings: Path = Path.of(PLAN_MANAGED_SETTINGS),
+    private val managedSettings: Path = ManagedSettings().file,
     private val temple: TempleMcpEntry = TempleMcpEntry(home),
     private val registry: McpUserRegistry = McpUserRegistry(StatePaths(homeDir = home)),
 ) {

@@ -10,13 +10,17 @@ import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
+import splice.core.topology.ServerConfig
 import splice.core.topology.ServerLimits
+import splice.core.turn.SERVED_NOTICE_HEADER
+import splice.core.turn.ServedNoticeText
 import splice.core.util.LogSink
 import splice.share.StreamEdit
 import splice.upstream.Waiter
@@ -175,14 +179,6 @@ internal class UsageHidden : StreamEdit {
     override fun ending(): String? = DONE_EVENT.takeUnless { done }
 }
 
-/** How a rig's server waits on a streamed answer: `[server] keepalive_seconds` and `stream_idle_seconds`, whose
- *  silences are waited out on [waiter]. */
-internal data class RigWaits(
-    val keepaliveSeconds: Int = 0,
-    val streamIdleSeconds: Int = 0,
-    val waiter: Waiter = ProcessWaiter(),
-)
-
 /** Server mode over one command, `claude-team`, whose head answers Claude Code's routes and whose provider is what
  *  [upstreams] says. The server's own lines go to [log]. */
 internal class OpenAiRig(
@@ -190,11 +186,14 @@ internal class OpenAiRig(
     upstreams: HeadUpstreams,
     limits: ServerLimits = ServerLimits(),
     log: LogSink = LogSink { },
-    waits: RigWaits = RigWaits(),
+    /** Where a kept-alive completion's silences are waited out. */
+    waiter: Waiter = ProcessWaiter(),
     /** Whether the command's head is running; a head that is down is never asked anything. */
     headUp: Boolean = true,
+    /** What a test sets in `[server]` beyond the limits: its keepalive, its client table, its aliases. */
+    configured: (ServerConfig) -> ServerConfig = { it },
 ) {
-    private val rig = ServerRig(log = log, upstreams = upstreams, waiter = waits.waiter)
+    private val rig = ServerRig(log = log, upstreams = upstreams, waiter = waiter)
     val port = rig.port
     private val http = HttpClient.newHttpClient()
 
@@ -202,9 +201,13 @@ internal class OpenAiRig(
         createContext("/v1") { exchange ->
             exchange.use {
                 it.requestBody.use { body -> body.readBytes() }
+                // A turn handed on with the minimum client's notice is answered with it, as a head answers one.
+                val sent = it.requestHeaders.getFirst(SERVED_NOTICE_HEADER)
+                val said = sent?.let(ServedNoticeText()::decode) ?: "from the head"
                 val (status, answer) = when (it.requestURI.path) {
                     "/v1/models" -> 200 to HEAD_MODELS
-                    "/v1/messages" -> 200 to """{"type":"message","content":[{"type":"text","text":"from the head"}]}"""
+                    "/v1/messages" -> 200 to """{"type":"message","content":[{"type":"text","text":${quoted(said)}}]}"""
+                    "/v1/messages/count_tokens" -> 200 to """{"input_tokens":3}"""
                     else -> 404 to HEAD_NO_ROUTE
                 }
                 it.responseHeaders.add("Content-Type", "application/json")
@@ -219,17 +222,15 @@ internal class OpenAiRig(
     private val mode = rig.open(
         state,
         listOf(StandInHead(head.address.port, up = headUp)),
-        rig.config.copy(
-            limits = limits,
-            keepaliveSeconds = waits.keepaliveSeconds,
-            streamIdleSeconds = waits.streamIdleSeconds,
-        ),
+        configured(rig.config.copy(limits = limits)),
     )
 
     fun close() {
         rig.close()
         head.stop(0)
     }
+
+    private fun quoted(text: String): String = JsonPrimitive(text).toString()
 
     /** A key issued to [person]. */
     fun keyFor(person: String): String = rig.keyFor(person)
@@ -278,6 +279,24 @@ internal class OpenAiRig(
     /** The lookup of the one model [id] names, asked with [extra] as headers of the caller's own. */
     fun model(key: String?, id: String, vararg extra: Pair<String, String>): HttpResponse<String> =
         http.send(request("models/$id", key, body = null, extra.toList()), HttpResponse.BodyHandlers.ofString())
+
+    /** [method] [path] on the listener, [path] beginning at its root, with [key] as a bearer when there is one, [body]
+     *  when one is given, and [extra] as headers of the caller's own. */
+    fun ask(
+        path: String,
+        key: String?,
+        body: String? = null,
+        extra: ClientHeaders = emptyList(),
+        method: String = if (body == null) "GET" else "POST",
+    ): HttpResponse<String> {
+        val publisher = body?.let(HttpRequest.BodyPublishers::ofString) ?: HttpRequest.BodyPublishers.noBody()
+        val request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:$port$path"))
+            .method(method, publisher)
+            .header("Content-Type", "application/json")
+        key?.let { request.header("Authorization", "Bearer $it") }
+        extra.forEach { (name, value) -> request.header(name, value) }
+        return http.send(request.build(), HttpResponse.BodyHandlers.ofString())
+    }
 
     /** A turn on the Messages route, as Claude Code sends one. */
     fun turn(key: String): HttpResponse<String> =

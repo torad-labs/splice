@@ -102,14 +102,21 @@ class SetupUpdateTest {
         assertTrue("processWrapper names another program" in said, said.toString())
     }
 
-    private fun update(said: StringBuilder, facts: DesktopFacts?, onCheckup: () -> Unit = {}): SetupUpdate {
+    private fun update(
+        said: StringBuilder,
+        facts: DesktopFacts?,
+        onCheckup: () -> Unit = {},
+        console: Boolean = false,
+        autoUpdate: Boolean? = false,
+    ): SetupUpdate {
         val env = EnvReader { null }
         val capabilities = facts?.let {
             val harness = HarnessFacts(null, null, geminiShim = true, synced = emptySet())
-            Capabilities(it, harness, HubFacts(linux = true, on = false, systemd = true), autoUpdate = false)
+            Capabilities(it, harness, HubFacts(linux = true, on = false, systemd = true), autoUpdate)
         }
+        val prompts = prompts(said, console = console)
         return SetupUpdate(
-            prompts(said, console = false),
+            prompts,
             env,
             SetupEffects(
                 env,
@@ -121,7 +128,39 @@ class SetupUpdateTest {
             ),
             detect = { SetupFacts(emptySet(), emptySet(), openRouterKey = false, daemonUp = false, capabilities) },
             desktopOn = { error("nothing asked for splice desktop on") },
+            modes = SetupModes(prompts, env, rows = ModeRows { emptyList() }),
         )
+    }
+
+    // Without a terminal nothing is asked, so what is missing is said; "nothing new" would be a claim nobody checked.
+    @Test
+    fun `an unattended update lists what is missing instead of claiming nothing is new`(@TempDir home: Path) {
+        val said = StringBuilder()
+        UserHome.within(home) {
+            seedToml(home, autoUpdate = null)
+            runBlocking { update(said, facts = desktop(cli = true, app = true), autoUpdate = null).run() }
+        }
+        assertFalse("Nothing new to set up" in said, said.toString())
+        assertTrue("automatic updates are off" in said, said.toString())
+        assertTrue("in a terminal" in said, said.toString())
+    }
+
+    // An offer declined leaves the install as it was: that is "nothing changed", never "nothing new".
+    @Test
+    fun `an interactive update whose offers are declined says nothing changed`(@TempDir home: Path) {
+        val said = StringBuilder()
+        UserHome.within(home) {
+            seedToml(home, autoUpdate = false)
+            runBlocking { update(said, facts = desktop(cli = true, app = true), console = true).run() }
+        }
+        assertTrue("splice desktop on" in said, "the full-app offer was made: $said")
+        assertFalse("Nothing new to set up" in said, said.toString())
+        assertTrue("Nothing changed" in said, said.toString())
+    }
+
+    private fun seedToml(home: Path, autoUpdate: Boolean?) {
+        val toml = Files.createDirectories(home.resolve(".config/splice")).resolve("splice.toml")
+        Files.writeString(toml, "[daemon]\ncontrol_port = 3096\n" + autoUpdate?.let { "auto_update = $it\n" }.orEmpty())
     }
 
     private fun prompts(
@@ -129,7 +168,11 @@ class SetupUpdateTest {
         console: Boolean = true,
         launchers: (List<SelectOption<String>>) -> Unit = {},
     ) = SetupPrompts(
-        frame = WizardFrame(out = said, ask = ConfirmPrompt { _, default -> default }),
+        // A question is said into the same log, so a test can see what was offered.
+        frame = WizardFrame(
+            out = said,
+            ask = ConfirmPrompt { question, default -> default.also { said.append(question) } },
+        ),
         pickLaunchers = HeadPicker { options, _ ->
             launchers(options)
             MultiSelectOutcome.Chosen(emptyList())

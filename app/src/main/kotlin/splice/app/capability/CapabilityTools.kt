@@ -11,12 +11,12 @@ import splice.diagnostics.doctor.ToolReading
 internal class CapabilityTools(private val facts: Capabilities) {
     fun readings(): List<ToolReading> = listOfNotNull(desktop(), wrapper(), agy(), shim(), codex(), hub())
 
-    /** Claude Desktop, said when splice has it on, or a side-by-side launcher for it, or when it is installed. */
+    /** Claude Desktop, said when splice has it on, or its Claude (Splice) app launcher is installed, or when it is
+     *  installed at all. `claude-splice` runs Claude Code in a terminal, not Desktop, so it is no use of Desktop. */
     private fun desktop(): ToolReading? {
         val d = facts.desktop
         val uses = listOfNotNull(
             "`splice desktop on`".takeIf { d.mode == DesktopMode.APP || d.mode == DesktopMode.STANDARD },
-            "the `claude-splice` launcher".takeIf { d.sideBySideCli },
             "the Claude (Splice) app launcher".takeIf { d.sideBySideApp },
         )
         val program = d.program
@@ -104,10 +104,10 @@ internal class CapabilityTools(private val facts: Capabilities) {
     private fun hub(): ToolReading? {
         if (!facts.hub.on) return null
         return if (facts.hub.systemd) {
-            ToolReading(HUB_ROW, ToolLevel.OK, "systemctl and systemd-run found for the MCP hub")
+            ToolReading(SYSTEMD_ROW, ToolLevel.OK, "systemctl and systemd-run found for the MCP hub")
         } else {
             ToolReading(
-                HUB_ROW,
+                SYSTEMD_ROW,
                 ToolLevel.WARN,
                 "the MCP hub runs under systemd --user, but systemctl or systemd-run is not on the PATH",
                 "install systemd's user tools, or turn sharing off with `mcp_share = false` under [daemon]",
@@ -121,7 +121,7 @@ private const val WRAPPER_ROW = "processWrapper"
 private const val AGY_ROW = "agy"
 private const val SHIM_ROW = "antigravity shim"
 private const val CODEX_ROW = "codex"
-private const val HUB_ROW = "systemd"
+private const val SYSTEMD_ROW = "systemd"
 
 internal const val SETUP_UPDATE = "splice setup --update"
 internal const val INSTALL_ALL = "splice install --all"

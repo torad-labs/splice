@@ -3,7 +3,6 @@
 // the install has not set up yet (CapabilityGaps), which only an interactive upgrade prints.
 package splice.app.capability
 
-import splice.app.InstallWiring
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.CLAUDE_COMMAND
 import splice.core.util.Cancellables
@@ -11,16 +10,18 @@ import splice.core.util.EnvReader
 import splice.launch.install.GeminiShim
 import splice.launch.install.GeminiShimLaid
 import splice.launch.install.InstallCommand
-import splice.lifecycle.upgrade.AftercareGaps
-import splice.lifecycle.upgrade.AftercareStep
-import splice.lifecycle.upgrade.UpgradeAftercare
+import splice.lifecycle.upgrade.aftercare.AftercareGaps
+import splice.lifecycle.upgrade.aftercare.AftercareStep
+import splice.lifecycle.upgrade.aftercare.UpgradeAftercare
 
-internal class CapabilityAftercare(private val env: EnvReader) {
+/** [hub] lays the MCP hub's units and `mcp-front.env` again where they differ (InstallWiring.refreshHub), handed in by
+ *  the wiring that owns the units. */
+internal class CapabilityAftercare(private val env: EnvReader, private val hub: AftercareStep) {
     private val quiet = TerminalOutput { }
 
     fun aftercare(output: TerminalOutput): UpgradeAftercare = UpgradeAftercare(
         output,
-        listOf(AftercareStep { shim() }, AftercareStep { InstallWiring.refreshHub(env) }),
+        listOf(AftercareStep { shim() }, hub),
         AftercareGaps { gaps().afterUpgrade().map { it.text } },
     )
 

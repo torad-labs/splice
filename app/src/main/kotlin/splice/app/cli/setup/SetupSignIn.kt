@@ -64,8 +64,9 @@ internal class SetupSignIn(
             ),
         )
         var ok = true
-        for ((key, command) in pending) {
-            if (confirm("Sign in to ${palette.paint(palette.signal, command)} now?", default = true)) {
+        // By the head's key: setup retires the command of each plan it connects, so the command names nothing to run.
+        for ((key, _) in pending) {
+            if (confirm("Sign in to ${palette.paint(palette.signal, key)} now?", default = true)) {
                 if (!loginHead(key)) ok = false
             } else {
                 println("  " + palette.paint(palette.quiet, "skipped; sign in later with: splice login $key"))

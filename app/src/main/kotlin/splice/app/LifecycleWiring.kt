@@ -31,6 +31,7 @@ import splice.lifecycle.upgrade.UpgradeAuto
 import splice.lifecycle.upgrade.UpgradeRuns
 import splice.lifecycle.upgrade.UpgradeVerb
 import splice.lifecycle.upgrade.VersionedRestart
+import splice.lifecycle.upgrade.aftercare.AftercareStep
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -126,7 +127,8 @@ internal object LifecycleWiring {
             UpgradeUnits(InstallWiring.units(env), InstallWiring.daemonUnits(env)),
             cliUpdateSettings(),
             // What the new jar does once its upgrade passed: the maintenance and the "action needed" list.
-            CapabilityAftercare(env).aftercare(TerminalOutput(::println)),
+            CapabilityAftercare(env, AftercareStep { InstallWiring.refreshHub(env) })
+                .aftercare(TerminalOutput(::println)),
         )
     }
 

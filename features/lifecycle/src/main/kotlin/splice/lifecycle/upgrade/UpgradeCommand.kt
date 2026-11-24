@@ -23,6 +23,9 @@ import splice.daemonclient.DaemonProbe
 import splice.daemonclient.DaemonSettings
 import splice.lifecycle.units.UpgradeDaemonUnit
 import splice.lifecycle.units.UpgradeUnits
+import splice.lifecycle.upgrade.aftercare.AFTERCARE_AUTO_FLAG
+import splice.lifecycle.upgrade.aftercare.AFTERCARE_FLAG
+import splice.lifecycle.upgrade.aftercare.UpgradeAftercare
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -51,7 +54,13 @@ public class UpgradeVerb(
     public fun upgrade(args: List<String>): Boolean {
         if (args == listOf("--check")) return UpgradeCheckLine(output, env, channel).answer()
         // Run by the upgrade that just activated this jar, never by hand: `--auto` keeps it to the maintenance alone.
-        if (args.firstOrNull() == AFTERCARE_FLAG) return aftercare.run(auto = AUTO_FLAG in args)
+        // Exactly `--aftercare` or `--aftercare --auto`: any other word after it is a command line nothing wrote.
+        val aftercareAuto = when (args) {
+            listOf(AFTERCARE_FLAG) -> false
+            listOf(AFTERCARE_FLAG, AFTERCARE_AUTO_FLAG) -> true
+            else -> null
+        }
+        if (aftercareAuto != null) return aftercare.run(auto = aftercareAuto)
         val settings = DaemonSettings(errors)
         val daemon = UpgradeDaemon(
             output,

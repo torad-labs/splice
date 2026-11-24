@@ -43,7 +43,7 @@ internal object DoctorWiring {
         },
         // The optional programs splice works beside (Claude Desktop, agy, Codex, systemd for the MCP hub), read where the
         // executable keeps them.
-        tools = ToolsRead { _, env -> CapabilityTools(CapabilityLook(env).read()).readings() },
+        tools = ToolsRead { topology, env -> CapabilityTools(CapabilityLook(env).read(topology)).readings() },
     )
 
     /** The console's /api/doctor body: the `--json` report under the daemon's own environment, reading

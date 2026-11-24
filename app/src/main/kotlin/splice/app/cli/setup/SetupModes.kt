@@ -6,14 +6,16 @@
 package splice.app.cli.setup
 
 import splice.app.modes.ModeBoot
-import splice.core.config.StatePaths
 import splice.core.mode.ModeSetting
 import splice.core.mode.ModeTableWrite
 import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriteResult
 import splice.core.topology.TopologyWriter
 import splice.core.util.Cancellables
+import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
 import splice.topology.TopologyLoader
+import splice.topology.TopologyStatePaths
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -29,21 +31,23 @@ internal fun interface ModeRows {
 internal class CarriedModes : ModeRows {
     override fun invoke(path: Path): List<ModeRow> {
         val tables = if (Files.exists(path)) TopologyLoader.parse(Files.readString(path)).modes else emptyMap()
-        return ModeBoot().catalog.modes.map { mode ->
+        return ModeBoot().catalog.modes.filterNot { it.name in MODE_TEMPLATES }.map { mode ->
             ModeRow(mode.name, mode.manifest.summary, tables[mode.name]?.on ?: mode.manifest.offer.on)
         }
     }
 }
 
+/** [env] is setup's own, so the backup of splice.toml lands in the state folder that file names. */
 internal class SetupModes(
     private val prompts: SetupPrompts,
+    private val env: EnvReader,
     private val rows: ModeRows = CarriedModes(),
 ) {
-    /** The modes the person turned on; none without a console. */
-    fun offer(path: Path): List<String> {
-        if (!prompts.hasConsole()) return emptyList()
+    /** The modes the person turned on; null when nothing was asked (no console, or no mode is off). */
+    fun offer(path: Path): List<String>? {
+        if (!prompts.hasConsole()) return null
         val all = Cancellables.runCatchingBestEffort { rows(path) }.getOrDefault(emptyList())
-        if (all.isEmpty()) return emptyList()
+        if (all.none { !it.on }) return null
         val listed = all.joinToString(", ") { "${it.name} (${if (it.on) "on" else "off"})" }
         prompts.frame.step("Modes add tools to every session on splice's door: $listed")
         return all.filterNot { it.on }.filter { prompts.frame.confirm("Turn on ${it.name}? ${it.summary}", false) }
@@ -56,17 +60,22 @@ internal class SetupModes(
     /** `on = true` in each of [on]'s tables, keeping any per-head keys it holds. A write that is refused is said. */
     fun save(path: Path, on: List<String>) {
         if (on.isEmpty()) return
-        val current = Cancellables.runCatchingBestEffort { TopologyLoader.parse(Files.readString(path)).modes }
-            .getOrDefault(emptyMap())
-        val writer = TopologyWriter(path, StatePaths().configBackupsDir, TopologyParse(TopologyLoader::parse))
+        val topology = Cancellables.runCatchingBestEffort { TopologyLoader.parse(Files.readString(path)) }.getOrNull()
+        val current = topology?.modes.orEmpty()
+        val backups = TopologyStatePaths(env).of(topology).configBackupsDir
+        val writer = TopologyWriter(path, backups, TopologyParse(TopologyLoader::parse))
         for (name in on) {
             val wanted = (current[name] ?: ModeSetting()).copy(on = true)
             val result = Cancellables.runCatchingBestEffort { ModeTableWrite(writer).write(name, wanted) }
             val refused = (result.getOrNull() as? TopologyWriteResult.Refused)
                 ?.findings?.joinToString("; ") { it.text() }
-            (refused ?: result.exceptionOrNull()?.message)?.let {
-                System.err.println("splice: mode $name was not turned on ($it); set on = true under [modes.$name]")
-            }
+            val failed = result.exceptionOrNull()?.let { SafeFailureText.render(it) }
+            val why = refused ?: failed ?: continue
+            System.err.println("splice: mode $name was not turned on ($why); set on = true under [modes.$name]")
         }
     }
 }
+
+// The two modes the repository ships to be copied into a new one (modes/README.md, "Adding a mode"): working examples
+// that ship off and give a session nothing it would use, so setup never offers them.
+private val MODE_TEMPLATES = setOf("template", "templateapp")

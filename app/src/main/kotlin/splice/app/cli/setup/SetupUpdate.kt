@@ -35,11 +35,11 @@ internal class SetupUpdate(
     private val effects: SetupEffects,
     private val detect: SetupProbe,
     private val desktopOn: DesktopOn = DesktopOn { DesktopCommand(env).run(listOf("on")) == 0 },
+    private val modes: SetupModes = SetupModes(prompts, env),
 ) {
     private val frame = prompts.frame
     private val sync = SetupMcpSync(env)
-    private val modes = SetupModes(prompts)
-    private val autoUpdate = SetupAutoUpdate(prompts)
+    private val autoUpdate = SetupAutoUpdate(prompts, env)
 
     /** False only when there is no install to update; every offer declined is still a good run. */
     suspend fun run(): Boolean {
@@ -54,13 +54,35 @@ internal class SetupUpdate(
         val gaps = facts?.let { CapabilityGaps(it, claudeWrapped()).all() }.orEmpty()
         // The shim is upkeep, said when laid, and no offer: "nothing new" is about what the person is asked.
         shim()
-        val done = listOf(launchers(facts?.desktop), desktop(facts?.desktop)).count { it } +
-            listOf(mcp(), modes(path), autoUpdate(path)).count { it }
-        val said = said(gaps)
-        if (done == 0 && !said) frame.step("Nothing new to set up: this install already has what this release adds.")
+        if (prompts.hasConsole()) asked(path, facts?.desktop, gaps) else unattended(gaps)
         effects.checkup(env)
         frame.outro("Up to date.")
         return true
+    }
+
+    /** Each offer in turn, then what no offer here closes; "nothing new" only when nothing was offered or left. */
+    private suspend fun asked(path: Path, desktop: DesktopFacts?, gaps: List<Gap>) {
+        val kinds = gaps.map { it.kind }.toSet()
+        val offers = listOf(launchers(desktop), desktop(desktop), mcp(GapKind.MCP_SYNC in kinds)) +
+            listOf(modes(path), autoUpdate(path))
+        val left = gaps.filter { it.kind in SAID_ONLY }
+        left.forEach { frame.step(it.text) }
+        when {
+            offers.all { it == Offer.NOTHING } && left.isEmpty() ->
+                frame.step("Nothing new to set up: this install already has what this release adds.")
+            offers.none { it == Offer.DONE } ->
+                frame.step("Nothing changed; `splice setup --update` asks again any time.")
+        }
+    }
+
+    /** With no terminal nothing can be asked: every gap is said, with where to set it up. */
+    private fun unattended(gaps: List<Gap>) {
+        if (gaps.isEmpty()) {
+            frame.step("Nothing new to set up: this install already has what this release adds.")
+            return
+        }
+        gaps.forEach { frame.step(it.text) }
+        frame.step("Run `splice setup --update` in a terminal to set these up.")
     }
 
     /** The Antigravity shim, laid where it is missing or stale, and said when it was. */
@@ -72,53 +94,59 @@ internal class SetupUpdate(
         }
     }
 
-    /** The side-by-side launchers not installed yet; true when one was. */
-    private fun launchers(desktop: DesktopFacts?): Boolean {
+    /** The side-by-side launchers not installed yet. */
+    private fun launchers(desktop: DesktopFacts?): Offer {
+        val missing = desktop == null || !desktop.sideBySideCli || (desktop.program != null && !desktop.sideBySideApp)
+        if (!missing) return Offer.NOTHING
         val launchers = effects.launchers()
-        val choice = launchers.offer(prompts, desktop, onlyNew = true) ?: return false
+        val choice = launchers.offer(prompts, desktop, onlyNew = true) ?: return Offer.DECLINED
         launchers.apply(choice, frame)
-        return choice.cliShortcut || choice.desktopApp
+        return if (choice.cliShortcut || choice.desktopApp) Offer.DONE else Offer.DECLINED
     }
 
     /** All of Claude Desktop on splice, offered where Desktop is installed and is off splice or on the older
      *  Code-tab-only door. */
-    private suspend fun desktop(desktop: DesktopFacts?): Boolean {
-        val mode = desktop?.takeIf { it.program != null && prompts.hasConsole() }?.mode
-        if (mode != DesktopMode.OFF && mode != DesktopMode.STANDARD) return false
+    private suspend fun desktop(desktop: DesktopFacts?): Offer {
+        val mode = desktop?.takeIf { it.program != null }?.mode
+        if (mode != DesktopMode.OFF && mode != DesktopMode.STANDARD) return Offer.NOTHING
         val older = mode == DesktopMode.STANDARD
         val question = if (older) {
             "Move Claude Desktop from the older Code-tab door to all of Desktop on splice (`splice desktop on`)?"
         } else {
             "Put all of Claude Desktop (Chat, Cowork, Code) on splice now (`splice desktop on`)?"
         }
-        if (!frame.confirm(question, older)) return false
-        return Cancellables.runCatchingBestEffort { desktopOn() }.getOrDefault(false)
+        if (!frame.confirm(question, older)) return Offer.DECLINED
+        val on = Cancellables.runCatchingBestEffort { desktopOn() }.getOrDefault(false)
+        return if (on) Offer.DONE else Offer.DECLINED
     }
 
-    /** MCP import and harness sync, which offers itself only where there is something to bring in or sync. */
-    private suspend fun mcp(): Boolean {
-        val choice = sync.offer(prompts) ?: return false
+    /** MCP import and harness sync, which offers itself where there is something to bring in or sync; [unsynced]:
+     *  agy or codex is installed and not synced, so declining leaves something undone. */
+    private suspend fun mcp(unsynced: Boolean): Offer {
+        val choice = sync.offer(prompts) ?: return Offer.DECLINED
         sync.apply(choice, frame)
-        return choice.active
+        return when {
+            choice.active -> Offer.DONE
+            unsynced -> Offer.DECLINED
+            else -> Offer.NOTHING
+        }
     }
 
-    private fun modes(path: Path): Boolean {
-        val on = modes.offer(path)
+    /** The Modes that are off; a running daemon is restarted onto any turned on, so the doctor and the next session
+     *  see them. */
+    private fun modes(path: Path): Offer {
+        val on = modes.offer(path) ?: return Offer.NOTHING
         modes.save(path, on)
-        return on.isNotEmpty()
+        if (on.isEmpty()) return Offer.DECLINED
+        effects.restart()
+        return Offer.DONE
     }
 
-    private fun autoUpdate(path: Path): Boolean {
+    private fun autoUpdate(path: Path): Offer {
+        if (!autoUpdate.askable(path)) return Offer.NOTHING
         val on = autoUpdate.offer(path)
         autoUpdate.save(path, on)
-        return on
-    }
-
-    /** The gaps no offer here closes, each said with what to do; true when any was. */
-    private fun said(gaps: List<Gap>): Boolean {
-        val left = gaps.filter { it.kind in SAID_ONLY }
-        left.forEach { frame.step(it.text) }
-        return left.isNotEmpty()
+        return if (on) Offer.DONE else Offer.DECLINED
     }
 
     /** Whether plain `claude` runs splice's launch shim: an older `splice setup` wrapped it. */
@@ -127,6 +155,9 @@ internal class SetupUpdate(
         InstallCommand(quiet, quiet).runsShim(CLAUDE_COMMAND, env)
     }.getOrDefault(false)
 }
+
+/** What one offer came to: nothing to offer, offered and left as it was, or done. */
+private enum class Offer { NOTHING, DECLINED, DONE }
 
 // The gaps `setup --update` can only say: root writes Claude Code's managed settings, and systemd is not splice's to
 // install. Every other gap has its offer above.

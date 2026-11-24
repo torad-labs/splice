@@ -21,10 +21,18 @@ class CapabilityReadingsTest {
 
     @Test
     fun `a Desktop setup without Claude Desktop warns, and never fails`() {
-        val facts = bare().copy(desktop = desktop(program = null, mode = DesktopMode.APP, cli = true))
+        val facts = bare().copy(desktop = desktop(program = null, mode = DesktopMode.APP))
         val row = CapabilityTools(facts).readings().single { it.name == "claude-desktop" }
         assertEquals(ToolLevel.WARN, row.level)
         assertTrue("not installed" in row.said, row.said)
+    }
+
+    // `claude-splice` runs Claude Code in a terminal: it is no use of Claude Desktop, so a machine with only that
+    // launcher and no Desktop has nothing to say about Desktop.
+    @Test
+    fun `the claude-splice launcher alone says nothing about Claude Desktop`() {
+        val facts = bare().copy(desktop = desktop(program = null, cli = true))
+        assertTrue(CapabilityTools(facts).readings().none { it.name == "claude-desktop" })
     }
 
     @Test
@@ -77,7 +85,7 @@ class CapabilityReadingsTest {
     }
 
     @Test
-    fun `the MCP hub without systemd warns; with systemd it is fine; with the hub off it says nothing`() {
+    fun `the MCP hub without systemd warns, with systemd it is fine, and with the hub off it says nothing`() {
         val missing = bare().copy(hub = HubFacts(linux = true, on = true, systemd = false))
         assertEquals(ToolLevel.WARN, CapabilityTools(missing).readings().single { it.name == "systemd" }.level)
         assertTrue(CapabilityGaps(missing, false).afterUpgrade().any { it.kind == GapKind.HUB_SYSTEMD })

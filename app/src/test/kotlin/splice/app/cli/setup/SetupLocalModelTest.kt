@@ -158,13 +158,17 @@ class SetupLocalModelTest {
         )
         runWizard(home, prompts, local, events)
         // The offer after the tick-list, both answers before anything runs, and rig only after the
-        // ticked heads landed and the daemon restarted for them.
+        // ticked heads landed and the daemon restarted for them. Nov 23, 2026: the wizard also asks about the Modes
+        // that are off (the two copy-me templates never) and automatic updates, and restarts once more after a mode
+        // is turned on, so the doctor and the next session see it.
         val expected = listOf(
             "pick heads",
             "ask Keep these context windows for codex?",
             "ask Run one short live turn against 'codex' once it is up?",
             "ask local",
             "ask Share MCP servers between sessions? It uses less memory.",
+            "ask mode tableapp",
+            "ask Install new splice releases automatically? The daemon installs each one itself.",
             "ask Install now?",
             "add codex",
             "restart",
@@ -173,6 +177,7 @@ class SetupLocalModelTest {
             "rig up",
             "rig describe",
             "add bonsai",
+            "restart",
         )
         assertEquals(expected, events)
         val summary = chrome.substring(chrome.indexOf("Summary"))
@@ -185,7 +190,13 @@ class SetupLocalModelTest {
         frame = WizardFrame(
             out = chrome,
             ask = ConfirmPrompt { question, _ ->
-                events += if (question.startsWith("Run a local model")) "ask local" else "ask $question"
+                events += when {
+                    question.startsWith("Run a local model") -> "ask local"
+                    // A mode's question carries its manifest's summary; the test names the mode alone.
+                    question.startsWith("Turn on ") ->
+                        "ask mode " + question.removePrefix("Turn on ").substringBefore('?')
+                    else -> "ask $question"
+                }
                 !question.startsWith("Run one short live turn")
             },
         ),

@@ -440,6 +440,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/report/DoctorReportFiles.kt" to mapOf(
         "Files.writeString(" to 1,
     ),
+    // The Antigravity shim install.sh lays, laid again by `splice install --all` and an upgrade's aftercare (Nov 23).
+    "features/launch/src/main/kotlin/splice/launch/install/GeminiShim.kt" to mapOf("writeAtomic(" to 1),
     "features/launch/src/main/kotlin/splice/launch/install/InstallLinker.kt" to mapOf("Files.createSymbolicLink(" to 1),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt" to mapOf("a shell redirect" to 2),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/restart/DaemonSuccessor.kt" to mapOf(

@@ -6,7 +6,7 @@
 //   - on an interactive upgrade only, a short "What's new / action needed" list of what the install has not set up
 //     yet, pointing at `splice setup --update`. `--auto` (the daemon's updater) prints no list and asks nothing.
 // The executable holds what both halves read (Desktop's mode, the hub, the harnesses), so it hands them in.
-package splice.lifecycle.upgrade
+package splice.lifecycle.upgrade.aftercare
 
 import splice.core.terminal.BOLD
 import splice.core.terminal.RESET
@@ -14,6 +14,7 @@ import splice.core.terminal.TerminalOutput
 import splice.core.terminal.YELLOW
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
+import splice.lifecycle.upgrade.UPGRADE_PAD
 
 /** One maintenance step: what it did, a line each (none when there was nothing to do). May throw; the aftercare says
  *  the failure and goes on. */
@@ -60,4 +61,4 @@ public class UpgradeAftercare(
 
 /** The verb the new jar answers after an upgrade, and the flag that keeps it quiet for the daemon's updater. */
 internal const val AFTERCARE_FLAG = "--aftercare"
-internal const val AUTO_FLAG = "--auto"
+internal const val AFTERCARE_AUTO_FLAG = "--auto"

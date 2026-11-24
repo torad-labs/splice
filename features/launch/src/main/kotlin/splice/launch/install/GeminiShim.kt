@@ -2,8 +2,9 @@
 // (docs/specs/desktop-antigravity.md): `~/.local/lib/splice/gemini/claude`, which runs `splice desktop acp` with
 // Desktop's own arguments. install.sh step 4a' lays it; `splice install --all` and the upgrade's aftercare lay the same
 // bytes, so an install that predates the shim, or one moved to another bin folder, gets it without a reinstall.
-// Named `claude` so seatd gives the session the profile every Desktop session has; it names the splice it runs by path,
-// since Desktop's PATH need not hold the bin folder.
+// Named `claude` because a host that runs Desktop's sessions under a profile picks that profile by the program's name,
+// so an Antigravity session gets the one every Desktop session has; it names the splice it runs by path, since
+// Desktop's PATH need not hold the bin folder.
 package splice.launch.install
 
 import splice.core.config.InstallPaths

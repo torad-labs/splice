@@ -10,6 +10,11 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
+import splice.lifecycle.upgrade.aftercare.AFTERCARE_AUTO_FLAG
+import splice.lifecycle.upgrade.aftercare.AFTERCARE_FLAG
+import splice.lifecycle.upgrade.aftercare.AftercareGaps
+import splice.lifecycle.upgrade.aftercare.AftercareStep
+import splice.lifecycle.upgrade.aftercare.UpgradeAftercare
 import java.nio.file.Path
 
 internal class UpgradeAftercareTest : UpgradeRig() {
@@ -30,7 +35,7 @@ internal class UpgradeAftercareTest : UpgradeRig() {
         pristine(home)
         val (ok, out) = captured { command(home, release(home)).upgrade(listOf("--auto", "--to", "v9.9.9")) }
         assertTrue(ok, out)
-        assertTrue(AUTO_FLAG in calls.single { AFTERCARE_FLAG in it }, calls.toString())
+        assertTrue(AFTERCARE_AUTO_FLAG in calls.single { AFTERCARE_FLAG in it }, calls.toString())
     }
 
     @Test
@@ -103,7 +108,26 @@ internal class UpgradeAftercareTest : UpgradeRig() {
                 steps = listOf(AftercareStep { emptyList<String>().also { ran++ } }),
             ),
         )
-        assertTrue(verb.upgrade(listOf(AFTERCARE_FLAG, AUTO_FLAG)))
+        assertTrue(verb.upgrade(listOf(AFTERCARE_FLAG, AFTERCARE_AUTO_FLAG)))
         assertEquals(1, ran, "the step ran, and nothing was fetched or restarted")
+    }
+
+    // Only the exact command lines the upgrade writes run the aftercare: a stray word after it is refused as usage.
+    @Test
+    fun `the verb runs no aftercare for a command line it never writes`() {
+        var ran = 0
+        val verb = UpgradeVerb(
+            TerminalOutput { },
+            TerminalOutput { },
+            EnvReader { null },
+            VersionedRestart { true },
+            aftercare = UpgradeAftercare(
+                TerminalOutput { },
+                steps = listOf(AftercareStep { emptyList<String>().also { ran++ } }),
+            ),
+        )
+        assertFalse(verb.upgrade(listOf(AFTERCARE_FLAG, "--now")))
+        assertFalse(verb.upgrade(listOf(AFTERCARE_FLAG, AFTERCARE_AUTO_FLAG, "x")))
+        assertEquals(0, ran)
     }
 }

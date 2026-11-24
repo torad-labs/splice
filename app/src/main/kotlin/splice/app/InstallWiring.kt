@@ -101,8 +101,11 @@ internal object InstallWiring {
         val output = TerminalOutput { said += it.removePrefix("splice: ") }
         val folder = unitFolder(env, output)
         folder.lay(HubUnits(folder, output).templates())
+        // Read, never made: an upgrade writes no splice.toml, so a missing or broken one reads as none.
         val path = TopologyLoader.configPath(env)
-        val topology = TopologyLoader.loadOrMaterialize(path)
+        val topology = Cancellables.runCatchingBestEffort {
+            if (Files.isRegularFile(path)) TopologyLoader.parse(Files.readString(path)) else null
+        }.getOrNull()
         McpFrontEnv(path.resolveSibling("mcp-front.env"))
             .write(StatePaths(envReader = env).stateDir.resolve("mcp-hub"), AdminSupport.controlPort(topology, env))
             ?.let { said += it.removePrefix("splice: ") }

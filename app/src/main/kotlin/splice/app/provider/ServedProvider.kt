@@ -48,6 +48,11 @@ internal interface ServedProvider {
     /** The largest request body this provider's turns take, in bytes. */
     val maxRequestBytes: Int
 
+    /** The client timeout a session must outlive to see a turn here end, in milliseconds
+     *  (UpstreamFaultPlan.clientWallMs): a launch on the door plants the longest of its providers' (#791). Null for a
+     *  provider whose turns run elsewhere and hold no wall of splice's. */
+    val clientWallMs: Long? get() = null
+
     /** How long reading one request body may take, in milliseconds: the gateway reads a turn's body itself, to route it,
      *  and holds it to the bounds the provider's turns are held to. */
     val requestReadTimeoutMs: Long

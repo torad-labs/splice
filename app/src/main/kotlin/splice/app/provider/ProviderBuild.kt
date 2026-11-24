@@ -11,6 +11,8 @@ import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.turn.LiveWatchdogBudget
 import splice.core.turn.WatchdogBudget
+import splice.upstream.retry.CLIENT_WALL_GRACE_MS
+import splice.upstream.retry.MAX_HOLD_MS
 
 /** The per-head inputs every provider builder threads through — a parameter object. */
 internal data class ProviderBuild(
@@ -30,7 +32,13 @@ internal data class UpstreamFaultPlan(
     /** [watchdog] with the live knobs (firstByteTimeoutMs, stallReanchorMs) read as they stand when a turn asks;
      *  the budget as built where nothing is live. */
     val liveWatchdog: LiveWatchdogBudget = LiveWatchdogBudget { watchdog },
-)
+) {
+    /** The client timeout a session must outlive to see a turn here end, in milliseconds: DERIVED from the whole-turn
+     *  cap (never a second hand-maintained number), since the proxy's wall is the one that names the verdict, and from
+     *  the longest hold (failure-handling slice 5), so a turn held until a reset up to seven days away is still the
+     *  client's request when the reset comes. A head's launch and a launch on the door both plant it (#791). */
+    val clientWallMs: Long get() = watchdog.totalCap.inWholeMilliseconds + MAX_HOLD_MS + CLIENT_WALL_GRACE_MS
+}
 
 /** What the head's endpoint published, as the provider builders read it. */
 internal data class PublishedRoster(

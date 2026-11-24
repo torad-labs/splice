@@ -76,4 +76,23 @@ class ClaudeArgvTest {
     fun `every word after -- is positional`() {
         assertEquals(listOf("claude", "--", "<7 chars withheld>"), logged("--", "--model"))
     }
+
+    // #791: a caller's --model starts the session, so a launch names no starting model beside it; read with the same
+    // grammar as everything else here, so a --model that is a value or a positional word is not taken for one.
+    @Test
+    fun `namesModel finds --model as an option, spaced or joined, among other options`() {
+        assertEquals(true, ClaudeArgv.namesModel(listOf("--model", "opus")))
+        assertEquals(true, ClaudeArgv.namesModel(listOf("--model=opus")))
+        assertEquals(true, ClaudeArgv.namesModel(listOf("--verbose", "--add-dir", "/tmp", "--model", "opus")))
+        assertEquals(true, ClaudeArgv.namesModel(listOf("-p", "--model", "opus")))
+    }
+
+    @Test
+    fun `namesModel passes over a --model that is another option's value, a positional word, or after --`() {
+        assertEquals(false, ClaudeArgv.namesModel(emptyList()))
+        assertEquals(false, ClaudeArgv.namesModel(listOf("--system-prompt", "--model")))
+        assertEquals(false, ClaudeArgv.namesModel(listOf("--", "--model", "opus")))
+        assertEquals(false, ClaudeArgv.namesModel(listOf("write --model docs")))
+        assertEquals(false, ClaudeArgv.namesModel(listOf("--models", "x")))
+    }
 }

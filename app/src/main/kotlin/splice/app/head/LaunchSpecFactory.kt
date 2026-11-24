@@ -24,8 +24,6 @@ import splice.launch.LaunchModels
 import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.ModelTiers
-import splice.upstream.retry.CLIENT_WALL_GRACE_MS
-import splice.upstream.retry.MAX_HOLD_MS
 import java.nio.file.Path
 
 /** A session starts at high when nothing sets its head's effort (Oct 28, 2026: the default effort is high). */
@@ -102,11 +100,8 @@ internal class LaunchSpecFactory(
                 // launch-spec assembly; direct synthetic calls still consume this resolved flag without
                 // reinterpreting the declaration. See ManagedHeadFactory.forwardClientAuth.
                 forwardClientAuth = forwardClientAuth,
-                // The client's request timeout is DERIVED from the head's whole-turn cap (never a
-                // second hand-maintained number): the proxy's wall is the one that names the verdict. Failure-handling
-                // slice 5: and from the longest hold, so a turn held in its own request until a reset up to seven days
-                // away is still the client's request when the reset comes.
-                apiTimeoutMs = ctx.faultPlan.watchdog.totalCap.inWholeMilliseconds + MAX_HOLD_MS + CLIENT_WALL_GRACE_MS,
+                // The client's request timeout, from the head's whole-turn cap and the longest hold (clientWallMs).
+                apiTimeoutMs = ctx.faultPlan.clientWallMs,
                 // The bearer rides in a 0600 header FILE curl reads (`-H @file`), never inline: an inline
                 // header sat in settings.json and in curl's argv, which /proc shows every local user.
                 statuslineCommand = "curl -sS -H ${shellSingleQuote("@${turnKey.headerFile()}")} " +

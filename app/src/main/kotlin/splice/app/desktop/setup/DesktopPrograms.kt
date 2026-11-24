@@ -15,7 +15,6 @@
 // Desktop's library, so they follow an upgrade.
 package splice.app.desktop.setup
 
-import splice.app.cli.AdminSupport
 import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -72,14 +71,8 @@ internal class DesktopPrograms(private val stateDir: Path) {
     /** Every program taken away; whether there was one. */
     fun remove(): Boolean = listOf(credential, launch, mcp).map(Files::deleteIfExists).any { it }
 
-    /** This splice as shell words: its Java and jar, or its class path when it runs from a build. */
-    private fun spliceWords(): String {
-        val java = ProcessHandle.current().info().command().orElse(null)
-            ?: Path.of(System.getProperty(JAVA_HOME), "bin", "java").toString()
-        val run = AdminSupport.selfJar()?.let { listOf(java, "-jar", it.toAbsolutePath().toString()) }
-            ?: listOf(java, "-cp", System.getProperty(CLASS_PATH).orEmpty(), MAIN_CLASS)
-        return run.joinToString(" ", transform = ::quoted)
-    }
+    /** This splice as shell words (SpliceSelf). */
+    private fun spliceWords(): String = SpliceSelf().command().joinToString(" ", transform = ::quoted)
 
     /** [word] as one shell word, in single quotes. */
     private fun quoted(word: String): String = "'" + word.replace("'", "'\\''") + "'"
@@ -96,9 +89,3 @@ private val OWNER_ONLY_EXECUTABLE = setOf(
 private const val CREDENTIAL_FILE = "desktop-credential"
 private const val LAUNCH_FILE = "desktop-launch"
 private const val MCP_FILE = "desktop-mcp"
-
-private const val JAVA_HOME = "java.home"
-private const val CLASS_PATH = "java.class.path"
-
-// The class splice's jar names as its entry point, for a splice run from classes (a build, not an install).
-private const val MAIN_CLASS = "splice.app.MainKt"

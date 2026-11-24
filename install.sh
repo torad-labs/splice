@@ -751,10 +751,10 @@ fi
 #     updater may replace it when [daemon] auto_update = true. A jar copied into place by hand never carries it.
 printf 'install.sh\n' > "${SHARE_DIR}/managed-install" ||
   echo "splice: warning: could not write ${SHARE_DIR}/managed-install; auto-update leaves this install alone" >&2
-# 4a'. The `claude` Claude Desktop's launcher runs in place of Claude Code for an Antigravity model
-#      (docs/specs/desktop-antigravity.md): named `claude` so seatd gives the session the profile every Desktop session
-#      has, it runs `splice desktop acp` with Desktop's own arguments. It names the splice it runs by path, since
-#      Desktop's PATH need not hold BIN_DIR.
+# 4a'. A `claude` that runs `splice desktop acp` with Desktop's own arguments, for a launcher of the person's own that
+#      starts a program named `claude` in place of Claude Code for an Antigravity model
+#      (docs/specs/desktop-antigravity.md). `splice desktop launch` needs none: it routes such a session itself. It
+#      names the splice it runs by path, since Desktop's PATH need not hold BIN_DIR.
 GEMINI_DIR="$HOME/.local/lib/splice/gemini"
 # shellcheck disable=SC2016 # the shim's own "$@", written as text
 if mkdir -p "$GEMINI_DIR" &&

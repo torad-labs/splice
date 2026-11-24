@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.wrap.WrapStateStore
 import splice.client.wrap.WrappedHead
+import splice.core.util.EnvReader
 import splice.launch.LaunchOutcome
 import java.nio.file.Path
 
@@ -21,6 +22,7 @@ class SideBySideLaunchTest {
         env = mapOf("ANTHROPIC_BASE_URL" to "http://127.0.0.1:3096/door"),
         unset = listOf("CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY"),
         overlay = "{}",
+        window = SESSION_WINDOW,
     )
 
     /** A door that knows profile `work`, in /profiles/work. */
@@ -74,7 +76,7 @@ class SideBySideLaunchTest {
     fun `the recipe sets the profile's CLAUDE_CONFIG_DIR and never takes it out`(@TempDir home: Path) {
         val ready = assertInstanceOf(SideBySideLaunch.Started.Ready::class.java, start("--profile", "work"))
         val wrap = WrappedHead(home, stateStore = WrapStateStore(home.resolve("wrap-state.json")))
-        val recipe = DoorRecipe(wrap, wrap, "claude")
+        val recipe = DoorRecipe(wrap, wrap, "claude", EnvReader { null })
             .outcome(ready.spec, ready.args, false, LaunchCaller(), emptyList())
         val launched = assertInstanceOf(LaunchOutcome.Ready::class.java, recipe).recipe
         assertEquals("/profiles/work", launched.env["CLAUDE_CONFIG_DIR"])
@@ -82,3 +84,6 @@ class SideBySideLaunchTest {
         assertFalse("--profile" in launched.argv, launched.argv.toString())
     }
 }
+
+// why: any window does here; this is the one a door session declares by default, 200k tokens.
+private const val SESSION_WINDOW = 200_000L

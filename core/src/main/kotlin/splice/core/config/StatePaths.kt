@@ -287,6 +287,10 @@ public class StatePaths(
      *  over splice's default policy in every configuration splice gives Desktop (DesktopPolicyLayers). */
     public val desktopPolicyOverridesFile: Path = stateDir.resolve("desktop-policy-overrides.json")
 
+    /** Which program a Claude Desktop session runs on for each model prefix (DesktopHarnesses): the choices the person
+     *  made in the console and the whole map they come to, owner-only, for any Desktop session launcher to read. */
+    public val desktopHarnessesFile: Path = stateDir.resolve("desktop-harnesses.json")
+
     /** The model catalog: every model a signed-in, configured provider's own list publishes, credential-free,
      *  rewritten at daemon start/restart and on a sign-in, sign-out or provider-list change (CatalogFile). One
      *  spelling for the writer and every reader. */

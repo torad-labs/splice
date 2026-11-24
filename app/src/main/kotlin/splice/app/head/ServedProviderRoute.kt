@@ -46,6 +46,8 @@ internal class ServedProviderRoute(
 
     override val requestReadTimeoutMs: Long get() = ctx.cfg.current().requestReadTimeoutMs
 
+    override val clientWallMs: Long get() = ctx.faultPlan.clientWallMs
+
     override fun quotaFull(): QuotaFull? = route.runtime.quotaFull()
 
     override suspend fun login(): ProviderLogin = logins.of(

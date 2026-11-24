@@ -1,5 +1,5 @@
 // Server mode (docs/specs/server-mode.md, F8 and F9, the laptop's half): what a launch of a command a team's server
-// serves hands Claude Code. Every one names this laptop's splice in x-splice-client beside the shell's own headers; on a
+// serves hands Claude Code. Every one names this laptop's splice in x-splice-client among splice's headers; on a
 // server that relays telemetry, the session exports its metrics and logs to the relay over OTLP/HTTP, reads the key
 // through an otelHeadersHelper, and logs no prompt; and a command whose managed settings set telemetry of their own gets
 // none of splice's.
@@ -74,10 +74,12 @@ class LaunchTeamServerTest(@param:TempDir private val tmp: Path) {
         )
     }
 
+    // #791: the recipe names splice's own headers alone; the launcher puts the shell's before them (ShimHeadersTest),
+    // so the daemon's own environment's headers (x-team-tag here) are not the caller's and do not ride along.
     @Test
-    fun `every launch of a server's command names this laptop's splice beside the shell's own headers`() {
+    fun `every launch of a server's command names this laptop's splice in its own headers`() {
         val lines = headerLines(launch(spec(TeamServerLaunch())))
-        assertTrue("x-team-tag: blue" in lines)
+        assertFalse("x-team-tag: blue" in lines)
         assertEquals(listOf("x-splice-client: $GATEWAY_VERSION"), lines.filter { it.substringBefore(':') == CLIENT })
     }
 

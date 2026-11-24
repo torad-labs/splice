@@ -52,3 +52,7 @@ internal class AntigravityCatalog {
         )
     }
 }
+
+/** The selector prefix of every Antigravity model, `claude-antigravity--<model>`: a session Desktop starts on one runs
+ *  on agy (`splice desktop acp`), never on Claude Code. */
+public const val ANTIGRAVITY_MODEL_PREFIX: String = "claude-antigravity--"

@@ -44,6 +44,7 @@ internal class RemoteDoor(private val http: ShareHttp, private val mark: DoorMar
         val rows = shared.rows.map { DoorPickerRow(it.model, it.label, "${it.command} on ${shared.machine}") }
         val door = "${address.server}/$DOOR_SEGMENT"
         val session = DoorSession(door, SHARE_NODE_TOKEN, window ?: shared.window, shared.model, rows)
-        return DoorLaunchSpec(session.env(), session.unset(), session.overlay(mark.here, mark.key))
+        val overlay = session.overlay(mark.here, mark.key)
+        return DoorLaunchSpec(session.env(), session.unset(), overlay, session.window, wallMs = shared.wallMs)
     }
 }

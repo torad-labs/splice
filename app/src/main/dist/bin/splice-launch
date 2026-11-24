@@ -14,7 +14,7 @@
 
 # Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 # — bump both together whenever this shim's behavior changes. No code generation.
-SPLICE_SHIM_VERSION="shim-29"
+SPLICE_SHIM_VERSION="shim-30"
 # Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 SPLICE_GATEWAY_VERSION="0.6.4"
 
@@ -880,6 +880,10 @@ request_launch() {
   # shim-20, MCP hub step 6: this shell's pid, which exec keeps for Claude Code, names the launch to the hub.
   set -- --data-urlencode "launch=$$" "$@"
   if [ -n "${CLAUDE_CONFIG_DIR+x}" ]; then set -- --data-urlencode "inheritedConfigDir=$CLAUDE_CONFIG_DIR" "$@"; fi
+  # shim-30 (#791): this shell's NO_PROXY and no_proxy, which the launch keeps beside loopback in what it sets
+  # (LaunchAmbient): the daemon's own environment is not this shell's.
+  if [ -n "${NO_PROXY-}" ]; then set -- --data-urlencode "noProxy=$NO_PROXY" "$@"; fi
+  if [ -n "${no_proxy-}" ]; then set -- --data-urlencode "noProxy=$no_proxy" "$@"; fi
   rl_try=0
   rl_delays=$LAUNCH_BUSY_DELAYS
   while :; do
@@ -946,6 +950,35 @@ drop_own_token() {
   dot_mgmt=""
 }
 
+# shim-30 (#791): this shell's ANTHROPIC_CUSTOM_HEADERS without blank lines and without the four headers a launch plants
+# for its session (its client wall, its window, its launch proof, and a team server's x-splice-client), which an outer
+# session leaves behind and the recipe names again for this one. Every other header stays, a wrapper's x-splice-wrapper
+# among them. Read here, not sent: a header of the caller's can hold a secret, and the daemon's recipe names splice's
+# own headers alone, which follow these (merged_headers). The four are LaunchAmbient's `planted`. Answered in
+# CALLER_HEADERS.
+caller_headers() {
+  CALLER_HEADERS=""
+  ch_rest=${ANTHROPIC_CUSTOM_HEADERS-}
+  while [ -n "$ch_rest" ]; do
+    case $ch_rest in
+      *"$NL"*) ch_line=${ch_rest%%"$NL"*}; ch_rest=${ch_rest#*"$NL"} ;;
+      *) ch_line=$ch_rest; ch_rest="" ;;
+    esac
+    ch_name=$(printf '%s' "${ch_line%%:*}" | tr -d ' \t' | tr '[:upper:]' '[:lower:]')
+    case $ch_name in
+      '' | x-splice-client | x-splice-client-wall-ms | x-splice-client-window | x-splice-launch-proof) ;;
+      *) CALLER_HEADERS=${CALLER_HEADERS:+$CALLER_HEADERS$NL}$ch_line ;;
+    esac
+  done
+}
+
+# The headers a launched session sends: the caller's (CALLER_HEADERS), then [$1], the recipe's. Answered in
+# MERGED_HEADERS, empty when both are.
+merged_headers() {
+  MERGED_HEADERS=$CALLER_HEADERS
+  [ -z "$1" ] || MERGED_HEADERS=${MERGED_HEADERS:+$MERGED_HEADERS$NL}$1
+}
+
 # Reads LAUNCH_RECIPE into the environment (exports and unsets, by name) and the positional parameters (the argv), and
 # runs it: a function's positional parameters are its own, so the argv has to be exec'd from in here.
 # Claude Code's own subcommands, as `claude --help` lists them under Commands on 2.1.296. One of these as the first
@@ -967,6 +1000,7 @@ native_subcommand() {
 # its thinking keeps that bound, and a launch with none set gets the recipe's value.
 apply_recipe() {
   drop_own_token
+  caller_headers
   ar_thinking=${MAX_THINKING_TOKENS-}
   ar_argc=0
   ar_warning=""
@@ -989,6 +1023,11 @@ apply_recipe() {
         case $ar_name in
           '' | [0-9]* | *[!A-Za-z0-9_]*) warn "splice: ignoring malformed env key from daemon: '$ar_name'" ;;
           MAX_THINKING_TOKENS) [ -n "$ar_thinking" ] || { unescape "${ar_rest#*=}"; export "$ar_name=$UNESCAPED"; } ;;
+          ANTHROPIC_CUSTOM_HEADERS)
+            unescape "${ar_rest#*=}"
+            merged_headers "$UNESCAPED"
+            if [ -n "$MERGED_HEADERS" ]; then export "$ar_name=$MERGED_HEADERS"; else unset "$ar_name"; fi
+            ;;
           *) unescape "${ar_rest#*=}"; export "$ar_name=$UNESCAPED" ;;
         esac
         ;;

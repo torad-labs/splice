@@ -57,6 +57,11 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # Peer names no peer may register, on top of the built-in ones (docs/peers.md): an inbox or a role of your own setup
 # that a peer must not be able to pose as. Each must be a peer name, or boot refuses. Read at the daemon's start.
 # reserved_peer_names = ["inbox"]
+# Antigravity (absent reads as on). At its start the daemon asks Google's `agy`, when it is installed and signed in,
+# which models it offers, so Claude Desktop lists them in Chat and the Code tab. false never runs agy and leaves
+# Antigravity out of Desktop's lists. Read at the daemon's start. The console's switch (Settings, Desktop harnesses),
+# once you set it, decides in place of this key; reset it there to hand the choice back here.
+# antigravity = false
 
 # ── LAN share: this machine's door, run from your other machines (docs/specs/door-network.md) ──
 # `splice share on` writes this table and restarts; `splice share status` prints the door and the one add that puts
@@ -1045,11 +1050,16 @@ discovery_prefix = "claude--"
 #                           acp`, which runs a session on agy in place of `claude`, reads them as Claude Code does,
 #                           for the folder its transcript and session record go in (~/.claude when unset), what
 #                           started it, and Desktop's id for the session.
+#   SPLICE_DESKTOP_ESCAPED  set by `splice desktop launch` itself, never by an operator: marks the launch it reruns as a
+#                           user service outside Linux's no-new-privileges bit, so that launch never escapes again
+#   DBUS_SESSION_BUS_ADDRESS read by `splice desktop launch`, never set by splice: with XDG_RUNTIME_DIR's bus or
+#                           systemd socket, it says the user's service manager can be reached for that escape
 #   SSL_CERT_FILE           an OS trust-bundle path used when extending the JVM's trusted roots.
 #   ANTHROPIC_CUSTOM_HEADERS newline-separated headers inherited by a launched Claude Code client.
-#                           splice keeps ambient headers, replaces any x-splice-client-wall-ms header with
-#                           the session's computed client timeout, and adds that header when none was set.
-#                           It has no TOML key; the launcher's wall header wins over the ambient value.
+#                           Read by the launcher (splice-launch), never sent to the daemon: it keeps the
+#                           shell's headers, drops any x-splice-* header an outer session left, and adds
+#                           the launch's own (the session's client wall, its window, its proof) after them.
+#                           It has no TOML key.
 #   SPLICE_CONFIG           the config file to load, overriding the default lookup
 #   SPLICE_STATE_DIR        the state directory, overriding both the default root and the
 #                           pre-0.4 one it adopts; CLAUDEX_STATE_DIR is the older spelling

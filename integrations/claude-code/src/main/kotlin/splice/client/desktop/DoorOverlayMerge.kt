@@ -5,8 +5,11 @@
 //
 // The rule: objects merge key by key and the person's values win, several `--settings` in the order given; hooks are
 // concatenated per event, splice's entries first, so a wrapper's hook runs beside splice's /login hook; and what keeps
-// the session on the door (the Mantle switch, its address and key, the starting model, the window, Claude Code's own
-// /login and /logout off) and splice's picker are always splice's. Claude Code's setting names stay here, beside the
+// the session on the door and as its launch set it (#791: the gateway's address and key, the starting model, the
+// windows, the client's timers, NO_PROXY, every provider switch off and every other credential and model list empty,
+// Claude Code's own /login and /logout off) and splice's picker are always splice's. Every other key, a wrapper's
+// `statusLine` among them, is the person's, but for a custom header in its `env`, which joins the launch's own headers
+// in its environment instead of standing over them. Claude Code's setting names stay here, beside the
 // other Claude Code facts (DoorSession).
 package splice.client.desktop
 
@@ -14,21 +17,30 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import splice.client.Keys
 import splice.core.config.UserHome
 import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
 import splice.sessions.registry.LaunchMarker
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 
 /** The person's `--settings` merged into splice's door [overlay]. [cwd] is where the person ran the command, which a
- *  relative settings file is read against. */
-public class DoorOverlayMerge(private val overlay: String, private val cwd: String?) {
+ *  relative settings file is read against. [held]: what this launch adds to the overlay's `env` beside what [overlay]
+ *  carries (#791: the client's timers, the windows, NO_PROXY), none of it a secret. */
+public class DoorOverlayMerge(
+    private val overlay: String,
+    private val cwd: String?,
+    private val held: Map<String, String> = emptyMap(),
+) {
     /** What a launch with [args] hands Claude Code: one overlay and the other arguments, in their order; or why it
      *  cannot start. */
     public sealed class Merged {
-        public data class Ready(val overlay: String, val args: List<String>) : Merged()
+        /** [headers]: the ANTHROPIC_CUSTOM_HEADERS the person's `--settings` named, taken out of [overlay], where it
+         *  would outrank the launch's own (its client wall), for the launch to set beside them (#791). */
+        public data class Ready(val overlay: String, val args: List<String>, val headers: String? = null) : Merged()
 
         public data class Refused(val reason: String) : Merged()
     }
@@ -41,9 +53,10 @@ public class DoorOverlayMerge(private val overlay: String, private val cwd: Stri
             )
         }
         val theirs = given.values.map { value -> readOrNull(value) ?: return Merged.Refused(refusal(value)) }
-        val own = Json.parseToJsonElement(overlay) as JsonObject
+        val own = withHeld(Json.parseToJsonElement(overlay) as JsonObject)
         val person = theirs.fold(JsonObject(emptyMap())) { merged, next -> merged(merged, next) }
-        return Merged.Ready(kept(own, merged(own, person)).toString(), given.rest)
+        val headers = JsonScalars.str(person[ENV_KEY] as? JsonObject, GATEWAY_HEADERS)
+        return Merged.Ready(kept(own, merged(own, person)).toString(), given.rest, headers)
     }
 
     /** The person's arguments, sorted: each `--settings X` or `--settings=X` value, in order, and every other argument,
@@ -116,21 +129,22 @@ public class DoorOverlayMerge(private val overlay: String, private val cwd: Stri
         return JsonObject(out)
     }
 
-    /** [merged] with splice's own values back where only splice's may stand: the door's variables in `env` and the
-     *  picker. A variable splice sets in the launch's environment rather than here is taken out of [merged]'s `env`,
-     *  so the launch's value holds. */
+    /** [own] with [held] in its `env`. */
+    private fun withHeld(own: JsonObject): JsonObject {
+        if (held.isEmpty()) return own
+        val env = (own[ENV_KEY] as? JsonObject).orEmpty() + held.mapValues { (_, value) -> JsonPrimitive(value) }
+        return JsonObject(own + (ENV_KEY to JsonObject(env)))
+    }
+
+    /** [merged] with splice's own values back where only splice's may stand: every variable splice's overlay carries in
+     *  `env` (#791: what the launch sets, and what it takes out spelled empty), and the picker. A door variable splice
+     *  sets in the launch's environment rather than here is taken out of [merged]'s `env`, so the launch's value holds.
+     *  Every other key the person gave, a `statusLine` among them, stays as they gave it. */
     private fun kept(own: JsonObject, merged: JsonObject): JsonObject {
         val out = merged.toMutableMap()
-        (merged[ENV_KEY] as? JsonObject)?.let { theirs ->
-            val ownEnv = own[ENV_KEY] as? JsonObject ?: JsonObject(emptyMap())
-            out[ENV_KEY] = JsonObject(
-                theirs - doorVariables + doorVariables.mapNotNull { name ->
-                    ownEnv[name]?.let {
-                        name to it
-                    }
-                },
-            )
-        }
+        val theirs = merged[ENV_KEY] as? JsonObject
+        val ownEnv = (own[ENV_KEY] as? JsonObject).orEmpty()
+        if (theirs != null || ownEnv.isNotEmpty()) out[ENV_KEY] = JsonObject(theirs.orEmpty() - doorVariables + ownEnv)
         restore(out, own, DESKTOP_PICKER)
         return JsonObject(out)
     }
@@ -146,4 +160,14 @@ private const val ENV_KEY = "env"
 
 /** What keeps a session on the door: the variables a person's settings may never move. */
 private val doorVariables: Set<String> =
-    setOf(DESKTOP_USE_MANTLE, DESKTOP_MANTLE_URL, DESKTOP_BEARER, DESKTOP_MODEL, DESKTOP_WINDOW, LOGIN_OFF, LOGOUT_OFF)
+    setOf(
+        DESKTOP_USE_MANTLE,
+        DESKTOP_MANTLE_URL,
+        DESKTOP_BEARER,
+        DESKTOP_MODEL,
+        DESKTOP_WINDOW,
+        LOGIN_OFF,
+        LOGOUT_OFF,
+        GATEWAY_TOKEN,
+        GATEWAY_HEADERS,
+    )

@@ -51,16 +51,35 @@ starts Claude Code in its gateway mode, the way Claude Code runs as a client of 
   prompt shows), `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1` (so `/model` is filled from the gateway's
   `/v1/models`, decision 4), `ANTHROPIC_MODEL` (the selector of the model a session starts on, so the session shows
   the model it runs), `CLAUDE_CODE_MAX_CONTEXT_TOKENS` (the declared window), `CLAUDE_CODE_AUTO_MODE_SERVER=0`,
-  `DISABLE_LOGIN_COMMAND=1` and `DISABLE_LOGOUT_COMMAND=1`.
+  `DISABLE_LOGIN_COMMAND=1` and `DISABLE_LOGOUT_COMMAND=1`. Since Nov 23, 2026 (#791), also what a head's launch sets
+  from the same code: the client's timers (`API_TIMEOUT_MS` from the longest wall of the providers and heads a turn
+  can run on, or for another machine's door the wall that machine says; `API_FORCE_IDLE_TIMEOUT=0`,
+  `CLAUDE_CODE_RETRY_WATCHDOG`, the non-streaming retry cap, the stream and byte idle timers) and the wall header in
+  `ANTHROPIC_CUSTOM_HEADERS`; `CLAUDE_CODE_AUTO_COMPACT_WINDOW` from the declared window and
+  `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`; and `NO_PROXY` and `no_proxy`, the caller shell's lists (which the launcher sends,
+  shim-30) and the daemon's, with loopback and the door's host added. A caller's `--model` (an option, read with
+  Claude Code's own grammar) leaves `ANTHROPIC_MODEL` unset.
+- `ANTHROPIC_CUSTOM_HEADERS` in the recipe holds splice's own headers alone (the wall, and a caller's `--settings`
+  headers taken out of the overlay). The launcher puts the caller shell's headers before them, without the four splice
+  plants (`x-splice-client-wall-ms`, `-client-window`, `-launch-proof`, `x-splice-client`), so a header that holds a
+  secret of the caller's never reaches the daemon and an outer session's never rides along.
 - In `unset`: everything that would send the session somewhere else or lay a list of models beside the gateway's:
   every provider switch (`CLAUDE_CODE_USE_BEDROCK`, `_VERTEX`, `_FOUNDRY`, `_MANTLE`), the Mantle variables
-  (`ANTHROPIC_BEDROCK_MANTLE_BASE_URL`, `AWS_BEARER_TOKEN_BEDROCK`), `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`,
+  (`ANTHROPIC_BEDROCK_MANTLE_BASE_URL`, `AWS_BEARER_TOKEN_BEDROCK`), `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` and
+  its refresh token, `_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL`,
   the tier variables (`ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL` with their name and description), and
   `ANTHROPIC_SMALL_FAST_MODEL` and `ANTHROPIC_CUSTOM_MODEL_OPTION`.
 - No `CLAUDE_CONFIG_DIR`: the session runs over the person's own Claude folder, as the wrapped `claude` head does.
   splice changes nothing of theirs in that folder and lays one file of its own there, its `/login` (decision 5).
   Everything else the session needs from splice rides the launch's `--settings` overlay: the launch mark and the
   hooks, and no model list.
+- The overlay's `env` says again every value of `env` but the key and `ANTHROPIC_CUSTOM_HEADERS` (which can carry the
+  shell's own secrets), and every variable of `unset` spelled taken out: each provider switch `0`, every other
+  credential, tier and model option empty (#791). A person's settings files apply their `env` over the process
+  environment, and only the `--settings` overlay outranks them, so a settings file's model, tiers, switches, window or
+  timers no longer win over the launch's. The overlay is an argument any local user can read, so no secret goes in it.
+  A `--settings` the caller passes merges into the overlay; its `env` cannot move these values, and every other key it
+  carries, a `statusLine` among them, stays the caller's.
 - The lane answers whether or not a head keyed `claude` exists, and whether or not anything is signed in.
 
 Why the Mantle switch went: until Nov 19 the launch set `CLAUDE_CODE_USE_MANTLE=1` with the door as its address, and

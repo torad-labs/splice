@@ -27,6 +27,7 @@ internal data class SessionLook(
     val commands: List<AgyCommand>,
     val version: String,
     val mcpServers: JsonArray = JsonArray(emptyList()),
+    val skills: List<String> = emptyList(),
 )
 
 /** What a turn's `result` reports. */
@@ -81,7 +82,7 @@ internal class DesktopFrames(internal val sessionId: String) {
         put("permissionMode", look.permissionMode)
         put("slash_commands", JsonArray(look.commands.map { JsonPrimitive(it.name) }))
         put("output_style", OUTPUT_STYLE)
-        put("skills", JsonArray(emptyList()))
+        put("skills", JsonArray(look.skills.map(::JsonPrimitive)))
         put("plugins", JsonArray(emptyList()))
         put("agents", JsonArray(emptyList()))
         put("claude_code_version", look.version)

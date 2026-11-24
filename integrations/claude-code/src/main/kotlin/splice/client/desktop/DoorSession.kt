@@ -13,6 +13,7 @@ package splice.client.desktop
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -45,32 +46,46 @@ public data class DoorSession(
 ) {
     private val gateway = GatewayMode()
 
-    /** What the launch sets. */
-    public fun env(): Map<String, String> = buildMap {
-        putAll(gateway.env(door, key, model))
+    /** What the launch sets: [told], and the terminal's key. */
+    public fun env(): Map<String, String> = told() + (GATEWAY_TOKEN to key)
+
+    /** What the launch takes out of the environment it inherits: every other way to a provider, every model list but
+     *  the gateway's, and a starting model when the gateway names none. */
+    public fun unset(): List<String> = buildList {
+        addAll(gateway.unset)
+        if (model == null) add(DESKTOP_MODEL)
+    }
+
+    /** What the launch's `--settings` overlay carries in its `env` (#791): a person's settings `env` is applied over
+     *  the process environment, so what the launch sets and takes out must be said again where only the overlay
+     *  outranks it, a variable taken out spelled as [GatewayMode.cleared] says. Built from [told] and never from
+     *  [env]: the key is a secret, and the overlay is an argument every local user can read. */
+    public fun settingsEnv(): Map<String, String> = buildMap {
+        putAll(gateway.cleared)
+        if (model == null) put(DESKTOP_MODEL, "")
+        putAll(told())
+    }
+
+    /** What the launch sets that is no secret: gateway mode at [door] on [model], the window, auto mode's classifier
+     *  off, and Claude Code's own /login and /logout off. */
+    private fun told(): Map<String, String> = buildMap {
+        putAll(gateway.settings(door, model))
         put(DESKTOP_WINDOW, window.toString())
         put(DESKTOP_AUTO_MODE, "0")
         put(LOGIN_OFF, "1")
         put(LOGOUT_OFF, "1")
     }
 
-    /** What the launch takes out of the environment it inherits: every other way to a provider, every model list but
-     *  the gateway's, the compaction window an outer head's session plants, and a starting model when the gateway
-     *  names none. */
-    public fun unset(): List<String> = buildList {
-        addAll(gateway.unset)
-        addAll(planted)
-        if (model == null) add(DESKTOP_MODEL)
-    }
-
-    /** The `--settings` overlay: a shared door's picker, when it has rows, splice's launch mark where [marked], and
-     *  [hooks] by event (splice's /login, DoorLogin), which Claude Code runs beside the person's own. No list of
-     *  splice's: on this machine's own launch [rows] is empty and nothing of the sort is put. */
+    /** The `--settings` overlay: [settingsEnv] as its `env`, a shared door's picker, when it has rows, splice's launch
+     *  mark where [marked], and [hooks] by event (splice's /login, DoorLogin), which Claude Code runs beside the
+     *  person's own. No list of splice's: on this machine's own launch [rows] is empty and nothing of the sort is
+     *  put. */
     public fun overlay(
         marked: Boolean,
         markKey: String,
         hooks: Map<String, List<JsonObject>> = emptyMap(),
     ): String = buildJsonObject {
+        put(Keys.ENV, JsonObject(settingsEnv().mapValues { (_, value) -> JsonPrimitive(value) }))
         DoorPicker(rows).json(replace = true)?.let { put(DESKTOP_PICKER, it) }
         if (marked) put(markKey, true)
         if (hooks.isNotEmpty()) put(Keys.HOOKS, JsonObject(hooks.mapValues { (_, entries) -> JsonArray(entries) }))
@@ -110,6 +125,3 @@ internal const val LOGIN_OFF: String = "DISABLE_LOGIN_COMMAND"
 internal const val LOGOUT_OFF: String = "DISABLE_LOGOUT_COMMAND"
 
 private const val REPLACE_BUILT_IN: String = "replaceBuiltInOptions"
-
-/** What a head's launch plants for its own window, which a session started inside one would carry to the gateway. */
-private val planted: List<String> = listOf("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE")

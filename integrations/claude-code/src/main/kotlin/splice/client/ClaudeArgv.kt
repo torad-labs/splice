@@ -23,6 +23,24 @@
 package splice.client
 
 public object ClaudeArgv {
+    /** Whether [args], a person's arguments to Claude Code, name the model the session starts on: `--model X` or
+     *  `--model=X` as an option, which outranks ANTHROPIC_MODEL (#791). Read as the client reads them: a `--model` that
+     *  is another option's value (`--system-prompt --model`) or follows `--` is not one. A word that cannot be placed
+     *  is passed over alone. */
+    public fun namesModel(args: List<String>): Boolean {
+        var at = 0
+        while (at < args.size) {
+            val word = args[at]
+            at = when {
+                word == END_OF_OPTIONS -> return false
+                !isFlag(word) -> at + 1
+                word.substringBefore('=') == MODEL_FLAG -> return true
+                word.startsWith(LONG) -> longWords(args, at, emptySet())?.next ?: (at + 1)
+                else -> shortWords(args, at, emptySet())?.next ?: (at + 1)
+            }
+        }
+        return false
+    }
 
     /** [argv] with every prompt's text, and every word it cannot place, replaced by its length. The
      *  program (argv[0]), every flag and every listed option's non-prompt value are kept verbatim, so

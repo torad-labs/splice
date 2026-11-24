@@ -32,6 +32,7 @@ class TerminalProfilesTest {
         env = mapOf("ANTHROPIC_BASE_URL" to "http://127.0.0.1:3096/door", "ANTHROPIC_MODEL" to "m"),
         unset = listOf("CLAUDE_CONFIG_DIR", "CLAUDE_CODE_USE_BEDROCK"),
         overlay = "{}",
+        window = SESSION_WINDOW,
     )
 
     private fun profiles(): TerminalProfiles {
@@ -79,3 +80,6 @@ class TerminalProfilesTest {
 
 // Enough launches at once that two rebuilds would meet if nothing kept them apart.
 private const val PARALLEL_LAUNCHES = 8
+
+// why: any window does here; this is the one a door session declares by default, 200k tokens.
+private const val SESSION_WINDOW = 200_000L

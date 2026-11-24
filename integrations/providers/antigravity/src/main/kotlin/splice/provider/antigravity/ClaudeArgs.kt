@@ -69,7 +69,7 @@ private const val ADD_DIR = "--add-dir"
 internal const val STRICT_MCP_CONFIG: String = "--strict-mcp-config"
 
 /** The launcher's flag naming the Claude Code the translator stands in for. */
-private const val STANDS_IN_FOR = "--stands-in-for"
+public const val STANDS_IN_FOR: String = "--stands-in-for"
 
 /** A Claude Code version, as Desktop keeps each in a folder of its own (`…/claude-code/<version>/…`). */
 private val SEMVER = Regex("^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$")

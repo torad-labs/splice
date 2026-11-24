@@ -51,6 +51,10 @@ internal data class DesktopLineup(
 ) {
     private val discovery = GatewayDiscovery()
 
+    /** The client timeout a session on the door must outlive, the longest of its providers' walls: a turn can run on
+     *  any of them (#791). Null while none has one. */
+    fun clientWallMs(): Long? = providers.mapNotNull { it.clientWallMs }.maxOrNull()
+
     /** The rows of a terminal session's picker (docs/specs/door-default.md, decision 4): every model of a provider
      *  called with a login splice holds, and of a provider on an API key or a local server the models splice.toml
      *  declares for it, or every model it lists when it declares none. Until Nov 18, 2026 the picker left every key

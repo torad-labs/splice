@@ -85,5 +85,4 @@ internal class LiveHandoff {
     }
 }
 
-internal const val ANTIGRAVITY_MODEL_PREFIX: String = "claude-antigravity--"
 private const val HANDOFF_HEADER = "Conversation so far before switching to Gemini:\n\n"

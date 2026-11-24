@@ -196,6 +196,11 @@ public data class DaemonConfig(
     // operator's own setup that a peer must not be able to pose as. Each is a peer name ([PEER_NAME_PATTERN]).
     // Read when the daemon boots.
     @SerialName("reserved_peer_names") val reservedPeerNames: List<String>? = null,
+    // desktop-antigravity: whether the daemon asks Google's `agy` for its models when it boots, so Claude Desktop
+    // offers Antigravity's models (Chat and the Code tab). Absent reads as on, as before the key existed, and an agy
+    // that is not installed is simply not served; false never runs agy and leaves Antigravity out of Desktop's lists.
+    // Read when the daemon boots.
+    val antigravity: Boolean? = null,
 )
 
 @Serializable

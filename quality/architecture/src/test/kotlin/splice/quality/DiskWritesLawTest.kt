@@ -117,6 +117,11 @@ internal object DiskWrites {
                 "the Codex app-server process stdin: Process.outputStream, not a file",
             ),
             NotAFile(
+                "app/src/main/kotlin/splice/app/desktop/pipe/PipeLeg.kt",
+                ".bufferedWriter(",
+                "a Code tab session's program stdin (Claude Code or the translator): Process.outputStream, not a file",
+            ),
+            NotAFile(
                 "integrations/mcp/src/main/kotlin/splice/control/mcp/McpContainment.kt",
                 "Files.writeString(",
                 "/proc/<pid>/oom_score_adj of a hosted MCP child: a kernel attribute that ends with the process",
@@ -340,6 +345,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         mapOf("writeAtomic(" to 1, "writeAtomic0600(" to 1),
     // The Desktop policy values set in the console, in the desktop-policy-overrides.json README row.
     "app/src/main/kotlin/splice/app/desktop/setup/DesktopPolicyOverrides.kt" to mapOf("writeAtomic0600(" to 1),
+    // Which program each Desktop session runs on, in the desktop-harnesses.json README row.
+    "app/src/main/kotlin/splice/app/desktop/harness/DesktopHarnessFile.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/desktop/setup/DesktopPrograms.kt" to mapOf("writeAtomic(" to 3),
     // An extension or skill copied whole into Desktop's gateway profile: staged beside it, then moved into place.
     "app/src/main/kotlin/splice/app/desktop/setup/DesktopTreeCopy.kt" to

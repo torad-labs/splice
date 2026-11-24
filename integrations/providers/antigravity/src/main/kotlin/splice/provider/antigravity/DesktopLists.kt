@@ -11,6 +11,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.model.ModelCatalog
 import splice.core.util.JsonScalars
+import splice.provider.antigravity.skills.LocalSkillItem
 
 /** Reads agy's models, commands and usage as Desktop takes them. */
 internal class DesktopLists {
@@ -41,6 +42,16 @@ internal class DesktopLists {
                 )
             }
         }
+
+    /** Merges [agy] native slash commands with [local] Claude skills and commands, keeping the first entry per name. */
+    fun mergeCommands(agy: List<AgyCommand>, local: List<LocalSkillItem>): List<AgyCommand> {
+        val merged = LinkedHashMap<String, AgyCommand>()
+        agy.forEach { merged.putIfAbsent(it.name, it) }
+        local.forEach { item ->
+            merged.putIfAbsent(item.name, AgyCommand(item.name, item.description, item.hint))
+        }
+        return merged.values.toList()
+    }
 
     /** A prompt's ACP usage (its `usage`) as Anthropic's; zeros for what agy did not report. */
     fun usage(usage: JsonObject?): JsonObject = buildJsonObject {

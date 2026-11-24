@@ -12,7 +12,7 @@
    through api.js's SIGNIN steps (POST …/login). */
 (() => {
   'use strict';
-  const { $, h, fmt, money, pct, px, iconBtn } = Deck;
+  const { $, h, fmt, money, pct, px, iconBtn } = Deck, DH = window.DESKTOP_HARNESSES;
   const READ_MS = 60000, HOUR = 3600000, DAY = 24 * HOUR;
   const AXIS_T = 0.8;                                 /* share of the centre given to time; the rest is "needs sign-in" */
   const enc = encodeURIComponent;
@@ -70,7 +70,7 @@
     return r ? nameOf(r) : String(label || '').startsWith('native:') ? "Claude Code's own sign-in" : 'another login';
   }
   async function read() {
-    const [ac, ss, ks, ec] = await Promise.all([API.get('/api/accounts'), API.get('/api/sessions'), API.get('/api/keys'), API.getReady('/api/economics')]);
+    const [ac, ss, ks, ec] = await Promise.all([API.get('/api/accounts'), API.get('/api/sessions'), API.get('/api/keys'), API.getReady('/api/economics'), DH.read()]);
     readOk = ac.ok;
     if (!ac.ok) { paintHead(); return; }
     rows = (ac.body && ac.body.accounts) || [];
@@ -302,7 +302,8 @@
     const rail = $('.rail-r'); rail.textContent = '';
     railById = {}; for (const k of Object.keys(railRefs)) delete railRefs[k];
     const others = SPLICE.providers.filter(p => p.family !== 'anthropic');
-    if (!others.length) { const s = h('section', 'sec'); s.append(h('p', 'faint small', 'No other provider.')); rail.append(s); return; }
+    const agy = antigravity();
+    if (!others.length && !agy) { const s = h('section', 'sec'); s.append(h('p', 'faint small', 'No other provider.')); rail.append(s); return; }
     for (const p of others) {
       const s = h('section', 'sec prov'); s.style.setProperty('--pc', p.color);
       const hd = h('div', 'hd'); hd.append(h('span', 'lamp'), h('b', '', p.name), h('span', 'cmd', p.command));
@@ -337,6 +338,8 @@
         row.append(h('span', '', 'API key · ' + k.name), st);
         s.append(row);
       }
+      const dh = DH.of(p.key, p.family);
+      if (dh) s.append(harnessRow(dh, dh.family));
       // a provider that signs in with a login takes another one here; a key is added on Providers
       if (p.auth && !/key/i.test(p.auth) && p.auth !== 'client') {
         const add = h('button', 'btn quiet press rail-add', 'Add login'); add.type = 'button'; add.dataset.add = p.key;
@@ -346,6 +349,57 @@
       }
       rail.append(s);
     }
+    if (agy) rail.append(agy);
+  }
+
+  /* ---------- a provider's Desktop harness (deck-desktop-harnesses.js) ----------
+     Each provider says which program its Claude Desktop sessions run on: Claude Code through Splice, Codex CLI where the
+     person opted GPT into it, or agy for Antigravity. GPT's alternative and Antigravity's switch are one press here; the
+     rest is in Settings. While a change waits for splice's answer every harness button waits with it. */
+  let harnessSaving = false;
+  function harnessRow(dh, fam) {
+    const box = h('div', 'harness');
+    const row = h('div', 'acct'), st = h('span', 'st', dh.enabled ? dh.name : 'Off');
+    st.style.setProperty('--c', dh.enabled ? 'var(--ink-quiet)' : STATE.out.c);
+    row.append(h('span', 'quiet small', 'Desktop sessions'), st);
+    box.append(row);
+    const acts = h('div', 'harness-acts');
+    if (fam && fam.toggleable) acts.append(harnessBtn(fam.family, { enabled: !fam.enabled }, fam.enabled ? 'Turn off' : 'Turn on', fam.title));
+    else if (fam && fam.choices.length > 1) {
+      const other = fam.choices.find(id => id !== fam.harness);
+      acts.append(harnessBtn(fam.family, { harness: other }, 'Use ' + DH.name(other), fam.title));
+    }
+    const go = h('a', 'quiet small', 'Desktop harnesses'); go.href = 'settings.html#harnesses';
+    acts.append(go);
+    box.append(acts);
+    const said = fam && DH.error(fam.family);
+    if (said) box.append(h('div', 'small harness-why', said));
+    else if (fam && fam.toggleable && DH.data && DH.data.restart_required) box.append(h('div', 'small faint', 'Restart splice to apply, then reopen Claude Desktop'));
+    return box;
+  }
+  function harnessBtn(family, change, word, title) {
+    const b = h('button', 'btn quiet press', harnessSaving ? 'Saving…' : word); b.type = 'button';
+    b.dataset.harness = family; b.dataset.change = JSON.stringify(change);
+    b.setAttribute('aria-label', word + ' · ' + title + ' in Claude Desktop');
+    b.disabled = harnessSaving || DH.busy();
+    return b;
+  }
+  /** Antigravity's own section: a provider only Claude Desktop runs, drawn while agy serves it, while it is off, and
+   *  while a change to it waits for a restart or was refused */
+  function antigravity() {
+    const fam = DH.family('antigravity');
+    // kept while a change waits for the daemon to start again or splice refused one, so the press never hides its answer
+    const held = (DH.data && DH.data.restart_required) || DH.error(fam ? fam.family : 'antigravity');
+    if (!fam || !(fam.configured === true || !fam.enabled || held)) return null;
+    const s = h('section', 'sec prov'); s.style.setProperty('--pc', 'var(--ink-faint)');
+    const hd = h('div', 'hd'); hd.append(h('span', 'lamp'), h('b', '', fam.title), h('span', 'cmd', 'Desktop only'));
+    s.append(hd, harnessRow({ harness: fam.harness, name: DH.name(fam.harness), enabled: fam.enabled }, fam));
+    return s;
+  }
+  async function pressHarness(b) {
+    if (harnessSaving || DH.busy()) return;
+    harnessSaving = true; rebuild();
+    try { await DH.save({ [b.dataset.harness]: JSON.parse(b.dataset.change) }); } finally { harnessSaving = false; rebuild(); }
   }
 
   /* ---------- inspection lens: the kit's glass, placed beside the account it opened from ---------- */
@@ -712,6 +766,8 @@
   /* the right rail: a login opens its glass, and Add login starts a sign-in for that provider's command */
   const railEl = $('.rail-r');
   const railPress = e => {
+    const hb = e.target.closest('button[data-harness]');
+    if (hb) { if (!hb.disabled) pressHarness(hb); return true; }
     const add = e.target.closest('[data-add]');
     if (add) { const p = SPLICE.providers.find(x => x.key === add.dataset.add); if (p) openId === 'add:' + p.key ? closeLens() : openAdd(p); return true; }
     const row = e.target.closest('.acct[data-id]'); if (!row) return false;
@@ -773,7 +829,7 @@
   const setClock = () => { $('#clock').textContent = Deck.clock(); };
   setClock(); setInterval(setClock, 15000);
   let busy = false;
-  const readNow = async () => { if (busy || document.hidden || document.body.classList.contains('locked')) return; busy = true; try { await read(); } finally { busy = false; } };
+  const readNow = async () => { if (busy || harnessSaving || document.hidden || document.body.classList.contains('locked')) return; busy = true; try { await read(); } finally { busy = false; } };
   SPLICE.ready.then(readNow);
   setInterval(readNow, READ_MS);
   addEventListener('splice:signed-in', readNow);

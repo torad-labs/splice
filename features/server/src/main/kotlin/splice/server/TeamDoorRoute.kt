@@ -23,6 +23,7 @@ internal class TeamDoorRoute(
     private val minimum: ClientMinimum,
     private val admission: TurnAdmission,
     private val voice: RefusalVoice,
+    private val bound: ProviderBound,
 ) {
     private val turnPath = listOf(HEAD_API_ROOT, "messages")
     private val countPath = turnPath + "count_tokens"
@@ -48,15 +49,16 @@ internal class TeamDoorRoute(
     private suspend fun turn(call: ApplicationCall, key: ServerKey, gateway: TeamGateway) {
         val routed = gateway.routed(call, voice, counting = false, served()) ?: return
         val notice = minimum.told(call, key.person)
+        val withheld = bound.withheld(call)
         if (notice != null) {
             if (minimum.refused(call, voice, notice)) return
-            return routed.serve(TeamTurnMeta(notice = notice))
+            return routed.serve(TeamTurnMeta(notice = notice, withheldHeaders = withheld))
         }
         val provider = ProviderCommand(routed.provider, routed.names)
         admission.served(call, key, provider, ROUTE_MESSAGES) { turn ->
             val preferred = parts.people.of(key.person).preferred
             val named = parts.books.turns.named(turn).second
-            routed.serve(TeamTurnMeta(preferred, named, keepaliveMs = keepaliveMs))
+            routed.serve(TeamTurnMeta(preferred, named, keepaliveMs = keepaliveMs, withheldHeaders = withheld))
         }
     }
 
@@ -65,7 +67,7 @@ internal class TeamDoorRoute(
         val routed = gateway.routed(call, voice, counting = true, served()) ?: return
         val refusal = parts.limits.access.refusal(key.person, ProviderCommand(routed.provider, routed.names))
         if (refusal != null) return voice.refuse(call, HttpStatus.FORBIDDEN, refusal)
-        routed.serve(TeamTurnMeta())
+        routed.serve(TeamTurnMeta(withheldHeaders = bound.withheld(call)))
     }
 
     /** The models the person may pick: those of the providers this server serves and their allowlist lets them use. */

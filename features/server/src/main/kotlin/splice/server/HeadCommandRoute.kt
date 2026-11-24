@@ -84,7 +84,9 @@ internal class HeadCommandRoute(private val parts: ServerParts, private val rout
     ): HeadTurn {
         val preferred = parts.people.of(key.person).preferred
         val chosen = listOfNotNull(preferred?.let { PREFERRED_UPSTREAM_HEADER to it }).toMap()
+        // The head sends its provider the headers `forward_headers` names, and knows none of this server's keys.
         val held = bound.keyed(call, parts.upstreams.forwarded(head.key))
-        return HeadTurn(head, paths.spell(path) + paths.query(call), chosen + named, routing.keepalive, held)
+        val spelled = paths.spell(path) + bound.query(paths.query(call))
+        return HeadTurn(head, spelled, chosen + named, routing.keepalive, held)
     }
 }

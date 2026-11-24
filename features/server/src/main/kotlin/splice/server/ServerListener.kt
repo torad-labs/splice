@@ -81,16 +81,19 @@ import splice.core.topology.ServerConfig
 import splice.core.util.LogSink
 import splice.core.wire.HttpStatus
 import splice.http.listen.HttpListenerThreads
+import splice.server.caller.AdminAccess
 import splice.server.caller.ClientAddresses
 import splice.server.caller.KeyAdmission
 import splice.server.client.ClientCheckins
 import splice.server.client.ClientMinimum
 import splice.server.path.PathAliases
 import splice.server.path.RequestPaths
-import splice.server.signin.SigninParts
+import splice.server.signin.SigninAttempts
 import splice.server.signin.SigninRoute
 import splice.server.telemetry.OTLP_ROUTE
 import splice.server.telemetry.TelemetryRelay
+import splice.server.web.BrowserForwardAuth
+import splice.server.web.ForwardAuthRoute
 import splice.server.web.ServerPublicRoutes
 import splice.share.RefusalVoice
 import splice.share.ShareCatalog
@@ -107,15 +110,29 @@ internal class ServerListener(
     /** Blocking work runs here: reading a head's launch, and the relay's JDK I/O. */
     io: CoroutineDispatcher,
     private val log: LogSink,
-    /** How a sign-in is checked, when `[server.signin]` is set (F2). */
-    signin: SigninParts? = null,
+    identity: ListenerSignins,
 ) {
     private val voice = RefusalVoice(SERVER_ERROR_PREFIX)
     private val catalog = ShareCatalog(parts.heads, io, voice)
-    private val admin = ServerAdmin(server, KeyApi(parts.keys, log, reads.audit), reads, voice)
     private val addresses = ClientAddresses(server.trustedProxies)
-    private val signins = SigninRoute(signin, KeyApi(parts.keys, log, reads.audit), addresses, voice, log)
-    private val publicRoutes = ServerPublicRoutes(server, parts.keys, parts.people, addresses, tls != null, voice)
+    private val adminAccess = AdminAccess(server, addresses)
+    private val keys = KeyApi(parts.keys, log, reads.audit)
+    private val attempts = SigninAttempts(addresses, identity.clock)
+    private val admin = ServerAdmin(adminAccess, keys, reads, voice)
+    private val signins = SigninRoute(identity.cli, keys, attempts, voice, log)
+    private val browser = server.forwardAuth?.takeIf { it.browserOrigin != null }?.let { policy ->
+        BrowserForwardAuth(
+            policy,
+            checkNotNull(identity.browser),
+            parts.keys,
+            adminAccess,
+            attempts,
+            voice,
+            identity.clock,
+        )
+    }
+    private val forwardAuth = ForwardAuthRoute(server, parts.keys, parts.people, adminAccess, browser, voice)
+    private val publicRoutes = ServerPublicRoutes(server, addresses, tls != null, voice, forwardAuth)
     private val keyAdmission = KeyAdmission(parts.keys, addresses, log)
     private val watched = WatchedRelay()
     private val paths = RequestPaths()
@@ -123,7 +140,7 @@ internal class ServerListener(
     private val checkins = ClientCheckins(server.client, voice)
     private val minimum = ClientMinimum(server.client, checkins)
     private val aliases = PathAliases(server)
-    private val teamDoor = TeamDoorRoute(server, parts, minimum, admission, voice)
+    private val teamDoor = TeamDoorRoute(server, parts, minimum, admission, voice, ProviderBound(parts.keys, log))
 
     /** How often a streamed turn's client is sent a keepalive while its answer is silent; null sends none. */
     private val keepalive = server.keepaliveSeconds.takeIf { it > 0 }?.seconds

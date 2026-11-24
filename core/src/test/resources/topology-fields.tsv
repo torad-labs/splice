@@ -234,6 +234,7 @@ remote
 remote.*.url	
 remote.*.window	
 server	
+server.admin_cidrs	
 server.admins	
 server.aliases	
 server.aliases.*	
@@ -272,7 +273,14 @@ server.export.secret_key_env
 server.export.to	
 server.forward_auth	
 server.forward_auth.allow	
+server.forward_auth.browser_origin	
+server.forward_auth.client_id	
+server.forward_auth.client_secret_env	
+server.forward_auth.email_header	
+server.forward_auth.role_header	
+server.forward_auth.session_seconds	
 server.keepalive_seconds	
+server.key_prefix	
 server.limits	
 server.limits.inflight_per_person	
 server.limits.rpm_per_person	
@@ -287,6 +295,7 @@ server.signin
 server.signin.client_id	
 server.signin.client_secret_env	
 server.signin.domains	
+server.signin.hosted_domain	
 server.signin.issuer	
 server.signin.key_days	
 server.signin.rate_per_minute	

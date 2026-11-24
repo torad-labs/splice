@@ -15,12 +15,12 @@ import io.ktor.http.HttpMethod
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.httpMethod
 import io.ktor.server.response.respondText
-import splice.core.topology.ServerConfig
 import splice.core.wire.HttpStatus
 import splice.http.JsonBody
 import splice.server.audit.DEFAULT_AUDIT_TAIL
 import splice.server.audit.ServerAudit
 import splice.server.backup.ServerBackupStore
+import splice.server.caller.AdminAccess
 import splice.server.ledger.UsageApi
 import splice.server.metrics.PROMETHEUS_TEXT
 import splice.server.metrics.ServerMetrics
@@ -36,7 +36,7 @@ internal data class AdminReads(
 )
 
 internal class ServerAdmin(
-    private val server: ServerConfig,
+    private val access: AdminAccess,
     private val keys: KeyApi,
     private val reads: AdminReads,
     private val voice: RefusalVoice,
@@ -48,11 +48,13 @@ internal class ServerAdmin(
         val metrics = rest == listOf(METRICS_ROUTE) && call.request.httpMethod == HttpMethod.Get
         when {
             rest.firstOrNull() != API_ROUTE && !metrics -> noSuchPath(call)
-            !server.admin(key.person) -> {
+            !access.names(key.person) -> {
                 val what = if (metrics) "metrics are" else "API is"
                 val why = "the server's $what for its admins, and ${key.person} is not one of them"
                 voice.refuse(call, HttpStatus.FORBIDDEN, why)
             }
+            !access.allowsAddress(call) ->
+                voice.refuse(call, HttpStatus.FORBIDDEN, "the server's admin routes are not allowed from this address")
             metrics -> call.respondText(reads.metrics.prometheus(), ContentType.parse(PROMETHEUS_TEXT))
             else -> say(call, asked(call, key.person, rest.drop(1)))
         }
@@ -60,6 +62,9 @@ internal class ServerAdmin(
 
     /** What an admin's request for [path], the path after `/server/api`, comes to; null for a path that is none. */
     private suspend fun asked(call: ApplicationCall, actor: String, path: List<String>): ServerAnswer? {
+        if (path == listOf(KEYS_ROUTE, "import") && call.request.httpMethod == HttpMethod.Post) {
+            return keys.importKey(jsonBody.parse(call), actor)
+        }
         if (path.firstOrNull() == KEYS_ROUTE && path.size <= 2) return keyAction(call, actor, path.getOrNull(1))
         return adminRoute(call, path)
     }

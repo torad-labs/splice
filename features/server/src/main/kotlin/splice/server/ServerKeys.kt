@@ -13,11 +13,16 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import splice.core.topology.DEFAULT_SERVER_KEY_PREFIX
+import splice.core.topology.ServerKeyFormat
+import splice.server.keys.KeyImport
+import splice.server.keys.KeyMint
 import splice.share.StateFile
 import java.nio.file.Path
 import java.security.SecureRandom
 import java.time.Clock
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 /** One key as the server keeps and lists it: its [hash], never the key. Times are epoch milliseconds. */
 @Serializable
@@ -43,6 +48,11 @@ public data class ServerKey(
         expiresAt != null && nowMs >= expiresAt -> KeyVerdict.Expired(this)
         else -> null
     }
+
+    /** A browser session that expired without being revoked at [nowMs]: it opens nothing, and nothing need remember
+     *  it. A revoked one is kept, so its revocation is never forgotten. */
+    internal fun lapsedSession(nowMs: Long): Boolean =
+        source == BROWSER_SOURCE && revokedAt == null && refusalAt(nowMs) != null
 }
 
 @Serializable
@@ -83,9 +93,10 @@ public class ServerKeys(
     private val io: CoroutineDispatcher,
     private val clock: Clock = Clock.systemUTC(),
     random: SecureRandom = SecureRandom(),
+    keyPrefix: String = DEFAULT_SERVER_KEY_PREFIX,
 ) {
     private val store = StateFile(file, KeyFile.serializer())
-    private val mint = KeyMint(random)
+    private val mint = KeyMint(random, keyPrefix)
     private val mutation = Mutex()
 
     @Volatile
@@ -93,12 +104,13 @@ public class ServerKeys(
 
     /** When each key last admitted a request since this store was read, by prefix. */
     private val used = ConcurrentHashMap<String, Long>()
+    private val useVersion = AtomicLong(0L)
+
+    @Volatile
+    private var persistedUseVersion = 0L
 
     @Volatile
     private var useKeptAt = clock.millis()
-
-    @Volatile
-    private var useChanged = false
 
     /** Every key, oldest first, or only [person]'s: each with when it was last used, none with a secret. */
     public fun list(person: String? = null): List<ServerKey> = byHash.values
@@ -109,13 +121,18 @@ public class ServerKeys(
     /** Everyone who holds a key the listener would admit now: by the same rule admit() refuses one by. */
     public fun livePeople(): Set<String> {
         val now = clock.millis()
-        return byHash.values.filter { it.refusalAt(now) == null }.mapTo(sortedSetOf()) { it.person }
+        return byHash.values.filter { it.source != BROWSER_SOURCE && it.refusalAt(now) == null }
+            .mapTo(sortedSetOf()) { it.person }
     }
 
+    /** Mints a key for [request]. Browser sessions that have expired unrevoked are dropped as it does: each sign-in
+     *  adds one, and an expired one opens nothing, so the file and the admin list stay one row per live session. A
+     *  revoked row and every other source's row are kept, so no revocation is ever forgotten. */
     public suspend fun mint(request: KeyRequest): MintedKey = mutation.withLock {
-        val prefix = mint.prefix(byHash.values.mapTo(HashSet()) { it.prefix })
-        val key = mint.key(prefix)
         val now = clock.millis()
+        val kept = byHash.filterValues { !it.lapsedSession(now) }
+        val prefix = mint.prefix(kept.values.mapTo(HashSet()) { it.prefix })
+        val key = mint.key(prefix)
         val row = ServerKey(
             prefix = prefix,
             hash = mint.hash(key),
@@ -126,9 +143,21 @@ public class ServerKeys(
             createdAt = now,
             expiresAt = request.lifetimeMs?.let { now + it },
         )
-        publish(byHash + (row.hash to row))
+        publish(kept + (row.hash to row))
         MintedKey(key, row)
     }
+
+    /** Imports a hash once. Conflicts include revoked and expired rows, which a repeat import must not revive. */
+    internal suspend fun importKey(asked: KeyImport): ServerKey? = mutation.withLock {
+        val key = asked.row(clock.millis())
+        if (key.hash in byHash || byHash.values.any { it.prefix == key.prefix }) return@withLock null
+        publish(byHash + (key.hash to key))
+        key
+    }
+
+    /** A signed browser cookie only refers to a dashboard session, never to an inference key. */
+    internal fun browserSession(reference: String): ServerKey? =
+        byHash[reference]?.takeIf { it.source == BROWSER_SOURCE && it.refusalAt(clock.millis()) == null }
 
     /** Revokes the key [prefix] names and answers it, as it now stands; null when no key has that prefix. A key
      *  already revoked keeps the moment it was first revoked. */
@@ -152,14 +181,32 @@ public class ServerKeys(
      *  sign-in key's first use supersedes the older live keys of its device before it answers, so the very next
      *  request on one of them is refused. */
     public suspend fun admit(presented: String?): KeyVerdict {
-        val key = presented?.takeIf { it.startsWith(KEY_MARK) }?.let { byHash[mint.hash(it)] }
-            ?: return KeyVerdict.Unknown
+        val key = presented?.takeIf(ServerKeyFormat::validKey)?.let { byHash[mint.hash(it)] }
+            ?.takeUnless { it.source == BROWSER_SOURCE } ?: return KeyVerdict.Unknown
         val now = clock.millis()
         key.refusalAt(now)?.let { return it }
         if (key.lastUsedAt == null && !used.containsKey(key.prefix)) supersedeElders(key)
-        used[key.prefix] = now
-        useChanged = true
+        recordUse(key, now)
         return KeyVerdict.Admitted(key)
+    }
+
+    /** Records [now] against [key] monotonically, marking a pending write only when the recorded time advances. */
+    private fun recordUse(key: ServerKey, now: Long) {
+        var advanced = false
+        used.compute(key.prefix) { _, prev ->
+            val current = when {
+                prev == null -> key.lastUsedAt
+                key.lastUsedAt == null -> prev
+                else -> maxOf(prev, key.lastUsedAt)
+            }
+            if (current == null || now > current) {
+                advanced = true
+                now
+            } else {
+                prev
+            }
+        }
+        if (advanced) useVersion.incrementAndGet()
     }
 
     /** Revokes the live sign-in keys of [newer]'s person and device that were minted before it, each marked as
@@ -182,26 +229,43 @@ public class ServerKeys(
 
     /** Whether [text] holds a key this server issued, live or not, anywhere in it. What a caller sends beside the key
      *  that admitted it is asked this before any of it leaves the machine: a person's key stays at the server. Each
-     *  run with a key's shape is hashed and looked up, as [admit] does, and nothing is marked used. */
-    internal fun heldIn(text: String): Boolean = mint.shapedIn(text).any { mint.hash(it) in byHash }
+     *  run with a key's shape is hashed and looked up, as [admit] does, so secrets of any admitted length match by
+     *  hash, benign text sharing only a public prefix is never flagged, and nothing is marked used. */
+    internal fun heldIn(text: String): Boolean {
+        val snapshot = byHash
+        if (snapshot.isEmpty()) return false
+        val hasImported = snapshot.values.any { it.source == IMPORT_SOURCE }
+        return ServerKeyFormat.keysIn(text, scanVariableLengths = hasImported).any { mint.hash(it) in snapshot }
+    }
 
     /** Writes when each key was last used, if any was used since the last write and that write is [olderThanMs] old.
      *  The listener asks after a turn; the daemon's stop asks with 0, so nothing is lost at a restart. */
     public suspend fun keepUse(olderThanMs: Long = USE_KEPT_EVERY_MS) {
-        if (!useChanged || clock.millis() - useKeptAt < olderThanMs) return
-        mutation.withLock { publish(byHash) }
+        if (useVersion.get() == persistedUseVersion || clock.millis() - useKeptAt < olderThanMs) return
+        mutation.withLock {
+            if (useVersion.get() == persistedUseVersion || clock.millis() - useKeptAt < olderThanMs) return@withLock
+            publish(byHash)
+        }
     }
 
-    /** [keys] become the keys the listener reads, once the file holds them: a write that fails changes nothing. */
+    /** [keys] become the keys the listener reads, once the file holds them: a write that fails changes nothing, and
+     *  publishing memory in the same non-suspending block keeps disk and memory aligned even on cancellation. */
     private suspend fun publish(keys: Map<String, ServerKey>) {
-        useChanged = false
+        val observedUse = useVersion.get()
         val kept = keys.mapValues { (_, key) -> withUse(key) }
-        withContext(io) { store.write(KeyFile(kept.values.sortedBy { it.createdAt })) }
-        byHash = kept
-        useKeptAt = clock.millis()
+        withContext(io) {
+            store.write(KeyFile(kept.values.sortedBy { it.createdAt }))
+            byHash = kept
+            persistedUseVersion = observedUse
+            useKeptAt = clock.millis()
+        }
     }
 
-    private fun withUse(key: ServerKey): ServerKey = used[key.prefix]?.let { key.copy(lastUsedAt = it) } ?: key
+    private fun withUse(key: ServerKey): ServerKey {
+        val latest = used[key.prefix] ?: return key
+        val monotonic = key.lastUsedAt?.let { maxOf(it, latest) } ?: latest
+        return if (monotonic == key.lastUsedAt) key else key.copy(lastUsedAt = monotonic)
+    }
 }
 
 /** The source of a key the operator issued, from the CLI, the control plane or an admin's key. */
@@ -209,6 +273,10 @@ internal const val OPERATOR_SOURCE: String = "operator"
 
 /** The source of a key a person's own sign-in minted (F2). */
 internal const val SIGNIN_SOURCE: String = "signin"
+
+internal const val BROWSER_SOURCE: String = "browser"
+
+internal const val IMPORT_SOURCE: String = "import"
 
 // why: an operator reads "last used" to find the keys nobody uses, in days; a minute of it lost to a crash changes
 // no such answer, and one write a minute is nothing to the disk.

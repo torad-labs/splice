@@ -133,6 +133,32 @@ internal class DesktopSkillIndexTest {
     }
 
     @Test
+    fun `a toolkit skill linked into both a project and the person's folder is indexed by the person's path`() {
+        val rig = rig("both")
+        val installed = skill(tmp.resolve("toolkit-install/stand-up"), "Daily stand-up", "Toolkit body")
+        val projectSkills = Files.createDirectories(rig.project.resolve(".claude/skills"))
+        Files.createSymbolicLink(projectSkills.resolve("stand-up"), installed)
+        Files.createSymbolicLink(projectSkills.resolve("alias"), installed)
+        val homeSkills = Files.createDirectories(rig.home.resolve(".claude/skills"))
+        Files.createSymbolicLink(homeSkills.resolve("stand-up"), installed)
+
+        var menu: Map<String?, String?> = emptyMap()
+        rig.run(ScriptedAgy(onInitialize = hello(APPEND_OFFERED))) {
+            control("init-1", """{"subtype":"initialize"}""")
+            menu = answer("init-1").obj("response").array("commands").map { it.jsonObject }
+                .associate { it.str("name") to it.str("description") }
+        }
+
+        val append = indexSent(rig)
+        val put = rig.home.toRealPath().resolve(".claude/skills/stand-up/SKILL.md")
+        assertTrue("- stand-up: Daily stand-up ($put)" in append, append)
+        assertEquals("Daily stand-up", menu["stand-up"])
+        for (excluded in listOf("toolkit-install", rig.project.toRealPath().toString(), "alias")) {
+            assertFalse(excluded in append, append)
+        }
+    }
+
+    @Test
     fun `a skill agy finds through a link in its own folder stays out of the index`() {
         val rig = rig()
         val outside = skill(tmp.resolve("shared/linked"), "Linked from outside", "Body")

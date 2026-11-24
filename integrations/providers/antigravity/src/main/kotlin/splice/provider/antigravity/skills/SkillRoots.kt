@@ -24,16 +24,20 @@ internal class SkillRoots(private val cwd: Path, private val env: EnvReader) {
 
     fun nativeUnder(dir: Path): Path = dir.resolve(AGENTS_DIR).resolve(LOCAL_SKILLS_DIR)
 
-    /** The skill folders, nearest first: each [workspace] folder's, which belong to the project (the repository root
-     *  that ends the walk, or outside a repository the folder holding them), then the person's own under [config]
-     *  and home. */
-    fun skillDirs(workspace: List<Path>, config: Path): List<SkillRoot> {
+    /** The skill folders in the order a shared name is settled, first wins: the person's own (under [config], under
+     *  home, then [plugin]), then each [workspace] folder's, nearest first, which belong to the project (the
+     *  repository root that ends the walk, or outside a repository the folder holding them). Personal over project
+     *  is Claude Code's rule, so `/name` runs the person's copy, and it keeps a skill a toolkit links into both
+     *  places: the project's copy, judged by the project's boundary, can no longer push the person's out. Which
+     *  folder is the person's comes from this declaration alone, never from what a project's entry links to. */
+    fun skillDirs(workspace: List<Path>, config: Path, plugin: SkillRoot?): List<SkillRoot> {
         val repository = workspace.lastOrNull()?.takeIf(::gitRoot)
         val project = workspace.flatMap { dir ->
             listOf(claudeUnder(dir).resolve(LOCAL_SKILLS_DIR), nativeUnder(dir))
                 .map { SkillRoot(it, project = repository ?: dir) }
         }
-        return project + listOf(config.resolve(LOCAL_SKILLS_DIR), nativeUnder(home())).map { SkillRoot(it) }
+        val own = listOf(config.resolve(LOCAL_SKILLS_DIR), nativeUnder(home())).map { SkillRoot(it) }
+        return own + listOfNotNull(plugin) + project
     }
 
     fun commandDirs(workspace: List<Path>, config: Path): List<Path> =

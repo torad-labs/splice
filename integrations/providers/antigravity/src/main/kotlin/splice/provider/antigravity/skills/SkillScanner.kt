@@ -14,8 +14,9 @@ internal data class SkillRoot(val path: Path, val disabled: Set<String> = emptyS
      *  null when the index may not name it. Trust follows who wrote the folder, not where a link lands.
      *
      *  In a folder that is the person's own, every skill is theirs, links included (a toolkit, stow or a dotfile
-     *  manager installs skills as links), and it is named where they put it, `<path>/<entry>/SKILL.md`: no link's
-     *  target goes upstream, and agy's read follows the link to what is installed now, as Claude Code's would.
+     *  manager installs skills as links), and it is named where they put it, `<path>/<entry>/SKILL.md`: the index
+     *  never names a link's target (a `/name` the person types still sends the real folder), and agy's read follows
+     *  the link to what is installed now, as Claude Code's would.
      *
      *  In a project's folder, a skill is named only when its real folder and file lie inside [project], and by that
      *  real file: a link the project wrote can point neither the index nor a later read the model starts at a file

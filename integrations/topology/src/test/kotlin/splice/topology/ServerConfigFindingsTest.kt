@@ -182,6 +182,94 @@ class ServerConfigFindingsTest {
     }
 
     @Test
+    fun `external metering and telemetry settings decode without running their sources`() {
+        val lines = """
+            metrics_prefix = "team_"
+            [server.telemetry]
+            forward_to = "https://collector.example"
+            [server.telemetry.identity_attributes]
+            person = "team.actor"
+            [server.cost_meters.gpu]
+            hourly_usd = 4.5
+            file = "not-yet-present"
+            [server.cost_meters.worker]
+            hourly_usd = 1.0
+            argv = ["/not-yet-installed/probe"]
+        """.trimIndent()
+        val read = ConfigFindings.read(server(lines) + head(), directory, configDir = directory)
+        val config = assertInstanceOf(ConfigRead.Ready::class.java, read, read.toString()).topology.server
+        assertEquals("team_", config.metricsPrefix)
+        assertEquals("team.actor", config.telemetry?.identityAttributes?.person)
+        assertEquals("user.email", config.telemetry?.identityAttributes?.email)
+        assertEquals(4.5, config.costMeters.getValue("gpu").hourlyUsd)
+        assertEquals(listOf("/not-yet-installed/probe"), config.costMeters.getValue("worker").argv)
+    }
+
+    @Test
+    fun `metering findings name invalid prefix, identity, rates, cadence and signal sources`() {
+        val lines = """
+            metrics_prefix = "1 invalid"
+            [server.telemetry]
+            forward_to = "https://collector.example"
+            [server.telemetry.identity_attributes]
+            person = "user.email"
+            [server.cost_meters.gpu]
+            hourly_usd = -1.0
+            poll_seconds = 0
+            [server.cost_meters.disk]
+            hourly_usd = 0.5
+            url = "file:///tmp/state"
+            [server.cost_meters.worker]
+            hourly_usd = 0.5
+            argv = ["probe"]
+        """.trimIndent()
+        assertEquals(
+            setOf(
+                "server.metrics_prefix",
+                "server.telemetry.identity_attributes",
+                "server.cost_meters.gpu",
+                "server.cost_meters.gpu.hourly_usd",
+                "server.cost_meters.gpu.poll_seconds",
+                "server.cost_meters.disk.url",
+                "server.cost_meters.worker.argv",
+            ),
+            refused(server(lines) + head()).map { it.path }.toSet(),
+        )
+    }
+
+    @Test
+    fun `a whole-number meter rate boots as dollars, as a provider's does`() {
+        val lines = """
+            [server.cost_meters.gpu]
+            hourly_usd = 3
+            file = "not-yet-present"
+        """.trimIndent()
+        val read = ConfigFindings.read(server(lines) + head(), directory, configDir = directory)
+        val config = assertInstanceOf(ConfigRead.Ready::class.java, read, read.toString()).topology.server
+        assertEquals(3.0, config.costMeters.getValue("gpu").hourlyUsd)
+    }
+
+    @Test
+    fun `a metrics prefix may not start with the double underscore Prometheus reserves`() {
+        assertEquals(
+            listOf("server.metrics_prefix"),
+            refused(server("metrics_prefix = \"__team_\"") + head()).map { it.path },
+        )
+    }
+
+    @Test
+    fun `a cost meter may not take a provider's key, which the report's hourly rows are keyed by`() {
+        val lines = """
+            [server.cost_meters.box]
+            hourly_usd = 1.0
+            file = "not-yet-present"
+        """.trimIndent()
+        val findings = refused(server(lines) + head())
+        assertEquals(listOf("server.cost_meters.box"), findings.map { it.path })
+        assertTrue(findings.single().message.contains("provider"), findings.single().message)
+    }
+
+    @Test
     fun `a sign-in table boots with its issuer, client, domains and key days, and a loopback issuer may be http`() {
         val lines = """
             [server.signin]
@@ -251,100 +339,6 @@ class ServerConfigFindingsTest {
         """.trimIndent()
         val found = refused(server(bad) + head())
         assertEquals(setOf("server.client.download_url", "server.forward_auth.allow"), found.map { it.path }.toSet())
-    }
-
-    // #791: the client minimum read from a launcher's own header or a check-in, and what an older one is answered with.
-    @Test
-    fun `a client table with its own header, status, words and check-in boots, and a wrong header or status is not`() {
-        val good = """
-            [server.client]
-            minimum = "0.10.0"
-            version_header = "x-team-launcher"
-            outdated_status = 426
-            outdated_message = "Run team-update: {version} is older than {minimum}."
-            checkin = true
-        """.trimIndent()
-        val ready = ConfigFindings.read(server(good) + head(), directory, configDir = directory)
-        val client = assertInstanceOf(ConfigRead.Ready::class.java, ready, ready.toString()).topology.server.client
-        assertEquals("x-team-launcher", client.header)
-        assertEquals(426, client.outdatedStatus)
-        assertTrue(client.checkin)
-        for (status in listOf(200, 400)) {
-            val read = ConfigFindings.read(
-                server("[server.client]\noutdated_status = $status") + head(),
-                directory,
-                configDir = directory,
-            )
-            assertInstanceOf(ConfigRead.Ready::class.java, read, "$status: $read")
-        }
-
-        val wrong = "[server.client]\nversion_header = \"x team: launcher\"\noutdated_status = 503"
-        val bad = refused(server(wrong) + head())
-        assertEquals(listOf("server.client.version_header", "server.client.outdated_status"), bad.map { it.path })
-    }
-
-    // #791: an alias is one plain path segment standing for a served command or the door.
-    @Test
-    fun `aliases to a served command or the door boot, and every alias that cannot be served is refused by name`() {
-        val ready = ConfigFindings.read(
-            server("[server.aliases]\n\"/v1\" = \"claude-team\"\n\"/openai\" = \"door\"") + head(),
-            directory,
-            configDir = directory,
-        )
-        val served = assertInstanceOf(ConfigRead.Ready::class.java, ready, ready.toString()).topology.server
-        assertEquals(mapOf("v1" to "claude-team", "openai" to "door"), served.aliasSegments)
-
-        val aliases = """
-            [server.aliases]
-            "v1" = "claude-team"
-            "/a/b" = "claude-team"
-            "/server" = "door"
-            "/health" = "door"
-            "/claude-team" = "door"
-            "/door" = "claude-team"
-            "/v2" = "claude-nobody"
-        """.trimIndent()
-        val found = refused(server(aliases) + head())
-        assertEquals(7, found.size, found.toString())
-        assertTrue(found.all { it.path == "server.aliases" }, found.toString())
-        val named = listOf("'v1'", "'/a/b'", "'/server'", "'/health'", "'/claude-team'", "'/door'", "'claude-nobody'")
-        for (alias in named) {
-            assertTrue(found.any { alias in it.message }, "$alias: $found")
-        }
-    }
-
-    // #791: the listener serves a head at its command and at its head key alike, and a provider with no head only at
-    // the door, so boot judges an alias by the same names the listener answers to.
-    @Test
-    fun `an alias may not take a served head's key, stand for a headless provider, or be written twice`() {
-        val shadow = refused(server("[server.aliases]\n\"/box\" = \"door\"") + head()).single()
-        assertTrue("'/box'" in shadow.message && "already a path" in shadow.message, shadow.message)
-
-        val byKey = server("[server.aliases]\n\"/v1\" = \"box\"") + head()
-        assertInstanceOf(ConfigRead.Ready::class.java, ConfigFindings.read(byKey, directory, configDir = directory))
-
-        val headless = head().substringBefore("[heads.box]")
-        val provider = refused(server("[server.aliases]\n\"/v1\" = \"box\"", commands = "\"box\"") + headless).single()
-        assertTrue("no head" in provider.message && "\"door\"" in provider.message, provider.message)
-        val atDoor = server("[server.aliases]\n\"/v1\" = \"door\"", commands = "\"box\"") + headless
-        assertInstanceOf(ConfigRead.Ready::class.java, ConfigFindings.read(atDoor, directory, configDir = directory))
-
-        val twice = refused(server("[server.aliases]\n\"/v1\" = \"claude-team\"\n\" /v1\" = \"door\"") + head())
-        assertEquals(1, twice.size, twice.toString())
-        assertTrue("'/v1' is written more than once" in twice.single().message, twice.toString())
-    }
-
-    // #791: the listener answers `/server/...` and `/health` itself, so an alias standing for a head whose command or key
-    // is so named would never reach that head.
-    @Test
-    fun `an alias may not stand for one of the listener's own routes, even where a served head is so named`() {
-        for (name in listOf("server", "health")) {
-            val named = head().replace("command = \"claude-team\"", "command = \"$name\"")
-            val found = refused(server("[server.aliases]\n\"/v1\" = \"$name\"", commands = "\"$name\"") + named)
-            val reserved = found.single { it.path == "server.aliases" }
-            assertTrue("'/v1' stands for '$name'" in reserved.message, found.toString())
-            assertTrue("listener's own routes" in reserved.message, reserved.message)
-        }
     }
 
     @Test

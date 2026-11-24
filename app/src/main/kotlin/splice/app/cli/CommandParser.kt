@@ -3,6 +3,7 @@
 // sat beside Install because that verb owned the argv-shaped cases.
 package splice.app.cli
 
+import splice.app.cli.status.CONSOLE_NO_BROWSER
 import splice.app.cli.status.CONSOLE_PILOT_USAGE
 
 /**
@@ -110,25 +111,29 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
         "[<head>|--all]",
         CommandFactory.OneHead { a -> Command.Uninstall(a.getOrNull(1)) },
     ),
-    // `login <head> [--label <name>] [--discard]` (v0.4.0, FEATURES.md §11): the value after the flag,
-    // wherever it sits. --discard (V4-276) takes no value and only means something with --label. --key-stdin (server
-    // mode, F7) takes none either: the key a server's operator issued arrives on stdin.
+    // `login [--no-browser | <head> [--label <name> [--discard]] | <server> [--key-stdin]]`: bare `splice login`
+    // opens Splice Console's Accounts page (`--no-browser` prints the launch URL instead). `--label` / `--discard`
+    // (V4-276) and `--key-stdin` (server mode, F7) apply to explicit head/server logins.
     "login" to CommandRegistration(
-        "<head> [--label <name> [--discard]] | <server> [--key-stdin]",
+        "[--no-browser | <head> [--label <name> [--discard]] | <server> [--key-stdin]]",
         CommandFactory { a ->
             val flag = a.indexOf(LABEL_FLAG)
             val label = if (flag > 0) a.getOrNull(flag + 1) else null
             val discard = DISCARD_FLAG in a
             val keyStdin = KEY_STDIN_FLAG in a
+            val noBrowser = CONSOLE_NO_BROWSER in a
             val positional = a.filterIndexed { i, word ->
-                i > 0 && word != DISCARD_FLAG && word != KEY_STDIN_FLAG && (flag < 1 || i != flag && i != flag + 1)
+                i > 0 && word != DISCARD_FLAG && word != KEY_STDIN_FLAG && word != CONSOLE_NO_BROWSER &&
+                    (flag < 1 || i != flag && i != flag + 1)
             }
             // A bare --label, a second --label or a second positional is a mistake, not an unlabeled
             // login: the parse fails and usage prints, nothing is silently dropped. So is --discard
-            // without --label, or twice.
+            // without --label, or twice, or --no-browser combined with head/server options.
             val malformed = flag > 0 && label == null || a.count { it == LABEL_FLAG } > 1 || positional.size > 1 ||
-                discard && (label == null || a.count { it == DISCARD_FLAG } > 1) || a.count { it == KEY_STDIN_FLAG } > 1
-            if (malformed) null else Command.Login(positional.firstOrNull(), label, discard, keyStdin)
+                discard && (label == null || a.count { it == DISCARD_FLAG } > 1) ||
+                a.count { it == KEY_STDIN_FLAG } > 1 || a.count { it == CONSOLE_NO_BROWSER } > 1 ||
+                noBrowser && (positional.isNotEmpty() || label != null || discard || keyStdin)
+            if (malformed) null else Command.Login(positional.firstOrNull(), label, discard, keyStdin, noBrowser)
         },
     ),
     // Nov 16, 2026: server mode (docs/specs/server-mode.md, F2); `login <server>` signs in, this forgets the key.

@@ -5,8 +5,12 @@ package splice.provider.antigravity
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.core.client.ForegroundToolCall
+import splice.core.client.ForegroundToolPhase
 import splice.core.util.JsonScalars
 import splice.core.util.WallClock
+import splice.provider.antigravity.hooks.AcpLoginPrompt
+import splice.provider.antigravity.hooks.AcpSessionHooks
 import splice.provider.antigravity.skills.LocalSkillCatalog
 import java.util.UUID
 
@@ -33,6 +37,7 @@ internal class DesktopSession(
     private val mcpState: McpState,
     private val bridge: McpBridge,
     private val clock: WallClock,
+    private val hooks: AcpSessionHooks = AcpSessionHooks(),
 ) : SessionControlHost {
     private val lists = DesktopLists()
     private val controls = DesktopControl(this, coordinator, mcpState, lists)
@@ -69,7 +74,12 @@ internal class DesktopSession(
 
     /** Removes the session record file when the session ends. */
     fun closeRecord() {
-        parts?.record?.remove()
+        parts?.let { p ->
+            hooks.foreground?.record(
+                ForegroundToolCall(p.frames.sessionId, null, ForegroundToolPhase.SESSION_END, hooks.foregroundOwner),
+            )
+            p.record.remove()
+        }
     }
 
     /** One line Desktop wrote. */
@@ -133,7 +143,14 @@ internal class DesktopSession(
         unusable = res.unusable
         val resolvedId = claude.sessionId ?: claude.resume ?: res.session?.id ?: UUID.randomUUID().toString()
         val built = partsFactory.build(resolvedId)
-        val agyTurn = AgyTurn(built.frames, built.out, built.transcript, mcpState)
+        val agyTurn = AgyTurn(
+            built.frames,
+            built.out,
+            built.transcript,
+            mcpState,
+            hooks.foreground,
+            hooks.foregroundOwner,
+        )
         agyTurn.draw.model = built.look.model
         agyTurn.draw.used = used
         parts = built
@@ -145,6 +162,12 @@ internal class DesktopSession(
             mcpServers = mcpState.initServers(),
         )
         built.record.write(busy = false)
+        if (claude.resume == null && built.look.cwd.isNotBlank()) {
+            hooks.sessionStart?.started(resolvedId, built.look.cwd)
+        }
+        hooks.foreground?.record(
+            ForegroundToolCall(resolvedId, null, ForegroundToolPhase.SESSION_START, hooks.foregroundOwner),
+        )
         if (claude.resume != null) pendingHandoff = LiveHandoff().of(built.transcript.file, res.resumed)
         return built
     }
@@ -173,6 +196,15 @@ internal class DesktopSession(
         val content = (line["message"] as? JsonObject)?.get("content") ?: JsonPrimitive("")
         p.out(p.frames.replay(line, uuid))
         p.transcript.user(uuid, content)
+        if (AcpLoginPrompt.matches(content)) {
+            if (prompts.isEmpty()) {
+                val reply = hooks.login.open()
+                begin(p)
+                turn?.say(reply)
+                finish(null)
+            }
+            return
+        }
         if (prompts.isEmpty()) begin(p)
         val handoff = pendingHandoff
         pendingHandoff = null

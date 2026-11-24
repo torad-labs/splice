@@ -152,7 +152,6 @@ public class ClaudeConfigMaterializer(
                     LoginInterception.keySetupAdvertiser(
                         configDir = spec.configDir,
                         spec = spec.signIn.tokenCapture,
-                        loginCommand = spec.signIn.loginCommand,
                         hooks = HookInstaller(execProbe = hookExecProbe),
                     )
                 } else {

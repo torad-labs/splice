@@ -224,9 +224,49 @@ every = "1h"
   `_duration_seconds`, `_prefill_tokens_per_second`, `_decode_tokens_per_second`, `_stream_stall_seconds`
   (the longest wait for the upstream's next chunk after the first token), gauges `splice_server_inflight{person}`
   and `splice_server_inflight_limit{person}`.
+- `[server] metrics_prefix = "team_gateway_"` replaces the literal `splice_server_` prefix on this scrape,
+  including HELP, TYPE and histogram series. Include your own separator; a prefix starting with `__`, which
+  Prometheus reserves, is refused. It does not rename the operator OTLP
+  export or the gateway's identity-free metrics.
 - Every person with a live key has their series at 0 from startup; a person with none has no series.
 - The same series go through the operator's OTLP export (`[telemetry.operator]`). These carry person and team by
   design; the operator families described in `docs/observability/exporters.md` stay identity-free.
+
+### External hourly costs
+
+Provider `hourly_usd` still follows the splice host's uptime. Add a named `[server.cost_meters.<name>]` table only
+for a separate resource, named apart from every provider key (the report rows both by name). Each table
+requires a nonnegative USD hourly rate and exactly one of these signals:
+
+```toml
+[server.cost_meters.gpu]
+hourly_usd = 3.25
+file = "/run/example/gpu-running" # trimmed text "true" (at most 64 bytes)
+
+[server.cost_meters.storage]
+hourly_usd = 0.6
+url = "http://127.0.0.1:8081/running" # GET returning 2xx; body ignored
+
+[server.cost_meters.worker]
+hourly_usd = 1.25
+argv = ["/usr/local/libexec/worker-running", "worker-1"] # exit 0
+poll_seconds = 30 # default: 60
+```
+
+Relative files resolve beside `splice.toml`; replace signal files atomically. URLs must be HTTP(S) with no embedded
+credentials and are not followed through redirects. The daemon starts argv directly, with no implicit shell,
+in the config directory with an empty environment and closed stdin. Use trusted, foreground probes only. A URL has
+five seconds to send its response headers; a command has five seconds to exit. Settings take effect on daemon restart.
+
+A report bills only the elapsed time between consecutive affirmative polls no more than one interval plus five
+seconds apart. A missing, malformed, negative, or failed probe ends that run at the last affirmative sample.
+There is no backfill before the first sample, during daemon downtime, or after the last confirmed sample. Each
+confirmed interval retains its original rate in `<state>/server/cost-meters.jsonl`, including across restarts,
+rate changes or removal of the meter. No probes run with the table absent.
+
+Read separate meter lines with `splice server usage report --format json`: each is in `fixed` with the meter name
+in `provider` and `source: "external"`. Their costs contribute to `fixed_usd` and `actual_usd`, not the token
+charges or per-person budgets. The history is in `[server.backup]` snapshots, not the per-turn usage export.
 
 ## P2: the laptop side
 
@@ -241,7 +281,10 @@ Drafted checks for these exist and are committed with the P2 plan once P1 has la
 - **F8 telemetry relay.** `[server.telemetry] forward_to` names the operator's collector.
   `POST /server/otlp/v1/{metrics,logs,traces}` takes Claude Code's own OTLP (JSON or protobuf) with the person's
   key, sets `splice.person`, `splice.team` and `user.email` on every resource whatever the client claimed, and
-  forwards it in the same encoding. The laptop recipe sets `CLAUDE_CODE_ENABLE_TELEMETRY=1` and
+  forwards it in the same encoding. Override the three names independently with `person`, `team` and `email`
+  under `[server.telemetry.identity_attributes]`. Keys must be distinct and nonblank. Client claims under either
+  the configured names or the defaults are removed; a caller without a team gets no team attribute.
+  The laptop recipe sets `CLAUDE_CODE_ENABLE_TELEMETRY=1` and
   `OTEL_EXPORTER_OTLP_ENDPOINT=<server>/server/otlp` with an `otelHeadersHelper` that sends the key, and never sets
   `OTEL_LOG_USER_PROMPTS`. Where any of the organisation's managed settings sets a telemetry key, splice adds no
   telemetry of its own; managed settings that set none leave the relay on. splice reads the file sources (#791): the

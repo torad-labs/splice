@@ -43,6 +43,9 @@ public data class DoorSession(
     val window: Long,
     val model: String?,
     val rows: List<DoorPickerRow> = emptyList(),
+    /** When false (side-by-side launch without splice's `commands/login.md` in `~/.claude`), Claude Code's built-in
+     *  `/login` and `/logout` stay enabled instead of returning "Unknown command". */
+    val disableLogin: Boolean = true,
 ) {
     private val gateway = GatewayMode()
 
@@ -50,10 +53,15 @@ public data class DoorSession(
     public fun env(): Map<String, String> = told() + (GATEWAY_TOKEN to key)
 
     /** What the launch takes out of the environment it inherits: every other way to a provider, every model list but
-     *  the gateway's, and a starting model when the gateway names none. */
+     *  the gateway's, a starting model when the gateway names none, and `DISABLE_LOGIN_COMMAND`/`DISABLE_LOGOUT_COMMAND`
+     *  when [disableLogin] is false so an inherited value cannot break Claude Code's built-in `/login`. */
     public fun unset(): List<String> = buildList {
         addAll(gateway.unset)
         if (model == null) add(DESKTOP_MODEL)
+        if (!disableLogin) {
+            add(LOGIN_OFF)
+            add(LOGOUT_OFF)
+        }
     }
 
     /** What the launch's `--settings` overlay carries in its `env` (#791): a person's settings `env` is applied over
@@ -63,17 +71,23 @@ public data class DoorSession(
     public fun settingsEnv(): Map<String, String> = buildMap {
         putAll(gateway.cleared)
         if (model == null) put(DESKTOP_MODEL, "")
+        if (!disableLogin) {
+            put(LOGIN_OFF, "0")
+            put(LOGOUT_OFF, "0")
+        }
         putAll(told())
     }
 
     /** What the launch sets that is no secret: gateway mode at [door] on [model], the window, auto mode's classifier
-     *  off, and Claude Code's own /login and /logout off. */
+     *  off, and Claude Code's own /login and /logout off when [disableLogin] is true. */
     private fun told(): Map<String, String> = buildMap {
         putAll(gateway.settings(door, model))
         put(DESKTOP_WINDOW, window.toString())
         put(DESKTOP_AUTO_MODE, "0")
-        put(LOGIN_OFF, "1")
-        put(LOGOUT_OFF, "1")
+        if (disableLogin) {
+            put(LOGIN_OFF, "1")
+            put(LOGOUT_OFF, "1")
+        }
     }
 
     /** The `--settings` overlay: [settingsEnv] as its `env`, a shared door's picker, when it has rows, splice's launch

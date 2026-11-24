@@ -21,6 +21,38 @@ import java.nio.file.Paths
 class LoginCommandTest {
 
     @Test
+    fun `bare splice login opens Splice Console Accounts and honours no-browser`(@TempDir tmp: Path) {
+        val opened = mutableListOf<Boolean>()
+        val out = mutableListOf<String>()
+        val ok = UserHome.within(tmp) {
+            kotlinx.coroutines.runBlocking {
+                val cmd = LoginCommand(
+                    output = { out += it },
+                    openConsole = { openBrowser ->
+                        opened += openBrowser
+                        true
+                    },
+                )
+                cmd.login(headArg = null) && cmd.login(headArg = null, openBrowser = false)
+            }
+        }
+        assertTrue(ok)
+        assertEquals(
+            listOf(true, false),
+            opened,
+            "bare `splice login` must open Console Accounts and honour --no-browser",
+        )
+        assertTrue(out.none { "which head" in it }, out.toString())
+        val parser = splice.app.cli.CommandParser()
+        assertEquals(splice.app.cli.Command.Login(null, noBrowser = false), parser.parse(arrayOf("login")))
+        assertEquals(
+            splice.app.cli.Command.Login(null, noBrowser = true),
+            parser.parse(arrayOf("login", "--no-browser")),
+        )
+        assertEquals(null, parser.parse(arrayOf("login", "codex", "--no-browser")))
+    }
+
+    @Test
     fun `oauth login writes to the provider configured auth file`() {
         val provider = ProviderConfig(
             dialect = Dialect.OPENAI_RESPONSES,

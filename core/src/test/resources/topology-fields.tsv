@@ -45,6 +45,11 @@ door.commands.*.models
 door.commands.*.provider	
 door.selector_aliases	
 door.selector_aliases.*	
+harnesses	
+harnesses.*.argv	
+harnesses.*.description	
+harnesses.*.name	
+harnesses.*.protocol	
 heads	
 heads.*.claude	
 heads.*.claude.command	
@@ -251,6 +256,12 @@ server.client.outdated_message
 server.client.outdated_status	
 server.client.version_header	
 server.commands	
+server.cost_meters	
+server.cost_meters.*.argv	
+server.cost_meters.*.file	
+server.cost_meters.*.hourly_usd	
+server.cost_meters.*.poll_seconds	
+server.cost_meters.*.url	
 server.export	
 server.export.access_key_env	
 server.export.endpoint	
@@ -267,6 +278,7 @@ server.limits.inflight_per_person
 server.limits.rpm_per_person	
 server.limits.tpm_per_person	
 server.listen	
+server.metrics_prefix	
 server.reference	
 server.reference.cached_usd_per_mtok	
 server.reference.input_usd_per_mtok	
@@ -283,6 +295,10 @@ server.teams.by_domain
 server.teams.by_domain.*	
 server.telemetry	
 server.telemetry.forward_to	
+server.telemetry.identity_attributes	
+server.telemetry.identity_attributes.email	
+server.telemetry.identity_attributes.person	
+server.telemetry.identity_attributes.team	
 server.tls_cert	
 server.tls_key	
 server.trusted_proxies	

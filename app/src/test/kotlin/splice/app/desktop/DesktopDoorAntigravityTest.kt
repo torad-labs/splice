@@ -29,11 +29,14 @@ import splice.app.desktop.record.DesktopKey
 import splice.app.desktop.record.DesktopRecords
 import splice.app.provider.AntigravityProvider
 import splice.app.provider.ServingProviders
+import splice.core.client.AGENT_HEADER
+import splice.core.client.SESSION_HEADER
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.speed.SessionSpeeds
 import splice.core.topology.Topology
 import splice.core.util.LogSink
 import splice.provider.antigravity.door.AntigravityDoorEngine
@@ -99,6 +102,46 @@ class DesktopDoorAntigravityTest {
             }
         }
 
+    @Test
+    fun `door relay records main turn provider in SessionSpeeds and ignores subagent turns`() =
+        UserHome.within(tempDir.resolve("home-speed")) {
+            testApplication {
+                val harness = buildHarness()
+                harness.providers.publish()
+                routing { post("/door/v1/messages") { harness.door.messages(call) } }
+                val chatBody =
+                    """{"model":"claude-antigravity--gem-4-neon","max_tokens":128,""" +
+                        """"stream":true,"messages":[{"role":"user","content":"hi"}]}"""
+                try {
+                    harness.speeds.ran("sess-door-1", "gpt-5.6-sol", provider = "codex")
+                    val mainRes = client.post("/door/v1/messages") {
+                        header(HttpHeaders.Authorization, "Bearer ${harness.desktopKey.get()}")
+                        header(HttpHeaders.UserAgent, "Anthropic/JS 0.39.0")
+                        header(SESSION_HEADER, "sess-door-1")
+                        contentType(ContentType.Application.Json)
+                        setBody(chatBody)
+                    }
+                    assertEquals(HttpStatusCode.OK, mainRes.status)
+                    assertEquals("antigravity", harness.speeds.lastProvider("sess-door-1"))
+                    assertEquals("gemini-4-neon", harness.speeds.lastModel("sess-door-1"))
+
+                    harness.speeds.ran("sess-sub", "gpt-5.6-sol", provider = "codex")
+                    val subRes = client.post("/door/v1/messages") {
+                        header(HttpHeaders.Authorization, "Bearer ${harness.desktopKey.get()}")
+                        header(HttpHeaders.UserAgent, "Anthropic/JS 0.39.0")
+                        header(SESSION_HEADER, "sess-sub")
+                        header(AGENT_HEADER, "agent-1")
+                        contentType(ContentType.Application.Json)
+                        setBody(chatBody)
+                    }
+                    assertEquals(HttpStatusCode.OK, subRes.status)
+                    assertEquals("codex", harness.speeds.lastProvider("sess-sub"))
+                } finally {
+                    harness.close()
+                }
+            }
+        }
+
     private suspend fun buildHarness(): Harness {
         val script = writeFakeAgy()
         val log = LogSink {}
@@ -127,11 +170,13 @@ class DesktopDoorAntigravityTest {
         val (_, terminalCaller) = terminal.open(providers, "http://127.0.0.1:3096/door")
         val launchSpec = requireNotNull(terminal.launch())
         val termToken = requireNotNull(launchSpec.env["ANTHROPIC_AUTH_TOKEN"])
+        val speeds = SessionSpeeds()
         val door = DesktopDoor(
             callers = listOf(DesktopCaller(desktopKey, records, log), terminalCaller),
             providers = providers,
+            sessionSpeeds = speeds,
         )
-        return Harness(door, providers, desktopKey, termToken, engine, engineScope)
+        return Harness(door, providers, desktopKey, termToken, speeds, engine, engineScope)
     }
 
     private fun writeFakeAgy(): Path {
@@ -168,6 +213,7 @@ class DesktopDoorAntigravityTest {
         val providers: DesktopProviders,
         val desktopKey: DesktopKey,
         val termToken: String,
+        val speeds: SessionSpeeds,
         private val engine: AntigravityDoorEngine,
         private val scope: CoroutineScope,
     ) : AutoCloseable {

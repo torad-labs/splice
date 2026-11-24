@@ -5,24 +5,8 @@
 // the map they resolve to are DesktopHarnesses'.
 package splice.app.desktop.harness
 
-/** A program a Desktop session runs on. [wire] is its id in `desktop-harnesses.json` and on the API. */
-internal enum class DesktopHarness(val wire: String, val title: String, val description: String) {
-    CLAUDE_CODE(
-        "claude-code",
-        "Claude Code (Splice)",
-        "Claude Code started through Splice's gateway, on the model the session picked",
-    ),
-    CODEX(
-        "codex",
-        "Codex CLI",
-        "OpenAI's Codex CLI, started by a session launcher that reads Splice's harness map",
-    ),
-    ANTIGRAVITY(
-        "antigravity",
-        "Antigravity",
-        "Google's agy, started through `splice desktop acp` in place of Claude Code",
-    ),
-}
+import splice.core.harness.HarnessDefinition
+import splice.core.mcp.McpHarness
 
 /** A model family whose Desktop sessions have a harness of their own to choose or switch. [providerFamilies] are the
  *  provider families it claims (ProviderFamilyRule's, or a `family` written in splice.toml), in lowercase: none for one
@@ -32,8 +16,8 @@ internal enum class HarnessFamily(
     val title: String,
     val description: String,
     val providerFamilies: Set<String>,
-    val default: DesktopHarness,
-    val choices: List<DesktopHarness>,
+    val default: HarnessDefinition,
+    val choices: List<HarnessDefinition>,
     val toggleable: Boolean,
 ) {
     OPENAI(
@@ -42,8 +26,8 @@ internal enum class HarnessFamily(
         "Sessions on a ChatGPT or OpenAI model. Claude Code through Splice runs them on the GPT model; Codex CLI is " +
             "for a session launcher that starts Codex instead, and only when you choose it",
         setOf("openai", "codex"),
-        DesktopHarness.CLAUDE_CODE,
-        listOf(DesktopHarness.CLAUDE_CODE, DesktopHarness.CODEX),
+        McpHarness.CLAUDE.definition,
+        listOf(McpHarness.CLAUDE.definition, McpHarness.CODEX.definition),
         toggleable = false,
     ),
     ANTIGRAVITY(
@@ -52,8 +36,8 @@ internal enum class HarnessFamily(
         "Sessions on Antigravity's Gemini models, which only agy runs. Off leaves Antigravity out of Desktop and the " +
             "daemon never runs agy",
         emptySet(),
-        DesktopHarness.ANTIGRAVITY,
-        listOf(DesktopHarness.ANTIGRAVITY),
+        McpHarness.AGY.definition,
+        listOf(McpHarness.AGY.definition),
         toggleable = true,
     ),
     ;
@@ -62,11 +46,8 @@ internal enum class HarnessFamily(
     fun claims(family: String?): Boolean = family?.lowercase() in providerFamilies
 }
 
-/** The harnesses and families by the ids the file and the API spell them in. */
+/** The families by the ids the file and the API spell them in. */
 internal class HarnessWords {
-    /** The harness [wire] names, or null when none is. */
-    fun harness(wire: String?): DesktopHarness? = DesktopHarness.entries.firstOrNull { it.wire == wire }
-
     /** The family [wire] names, or null when none is. */
     fun family(wire: String?): HarnessFamily? = HarnessFamily.entries.firstOrNull { it.wire == wire }
 }

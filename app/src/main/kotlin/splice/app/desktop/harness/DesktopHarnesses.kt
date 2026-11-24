@@ -20,6 +20,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.harness.HarnessCatalog
+import splice.core.harness.HarnessDefinition
+import splice.core.mcp.McpHarness
 import splice.core.model.ClientModelNames
 import splice.core.topology.gateway.GatewaySelectorPrefixes
 import splice.core.util.LogSink
@@ -48,7 +51,7 @@ internal data class HarnessSwitch(
     val prefix: String,
     val provider: String,
     val family: HarnessFamily?,
-    val harness: DesktopHarness,
+    val harness: HarnessDefinition,
     val enabled: Boolean,
 )
 
@@ -58,6 +61,7 @@ internal class DesktopHarnesses(
     val file: DesktopHarnessFile,
     private val providers: Map<String, String?>,
     private val antigravity: Boolean?,
+    private val catalog: HarnessCatalog = HarnessCatalog(),
     private val log: LogSink,
 ) {
     /** Whether the daemon asks agy, as [boot] read it at the daemon's start; null before. */
@@ -89,7 +93,7 @@ internal class DesktopHarnesses(
             val state = HarnessFamily.entries.firstOrNull { it.claims(family) }?.let(byFamily::get)
             val canonical = GatewaySelectorPrefixes.canonical(key)
             listOf(canonical, ClientModelNames.prefixOf(canonical)).map { prefix ->
-                val choice = state?.choice ?: HarnessChoice(DesktopHarness.CLAUDE_CODE, enabled = true)
+                val choice = state?.choice ?: HarnessChoice(McpHarness.CLAUDE.definition, enabled = true)
                 HarnessSwitch(prefix, key, state?.family, choice.harness, choice.enabled)
             }
         }
@@ -107,8 +111,8 @@ internal class DesktopHarnesses(
     /** The file's whole body under [states]. */
     fun document(states: List<FamilyState>): JsonObject = buildJsonObject {
         put(HARNESS_KEY_VERSION, HARNESS_FILE_VERSION)
-        put("default_harness", DesktopHarness.CLAUDE_CODE.wire)
-        put("harnesses", JsonArray(DesktopHarness.entries.map(::harnessJson)))
+        put("default_harness", McpHarness.CLAUDE.definition.wire)
+        put("harnesses", JsonArray(catalog.entries.map(::harnessJson)))
         put(HARNESS_KEY_FAMILIES, JsonArray(states.map(::familyJson)))
         put("switches", JsonArray(switches(states).map(::switchJson)))
     }
@@ -158,7 +162,7 @@ internal class DesktopHarnesses(
     private fun enabled(states: List<FamilyState>, family: HarnessFamily): Boolean =
         states.first { it.family == family }.choice.enabled
 
-    private fun harnessJson(harness: DesktopHarness): JsonObject = buildJsonObject {
+    private fun harnessJson(harness: HarnessDefinition): JsonObject = buildJsonObject {
         put("id", harness.wire)
         put("name", harness.title)
         put("description", harness.description)

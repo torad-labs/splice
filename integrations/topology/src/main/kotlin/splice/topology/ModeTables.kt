@@ -17,6 +17,7 @@ internal object ModeTables {
     fun attached(topology: Topology, tables: List<CapabilityTable>): Topology = if (tables.isEmpty()) {
         topology
     } else {
-        topology.copy(modes = ModeSettingsReader(topology.heads.keys, null).read(tables).settings)
+        val modes = ModeSettingsReader(topology.heads.keys, null).read(tables).settings
+        topology.copy(extensions = topology.extensions.copy(modes = modes))
     }
 }

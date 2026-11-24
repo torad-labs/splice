@@ -28,14 +28,14 @@ internal class SkillScanner(private val log: LogSink) {
         val name = SkillName.valid(child.fileName.toString())?.takeUnless(disabled::contains) ?: return null
         val folder = SkillPaths.directory(child) ?: return null
         return SkillPaths.file(folder.resolve(SKILL_DOC))
-            ?.let { frontmatter.readItem(it, name, folder, root.path) }
+            ?.let { frontmatter.readItem(SkillPlace(it, folder, root.path), name) }
             ?.takeUnless { it.name in disabled }
     }
 
     private fun command(child: Path, root: Path): LocalSkillItem? {
         val leaf = child.fileName.toString().takeIf { it.endsWith(COMMAND_EXT) } ?: return null
         val name = SkillName.valid(leaf.removeSuffix(COMMAND_EXT)) ?: return null
-        return SkillPaths.file(child)?.let { frontmatter.readItem(it, name, folder = null, root = root) }
+        return SkillPaths.file(child)?.let { frontmatter.readItem(SkillPlace(it, folder = null, root = root), name) }
     }
 
     private fun children(dir: Path): List<Path> = try {

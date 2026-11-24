@@ -67,7 +67,7 @@ internal class DesktopSession(
 
     override val agy: AgySession? get() = session
     override val skills: SkillShelf get() = partsFactory.skills
-    override val commands: List<AgyCommand> get() = lists.mergeCommands(agyCommands, skills.current.commands)
+    override val commands: List<AgyCommand> get() = lists.mergeCommands(agyCommands, skills.current.typed)
     override val nativeCommands: Set<String> get() = agyCommands.mapTo(HashSet(), AgyCommand::name)
 
     /** The session's frames; before agy opens, frames under the id Desktop gave, which a control answer (naming no
@@ -225,7 +225,7 @@ internal class DesktopSession(
         if (prompts.isEmpty()) begin(p)
         val handoff = pendingHandoff
         pendingHandoff = null
-        val prompt = session?.prompt(invocation.expand(content, skills.current.commands, nativeCommands), handoff)
+        val prompt = session?.prompt(invocation.expand(content, skills.current.typed, nativeCommands), handoff)
         if (prompt != null) {
             prompts += prompt
             return

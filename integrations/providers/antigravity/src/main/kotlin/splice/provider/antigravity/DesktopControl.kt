@@ -90,7 +90,7 @@ internal class DesktopControl(
      *  commands agy's own don't shadow. It never opens agy, which opens on `initialize` with Desktop's MCP servers. */
     private fun reloadSkills(id: String): JsonObject {
         val native = host.nativeCommands
-        val fresh = host.skills.reload().commands.filter { it.name !in native }
+        val fresh = host.skills.reload().typed.filter { it.name !in native }
         val listed = host.frames.commandsOf(lists.mergeCommands(emptyList(), fresh))
         return host.frames.controlOk(id, JsonObject(mapOf("skills" to listed)))
     }

@@ -10,11 +10,12 @@ import java.nio.file.Path
 
 /** Builds the skill index for agy's system prompt. */
 internal class SkillIndex {
-    /** [catalog]'s skills that agy does not serve itself, as an index; null when none qualify. agy serves a skill
-     *  found in one of its [nativeRoots], one whose real folder is that of one of its [native] skills (an alias that
-     *  links there), and one with the name of one of them. */
+    /** [catalog]'s skills the model may choose and agy does not serve itself, as an index; null when none qualify. A
+     *  `disable-model-invocation: true` skill stays out (only the person may start it), while a `user-invocable:
+     *  false` one stays in. agy serves a skill found in one of its [nativeRoots], one whose real folder is that of one
+     *  of its [native] skills (an alias that links there), and one with the name of one of them. */
     fun of(catalog: LocalSkillCatalog, nativeRoots: List<Path>, native: List<LocalSkillItem> = emptyList()): String? {
-        val skills = catalog.commands.filter { it.isSkill && !agyServes(it, nativeRoots, native) }
+        val skills = catalog.commands.filter { it.isSkill && it.use.byModel && !agyServes(it, nativeRoots, native) }
         if (skills.isEmpty()) return null
         val lines = mutableListOf(INDEX_HEADER)
         var chars = INDEX_HEADER.length

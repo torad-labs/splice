@@ -180,17 +180,24 @@ A Gemini session offers the person's Claude skills and commands as a Claude Code
 or writing `~/.gemini`.
 
 - **Where they come from** (`ClaudeSkillCatalog`, nearest first, and the first one with a given name wins):
-  `.claude/skills` and `.agents/skills` in the session folder and each parent up to the repository root;
-  `<CLAUDE_CONFIG_DIR or ~/.claude>/skills`; `~/.agents/skills`; the skills in
+  `.claude/skills` and `.agents/skills` in the session folder and each parent up to the repository root (the folder
+  holding `.git`); outside a repository the walk stops below the home folder, or at the filesystem root when the
+  session isn't under home. Then `<CLAUDE_CONFIG_DIR or ~/.claude>/skills`; `~/.agents/skills`; the skills in
   `$CLAUDE_CODE_DESKTOP_SKILLS_PLUGIN_DIR/skills` that its `manifest.json` doesn't turn off; then `.claude/commands`
-  along the same walk and `<config>/commands`. They are found once when the session starts, before agy opens.
+  along the same walk and `<config>/commands`. They are scanned when the session starts, before agy opens, and
+  again on each `reload_skills`.
+- **Who may start one**, from the frontmatter as Claude Code reads it: `user-invocable: false` keeps a skill out of
+  what the person can type (the slash menu, `reload_skills`, `system/init`'s `skills` and `/name` expansion), but the
+  model may still choose it, so it is in the skill index. `disable-model-invocation: true` keeps a skill out of the
+  index only; the person can still type it.
 - **Autocomplete:** the `initialize` answer's `commands` and `system/init`'s `slash_commands` list agy's commands
-  and then the local ones. On a shared name, agy's command wins. `skills` lists the local skills.
+  and then the local ones the person can type. On a shared name, agy's command wins. `skills` lists those local
+  skills.
 - **`system/init`** comes right after the `initialize` answer, so Desktop has the commands before any turn. The first
   turn doesn't say it again unless the model, mode, commands or skills changed in between. Each later turn begins with
   it, as each of Claude Code's stream-json turns does.
-- **`/name args`:** when a message's first text is `/name args` and `name` is a local skill or command that agy
-  doesn't have, agy is sent `<command-name>/name</command-name>`, `<command-args>args</command-args>`, the skill's
+- **`/name args`:** when a message's first text is `/name args` and `name` is a local skill or command that the
+  person can type and agy doesn't have, agy is sent `<command-name>/name</command-name>`, `<command-args>args</command-args>`, the skill's
   folder (`Base directory for this skill: …`, so relative `scripts/` and `references/` paths resolve), and then the
   body. In the body, `$ARGUMENTS` is replaced by the arguments; if the body has no `$ARGUMENTS` and there are
   arguments, they are added after it as `ARGUMENTS: …`. In a message made of blocks, only that text block changes and
@@ -199,9 +206,10 @@ or writing `~/.gemini`.
   they open Splice Console's Accounts page and never reach agy, and in a message with an image they go to agy as
   typed.
 - **`reload_skills`** scans the folders again and answers `{"skills": [{name, description, argumentHint}, …]}`, as
-  Claude Code does, with the local skills and commands. It leaves out only the names of commands agy has already
-  reported in `available_commands_update`; before agy reports any, nothing is left out. It never opens the agy
-  session. Autocomplete, `/name` and the index of a session not yet opened use the new list from then on.
+  Claude Code does, with the local skills and commands the person can type. It leaves out only the names of commands
+  agy has already reported in `available_commands_update`; before agy reports any, nothing is left out. It never
+  opens the agy session. Autocomplete, `/name` and the index of a session not yet opened use the new list from then
+  on.
 - **The skill index.** When agy offers `systemPrompt.append`, a new session (`session/new`, including the retry
   without MCP servers) gets a short index appended to agy's system prompt. It is built from the skills as they stand
   when `session/new` is sent, so a `reload_skills` before then counts. The index lists each local skill's name,
@@ -210,7 +218,9 @@ or writing `~/.gemini`.
   - only when agy's ACP `initialize` advertised the capability as JSON `true` (not the string `"true"`), and only on
     `session/new`, never on `session/resume` or the `mcp_set_servers` resume, because agy adds a resumed append to
     the one the session already has;
-  - skills only, leaving out every skill agy serves itself: one found in an `.agents/skills` folder of the
+  - skills only, and only those the model may choose (not `disable-model-invocation: true`; a `user-invocable:
+    false` skill is included);
+  - leaving out every skill agy serves itself: one found in an `.agents/skills` folder of the
     session's walk (even when its entry or its `SKILL.md` links elsewhere), one whose real folder is that of such a
     skill (a `.claude/skills` alias that links into `.agents/skills`), and one sharing such a skill's name;
   - bounded to 100 entries, 160 characters per description and about 12,000 characters, then

@@ -239,6 +239,44 @@ internal class DesktopSkillsTest {
         assertEquals(listOf("/login now", "/splice:login"), sentText(rig))
     }
 
+    @Test
+    fun `a model-only skill is indexed but not typeable, and a person-only skill is typeable but not indexed`() {
+        val rig = rig()
+        writeFlagged(rig.home.resolve(".claude/skills/hidden"), "Model-only skill", "user-invocable: false")
+        writeFlagged(rig.home.resolve(".claude/skills/manual"), "Person-only skill", NO_MODEL)
+        writeFlagged(rig.home.resolve(".claude/skills/neither"), "Nobody's", "user-invocable: false", NO_MODEL)
+        var menu = emptyList<String?>()
+        var reloaded = emptyList<String?>()
+        var initSkills = emptyList<String>()
+        rig.run(ScriptedAgy(onInitialize = hello(APPEND_OFFERED))) {
+            control("init-1", """{"subtype":"initialize"}""")
+            menu = answer("init-1").obj("response").array("commands").map { it.jsonObject.str("name") }
+            initSkills = next { it.str("subtype") == "init" }.array("skills").map { (it as JsonPrimitive).content }
+            control("reload-1", """{"subtype":"reload_skills"}""")
+            reloaded = answer("reload-1").obj("response").array("skills").map { it.jsonObject.str("name") }
+            send(user("\"/hidden go\"", "u-1"))
+            result()
+            send(user("\"/manual go\"", "u-2"))
+            result()
+        }
+        val append = indexSent(rig)
+        assertTrue("- hidden: Model-only skill" in append, append)
+        assertFalse("manual" in append || "neither" in append, append)
+        listOf(menu, reloaded, initSkills).forEach { listed ->
+            assertTrue("manual" in listed, listed.toString())
+            assertFalse("hidden" in listed || "neither" in listed, listed.toString())
+        }
+        val sent = sentText(rig)
+        assertEquals("/hidden go", sent[0], "a model-only skill is not expanded when typed")
+        assertTrue(sent[1].startsWith("<command-name>/manual</command-name>"), sent[1])
+    }
+
+    private fun writeFlagged(dir: Path, description: String, vararg flags: String) {
+        Files.createDirectories(dir)
+        val front = (listOf("description: $description") + flags).joinToString("\n")
+        Files.writeString(dir.resolve("SKILL.md"), "---\n$front\n---\nB\n")
+    }
+
     private suspend fun AgyDriver.initialize() {
         control("init-1", """{"subtype":"initialize"}""")
         answer("init-1")
@@ -289,4 +327,5 @@ internal class DesktopSkillsTest {
 private const val APPEND_OFFERED = """"_meta":{"antigravity":{"tier":true,"systemPrompt":{"append":true}}}"""
 private const val APPEND_DECLINED = """"_meta":{"antigravity":{"systemPrompt":{"append":false}}}"""
 private const val APPEND_AS_TEXT = """"_meta":{"antigravity":{"systemPrompt":{"append":"true"}}}"""
+private const val NO_MODEL = "disable-model-invocation: true"
 private const val DOCS_SERVER = """"docs":{"type":"http","url":"https://mcp.example.test/docs"}"""

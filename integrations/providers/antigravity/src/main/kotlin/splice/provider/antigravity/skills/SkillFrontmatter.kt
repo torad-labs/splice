@@ -7,19 +7,22 @@ import java.nio.file.Path
 internal class SkillFrontmatter(private val log: LogSink) {
     private val markdown = SkillMarkdown()
 
-    fun readItem(file: Path, fallbackName: String, folder: Path?, root: Path): LocalSkillItem? {
+    /** The command or skill in [file], found at [place]: a `user-invocable: false` one stays (only the model may start
+     *  it), and so does a `disable-model-invocation: true` one (only the person may). */
+    fun readItem(place: SkillPlace, fallbackName: String): LocalSkillItem {
+        val file = place.file
         val document = markdown.read(file)
         val front = document.frontmatter
-        val body = body(document, file)
-        if (scalar(front, "user-invocable").equals("false", ignoreCase = true)) return null
         return LocalSkillItem(
             name = SkillName.valid(scalar(front, "name")) ?: fallbackName,
             description = scalar(front, "description").ifBlank { bodyDescription(document.body) },
             hint = scalar(front, "argument-hint"),
-            body = body,
-            file = file,
-            folder = folder,
-            root = root,
+            body = body(document, file),
+            place = place,
+            use = SkillUse(
+                byUser = !scalar(front, "user-invocable").equals("false", ignoreCase = true),
+                byModel = !scalar(front, "disable-model-invocation").equals("true", ignoreCase = true),
+            ),
         )
     }
 

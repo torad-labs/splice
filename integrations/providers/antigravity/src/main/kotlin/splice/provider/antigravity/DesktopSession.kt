@@ -244,7 +244,7 @@ internal class DesktopSession(
         val uuid = JsonScalars.str(line, "uuid") ?: UUID.randomUUID().toString()
         val content = (line["message"] as? JsonObject)?.get("content") ?: JsonPrimitive("")
         if (!AcpLoginPrompt.matches(content)) {
-            submitUser(p, line, uuid, content)
+            submitUser(p, line, uuid, invocation.expand(content, skills.current.typed, nativeCommands))
             return
         }
         // Desktop's `/login` is answered locally with Console Accounts, never sent to agy.
@@ -257,15 +257,17 @@ internal class DesktopSession(
         finish(null)
     }
 
+    /** Replays [line] into Desktop and the transcript as typed, then sends agy [prompt]: a typed line's skill
+     *  expansion, or a peer's text exactly as it came. */
     private fun submitUser(
         p: DesktopParts,
         line: JsonObject,
         uuid: String,
-        content: JsonElement,
+        prompt: JsonElement,
         peer: DesktopPeerMessage? = null,
     ): Boolean {
         p.out(p.frames.replay(line, uuid))
-        p.transcript.user(uuid, content)
+        p.transcript.user(uuid, (line["message"] as? JsonObject)?.get("content") ?: prompt)
         if (prompts.isEmpty()) begin(p)
         if (peer?.beginSubmit() == false) {
             if (prompts.isEmpty()) p.record.write(busy = false)
@@ -273,9 +275,9 @@ internal class DesktopSession(
         }
         val handoff = pendingHandoff
         pendingHandoff = null
-        val prompt = session?.prompt(invocation.expand(content, skills.current.typed, nativeCommands), handoff)
-        return if (prompt != null) {
-            prompts += prompt
+        val sent = session?.prompt(prompt, handoff)
+        return if (sent != null) {
+            prompts += sent
             true
         } else {
             if (prompts.isEmpty()) {

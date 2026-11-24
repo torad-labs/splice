@@ -18,6 +18,7 @@ import splice.core.client.ClaudeProjectFolder
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.core.util.WallClock
+import splice.provider.antigravity.peer.DesktopPeerWiring
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
 import java.io.PipedInputStream
@@ -98,7 +99,12 @@ internal class AgyRig(private val tmp: Path) {
     fun transcriptFile(id: String): Path = home.resolve(".claude").resolve("projects")
         .resolve(ClaudeProjectFolder.of(project.toString())).resolve("$id.jsonl")
 
-    fun run(agy: ScriptedAgy, extra: List<String> = emptyList(), drive: suspend AgyDriver.() -> Unit): SeenOut {
+    fun run(
+        agy: ScriptedAgy,
+        extra: List<String> = emptyList(),
+        peer: DesktopPeerWiring = DesktopPeerWiring(),
+        drive: suspend AgyDriver.() -> Unit,
+    ): SeenOut {
         Files.createDirectories(project)
         Files.createDirectories(home)
         val script = tmp.resolve("agy.sh")
@@ -123,7 +129,7 @@ internal class AgyRig(private val tmp: Path) {
                         LogSink { logged.append(it) },
                         WallClock { RIG_CLOCK },
                         listOf("sh", script.toString()),
-                    ).run(driver.stdin, driver.stdout)
+                    ).run(driver.stdin, driver.stdout, peer = peer)
                 }
                 driver.running = job
                 driver.drive()

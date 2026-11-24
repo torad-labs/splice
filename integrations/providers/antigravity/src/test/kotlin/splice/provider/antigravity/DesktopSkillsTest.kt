@@ -1,9 +1,12 @@
 // What a Desktop session on agy does with local skills: a typed `/name args` reaches agy expanded (string and block
 // content, images kept, `$ARGUMENTS` filled) while Desktop's replay and the transcript keep what was typed; agy's own
 // commands pass through; `reload_skills` finds a new skill; `system/init` is said on `initialize` and not again on the
-// first turn; and a new agy session gets the skill index in `_meta` only when agy offers it, never on resume.
+// first turn; a peer's message reaches agy as it came, never expanded; and a new agy session gets the skill index in `_meta` only when agy offers it, never on resume.
 package splice.provider.antigravity
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
@@ -17,6 +20,11 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.provider.antigravity.peer.DesktopPeerInbox
+import splice.provider.antigravity.peer.DesktopPeerInboxFactory
+import splice.provider.antigravity.peer.DesktopPeerMessage
+import splice.provider.antigravity.peer.DesktopPeerOutcome
+import splice.provider.antigravity.peer.DesktopPeerWiring
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -59,6 +67,35 @@ internal class DesktopSkillsTest {
         val expected = "<command-name>/deploy</command-name>\n<command-args>prod</command-args>\n\n" +
             "Ship it.\n\nARGUMENTS: prod"
         assertEquals(expected, prompt[1].str("text"))
+    }
+
+    @Test
+    fun `a peer's message naming a local skill reaches agy as it came, while a typed one expands`() {
+        val rig = rig()
+        val folder = skill(rig.home.resolve(".claude/skills/probe"), "Probe it", "Probe \$ARGUMENTS now.")
+        val messages = Channel<DesktopPeerMessage>(Channel.UNLIMITED)
+        val inbox = object : DesktopPeerInbox {
+            override val socketPath: String? = null
+            override val pidDomain: String? = null
+            override val procStart: String? = null
+            override val incoming: ReceiveChannel<DesktopPeerMessage> = messages
+
+            override fun close() {
+                messages.close()
+            }
+        }
+        val peer = DesktopPeerWiring(inbox = DesktopPeerInboxFactory { _, _, _, _ -> inbox })
+        val delivered = CompletableDeferred<DesktopPeerOutcome>()
+        rig.run(ScriptedAgy(), peer = peer) {
+            send(user("\"/probe x\"", "u-1"))
+            result()
+            messages.send(DesktopPeerMessage("/probe peer-args", delivered))
+            result()
+            assertEquals(DesktopPeerOutcome.Delivered, delivered.await())
+        }
+        val expanded = "<command-name>/probe</command-name>\n<command-args>x</command-args>\n" +
+            "Base directory for this skill: $folder\n\nProbe x now."
+        assertEquals(listOf(expanded, "/probe peer-args"), sentText(rig))
     }
 
     @Test

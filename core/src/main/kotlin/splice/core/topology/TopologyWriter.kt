@@ -60,6 +60,7 @@ import splice.core.prompt.HeadSystemPrompt
 import splice.core.prompt.SystemPromptLayers
 import splice.core.topology.gateway.GatewayMoveChecks
 import splice.core.topology.gateway.GatewayProviderRoute
+import splice.core.topology.gateway.HeadFallbacks
 import splice.core.topology.toml.TomlKeys
 import splice.core.topology.toml.TomlPatch
 import splice.core.topology.toml.TomlTextPatch
@@ -382,6 +383,10 @@ public object TopologyFindings {
         rosters: Boolean = true,
         configDir: Path? = null,
     ): List<TopologyFinding> = TopologyChecks(topology, discovered, stateBase, rosters, configDir).findings()
+
+    /** What boots and is said, never a refusal: a value a 0.6.4 file left on a head that its provider should hold for
+     *  the gateway (GatewayMoveChecks), which the gateway serves from the head meanwhile (HeadFallbacks). */
+    public fun warnings(topology: Topology): List<TopologyFinding> = GatewayMoveChecks(topology).warnings()
 }
 
 /** The checks the loader does not make at decode time but the daemon would trip on at boot. */
@@ -555,7 +560,7 @@ private class TopologyChecks(
     }
 
     private fun rosters(): List<TopologyFinding> =
-        topology.providers.mapNotNull { (key, provider) ->
+        HeadFallbacks(topology).providers().mapNotNull { (key, provider) ->
             val refusal = GatewayProviderRoute(key, provider).rosterRefusal()
             refusal?.let { TopologyFinding("providers.$key.model_slots", it) }
         } + topology.heads.mapNotNull { (key, head) ->

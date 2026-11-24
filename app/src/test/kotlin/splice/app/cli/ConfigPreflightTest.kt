@@ -56,6 +56,21 @@ class ConfigPreflightTest {
         assertEquals("", said)
     }
 
+    /** upgrade-compat: a 0.6.4 head that still holds its provider's window and prefix is no refusal: the check exits 0,
+     *  so an upgrade goes on, and says each value to move with the verb that moves it. */
+    @Test
+    fun `a 0 6 4 head holding its provider's values exits 0 and says each one as a warning`(@TempDir root: Path) {
+        val legacy = demo.replace("[door.selector_aliases]\n        \"claude-one--\" = \"demo\"\n", "")
+            .replace("pinned_model = \"m\"", "pinned_model = \"m\"\ncontext_window = 150000")
+        val (code, said) = run(root, legacy)
+
+        assertEquals(0, code, said)
+        assertTrue(said.contains("warning: heads.one.discovery_prefix"), said)
+        assertTrue(said.contains("warning: heads.one.context_window"), said)
+        assertTrue(said.contains("splice check-config --fix"), said)
+        assertFalse(said.contains(SECRET) || said.contains("150000"), "no value reaches the report: $said")
+    }
+
     @Test
     fun `a dangling symlink for splice toml exits 3, because boot refuses it`(@TempDir root: Path) {
         Files.createSymbolicLink(root.resolve("splice.toml"), root.resolve("dotfiles-gone.toml"))

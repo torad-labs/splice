@@ -8,6 +8,7 @@ import splice.core.config.StatePaths
 import splice.core.prompt.SystemPromptMode
 import splice.core.topology.HeadConfig
 import splice.core.topology.Topology
+import splice.core.topology.TopologyFindings
 import splice.core.topology.TopologyKnobLayer
 import splice.core.topology.TopologyMessages
 import splice.core.util.EnvReader
@@ -23,6 +24,10 @@ private const val CHECK_TOPOLOGY = "topology"
  *  at the sample a release user can reach, and never at a source-tree path or deleting their config. */
 private const val SYNTAX_FIX =
     "fix the TOML syntax; the sample topology, splice.example.toml, is linked from splice's README"
+
+/** The verb that offers each head-to-provider move, one answer at a time, after a backup. */
+private const val MOVE_FIX = "splice check-config --fix"
+
 private const val REPLACE_FIX =
     "set system_prompt_mode = \"append\" to add your text beside the client's own instructions instead"
 
@@ -105,11 +110,18 @@ internal class DoctorConfigChecks(
             listOf(summary) + brokenRefs + authPairings.checks(topology, configPath) + portDupes +
                 museCompatibility.checks(topology, configPath) +
                 DoctorTierChecks.checks(unmappedTiers, configPath) + ignoredSettingChecks(topology, configPath) +
-                stateDirChecks(topology, configPath) + systemPromptChecks(topology) +
+                stateDirChecks(topology, configPath) + headMoveChecks(topology) + systemPromptChecks(topology) +
                 projectPrompts.projectPromptChecks(topology) + wireTaps.wireTapChecks(topology) +
                 traces.traceChecks(topology, runningTrace) + localRuntime.localChecks(topology, live) +
                 localRuntime.servedWindowChecks(topology)
         }
+    }
+
+    /** upgrade-compat (Nov 23, 2026): each value a head holds that its provider should hold for the gateway, which boot
+     *  serves past (TopologyFindings.warnings): WARN, with the verb that moves it. The key path goes last, since a
+     *  path ending `_prefix` and then a colon would read as a fix inside the detail. */
+    private fun headMoveChecks(topology: Topology): List<DoctorCheck> = TopologyFindings.warnings(topology).map {
+        DoctorCheck(CHECK_TOPOLOGY, CheckStatus.WARN, "${it.message} (${it.path})", MOVE_FIX, fixKind = FixKind.COMMAND)
     }
 
     /** V4-110: a `[daemon].state_dir` the operator wrote but that cannot be resolved to a path. The

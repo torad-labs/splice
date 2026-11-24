@@ -48,7 +48,15 @@ internal class ConfigFixSession(
     private val prompter: FixPrompter,
     private val check: ConfigFindingsOf,
     private val backup: ConfigBackup,
+    /** A session over warnings splice boots past (`check-config --fix`), not findings that keep it from starting. */
+    private val advisory: Boolean = false,
 ) {
+    /** What quitting, or leaving one as it is, means for splice's start. */
+    private val leaving: String = if (advisory) "splice starts as it is" else "splice does not start"
+
+    /** What the session works through. */
+    private val noun: String = if (advisory) "warning(s)" else "finding(s)"
+
     /** The link's TARGET, never the link: a splice.toml linked into a dotfiles checkout is edited where it lives,
      *  so an atomic write cannot replace the link with a regular file and leave the target unfixed. */
     private val file: Path = try {
@@ -75,11 +83,11 @@ internal class ConfigFixSession(
             val finding = findings.firstOrNull { it.text() !in skipped }
             if (finding == null) {
                 output.line("")
-                output.line("${findings.size} finding(s) left as they are; splice does not start until fixed.")
+                output.line("${findings.size} $noun left as they are; $leaving.")
                 return false
             }
             output.line("")
-            output.line("${findings.size} finding(s) left. Fixing: ${finding.text()}")
+            output.line("${findings.size} $noun left. Fixing: ${finding.text()}")
             val changed = fix(finding) ?: return false
             if (changed) {
                 checked = Files.readString(file)
@@ -113,7 +121,7 @@ internal class ConfigFixSession(
     private fun clearOffered(finding: TopologyFinding, origin: TopologyFinding.Origin.Saved): Boolean? {
         output.line("  [c] clear the saved setting from ${origin.file}")
         output.line("  [s] skip this one for now")
-        output.line("  [q] quit; splice does not start")
+        output.line("  [q] quit; $leaving")
         return when (prompter.ask("> ")?.trim()?.lowercase()) {
             "c" -> {
                 val saved = origin.file
@@ -164,7 +172,7 @@ internal class ConfigFixSession(
         if (choices.isNotEmpty()) output.line("  " + choices.joinToString("  "))
         output.line("  [e] open your editor${line?.let { " at line $it" }.orEmpty()}")
         output.line("  [s] skip this one for now")
-        output.line("  [q] quit; splice does not start")
+        output.line("  [q] quit; $leaving")
     }
 
     /** The key assigned on [line] of the bytes the findings came from ([checked]), when that line holds one

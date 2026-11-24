@@ -8,6 +8,7 @@ import kotlinx.coroutines.CompletableDeferred
 import splice.app.control.HandOver
 import splice.app.control.NextDaemon
 import splice.app.daemon.BootRead
+import splice.app.daemon.BootWarnings
 import splice.app.daemon.DaemonLock
 import splice.app.daemon.DaemonLockWait
 import splice.app.daemon.HeapFlags
@@ -129,6 +130,7 @@ internal class DaemonProcess(
         // before it, so a start that waits for a running daemon to hand over, or loses to one, deleted the records
         // of moves that daemon was still carrying out.
         (start.ownerOnlyLines + boundary.clearMovesInFlight(statePaths)).forEach { log(it) }
+        BootWarnings(log).say(start.loaded.warnings, statePaths)
         // Oct 15: the splice manager's folder, refreshed from this release, because auto-update never reruns init. Best
         // effort: a failure is logged and never refuses boot.
         ManagerHome(start.topologyPath, statePaths.stateDir, log).ensureBestEffort()

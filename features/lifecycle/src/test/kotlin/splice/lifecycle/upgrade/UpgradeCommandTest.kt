@@ -226,6 +226,41 @@ internal class UpgradeCommandTest : UpgradeRig() {
         val (ok, out) = captured { command(home, release(home)).upgrade(listOf("--now")) }
         assertFalse(ok, out)
         assertTrue(out.contains("heads.one.provider (line 9)"), out)
+        assertTrue(out.contains("in a terminal"), "off a terminal it says where the fix session runs: $out")
+        assertTrue(calls.none { "--fix" in it }, "no fix session runs with nobody to answer it")
+        assertTrue(out.contains("nothing activated"), out)
+        assertFalse(Files.exists(home.resolve("share/releases/current")), "nothing became the live release")
+        assertEquals(0 to 0, unitRestarts to verbRestarts, "the running daemon is not restarted")
+    }
+
+    /** upgrade-compat: a person at a terminal is not left at a refusal: the candidate's own fix session runs there,
+     *  and the upgrade goes on once the candidate's check accepts the file. */
+    @Test
+    fun `at a terminal, a candidate that refuses the config runs its fix session and upgrades once it accepts`(
+        @TempDir home: Path,
+    ) {
+        flatInstall(home)
+        pristine(home)
+        configCheck = UpgradeExit(3, "splice: splice.toml has 1 finding: heads.one.provider (line 9)\n")
+        fixLeaves = UpgradeExit(0, "")
+        atTerminal = true
+        val (ok, out) = captured { command(home, release(home)).upgrade(listOf("--now")) }
+        assertTrue(ok, out)
+        assertTrue(out.contains("heads.one.provider (line 9)"), "the findings are shown first: $out")
+        assertTrue(calls.any { it.takeLast(2) == listOf("check-config", "--fix") }, "the fix session ran: $calls")
+        assertTrue(out.contains("accepts splice.toml now"), out)
+        assertEquals("9.9.9", link(home, "current"), "the candidate became the live release")
+    }
+
+    /** A fix session that leaves a finding is the same refusal as before: nothing activated, nothing restarted. */
+    @Test
+    fun `at a terminal, a fix session that leaves a finding activates nothing`(@TempDir home: Path) {
+        flatInstall(home)
+        pristine(home)
+        configCheck = UpgradeExit(3, "splice: splice.toml has 1 finding: heads.one.provider (line 9)\n")
+        atTerminal = true
+        val (ok, out) = captured { command(home, release(home)).upgrade(listOf("--now")) }
+        assertFalse(ok, out)
         assertTrue(out.contains("nothing activated"), out)
         assertFalse(Files.exists(home.resolve("share/releases/current")), "nothing became the live release")
         assertEquals(0 to 0, unitRestarts to verbRestarts, "the running daemon is not restarted")

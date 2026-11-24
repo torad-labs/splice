@@ -34,7 +34,15 @@ class ConfigFixSessionTest {
         )
     }
 
-    private fun session(file: Path, root: Path, replies: ArrayDeque<String>, said: MutableList<String>) =
+    /** A session over the file's findings, or with [advisory] over the warnings boot serves past
+     *  (`check-config --fix`), a finding a move would add counted too. */
+    private fun session(
+        file: Path,
+        root: Path,
+        replies: ArrayDeque<String>,
+        said: MutableList<String>,
+        advisory: Boolean = false,
+    ) =
         ConfigFixSession(
             file,
             TerminalOutput { said += it },
@@ -45,8 +53,14 @@ class ConfigFixSessionTest {
 
                 override fun edit(file: Path, line: Int?): Boolean = false
             },
-            { text -> (ConfigFindings.read(text, root) as? ConfigRead.Refused)?.findings.orEmpty() },
+            { text ->
+                when (val read = ConfigFindings.read(text, root)) {
+                    is ConfigRead.Refused -> read.findings
+                    is ConfigRead.Ready -> if (advisory) read.warnings else emptyList()
+                }
+            },
             { source -> Files.copy(source, root.resolve("backup.toml")) },
+            advisory,
         )
 
     @Test
@@ -152,8 +166,12 @@ class ConfigFixSessionTest {
         )
     }
 
-    private fun readsClean(file: Path, root: Path) =
-        assertTrue(ConfigFindings.read(Files.readString(file), root) is ConfigRead.Ready, Files.readString(file))
+    /** The file boots, and says nothing it serves past: every warning was moved too. */
+    private fun readsClean(file: Path, root: Path) {
+        val read = ConfigFindings.read(Files.readString(file), root)
+        assertTrue(read is ConfigRead.Ready, Files.readString(file))
+        assertEquals(emptyList<Any>(), (read as ConfigRead.Ready).warnings, Files.readString(file))
+    }
 
     @Test
     fun `a move into a provider that already assigns its overrides inline adds the field to that table`(
@@ -187,7 +205,7 @@ class ConfigFixSessionTest {
                 "\n[door]\nselector_aliases = { \"old--\" = \"demo\" }\n",
         )
 
-        val fixed = session(file, root, ArrayDeque(listOf("m")), mutableListOf()).run()
+        val fixed = session(file, root, ArrayDeque(listOf("m")), mutableListOf(), advisory = true).run()
 
         val text = Files.readString(file)
         assertTrue(fixed, text)
@@ -208,7 +226,7 @@ class ConfigFixSessionTest {
                 "\n[[heads.one.models]]\nid = \"s\"\nslot = \"haiku\"\n",
         )
 
-        val fixed = session(file, root, ArrayDeque(listOf("m")), mutableListOf()).run()
+        val fixed = session(file, root, ArrayDeque(listOf("m")), mutableListOf(), advisory = true).run()
 
         val text = Files.readString(file)
         assertTrue(fixed, text)

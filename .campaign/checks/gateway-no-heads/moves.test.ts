@@ -1,8 +1,10 @@
 // gnh-moves: a value that only a head block holds and that would make the Splice gateway serve that head's provider
-// differently (an older selector prefix, a context window, the tiers' models, the system prompt mode, an override) is a
-// boot finding that names it, and the fix session offers to move it: the prefix becomes a `[door.selector_aliases]` entry,
-// every other value moves to the provider's own table, the head keeps behaving as before, and nothing is moved without
-// the person's answer. A head whose values the gateway already serves the same way is no finding.
+// differently once the head goes (an older selector prefix, a context window, the tiers' models, the system prompt mode,
+// an override) is a warning that names it, and `splice check-config --fix` offers to move it: the prefix becomes a
+// `[door.selector_aliases]` entry, every other value moves to the provider's own table, the head keeps behaving as
+// before, and nothing is moved without the person's answer. A head whose values the gateway already serves the same way
+// is no warning. upgrade-compat (Nov 23, 2026): these were boot findings, so a 0.6.4 file refused to boot on 0.7.0; the
+// gateway now serves the head's values meanwhile, and the file boots.
 
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -52,21 +54,21 @@ context_window = 200000
 model_slots = { opus = "${BIG}", sonnet = "${BIG}", haiku = "${SMALL}", fable = "${BIG}" }
 system_prompt_mode = "replace"
 [heads.qz.overrides]
-upstreamTimeoutMs = "600000"`;
+maxInflight = "3"`;
 
 describe("gnh-moves", () => {
-  test("each value only the head holds is a finding that names it", async () => {
+  test("each value only the head holds is a warning that names it, and the file boots", async () => {
     const s = await Splice.create(await quartz(HELD));
     made.push(s);
     const r = s.cli(["check-config"]);
     const text = `${r.out}\n${r.err}`;
-    expect(r.code).toBe(3);
+    expect(r.code, text).toBe(0);
     for (const path of [
       "heads.qz.discovery_prefix",
       "heads.qz.context_window",
       "heads.qz.model_slots",
       "heads.qz.system_prompt_mode",
-      "heads.qz.overrides.upstreamTimeoutMs",
+      "heads.qz.overrides.maxInflight",
     ]) {
       expect(text).toContain(path);
     }
@@ -74,11 +76,12 @@ describe("gnh-moves", () => {
     expect(text).not.toContain("heads.qz.pinned_model");
   });
 
-  test("a head whose values the gateway serves the same way is no finding", async () => {
+  test("a head whose values the gateway serves the same way is no warning", async () => {
     const s = await Splice.create(await quartz(`discovery_prefix = "claude-quartz--"\npinned_model = "${BIG}"`));
     made.push(s);
     const r = s.cli(["check-config"]);
     expect(r.code, `${r.out}\n${r.err}`).toBe(0);
+    expect(`${r.out}\n${r.err}`).not.toContain("warning:");
   });
 
   test("a built-in legacy selector does not require a config move", async () => {
@@ -95,21 +98,23 @@ describe("gnh-moves", () => {
     const s = await Splice.create(await quartz(HELD));
     made.push(s);
     // one answer per finding: move it
-    const r = onTerminal(s, ["status"], Array.from({ length: 12 }, () => "m"));
-    expect(s.cli(["check-config"]).code, r.out).toBe(0);
+    const r = onTerminal(s, ["check-config", "--fix"], Array.from({ length: 12 }, () => "m"));
+    const after = s.cli(["check-config"]);
+    expect(after.code, r.out).toBe(0);
+    expect(`${after.out}\n${after.err}`, r.out).not.toContain("warning:");
     const toml = tomlOf(s);
     expect(toml.door?.selector_aliases?.["qz--"]).toBe("quartz");
     const quartzTable = toml.providers.quartz;
     expect(quartzTable.context_window).toBe(200000);
     expect(quartzTable.model_slots).toEqual({ opus: BIG, sonnet: BIG, haiku: SMALL, fable: BIG });
     expect(quartzTable.system_prompt_mode).toBe("replace");
-    expect(quartzTable.overrides?.upstreamTimeoutMs).toBe("600000");
+    expect(quartzTable.overrides?.maxInflight).toBe("3");
     const head = toml.heads.qz;
     // the head keeps its own prefix and pin for its own command; what moved is no longer written twice
     expect(head.discovery_prefix).toBe("qz--");
     expect(head.pinned_model).toBe(BIG);
     for (const key of ["context_window", "model_slots", "system_prompt_mode"]) expect(head[key]).toBeUndefined();
-    expect(head.overrides?.upstreamTimeoutMs).toBeUndefined();
+    expect(head.overrides?.maxInflight).toBeUndefined();
     const backups = join(s.state, "config-backups");
     expect(existsSync(backups) && readdirSync(backups).length > 0).toBe(true);
   });
@@ -118,7 +123,7 @@ describe("gnh-moves", () => {
     const s = await Splice.create(await quartz(HELD));
     made.push(s);
     const before = readFileSync(s.config, "utf8");
-    onTerminal(s, ["status"], ["q"]);
+    onTerminal(s, ["check-config", "--fix"], ["q"]);
     expect(readFileSync(s.config, "utf8")).toBe(before);
   });
 });

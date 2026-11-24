@@ -1,10 +1,12 @@
 // NEW: gateway-no-heads. A value only a head block holds, and that would make the gateway serve that head's provider
-// differently, is a boot finding that names it: the gateway serves a provider with no head, from the provider's own
-// table, so what a head alone says (an older selector prefix, a window, the tiers' models, the standing prompt, an
-// override) would be lost the day the head goes. Each finding says where the value moves to (GatewayMove), and the fix
-// session offers the move. A head whose values the provider already carries the same way is no finding; a pin is where
-// the head's own command starts, and capture and console knobs stay with the head. The values a provider carries for
-// the gateway are checked here too, at the provider's own path.
+// differently once the head goes (an older selector prefix, a window, the tiers' models, the standing prompt, an
+// override), is a WARNING that names it and says where it moves to (GatewayMove); `splice check-config --fix` offers the
+// move. upgrade-compat (Nov 23, 2026): these were boot findings, so every 0.6.4 splice.toml that said them on its head,
+// as 0.6.4 asked, refused to boot and to upgrade on 0.7.0. The gateway now serves what the heads on a provider agree on
+// (HeadFallbacks), so such a file boots and serves as before, and the warning says whether the gateway has the value
+// today. A head whose values the provider already carries the same way is no warning; a pin is where the head's own
+// command starts, and capture and console knobs stay with the head. The values a provider carries for the gateway are
+// checked here too, at the provider's own path, and those stay boot findings: the gateway cannot serve them at all.
 package splice.core.topology.gateway
 
 import splice.core.config.Knob
@@ -19,9 +21,14 @@ import splice.core.topology.toml.TomlKeys
 internal class GatewayMoveChecks(private val topology: Topology) {
     private val keys = TomlKeys()
 
-    fun findings(): List<TopologyFinding> = heads() + providers()
+    /** Each provider as the gateway serves it today, with what its heads agree on. */
+    private val served = HeadFallbacks(topology).providers()
 
-    private fun heads(): List<TopologyFinding> = topology.heads.flatMap { (key, head) ->
+    /** What refuses boot: a provider value the gateway cannot serve. */
+    fun findings(): List<TopologyFinding> = providers()
+
+    /** What boots and is said: a value a head holds that its provider should hold once the head goes. */
+    fun warnings(): List<TopologyFinding> = topology.heads.flatMap { (key, head) ->
         topology.providers[head.provider]?.let { provider -> of(key, head, provider) }.orEmpty()
     }
 
@@ -39,7 +46,8 @@ internal class GatewayMoveChecks(private val topology: Topology) {
     private fun of(key: String, head: HeadConfig, provider: ProviderConfig): List<TopologyFinding> =
         prefix(key, head) + serving(key, head, provider) + overrides(key, head, provider)
 
-    /** The head's selector prefix, which the gateway reads from `[door.selector_aliases]` once the head is gone. */
+    /** The head's selector prefix, which the gateway reads from the head while it is there (SelectorAliases), and from
+     *  `[door.selector_aliases]` once it is gone. */
     private fun prefix(key: String, head: HeadConfig): List<TopologyFinding> {
         val said = head.discoveryPrefix
         if (said.isBlank()) return emptyList()
@@ -53,24 +61,38 @@ internal class GatewayMoveChecks(private val topology: Topology) {
             value = quoted(head.provider),
             keepsSource = true,
         ).takeIf { explicit == null && canonical == null }
-        return listOf(
-            TopologyFinding(
-                "heads.$key.discovery_prefix",
-                "the gateway reads this prefix only from [door.selector_aliases]; the head keeps it for its command",
-                move = move,
-            ),
-        )
+        val why = "the gateway reads this prefix from this head while it is in splice.toml, and only from " +
+            "[door.selector_aliases] once it goes; the head keeps it for its command"
+        return listOf(TopologyFinding("heads.$key.discovery_prefix", why, move = move))
     }
 
-    /** The head's window, tiers and standing prompt, each against the provider's own. */
+    /** The head's window, tiers and standing prompt, each against the provider's own and what the gateway serves. */
     private fun serving(key: String, head: HeadConfig, provider: ProviderConfig): List<TopologyFinding> {
         val table = "providers.${keys.render(head.provider)}"
+        val gets = served.getValue(head.provider)
         return listOfNotNull(
-            held(key, "context_window", head.contextWindow, provider.contextWindow, table),
-            held(key, "model_slots", head.modelSlots.ifEmpty { null }, provider.modelSlots.ifEmpty { null }, table),
-            held(key, "system_prompt", head.systemPrompt, provider.systemPrompt, table),
-            held(key, "system_prompt_file", head.systemPromptFile, provider.systemPromptFile, table),
-            held(key, "system_prompt_mode", head.systemPromptMode, provider.systemPromptMode, table),
+            held(key, Said("context_window", head.contextWindow, provider.contextWindow, gets.contextWindow), table),
+            held(
+                key,
+                Said(
+                    "model_slots",
+                    head.modelSlots.ifEmpty { null },
+                    provider.modelSlots.ifEmpty { null },
+                    gets.modelSlots.ifEmpty { null },
+                ),
+                table,
+            ),
+            held(key, Said("system_prompt", head.systemPrompt, provider.systemPrompt, gets.systemPrompt), table),
+            held(
+                key,
+                Said("system_prompt_file", head.systemPromptFile, provider.systemPromptFile, gets.systemPromptFile),
+                table,
+            ),
+            held(
+                key,
+                Said("system_prompt_mode", head.systemPromptMode, provider.systemPromptMode, gets.systemPromptMode),
+                table,
+            ),
             embeddedTiers(key, head, provider),
         )
     }
@@ -82,31 +104,40 @@ internal class GatewayMoveChecks(private val topology: Topology) {
         val said = head.tierModels()
         if (head.models.orEmpty().none { it.slot != null } || said == provider.tierModels) return null
         val free = provider.modelSlots.isEmpty()
-        val why = if (free) "only this head says it" else "the provider says another"
         val map = said.entries.joinToString(", ", "{ ", " }") { (slot, id) -> "${keys.render(slot)} = ${quoted(id)}" }
         val move = GatewayMove(table, "model_slots", map, keepsSource = true).takeIf { free }
-        return TopologyFinding("heads.$key.models", unserved(why), move = move)
+        val why = unserved(free, inherited = served[head.provider]?.tierModels == said, table)
+        return TopologyFinding("heads.$key.models", why, move = move)
     }
 
-    /** A finding when the head says [field] and its provider does not say the same. It moves to the provider's table
-     *  when the provider says nothing; when the provider says something else, the person chooses which stands. */
-    private fun <T : Any> held(head: String, field: String, said: T?, provider: T?, table: String): TopologyFinding? {
-        if (said == null || said == provider) return null
-        val free = provider == null
-        val why = if (free) "only this head says it" else "the provider says another"
-        val move = GatewayMove(table, field, value = null, keepsSource = false).takeIf { free }
-        return TopologyFinding("heads.$head.$field", unserved(why), move = move)
+    /** A warning when the head says [said]'s field and its provider does not say the same. It moves to the provider's
+     *  table when the provider says nothing; when the provider says something else, the person chooses which stands. */
+    private fun <T : Any> held(head: String, said: Said<T>, table: String): TopologyFinding? {
+        if (said.head == null || said.head == said.provider) return null
+        val free = said.provider == null
+        val move = GatewayMove(table, said.field, value = null, keepsSource = false).takeIf { free }
+        val why = unserved(free, inherited = said.gateway == said.head, table)
+        return TopologyFinding("heads.$head.${said.field}", why, move = move)
     }
 
     /** [text] as a TOML string, which a value is and a key need not be. */
     private fun quoted(text: String): String = "\"${keys.escape(text)}\""
 
-    /** Whether [knob] is a finding of this check: one a provider carries (providerCarriedKnobs). A capture or console
+    /** Whether [knob] is a warning of this check: one a provider carries (providerCarriedKnobs). A capture or console
      *  knob stays with a head, and a daemon-wide one a head already cannot set, whose own finding offers the move for the
      *  serving bounds a provider may carry (TopologyChecks.knobs). */
     private fun servedByProvider(knob: Knob): Boolean = knob in providerCarriedKnobs
 
-    private fun unserved(why: String): String = "$why, so the gateway would serve the provider without it"
+    /** Why a head's value is a warning: what the gateway serves today, and what it would serve once the head goes. */
+    private fun unserved(free: Boolean, inherited: Boolean, table: String): String = when {
+        !free -> "[$table] says another, which the gateway serves; the head keeps its own for its command"
+        inherited ->
+            "only this head says it; the gateway serves the provider with it while the head is in " +
+                "splice.toml, and without it once the head goes, so move it to [$table]"
+        else ->
+            "the heads on this provider say different values, so the gateway serves the provider with none; " +
+                "set the one it should serve in [$table]"
+    }
 
     /** Each override the gateway reads that the head sets and its provider does not say the same. */
     private fun overrides(key: String, head: HeadConfig, provider: ProviderConfig): List<TopologyFinding> =
@@ -114,9 +145,13 @@ internal class GatewayMoveChecks(private val topology: Topology) {
             val known = Knob.entries.firstOrNull { it.key == knob }?.takeIf(::servedByProvider)
             if (known == null || provider.overrides[knob] == value) return@mapNotNull null
             val free = knob !in provider.overrides
-            val why = if (free) "only this head says it" else "the provider says another"
             val table = "providers.${keys.render(head.provider)}.overrides"
             val move = GatewayMove(table, knob, value = null, keepsSource = false).takeIf { free }
-            TopologyFinding("heads.$key.overrides.$knob", unserved(why), move = move)
+            val why = unserved(free, inherited = served[head.provider]?.overrides?.get(knob) == value, table)
+            TopologyFinding("heads.$key.overrides.$knob", why, move = move)
         }
+
+    /** One value as a head says it ([head]), as its provider says it ([provider]) and as the gateway serves it
+     *  today ([gateway]). */
+    private data class Said<T : Any>(val field: String, val head: T?, val provider: T?, val gateway: T?)
 }

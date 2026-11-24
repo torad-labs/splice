@@ -21,7 +21,7 @@ private const val DEFAULT_TIMEOUT_MS = 300_000L
 
 internal data class UpgradeExit(val code: Int, val stdout: String)
 
-/** Run a command; [inherit] streams its output to the operator instead of capturing it. */
+/** Run a command; [inherit] streams its output to the operator instead of capturing it, and gives it their input. */
 internal fun interface UpgradeProcess {
     operator fun invoke(command: List<String>, inherit: Boolean): UpgradeExit
 }
@@ -32,7 +32,10 @@ internal class JdkUpgradeProcess(private val timeoutMs: Long = DEFAULT_TIMEOUT_M
         val builder = UserManagerBus.supply(ProcessBuilder(command))
             .redirectErrorStream(false)
             .redirectError(ProcessBuilder.Redirect.INHERIT)
-        if (inherit) builder.redirectOutput(ProcessBuilder.Redirect.INHERIT)
+        // An inherited command may ask the person something (the release's fix session), so it reads their terminal too.
+        if (inherit) {
+            builder.redirectOutput(ProcessBuilder.Redirect.INHERIT).redirectInput(ProcessBuilder.Redirect.INHERIT)
+        }
         val process = builder.start()
         // Read on a thread so a command that neither exits nor closes stdout still hits the deadline.
         val out = if (inherit) {

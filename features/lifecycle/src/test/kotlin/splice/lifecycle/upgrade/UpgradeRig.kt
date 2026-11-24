@@ -68,8 +68,18 @@ internal abstract class UpgradeRig {
     /** What the candidate's `check-config` answers: 0 for a splice.toml it boots on, 3 with the findings it refuses. */
     protected var configCheck = UpgradeExit(0, "")
 
+    /** What the candidate's `check-config` answers once its fix session (`check-config --fix`) has run; null leaves it. */
+    protected var fixLeaves: UpgradeExit? = null
+
+    /** Whether a person is at the terminal the upgrade runs on, who can answer the release's fix session. */
+    protected var atTerminal = false
+
     protected fun java(cmd: List<String>) = when {
         cmd.last() == "check-config" -> configCheck
+        cmd.takeLast(2) == listOf("check-config", "--fix") -> {
+            fixLeaves?.let { configCheck = it }
+            UpgradeExit(0, "")
+        }
         cmd.last() == "version" -> UpgradeExit(0, "splice $reportedVersion\n")
         cmd.contains("doctor") -> UpgradeExit(if ("--json" in cmd) 0 else postUpgradeDoctor, "{}")
         else -> UpgradeExit(0, "")
@@ -110,7 +120,7 @@ internal abstract class UpgradeRig {
             output = out,
             env = env,
             java = "java",
-            release = UpgradeRelease(out, fetch, process(gh), "java"),
+            release = UpgradeRelease(out, fetch, process(gh), "java", terminal = atTerminal),
             wrapper = UpgradeWrapper(out, process()),
             daemon = daemon,
             layout = UpgradeLayout(env),

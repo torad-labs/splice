@@ -11,7 +11,8 @@
 // with `claude --model claude-opus-5-5` on the door ran on the lane's default model, a Grok, for an hour with nothing
 // said; the rule since: a named model runs on the provider that serves it, or is refused by name, and the default never
 // stands in for it. Claude Code's start-up probe and its small-tier calls with no served model can still use the
-// caller's defaults.
+// caller's defaults. A provider whose `model_slots` maps a tier (opus, sonnet, haiku, fable) serves a bare Claude id of
+// that tier as the model it names, on the session's provider or the caller's default one: the person told it to.
 package splice.app.desktop
 
 import splice.app.desktop.catalog.DesktopLineup
@@ -76,23 +77,33 @@ internal class DoorRouting {
         // Claude Code's own tier alias always runs: on the session's provider, else the caller's default model.
         ask.model.startsWith(ANTHROPIC_ALIAS) -> held?.let { onHeld(lineup, it, decided.native, decided.name) }
             ?: defaulted(lineup, decided.name, decided.default)
-        refused(decided, ask) -> null
+        refused(decided, held ?: defaultProvider(lineup, decided.default)) -> null
         held != null -> onHeld(lineup, held, decided.native, decided.name)
         else -> sideCall(lineup, decided)
     }
 
-    /** Whether a named model of Anthropic's, no provider serving it, is refused rather than run on the session's
-     *  provider's pinned model. Claude Code's own tier alias is not such a model. */
-    private fun refused(decided: Tier, ask: DoorAsk): Boolean =
-        decided.picked && decided.native != null && !ask.model.startsWith(ANTHROPIC_ALIAS) &&
-            decided.name != SMALL_TIER
+    /** Whether a named model of Anthropic's, no provider serving it, is refused rather than run on the provider it
+     *  would land on ([landing]: the session's, else the caller's default's). A provider whose `model_slots` names a
+     *  model for the tier runs it as that model, the tier being what it was told to serve; one that names none would
+     *  run its pinned model in the Claude model's place, which is what Nov 17 forbids. Claude Code's own tier alias
+     *  (handled before this) and its small tier are not such models. */
+    private fun refused(decided: Tier, landing: ServedProvider?): Boolean =
+        decided.picked && decided.native != null && decided.name != SMALL_TIER && !maps(landing, decided.name)
 
-    /** [tier] in a session on no provider: the default model, which only Claude Code's own calls and its small tier run
-     *  as when a model is named. */
+    /** [tier] in a session on no provider: the default model, which only Claude Code's own calls, its small tier and a
+     *  tier the default's provider maps run as when a model is named. */
     private fun sideCall(lineup: DesktopLineup, tier: Tier): DoorRoute? = when {
-        !tier.picked || tier.name == SMALL_TIER -> defaulted(lineup, tier.name, tier.default)
+        !tier.picked || tier.name == SMALL_TIER || maps(defaultProvider(lineup, tier.default), tier.name) ->
+            defaulted(lineup, tier.name, tier.default)
         else -> null
     }
+
+    /** Whether [provider]'s `model_slots` names a model for [tier]. */
+    private fun maps(provider: ServedProvider?, tier: String): Boolean = provider?.tiers?.get(tier) != null
+
+    /** The provider of the caller's [default] selector, when it is still in the door. */
+    private fun defaultProvider(lineup: DesktopLineup, default: String?): ServedProvider? =
+        default?.let(lineup::find)?.first
 
     /** The provider [ask]'s session is on, or null for a session on none. */
     private fun heldProvider(lineup: DesktopLineup, ask: DoorAsk): ServedProvider? =
@@ -118,14 +129,13 @@ internal class DoorRouting {
     private fun names(row: DoorModel, native: String): Boolean =
         tiers.modelOf(ModelTierSuffix.strip(row.upstream)) == native
 
-    /** [tier] in a session that named no selector: the default model, or its provider's model for the small tier; the
-     *  first provider's model for [tier] when the default model is no longer in the door. */
+    /** [tier] in a session that named no selector: the default's provider's model for [tier] when its `model_slots`
+     *  names one, else the default model; the first provider's model for [tier] when the default is out of the door. */
     private fun defaulted(lineup: DesktopLineup, tier: String, default: String?): DoorRoute? {
         val chosen = default?.let(lineup::find)
             ?: return lineup.providers.firstOrNull()?.let { DoorRoute(it, it.tiers[tier] ?: lineup.pinnedId(it)) }
         val (provider, model) = chosen
-        val small = provider.tiers[SMALL_TIER]?.takeIf { tier == SMALL_TIER }
-        return DoorRoute(provider, small ?: model.upstream)
+        return DoorRoute(provider, provider.tiers[tier] ?: model.upstream)
     }
 }
 

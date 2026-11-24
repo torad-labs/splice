@@ -63,6 +63,9 @@ private const val EVERY_HEAD_FLAG = "--all"
 
 private val helpFlags = setOf("--help", "-h")
 
+/** `check-config --fix`: the fix session over every finding, then every warning, on a terminal. */
+internal const val CONFIG_FIX_FLAG = "--fix"
+
 /** Words after `--` are a verb's own text, never flags: `splice console fill e3 -- -h` types "-h" (Oct 16, 2026). */
 internal const val END_OF_FLAGS = "--"
 
@@ -88,7 +91,16 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
             if (valid) LaunchOwnerCommand(a.drop(1)) else null
         },
     ),
-    "check-config" to CommandRegistration("", CommandFactory.Alone(Command.CheckConfig)),
+    "check-config" to CommandRegistration(
+        "[$CONFIG_FIX_FLAG]",
+        CommandFactory { a ->
+            when {
+                a.size == 1 -> Command.CheckConfig(fix = false)
+                a.size == 2 && a[1] == CONFIG_FIX_FLAG -> Command.CheckConfig(fix = true)
+                else -> null
+            }
+        },
+    ),
     "listeners" to CommandRegistration("", CommandFactory.Alone(Command.Listeners)),
     "capabilities" to CommandRegistration("", CommandFactory.Alone(Command.Capabilities)),
     "shim-version" to CommandRegistration("", CommandFactory.Alone(Command.ShimVersion)),

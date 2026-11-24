@@ -26,7 +26,10 @@ import java.nio.file.Path
 
 /** What reading splice.toml for boot produced: the topology, or every reason it cannot serve. */
 public sealed class ConfigRead {
-    public data class Ready(val topology: Topology) : ConfigRead()
+    /** [warnings] boot says and serves past (upgrade-compat, Nov 23, 2026): what a 0.6.4 file left on a head that its
+     *  provider should hold, and a retired knob splice ignores. Each names a key path and never a value, as a finding
+     *  does, and `splice check-config --fix` offers each one's fix. */
+    public data class Ready(val topology: Topology, val warnings: List<TopologyFinding> = emptyList()) : ConfigRead()
 
     /** [findings] is never empty. */
     public data class Refused(val findings: List<TopologyFinding>) : ConfigRead()
@@ -40,8 +43,8 @@ public fun interface LocalRowFindings {
 }
 
 /** What boot reads beside splice.toml's own text: each retired knob splice's environment or saved settings still set
- *  ([retired]), and the modes splice carries ([modes]: their names, which a `[modes.<name>]` table must name, and the
- *  findings of any that are broken). Null leaves each out. */
+ *  ([retired], said as warnings: splice ignores them), and the modes splice carries ([modes]: their names, which a
+ *  `[modes.<name>]` table must name, and the findings of any that are broken). Null leaves each out. */
 public data class BootSettings(val retired: RetiredSettings? = null, val modes: FoundModes? = null)
 
 /** Reads splice.toml text the way boot does and collects EVERY finding instead of throwing the first.
@@ -53,9 +56,9 @@ public data class BootSettings(val retired: RetiredSettings? = null, val modes: 
  *  check is left out: it needs the models a runtime discovers, which boot does not have yet, so it stays a per-head
  *  DEGRADED, never a refusal.
  *
- *  [stateBase] only satisfies the knob check's constructor; nothing here reads state but [retired], which adds a
- *  retired knob still set in splice's environment or saved in its state folder, in every layer, since a file the
- *  decode refuses would otherwise hide them until a second boot. */
+ *  [stateBase] only satisfies the knob check's constructor; nothing here reads state but [retired], which warns of a
+ *  retired knob still set in splice's environment or saved in its state folder. Neither refuses boot: splice reads
+ *  neither, and the daemon clears a saved one at its start (SavedSettingsPrune). */
 public object ConfigFindings {
     /** [configDir] is the topology's directory, so a head's relative `system_prompt_file` is read where the daemon
      *  reads it; null leaves the prompt check out. [runtimes] adds what each local runtime that is up refuses. */
@@ -79,13 +82,11 @@ public object ConfigFindings {
         val modes = { topology: Topology? ->
             ModeSettingsReader(topology?.heads?.keys, beside.modes?.names).read(modeTables.tables)
         }
-        val retired = beside.retired
         // A structural finding is answered BEFORE any decode: a head roster written as an array of strings sends the
         // decoder into the loop the preflight exists to prevent, so the decoder never sees such a file.
         val structural = TomlStructurePreflight.failures(text).map { finding(it) }
         val elsewhere = { topology: Topology? ->
-            declared(topology).findings + modes(topology).findings + retired?.findings(topology).orEmpty() +
-                beside.modes?.findings.orEmpty()
+            declared(topology).findings + modes(topology).findings + beside.modes?.findings.orEmpty()
         }
         if (structural.isNotEmpty()) return refused(structural + TopologyTypeMismatch.all(text) + elsewhere(null))
         val decoded = decode(text)
@@ -103,7 +104,9 @@ public object ConfigFindings {
         val local = runtimes.of(topology).distinct()
             .map { it.copy(line = rows.of(text, it.path) ?: lineOf(text, it.path)) }
         val ready = topology.copy(capabilities = declared(topology).capabilities, modes = modes(topology).settings)
-        return refused(checks + OperatorTelemetryFindings.of(topology) + local + elsewhere(topology), ready)
+        val warnings = TopologyFindings.warnings(topology)
+            .map { it.copy(line = lineOf(text, it.path)) } + beside.retired?.warnings(topology).orEmpty()
+        return refused(checks + OperatorTelemetryFindings.of(topology) + local + elsewhere(topology), ready, warnings)
     }
 
     /** A knob finding keeps boot's own reason as written (the console writer pins its exact text); the boot
@@ -153,9 +156,13 @@ public object ConfigFindings {
             TopologyFinding(FINDING_FILE, SYNTAX, found.groupValues[1].toInt())
         }
 
-    private fun refused(findings: List<TopologyFinding>, topology: Topology? = null): ConfigRead = when {
+    private fun refused(
+        findings: List<TopologyFinding>,
+        topology: Topology? = null,
+        warnings: List<TopologyFinding> = emptyList(),
+    ): ConfigRead = when {
         findings.isNotEmpty() -> ConfigRead.Refused(findings)
-        topology != null -> ConfigRead.Ready(topology)
+        topology != null -> ConfigRead.Ready(topology, warnings)
         else -> error("a read with neither findings nor a topology")
     }
 

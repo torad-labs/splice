@@ -14,16 +14,15 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import splice.core.topology.metering.OtlpIdentityAttributes
 
-/** The attributes a person's telemetry carries on every resource: [person] as `splice.person` and `user.email`, and
- *  the [team] they are on as `splice.team`, which a person on no team has none of. */
-internal data class ResourceStamp(val person: String, val team: String?) {
-    /** Every key the stamp owns, so a client's value for one is dropped even where the stamp writes none. */
-    val owned: Set<String> get() = setOf(PERSON_KEY, EMAIL_KEY, TEAM_KEY)
+/** The authenticated identity a relay writes on each resource in either encoding. */
+internal class ResourceStamp(person: String, team: String?, names: OtlpIdentityAttributes) {
+    /** Drop both the configured keys and the default identity keys clients might otherwise spoof. */
+    val owned: Set<String> = DEFAULT_IDENTITY_NAMES + listOf(names.person, names.email, names.team)
 
-    /** What the stamp writes, by key. */
-    val written: List<Pair<String, String>> get() =
-        listOfNotNull(PERSON_KEY to person, EMAIL_KEY to person, team?.let { TEAM_KEY to it })
+    val written: List<Pair<String, String>> =
+        listOfNotNull(names.person to person, names.email to person, team?.let { names.team to it })
 }
 
 /** The OTLP signals a relay takes, each by its path segment and the key its JSON request lists resources under. */
@@ -74,11 +73,4 @@ internal class JsonStamp {
 private const val RESOURCE_KEY = "resource"
 private const val ATTRIBUTES = "attributes"
 
-/** Who sent the telemetry, as the server knows them by their key. */
-internal const val PERSON_KEY: String = "splice.person"
-
-/** The person again, under the key Claude Code's own telemetry and most dashboards name a user by. */
-internal const val EMAIL_KEY: String = "user.email"
-
-/** The team the person is on. */
-internal const val TEAM_KEY: String = "splice.team"
+private val DEFAULT_IDENTITY_NAMES = OtlpIdentityAttributes().let { setOf(it.person, it.email, it.team) }

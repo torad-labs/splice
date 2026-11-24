@@ -127,6 +127,23 @@ internal class ServerMetricsTest {
     }
 
     @Test
+    fun `a custom prefix applies to all Prometheus families but not the operator OTLP snapshot`() {
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        val named = json.decodeFromString<ServerConfig>("""{"metrics_prefix":"tenant_"}""")
+        val mode = serve(named.copy(listen = config.listen, commands = config.commands, admins = config.admins))
+        val admin = rig.keyFor("ops@team.example")
+        val text = scrape(admin)
+        assertTrue(text.contains("# HELP tenant_requests_total "), text)
+        assertTrue(text.contains("# TYPE tenant_ttft_seconds histogram"), text)
+        assertTrue(text.contains("tenant_ttft_seconds_bucket{"), text)
+        assertTrue(text.contains("tenant_ttft_seconds_count{"), text)
+        assertTrue(text.contains("tenant_ttft_seconds_sum{"), text)
+        assertTrue(text.contains("tenant_inflight{"), text)
+        assertFalse(text.contains("splice_server_"), text)
+        assertTrue(mode.metrics.snapshot().families.all { it.name.startsWith("splice_server_") })
+    }
+
+    @Test
     fun `everyone with a live key reads zero before sending anything, and no one without one is listed`() {
         val mode = serve()
         val admin = rig.keyFor("ops@team.example")

@@ -26,11 +26,14 @@ internal data class MetricPeople(
     val limits: PersonLimits,
 )
 
-public class ServerMetrics internal constructor(private val who: MetricPeople, private val clock: Clock) :
-    ServedMetricSource {
+public class ServerMetrics internal constructor(
+    private val who: MetricPeople,
+    private val clock: Clock,
+    metricsPrefix: String,
+) : ServedMetricSource {
     private val sinceMs = clock.millis()
     private val tallies = TurnTallies()
-    private val exposition = PrometheusExposition()
+    private val exposition = PrometheusExposition(metricsPrefix)
 
     // The heads the listener serves, once it opened: a person's request series start at zero for each command.
     @Volatile

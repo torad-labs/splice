@@ -10,6 +10,9 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import splice.core.client.ClientVersion
 import splice.core.client.ClientVersionParser
+import splice.core.topology.metering.DEFAULT_SERVER_METRICS_PREFIX
+import splice.core.topology.metering.OtlpIdentityAttributes
+import splice.core.topology.metering.ServerCostMeter
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -52,6 +55,10 @@ public data class ServerConfig(
     /** `[server.backup]` (F14): durable state snapshots (`keys.json`, `people.json`, `budgets.json`, `ledger.jsonl`,
      *  `audit.jsonl`) written on a schedule and restored fail-closed on a fresh disk. */
     val backup: ServerBackup = ServerBackup(),
+    /** Literal prefix of every series on the server Prometheus scrape, including any separator. */
+    @SerialName("metrics_prefix") val metricsPrefix: String = DEFAULT_SERVER_METRICS_PREFIX,
+    /** External hourly meters by stable name. An empty table starts no probes. */
+    @SerialName("cost_meters") val costMeters: Map<String, ServerCostMeter> = emptyMap(),
 ) {
     /** Whether the file carries a `[server]` table at all, whatever it holds. */
     val declared: Boolean get() = this != ServerConfig()
@@ -116,7 +123,10 @@ public data class ServerForwardAuth(val allow: List<String> = emptyList()) {
 /** `[server.telemetry]` (F8): [forwardTo] is the operator's OTLP/HTTP collector, as in "http://otel.lan:4318", which
  *  each signal is posted under (`/v1/logs`, `/v1/metrics`, `/v1/traces`) with the person who sent it on every resource. */
 @Serializable
-public data class ServerTelemetry(@SerialName("forward_to") val forwardTo: String = "") {
+public data class ServerTelemetry(
+    @SerialName("forward_to") val forwardTo: String = "",
+    @SerialName("identity_attributes") val identityAttributes: OtlpIdentityAttributes = OtlpIdentityAttributes(),
+) {
     /** [forwardTo] as the base each signal's path is put after, with no trailing slash. */
     public val collector: String get() = forwardTo.trim().trimEnd('/')
 }

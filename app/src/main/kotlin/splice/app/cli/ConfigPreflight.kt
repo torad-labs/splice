@@ -12,10 +12,8 @@ import splice.core.topology.TopologyFinding
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import splice.core.util.TopologyRefusal
-import splice.topology.BootSettings
 import splice.topology.ConfigFindings
 import splice.topology.ConfigRead
-import splice.topology.RetiredSettings
 import splice.topology.TopologyLoader
 import java.io.IOException
 import java.nio.file.Files
@@ -60,7 +58,7 @@ internal class ConfigPreflight(
             return Inspected(unreadableReason(failure))
         }
         val dir = path.toAbsolutePath().parent ?: path
-        val beside = BootSettings(RetiredSettings(env), ModeBoot().found())
+        val beside = ModeBoot().beside(env)
         return when (val read = ConfigFindings.read(text, dir, dir, LocalRowBootFindings(env), beside)) {
             is ConfigRead.Refused -> Inspected(SafeFailureText.render(TopologyRefusal(read.findings)))
             is ConfigRead.Ready -> Inspected(null, read.warnings)

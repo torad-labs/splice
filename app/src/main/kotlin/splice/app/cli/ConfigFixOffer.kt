@@ -10,10 +10,8 @@ import splice.core.topology.TopologyBackupName
 import splice.core.util.EnvReader
 import splice.core.util.SecureFile
 import splice.core.util.TopologyRefusal
-import splice.topology.BootSettings
 import splice.topology.ConfigFindings
 import splice.topology.ConfigRead
-import splice.topology.RetiredSettings
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -31,7 +29,7 @@ internal class ConfigFixOffer(
     private val output: TerminalOutput = TerminalOutput(System.err::println),
 ) {
     private val runtimes = LocalRowBootFindings(env)
-    private val beside by lazy { BootSettings(RetiredSettings(env), ModeBoot().found()) }
+    private val beside by lazy { ModeBoot().beside(env) }
 
     /** [broken] as the refusal listing every finding of splice.toml, when the file has findings; null otherwise. */
     fun refusalOf(broken: Throwable): TopologyRefusal? {

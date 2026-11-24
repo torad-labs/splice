@@ -577,6 +577,14 @@ Such a request's body goes to the provider's own server as the client sent it, u
 
 splice refuses to start a server beside `splice share on`, with a command no head here runs, or with a command whose head signs in with a person's plan login (a Claude or ChatGPT subscription, for example): a plan's terms are for one person, so a server serves only heads that sign with an API key or a self-hosted provider. There is no sign-in, budget, usage report or per-person metric yet; [server mode's spec](docs/specs/server-mode.md) is the plan for them.
 
+### Install an external mode
+
+Add a `[[mods.jar]]` entry to `splice.toml` with a unique `name`, one `path` or `url` and the trusted
+`sha256` of that JAR. Relative paths start in `[mods].dir` (default: `mods/` beside the config).
+Run `splice check-config` and restart. URL JARs are cached by hash and never auto-updated. Both commands
+instantiate the pinned code with your permissions, so only configure JARs you trust. See the
+[external mode JAR spec](docs/specs/server-mode.md#external-mode-jars) for examples and cache removal.
+
 ## Troubleshooting
 
 `splice doctor` checks prerequisites, install integrity, config, daemon, and auth, then prints
@@ -954,6 +962,7 @@ These files hold settings and statistics. Custom compaction instructions and tea
 
 | File | What it holds | Who can read it | How long it stays | Written by |
 | --- | --- | --- | --- | --- |
+| `~/.splice/state/mod-<sha256>.jar` and brief `.secure*.tmp` siblings | Byte-for-byte URL mode JAR after pin and catalog verification. Boot writes it; `splice check-config` does not. | Only you (0600) | Until you remove it. A matching pin reuses it without a download; selecting a new pin leaves the old file alone. | `ModArtifacts.kt` |
 | `~/.splice/state/perf-configuration.json` | Effective performance configuration revision intervals used to scope comparisons. It stores fingerprints and observation times, not configuration values. | The local account; the state directory is private. | The most recent 128 intervals. | `PerfConfigHistory.kt` |
 | `~/.splice/state/perf-aggregates/` (`minute-<time>.json`, `hour-<time>.json`, `checkpoint.json`, `history.lock`, `writer.lock`, `writer-open.json`) | Numeric performance aggregates and checkpoint identity/cleanliness metadata. The marker makes an interrupted writable session visible after restart. | The local account; state files are written atomically with owner-only permissions. | 35 days, within a 176 MiB history budget; minute files are folded into hourly files. | `PerfHistoryFiles.kt`, `PerfHistoryWriter.kt` |
 | `~/.splice/state/perf-evidence/` (`evidence-<head>-<time>-<id>.jsonl`, `retention.json`, `coverage.json`, `coverage.lock`) | Bounded per-head performance observation evidence plus a coverage receipt recording durable file prefixes, gaps, and retention. This is instrumentation evidence, not a session transcript. | The local account; the evidence directory must be owner-only, and metadata replacements are owner-only and atomic. | Up to 35 days, 128 segments and 64 MiB total; individual segments are limited to 1 MiB. | `RequestEvidenceFiles.kt`, `RequestEvidenceRetentionWriter.kt`, `RequestEvidenceCoverage.kt`, `RequestEvidencePrefixes.kt` |

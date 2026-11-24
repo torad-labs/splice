@@ -22,6 +22,7 @@ import splice.core.prompt.SystemPromptMode
 public data class TopologyExtensions(
     val capabilities: List<Capability> = emptyList(),
     val modes: Map<String, ModeSetting> = emptyMap(),
+    val mods: ModsConfig = ModsConfig(),
 )
 
 /** V4-124: a `[projects."ROOT"]` table — standing instructions for every session whose working

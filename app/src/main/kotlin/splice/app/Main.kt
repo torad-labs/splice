@@ -131,6 +131,7 @@ internal class DaemonProcess(
         // of moves that daemon was still carrying out.
         (start.ownerOnlyLines + boundary.clearMovesInFlight(statePaths)).forEach { log(it) }
         BootWarnings(log).say(start.loaded.warnings, statePaths)
+        start.boot.modes.log(log)
         // Oct 15: the splice manager's folder, refreshed from this release, because auto-update never reruns init. Best
         // effort: a failure is logged and never refuses boot.
         ManagerHome(start.topologyPath, statePaths.stateDir, log).ensureBestEffort()
@@ -292,6 +293,7 @@ internal class DaemonProcess(
         // (V4-278) so are splice.toml and its backups, which can hold header secrets and which an older
         // splice left at the umask. What they say is logged once the logger exists.
         val ownerOnlyLines = secureStateDirs(statePaths) + secureConfig(topologyPath)
+        boot.modes.persist()
         return StartState(topologyPath, loaded, statePaths, ownerOnlyLines, boot)
     }
 

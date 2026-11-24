@@ -10,6 +10,17 @@
 # Kimi, or Muse subscription.
 # A new OpenAI-compatible API-key vendor is otherwise pure TOML: base URL, key env, and models.
 
+# Optional: separately installed modes (docs/specs/server-mode.md#external-mode-jars).
+# Only list JARs you trust to run with your permissions. Use one path or URL and its real SHA-256;
+# check with `splice check-config` before restarting. URL JARs are cached by pin, never auto-updated.
+# [mods]
+# dir = "mods"                         # default: mods/ beside splice.toml
+# [[mods.jar]]
+# name = "inventory-release"
+# path = "inventory.jar"               # relative to dir, or absolute
+# sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+# To fetch instead, replace path with url = "https://downloads.example.org/splice/inventory.jar".
+
 [daemon]
 control_port = 3096          # loopback-only control plane + dashboard
 # state_dir = "/mnt/fast/splice-state"   # where the daemon keeps its lock, per-head state and traces (default

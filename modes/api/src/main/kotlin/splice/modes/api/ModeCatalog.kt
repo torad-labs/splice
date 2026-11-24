@@ -18,13 +18,17 @@ public data class ModeCatalog(val modes: List<FoundMode>, val findings: List<Str
 }
 
 /** Reads every mode [loader] can see. */
-public class ModeCatalogReader(private val loader: ClassLoader) {
+public class ModeCatalogReader(
+    private val loader: ClassLoader,
+    private val requireLocalProviders: Boolean = false,
+) {
     public fun read(): ModeCatalog {
-        val handlers = handlers()
+        val serviceFindings = mutableListOf<String>()
+        val handlers = handlers(serviceFindings)
         val folders = folders()
         val checked = folders.map { ManifestCheck(ModeFolder(it, loader), handlers).check() }
         val modes = checked.mapNotNull { it.first }.sortedBy { it.name }
-        return ModeCatalog(modes, checked.flatMap { it.second } + across(modes), folders.sorted())
+        return ModeCatalog(modes, serviceFindings + checked.flatMap { it.second } + across(modes), folders.sorted())
     }
 
     /** The folder names the index lists, each once, in order. */
@@ -32,10 +36,9 @@ public class ModeCatalogReader(private val loader: ClassLoader) {
         .flatMap { url -> url.openStream().use { it.readBytes().decodeToString() }.lines() }
         .map(String::trim).filter(String::isNotEmpty).distinct()
 
-    /** Every handler the ServiceLoader can make, by the class name its service entry gives. An entry it cannot load
-     *  is skipped here: the mode whose manifest names it reports it. java.util.ServiceLoader is how splice finds a
-     *  mode (modes/README.md), and it is asked by the service's class: the one class token in this module. */
-    private fun handlers(): Map<String, Mode> {
+    /** Built-in handler failures are reported by their manifests. An external archive must also have no broken
+     *  registrations of its own, and must not name a provider from the parent classpath. */
+    private fun handlers(findings: MutableList<String>): Map<String, Mode> {
         val found = LinkedHashMap<String, Mode>()
         // ast-grep-ignore: kt-no-reflection-in-production
         val providers = ServiceLoader.load(Mode::class.java, loader).stream().iterator()
@@ -44,17 +47,32 @@ public class ModeCatalogReader(private val loader: ClassLoader) {
         while (more) {
             more = try {
                 if (providers.hasNext()) {
-                    val provider = providers.next()
-                    found[provider.type().name] = provider.get()
+                    register(providers.next(), found, findings)
                     true
                 } else {
                     false
                 }
             } catch (_: ServiceConfigurationError) {
                 ++failures < MAX_LOAD_FAILURES
+            } catch (_: LinkageError) {
+                ++failures < MAX_LOAD_FAILURES
             }
         }
+        if (requireLocalProviders && failures > 0) findings += "could not load a mode service provider from the archive"
         return found
+    }
+
+    private fun register(
+        provider: ServiceLoader.Provider<Mode>,
+        found: MutableMap<String, Mode>,
+        findings: MutableList<String>,
+    ) {
+        val type = provider.type()
+        if (requireLocalProviders && type.classLoader !== loader) {
+            findings += "service provider is not defined in its mod archive"
+        } else {
+            found[type.name] = provider.get()
+        }
     }
 
     /** What two modes may not share: a name, a server, or an offered tool name. Each finding names the later mode. */

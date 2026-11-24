@@ -23,6 +23,9 @@
 package splice.client
 
 public object ClaudeArgv {
+    /** Whether [args], a person's arguments to Claude Code, name the model the session starts on: `--model X` or
+     *  `--model=X`, which outranks ANTHROPIC_MODEL (#791). */
+    public fun namesModel(args: List<String>): Boolean = args.any { it == MODEL_FLAG || it.startsWith("$MODEL_FLAG=") }
 
     /** [argv] with every prompt's text, and every word it cannot place, replaced by its length. The
      *  program (argv[0]), every flag and every listed option's non-prompt value are kept verbatim, so

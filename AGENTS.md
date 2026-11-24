@@ -145,9 +145,12 @@ picks the head
 (`DoorRouting`); `/model` lists the gateway's models (`GET /door/v1/models`). A launch on the door starts Claude
 Code in its gateway mode (`ANTHROPIC_BASE_URL` at the Splice gateway, the terminal key as `ANTHROPIC_AUTH_TOKEN`,
 `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`, no `CLAUDE_CODE_USE_*` switch), sets `ANTHROPIC_MODEL` and
-`DISABLE_LOGIN_COMMAND`/`DISABLE_LOGOUT_COMMAND`, lays a `--settings` overlay carrying the hook that answers
-`/login` and no model list, and sets no `CLAUDE_CONFIG_DIR`. The one
-file it lays in `~/.claude` is its bare `/login`, `commands/login.md` (`DoorLogin`), which opens the accounts page
+`DISABLE_LOGIN_COMMAND`/`DISABLE_LOGOUT_COMMAND`, sets the client's timers, windows and `NO_PROXY` as a head's launch
+does (`LaunchClientTimers`, `LaunchModelEnvironment`, `LaunchAmbient`), lays a `--settings` overlay carrying the hook
+that answers `/login`, no model list, and in its `env` every non-secret value of the launch with each provider switch
+`0` and every other credential, tier and model option empty (so a settings file cannot outrank them; the key never
+goes in it), and sets no `CLAUDE_CONFIG_DIR`. The one file it lays in `~/.claude` is its bare `/login`,
+`commands/login.md` (`DoorLogin`), which opens the accounts page
 through `splice console`: laid where it is missing, never over a `/login` the person wrote, and taken out by
 `splice claude head` and `splice uninstall`.
 
@@ -164,7 +167,8 @@ through `splice console`: laid where it is missing, never over a `/login` the pe
 - **One list.** Every session's `/model` is the Splice gateway's `/v1/models` answer (`GatewayModels`, from
   `DesktopLineup.picker`), which Claude Code discovers in gateway mode. No launch carries a model list of splice's:
   no `modelPicker`, `availableModels`, `enforceAvailableModels`, `modelOverrides`, `additionalModelOptionsCache` or
-  tier variables, in the `--settings` overlay, the environment, or any Claude folder splice writes.
+  tier variables, in the `--settings` overlay, the environment, or any Claude folder splice writes. A door launch's
+  overlay names the tier variables empty, which clears a list a settings file lays and lays none.
 - **The lane** is in `claude-lane.json` in the state folder (`ClaudeLaneRecords`): the one chosen with `splice claude
   door` or `head`, or with none chosen, the head while `splice.toml` has a head whose command is `claude` (or a
   `[remote.claude]`), and the door otherwise. `splice setup` links `claude` on the door and adds no head keyed

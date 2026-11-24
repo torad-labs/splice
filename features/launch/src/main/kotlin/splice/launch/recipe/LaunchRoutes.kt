@@ -124,7 +124,9 @@ public class LaunchRoutes(
         val caller = LaunchCaller(request.cwd, null, request.inheritedConfigDir, request.launch)
         val headDirs = heads.all().mapNotNull { it.spec?.trees?.own }
         val skip = request.dangerouslySkipPermissions
-        val told = door.copy(notice = inHeadFolder(request.inheritedConfigDir, service))
+        // #791: the session outlives the longest wall of the heads its turns can run on, as a head's outlives its own
+        val wall = heads.all().mapNotNull { it.spec?.gateway?.apiTimeoutMs }.maxOrNull()
+        val told = door.copy(notice = inHeadFolder(request.inheritedConfigDir, service), wallMs = wall)
         answer(call, key, service.onDoor.outcome(told, request.extraArgs, skip, caller, headDirs))
     }
 

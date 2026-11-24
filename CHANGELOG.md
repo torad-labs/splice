@@ -142,6 +142,15 @@
   model takes.
 
 ### Fixed
+- **`claude` on the door launches with what a head's launch sets, and your settings files can't undo it.** A launch on
+  the door (`claude`, `splice launch claude` and door commands) now sets the client's timers and wall header from the
+  heads' walls, so a long turn or compaction is no longer cut as a client abort while the daemon still streams; the
+  compaction window from the door's declared window; and `NO_PROXY` with the door's address, so an `HTTPS_PROXY` in the
+  shell no longer makes the door unreachable. Every one of these values, the starting model, each provider switch
+  (`0`) and every other credential, tier and model option (empty) also rides the launch's `--settings` overlay, which
+  outranks your `settings.json` `env`: a model, tier, provider switch or 200,000 window left there from another
+  provider no longer wins. Keys never go in the overlay. A `--model` you pass is left alone, and a `statusLine` a
+  wrapper passes in its own `--settings` is kept.
 - **An open glass on the console's Teams page stays as you left it.** With a member's or a team's glass open, the
   page drew the glass again after every read, every five seconds, whether or not anything had changed: a menu opened
   in it closed by itself, and a click could land on nothing. The glass is drawn again only when the page under it

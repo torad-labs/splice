@@ -71,6 +71,7 @@ internal class ClaudeDoorLaunch(
             session.env(),
             session.unset(),
             session.overlay(LaunchMarker.here, LaunchMarker.SPLICE_LAUNCH_KEY, loginHooks),
+            session.window,
         )
     }
 

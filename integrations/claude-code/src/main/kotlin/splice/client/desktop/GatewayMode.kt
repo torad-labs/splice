@@ -13,9 +13,13 @@ import splice.client.ClaudeModelLists
 public class GatewayMode {
     /** What a gateway-mode launch sets: [base] the gateway's address, [key] its key, and [model] the selector the
      *  session starts on, when there is one. */
-    public fun env(base: String, key: String, model: String?): Map<String, String> = buildMap {
+    public fun env(base: String, key: String, model: String?): Map<String, String> =
+        settings(base, model) + (GATEWAY_TOKEN to key)
+
+    /** What a gateway-mode launch sets that is no secret: [env] without the key, which a `--settings` overlay may carry
+     *  (#791): an overlay is an argument every local user can read, and the key stays in the process environment. */
+    public fun settings(base: String, model: String?): Map<String, String> = buildMap {
         put(GATEWAY_BASE_URL, base)
-        put(GATEWAY_TOKEN, key)
         put(GATEWAY_DISCOVERY, "1")
         model?.let { put(DESKTOP_MODEL, it) }
     }
@@ -24,6 +28,11 @@ public class GatewayMode {
      *  model list but the gateway's. */
     public val unset: List<String> =
         (providerSwitches + ALL_SWITCHES).distinct() + CREDENTIALS + ClaudeModelLists.variables
+
+    /** [unset] as a settings file's `env` spells it taken out: a person's settings `env` is applied over the process
+     *  environment, so a variable this launch unsets can come back from there. Each switch is `0`, which Claude Code
+     *  reads as off, and every other variable is empty, which it reads as not set (#791). No value here is a secret. */
+    public val cleared: Map<String, String> = unset.associateWith { if (it in ALL_SWITCHES) SWITCH_OFF else "" }
 
     /** Whether [env], what a launch sets, puts its session in gateway mode: a base URL, a bearer, discovery on, and
      *  no provider switch. */
@@ -40,6 +49,9 @@ public const val GATEWAY_DISCOVERY: String = "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_D
 // Claude Code's provider switches: discovery does not run while one is set.
 private val ALL_SWITCHES =
     listOf("CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_USE_MANTLE")
+
+// How a settings file turns a provider switch off.
+private const val SWITCH_OFF = "0"
 
 // The other credentials Claude Code would send in place of the gateway's key.
 private val CREDENTIALS = listOf("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN")

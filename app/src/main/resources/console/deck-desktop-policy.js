@@ -14,6 +14,8 @@ window.DESKTOP_POLICY = (() => {
   const errors = new Map();
   /** what a row last said splice answered, so a row drawn again keeps saying it for a moment */
   const told = new Map();
+  /** whether a save is waiting for splice's answer */
+  let saving = false;
   const why = res => (res.status === 0 ? 'splice is not answering' : (res.body && res.body.error) || 'splice answered ' + res.status);
 
   /** the words each choice's values are drawn with; a value with none is drawn as it is */
@@ -33,7 +35,6 @@ window.DESKTOP_POLICY = (() => {
     return res.ok;
   };
   const keys = () => (P.data ? P.data.groups.flatMap(g => g.keys) : []);
-  const field = key => keys().find(k => k.key === key);
 
   /** save [changes] ({ key: value | null }); the daemon's answer as a row reads it */
   P.save = async changes => {
@@ -55,7 +56,7 @@ window.DESKTOP_POLICY = (() => {
     if (!P.data) return { fig: '—', cap: P.status === 503 ? 'Opens once the door is up' : 'Not read' };
     const set = keys().filter(k => k.overridden).length;
     const cap = P.data.overrides_error ? 'Overrides file unreadable' : P.data.restart_required ? 'Reopen Claude Desktop to apply' : 'Claude Desktop policy';
-    return { fig: String(set), unit: set === 1 ? 'set here' : 'set here', cap, waiting: !!P.data.restart_required, changed: set > 0 };
+    return { fig: String(set), unit: 'set here', cap, waiting: !!P.data.restart_required, changed: set > 0 };
   };
 
   /* ---------- the glass ---------- */
@@ -94,14 +95,26 @@ window.DESKTOP_POLICY = (() => {
 
   function row(k, kit) {
     const { r, sv, ctl } = line(k.key, k.label, k.description, k.overridden ? 'Set here' : 'Default');
-    const save = (changes, revert) => kit.commit(r, sv, async () => {
-      const res = await P.save(changes);
-      if (res.state === 'applied') told.set(k.key, { state: 'applied', word: res.word, at: Date.now() });
-      return res;
-    }, revert).then(res => { if (res.state !== 'refused') kit.reopen(); return res; });
+    // one save at a time: every control in the glass waits for splice's answer, so a second pick never races the first
+    // or saves from values the first has already changed
+    const save = (changes, revert) => {
+      if (saving) { revert && revert(); return Promise.resolve({ state: 'busy' }); }
+      saving = true;
+      const glass = r.closest('.lens') || r;
+      const live = [...glass.querySelectorAll('.lr button, .lr input')].filter(x => !x.disabled);
+      live.forEach(x => { x.disabled = true; });
+      return kit.commit(r, sv, async () => {
+        const res = await P.save(changes);
+        if (res.state === 'applied') told.set(k.key, { state: 'applied', word: res.word, at: Date.now() });
+        return res;
+      }, revert).then(res => {
+        if (res.state !== 'refused') kit.reopen();
+        return res;
+      }).finally(() => { saving = false; live.forEach(x => { x.disabled = false; }); });
+    };
     switch (k.type) {
       case 'boolean': { let c; c = Deck.choice(SWITCH, k.effective === true, v => save({ [k.key]: v }, () => c.set(k.effective === true)), { label: k.label }); ctl.append(c); break; }
-      case 'enum': { let c; c = Deck.choice(k.options.map(v => ({ v, label: word(v) })), k.effective, v => save({ [k.key]: v }, () => c.set(k.effective)), { label: k.label }); ctl.append(c); break; }
+      case 'enum': { let c; c = Deck.choice(k.options.map(v => ({ v, label: word(v) })), k.effective, v => save({ [k.key]: v }, () => c.set(k.effective)), { label: k.label, empty: 'Default' }); ctl.append(c); break; }
       case 'integer': ctl.append(...number(k, save)); break;
       case 'hosts': ctl.append(list(k, save, x => x, text => text)); break;
       case 'marketplaces': ctl.append(list(k, save, market, marketOf)); break;
@@ -128,7 +141,8 @@ window.DESKTOP_POLICY = (() => {
       if (i.value === '' || v === k.effective) { i.value = k.effective ?? ''; return; }
       save({ [k.key]: Number.isInteger(v) ? v : i.value }, () => { i.value = k.effective ?? ''; });
     };
-    i.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(); } e.stopPropagation(); });
+    // Enter leaves the field, and leaving it saves: one save, and the glass is drawn again once it is answered
+    i.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); i.blur(); } e.stopPropagation(); });
     i.addEventListener('change', go);
     return [i, h('span', 'faint small', `seconds · ${k.min}–${k.max}`)];
   }
@@ -147,7 +161,7 @@ window.DESKTOP_POLICY = (() => {
     i.placeholder = k.type === 'hosts' ? 'example.com or *.example.com' : 'owner/repo or https://…/marketplace.json';
     i.setAttribute('aria-label', 'Add to ' + k.label);
     const b = h('button', 'btn quiet press', 'Add'); b.type = 'button';
-    const go = () => { const t = i.value.trim(); if (!t) return; save({ [k.key]: [...now, parse(t)] }); };
+    const go = () => { const t = i.value.trim(); if (!t) return; i.blur(); save({ [k.key]: [...now, parse(t)] }); };
     b.addEventListener('click', go);
     i.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(); } e.stopPropagation(); });
     add.append(i, b);

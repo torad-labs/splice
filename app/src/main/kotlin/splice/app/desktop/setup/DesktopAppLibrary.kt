@@ -121,12 +121,7 @@ internal class DesktopAppLibrary(
      *  configuration says, and each key of [reset], which the console no longer holds, goes back to splice's policy
      *  (DesktopPolicyLayers.forced). */
     fun publish(door: String, models: JsonArray? = null, reset: Set<String> = emptySet()): Boolean {
-        val id = files.read(config.meta)?.let(config::applied) ?: return false
-        val file = config.file(id).normalize()
-        val current = file.takeIf { it.parent == config.library.normalize() }
-            ?.takeIf { Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) }
-            ?.let(files::read)
-            ?.takeIf { config.door(it)?.trimEnd('/') == door.trimEnd('/') } ?: return false
+        val (file, current) = onDoor(door) ?: return false
         syncProfileBestEffort()
         val withModels = if (models != null) config.withModels(current, models) else current
         val updated = layers.forced(config.withPolicy(withModels, policy()), reset)
@@ -136,6 +131,17 @@ internal class DesktopAppLibrary(
             files.write(file, updated)
             true
         }
+    }
+
+    /** The configuration this library applies, its file and what it holds, when it is one of the library's own and
+     *  points Desktop at [door]; null otherwise. */
+    fun onDoor(door: String): Pair<Path, JsonObject>? {
+        val id = files.read(config.meta)?.let(config::applied) ?: return null
+        val file = config.file(id).normalize().takeIf { it.parent == config.library.normalize() } ?: return null
+        return file.takeIf { Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) }
+            ?.let(files::read)
+            ?.takeIf { config.door(it)?.trimEnd('/') == door.trimEnd('/') }
+            ?.let { file to it }
     }
 
     private fun syncProfileBestEffort() {

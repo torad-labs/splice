@@ -1,7 +1,7 @@
 // NEW: desktop-policy-console. What [DesktopPolicyRoutes] reads and changes: a PATCH body checked key by key against
 // the keys the console sets (DesktopPolicyCatalog), and the policy as Settings draws it, group by group, each key with
-// its words, the values it takes, splice's default, the value Desktop is given and the console's own value. A
-// marketplace URL is shown without any user or token it names.
+// its words, the values it takes, splice's default, the value Desktop is given and the console's own value. No
+// value carries a credential: a marketplace address with one is never taken (DesktopPolicyKind.Marketplaces).
 package splice.app.control.api.desktop
 
 import kotlinx.serialization.json.JsonArray
@@ -92,26 +92,12 @@ internal class DesktopPolicyRouteOps(private val catalog: DesktopPolicyCatalog =
             DesktopPolicyKind.Import,
             -> Unit
         }
-        put("default", shown(values.default))
-        put("effective", shown(values.effective))
-        put("override", shown(values.override))
+        put("default", values.default ?: JsonNull)
+        put("effective", values.effective ?: JsonNull)
+        put("override", values.override ?: JsonNull)
         put("overridden", values.override != null)
-    }
-
-    /** [value] as it may be shown: a marketplace URL loses any user or token before its host. */
-    private fun shown(value: JsonElement?): JsonElement = when (value) {
-        null -> JsonNull
-        is JsonArray -> JsonArray(value.map(::shown))
-        is JsonObject -> JsonObject(value.mapValues { (key, inner) -> if (key == URL_KEY) shown(inner) else inner })
-        is JsonPrimitive -> if (value.isString) JsonPrimitive(value.content.replace(CREDENTIAL, "://***@")) else value
     }
 
     /** One key's value in each layer: splice's default, what Desktop is given, and the console's own. */
     private data class Values(val default: JsonElement?, val effective: JsonElement?, val override: JsonElement?)
 }
-
-// A marketplace's address key where it is a URL.
-private const val URL_KEY = "url"
-
-// The user (and maybe token) a URL names before its host.
-private val CREDENTIAL = Regex("""://[^/@\s]+@""")

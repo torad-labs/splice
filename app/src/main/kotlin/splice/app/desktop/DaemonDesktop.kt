@@ -175,8 +175,13 @@ internal class DaemonDesktop(
     }
 
     /** Whether Claude Desktop, on splice's configuration, has not been reopened since splice last changed it, which it
-     *  reads only at launch; null when Desktop is not on splice's configuration, where the door can't tell. */
-    override fun restartPending(): Boolean? = app.relaunched()?.not()
+     *  reads only at launch. A Desktop run beside the person's own (Claude (Splice)) counts as on splice's
+     *  configuration when its library applies one on the door. Null when no Desktop is, where the door can't tell. */
+    override fun restartPending(): Boolean? {
+        app.relaunched()?.let { return !it }
+        val at = door ?: return null
+        return if (library.beside().any { it.onDoor(at) != null }) !records.get().seenSinceWritten() else null
+    }
 
     /** The model list and splice's policy given to every Claude Desktop whose applied configuration points at [door]:
      *  the person's own, and each one run beside it on a config folder of its own. */

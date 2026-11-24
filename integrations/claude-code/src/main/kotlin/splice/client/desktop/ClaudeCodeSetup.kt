@@ -40,7 +40,8 @@ internal class ClaudeCodeSetup(private val claudeDir: Path) {
     /** The marketplaces the person added that Desktop's configuration can name, combining
      *  `plugins/known_marketplaces.json`, `settings.json`, and `settings.local.json`'s `extraKnownMarketplaces`.
      *  A GitHub repository, git remote or hosted marketplace file is carried with its branch and folder;
-     *  local directories and sparse-path repositories are omitted because Desktop cannot express them faithfully. */
+     *  local directories and sparse-path repositories are omitted because Desktop cannot express them faithfully, and
+     *  an address carrying a credential because Desktop's configuration is readable and is no place for one. */
     fun marketplaces(): List<JsonObject> {
         val fromKnown = held(KNOWN_MARKETPLACES_FILE)?.values.orEmpty()
             .mapNotNull { known -> named((known as? JsonObject)?.get(MARKETPLACE_SOURCE)) }
@@ -71,6 +72,7 @@ internal class ClaudeCodeSetup(private val claudeDir: Path) {
         val kind = JsonScalars.str(held, MARKETPLACE_SOURCE)
         val address = marketplaceAddressOf.entries.firstOrNull { it.key == kind }
         val at = address?.let { JsonScalars.str(held, it.value) }?.takeIf(String::isNotBlank)
+            ?.takeUnless(DesktopPolicyKind.Marketplaces::credentialed)
         if (address == null || at == null) return null
         return buildJsonObject {
             put(MARKETPLACE_SOURCE, address.key)

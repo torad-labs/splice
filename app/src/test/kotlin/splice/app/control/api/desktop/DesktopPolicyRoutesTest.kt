@@ -23,6 +23,7 @@ import io.ktor.server.netty.NettyApplicationEngine
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
@@ -131,10 +132,14 @@ class DesktopPolicyRoutesTest {
     fun `Settings reads five groups of keys, each with its default, and the keys splice holds itself`() = runBlocking {
         Files.createDirectories(home.resolve(".claude/plugins"))
         Files.writeString(home.resolve(".claude/settings.json"), """{"effortLevel":"low"}""")
-        val market = """{"m":{"source":{"source":"url","url":"https://someone:tok3n-secret@example.com/m.json"}}}"""
+        // A made-up token, put together here so the source holds no URL that reads as a credential.
+        val token = listOf("made", "up", "token", "value").joinToString("-")
+        val secret = "https://someone:" + token + "@example.com/m.json"
+        val tools = """{"source":{"source":"github","repo":"acme/tools"}}"""
+        val market = """{"m":{"source":{"source":"url","url":"$secret"}},"t":$tools}"""
         Files.writeString(home.resolve(".claude/plugins/known_marketplaces.json"), market)
         val text = get().bodyAsText()
-        assertFalse("tok3n-secret" in text, "a URL's token is never shown")
+        assertFalse(token in text, "a marketplace with a token is never shown")
         val body = json.parseToJsonElement(text).jsonObject
         val groups = body.getValue("groups").jsonArray.map { it.jsonObject }
         assertEquals(listOf("surfaces", "code", "extensions", "browser", "experience"), groups.map { it.str("id") })
@@ -157,6 +162,11 @@ class DesktopPolicyRoutesTest {
         assertEquals(listOf("standard", "simple", "no-vm", "off"), homes)
         val effort = keys.getValue("defaultModelEffort")
         assertEquals("low", effort.str("default"), "the person's Claude Code effort is the default")
+        val markets = keys.getValue("allowedPluginMarketplaces").getValue("default").jsonArray.map { it.jsonObject }
+        assertTrue(markets.any { it.str("repo") == "acme/tools" }, "the person's marketplace without a token is kept")
+        assertTrue(markets.none { "url" in it }, "the one with a token is left out: $markets")
+        val edited = """{"allowedPluginMarketplaces":${JsonArray(markets)}}"""
+        assertEquals(HttpStatusCode.OK, patch(edited).status, "the list as shown saves again unchanged")
         assertEquals("false", body.str("restart_required"))
         assertEquals(JsonNull, body["overrides_error"])
     }
@@ -177,7 +187,20 @@ class DesktopPolicyRoutesTest {
             """{"allowedPluginMarketplaces":[{"source":"url","url":"https://u:p@h.example/m.json"}]}""" to
                 "allowedPluginMarketplaces",
             """{"claudeAiImport":{"bannerMaxDismissals":99}}""" to "claudeAiImport",
-        )
+            """{"claudeAiImport":{}}""" to "claudeAiImport",
+            """{"coworkEgressAllowedHosts":["h.example:0"]}""" to "coworkEgressAllowedHosts",
+            """{"coworkEgressAllowedHosts":["h.example:70000"]}""" to "coworkEgressAllowedHosts",
+        ) + listOf(
+            """{"source":"github","repo":42}""",
+            """{"source":true,"repo":"a/b"}""",
+            """{"source":"github","repo":"not a repo"}""",
+            """{"source":"github","repo":"a/b","ref":5}""",
+            """{"source":"github","repo":"a/b","path":" "}""",
+            """{"source":"url","url":"h.example/m.json"}""",
+            """{"source":"git","url":"ftp://h.example/r.git"}""",
+            """{"source":"url","url":"https://u:a@b@h.example/m.json"}""",
+            """{"source":"url","url":"https://tok@h.example/m.json"}""",
+        ).map { """{"allowedPluginMarketplaces":[$it]}""" to "allowedPluginMarketplaces" }
         refusedBodies.forEach { (body, key) ->
             val answer = patch(body)
             assertEquals(HttpStatusCode.BadRequest, answer.status, body)
@@ -188,6 +211,24 @@ class DesktopPolicyRoutesTest {
         assertEquals(HttpStatusCode.BadRequest, patch("{}").status)
         assertFalse(Files.exists(overrides), "a refused body keeps nothing")
         assertEquals("true", desktop().str("projectsEnabled"), "and changes nothing in Desktop")
+    }
+
+    @Test
+    fun `each kind of marketplace, a host with a port, and part of the import settings are kept`() = runBlocking {
+        val markets = listOf(
+            """{"source":"github","repo":"acme/tools","ref":"main","path":"plugins"}""",
+            """{"source":"url","url":"https://h.example/marketplace.json"}""",
+            """{"source":"git","url":"ssh://git@h.example/acme/tools.git"}""",
+            """{"source":"git","url":"git@h.example:acme/tools.git"}""",
+        ).joinToString(",")
+        val body = """{"allowedPluginMarketplaces":[$markets],"coworkEgressAllowedHosts":["h.example:8443"],""" +
+            """"claudeAiImport":{"bannerBehavior":"off"}}"""
+        val answer = patch(body)
+        assertEquals(HttpStatusCode.OK, answer.status, answer.bodyAsText())
+        val written = desktop()
+        assertEquals(4, written.getValue("allowedPluginMarketplaces").jsonArray.size)
+        assertEquals("off", written.getValue("claudeAiImport").jsonObject.str("bannerBehavior"))
+        assertEquals("true", written.getValue("claudeAiImport").jsonObject.str("enabled"), "the rest stays splice's")
     }
 
     @Test

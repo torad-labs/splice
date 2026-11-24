@@ -399,7 +399,7 @@ class DesktopPeerInboxTest {
                         log = LogSink {},
                         clock = WallClock { 1_795_300_000_000L },
                         agy = listOf("sh", agent.toString()),
-                    ).run(driver.stdin, driver.stdout, peer)
+                    ).run(driver.stdin, driver.stdout, peer = peer)
                 }
                 driver.drive(this)
                 driver.close()

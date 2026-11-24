@@ -19,6 +19,19 @@ public object PathProbe {
         null
     }
 
+    /** Where [path] is or would be: every link on the way resolved as far as the path exists, the rest as written. Two
+     *  paths that reach one folder, through a link or not, are equal here. */
+    public fun real(path: Path): Path {
+        val absolute = path.toAbsolutePath().normalize()
+        var base: Path? = absolute
+        while (base != null) {
+            val found = resolved(base)
+            if (found != null) return found.resolve(base.relativize(absolute)).normalize()
+            base = base.parent
+        }
+        return absolute
+    }
+
     /** [raw] as a path; null for text the filesystem cannot spell (a NUL byte). */
     public fun spelled(raw: String): Path? = try {
         Path.of(raw)

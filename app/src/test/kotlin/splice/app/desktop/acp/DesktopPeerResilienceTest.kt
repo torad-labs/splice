@@ -245,7 +245,7 @@ class DesktopPeerResilienceTest {
                 val run = async(Dispatchers.IO) {
                     val agy = listOf("sh", broken.agent.toString())
                     DesktopAcp(args, broken.project, broken.env, Dispatchers.IO, LogSink {}, clock, agy)
-                        .run(stdin, stdout, DesktopPeerWiring(inbox = factory))
+                        .run(stdin, stdout, peer = DesktopPeerWiring(inbox = factory))
                 }
                 toSession.write((RESILIENCE_INIT + "\n").toByteArray())
                 toSession.flush()

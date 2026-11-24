@@ -5,6 +5,7 @@ package splice.server.backup
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import splice.server.ledger.COST_METER_FILE
 
 /** What reading a snapshot key came to. */
 internal sealed class SnapshotRead {
@@ -45,6 +46,7 @@ internal val snapshotStateFiles: List<String> = listOf(
     "budgets.json",
     "ledger.jsonl",
     "audit.jsonl",
+    COST_METER_FILE,
 )
 
 internal const val LATEST_SNAPSHOT_KEY: String = "splice-state/latest.json"

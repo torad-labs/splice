@@ -29,12 +29,11 @@ public class UsageApi internal constructor(
     clock: Clock,
     /** The providers behind the server, for what those paid for by the hour cost (F10). */
     private val upstreams: UpstreamApi,
-    /** When the host came up, read at each report: the kernel's boot time. */
-    boot: HostBoot = KernelBoot(),
+    private val costMeters: ExternalCostMeters,
 ) {
     private val windows = UsageWindows(clock)
     private val report = UsageReport(people, server.teams, server.reference)
-    private val fixed = FixedMeter(boot, clock)
+    private val fixed = FixedMeter(KernelBoot(), clock)
     private val json = Json { encodeDefaults = true }
 
     /** The rows of the window [asked] names, only one person's when it names `person`. */
@@ -69,7 +68,8 @@ public class UsageApi internal constructor(
     }
 
     private fun reportOf(window: UsageWindow, by: ReportBy, format: ReportFormat): ServerAnswer {
-        val body = report.of(ledger.between(window.from, window.to), window, by, fixed.of(upstreams.hourly(), window))
+        val costs = fixed.of(upstreams.hourly(), window) + costMeters.costs(window)
+        val body = report.of(ledger.between(window.from, window.to), window, by, costs)
         if (format == ReportFormat.JSON) return ServerAnswer.Done(HttpStatusCode.OK, body)
         return ServerAnswer.Text(HttpStatusCode.OK, format.contentType, UsageTables.text(body, format))
     }

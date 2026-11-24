@@ -12,6 +12,7 @@ package splice.client.login
 import kotlinx.serialization.json.JsonObject
 import splice.client.Keys
 import splice.core.util.SecureFile
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -47,6 +48,13 @@ public class DoorLogin(private val claudeDir: Path, private val hookDir: Path) {
             Files.exists(skill) -> skill
             else -> null
         }
+    }
+
+    /** True when splice's own `commands/login.md` is already laid in [claudeDir] (read-only; never writes). */
+    public fun isLaid(): Boolean = try {
+        splices(current())
+    } catch (_: IOException) {
+        false
     }
 
     /** splice's file taken out, and only splice's: true when one was there. Throws the disk's IOException. */

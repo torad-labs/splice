@@ -159,7 +159,7 @@ class DesktopPeerTimeoutAndVersionTest {
                     val agy = listOf("sh", runSpec.agent.toString())
                     val stdout = blockingUserReplaySink(received, outBlocked, releaseOut)
                     DesktopAcp(blockedArgs(), runSpec.project, env, Dispatchers.IO, LogSink {}, clock, agy)
-                        .run(stdin, stdout, DesktopPeerWiring(inbox = factory))
+                        .run(stdin, stdout, peer = DesktopPeerWiring(inbox = factory))
                 }
                 toSession.write((INIT_LINE + "\n").toByteArray())
                 toSession.flush()
@@ -302,7 +302,7 @@ class DesktopPeerTimeoutAndVersionTest {
                 val run = async(Dispatchers.IO) {
                     val agy = listOf("sh", agent.toString())
                     DesktopAcp(args, project, env, Dispatchers.IO, LogSink {}, clock, agy)
-                        .run(stdin, stdout, DesktopPeerWiring(inbox = factory))
+                        .run(stdin, stdout, peer = DesktopPeerWiring(inbox = factory))
                 }
                 toSession.write((INIT_LINE + "\n").toByteArray())
                 toSession.flush()

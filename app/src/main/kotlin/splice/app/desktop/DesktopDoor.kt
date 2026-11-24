@@ -26,6 +26,7 @@ import splice.client.desktop.APP_MODE_HEADER
 import splice.client.desktop.DesktopAppWindow
 import splice.client.desktop.GatewayDiscovery
 import splice.core.client.SESSION_HEADER
+import splice.core.speed.SessionSpeeds
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.util.WallClock
@@ -58,13 +59,14 @@ internal class DesktopDoor(
     private val callers: List<DoorCaller>,
     private val providers: DesktopProviders,
     clock: WallClock = WallClock(System::currentTimeMillis),
+    sessionSpeeds: SessionSpeeds? = null,
 ) {
     /** The door's own voice, for a key it holds for no caller: it can't tell whose session that is, so its words name
      *  splice alone and say where each caller's key comes from. */
     private val voice = RefusalVoice("")
     private val json = Json { ignoreUnknownKeys = true }
     private val routing = DoorRouting()
-    private val toProvider = DoorRelay(clock)
+    private val toProvider = DoorRelay(clock, sessionSpeeds)
     private val windows = DesktopAppWindow()
     private val discovery = GatewayDiscovery()
     private val gatewayModels = GatewayModels()

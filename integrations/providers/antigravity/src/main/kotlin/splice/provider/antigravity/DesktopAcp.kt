@@ -19,6 +19,7 @@ import splice.core.util.EnvReader
 import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.core.util.WallClock
+import splice.provider.antigravity.hooks.AcpSessionHooks
 import splice.provider.antigravity.peer.DesktopPeerInboxFactory
 import splice.provider.antigravity.peer.DesktopPeerMessage
 import splice.provider.antigravity.peer.DesktopPeerWiring
@@ -48,6 +49,7 @@ public class DesktopAcp(
     public suspend fun run(
         input: InputStream,
         output: OutputStream,
+        hooks: AcpSessionHooks = AcpSessionHooks(),
         peer: DesktopPeerWiring = DesktopPeerWiring(),
     ): Int = coroutineScope {
         val lines = Channel<String>(Channel.UNLIMITED)
@@ -55,7 +57,7 @@ public class DesktopAcp(
         val claude = ClaudeArgsReader().of(args)
         val started = AgyLaunch(agy, cwd, io, peer.childEnv).start(claude, this)
         try {
-            serve(claude, started, lines, output, peer.inbox)
+            serve(ServeTarget(claude, started, hooks, peer.inbox), lines, output)
         } finally {
             reader.shutdownNow()
             started.close(log)
@@ -86,13 +88,20 @@ public class DesktopAcp(
         return pool
     }
 
+    private data class ServeTarget(
+        val claude: ClaudeArgs,
+        val started: StartedAgy,
+        val hooks: AcpSessionHooks,
+        val peerInbox: DesktopPeerInboxFactory?,
+    )
+
     private suspend fun serve(
-        claude: ClaudeArgs,
-        started: StartedAgy,
+        target: ServeTarget,
         lines: ReceiveChannel<String>,
         output: OutputStream,
-        peerInbox: DesktopPeerInboxFactory?,
     ) = coroutineScope {
+        val claude = target.claude
+        val started = target.started
         val (hello, helloFailure) = started.connection?.let { AgyOpener(it, cwd.toString()).sayHello() }
             ?: (null to started.reason)
         val out = synchronizedOut(output)
@@ -102,11 +111,11 @@ public class DesktopAcp(
             override fun connected(serverName: String) = mcpState.markConnected(serverName)
         }
         McpBridge(out, connected).use { bridge ->
-            val target = CoordinatorEnv(claude, STRICT_MCP_CONFIG in args, cwd, env, log)
+            val envTarget = CoordinatorEnv(claude, STRICT_MCP_CONFIG in args, cwd, env, log)
             val chan = CoordinatorIo(started, hello, helloFailure, lines, deferredLines, this)
-            val coordinator = AgyMcpCoordinator(target, chan, mcpState, bridge)
-            val factory = PartsFactory { id -> parts(id, claude, peerInbox, out, this) }
-            val session = DesktopSession(claude, factory, coordinator, mcpState, bridge, clock)
+            val coordinator = AgyMcpCoordinator(envTarget, chan, mcpState, bridge)
+            val factory = PartsFactory { id -> parts(id, claude, target.peerInbox, out, this) }
+            val session = DesktopSession(claude, factory, coordinator, mcpState, bridge, clock, target.hooks)
             val stop = Executors.defaultThreadFactory().newThread { session.closeRecord() }
             Runtime.getRuntime().addShutdownHook(stop)
             try {

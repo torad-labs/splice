@@ -41,6 +41,7 @@ internal class SetupCommand(
     private val frame = prompts.frame
     private val menu = SetupMenu(frame, profiles)
     private val mcpShare = SetupMcpShare(prompts, InstallWiring.units(env), env)
+    private val codexHooks = SetupCodexHooks(prompts)
     private val headChoices = SetupHeadChoices(prompts, profiles)
     private val modes = SetupModes(prompts, env)
     private val autoUpdate = SetupAutoUpdate(prompts, env)
@@ -72,28 +73,34 @@ internal class SetupCommand(
         val choices = headChoices.ask(heads)
         val launcherChoice = launchers.offer(prompts, facts.capabilities?.desktop)
             ?: return WizardAnswer.Cancelled("cancelled")
-        return confirmPlan(path, launcherChoice, picker, heads, choices)
+        return confirmPlan(path, facts, launcherChoice, HeadSelection(picker, heads, choices))
     }
+
+    private data class HeadSelection(
+        val picker: SetupHeads,
+        val heads: List<String>,
+        val choices: Map<String, HeadChoice>,
+    )
 
     private fun confirmPlan(
         path: Path,
+        facts: SetupFacts,
         launcherChoice: LauncherChoice,
-        picker: SetupHeads,
-        heads: List<String>,
-        choices: Map<String, HeadChoice>,
+        selection: HeadSelection,
     ): WizardAnswer {
         val bin = InstallLayout().localBin(env)
         val launchers = effects.launchers()
         val local = localModel.offer(path)
         val share = mcpShare.ask(path) ?: return WizardAnswer.Cancelled("cancelled")
-        val extras = SetupExtras(local, share, modes.offer(path).orEmpty(), autoUpdate.offer(path))
-        val summary = menu.summaryLines(path, bin, heads, launchers.summaryLines(launcherChoice)) +
-            choices.values.map { it.summary } + localModel.summary(local) + mcpShare.summary(share) +
-            modes.summary(extras.modes) + autoUpdate.summary(extras.autoUpdate)
+        val hooksChoice = codexHooks.offer(facts)
+        val extras = SetupExtras(local, share, modes.offer(path).orEmpty(), autoUpdate.offer(path), hooksChoice)
+        val summary = menu.summaryLines(path, bin, selection.heads, launchers.summaryLines(launcherChoice)) +
+            selection.choices.values.map { it.summary } + localModel.summary(local) + mcpShare.summary(share) +
+            codexHooks.summary(hooksChoice) + modes.summary(extras.modes) + autoUpdate.summary(extras.autoUpdate)
         frame.note("Summary", summary)
         if (!frame.confirm("Install now?", true)) return WizardAnswer.Cancelled("not installing")
-        effects.choose(choices)
-        return WizardAnswer.Plan(path, launchers, launcherChoice, picker, heads, extras)
+        effects.choose(selection.choices)
+        return WizardAnswer.Plan(path, launchers, launcherChoice, selection.picker, selection.heads, extras)
     }
 
     private suspend fun install(plan: WizardAnswer.Plan): Boolean {
@@ -104,6 +111,7 @@ internal class SetupCommand(
         val topology = TopologyLoader.loadOrMaterialize(plan.path)
         mcpShare.save(plan.path, plan.extras.share)
         mcpShare.hub(plan.path, plan.extras.share)
+        codexHooks.apply(plan.extras.codexHooks)
         modes.save(plan.path, plan.extras.modes)
         autoUpdate.save(plan.path, plan.extras.autoUpdate)
         // A running daemon read splice.toml before the modes were turned on; restart it so the doctor below and the

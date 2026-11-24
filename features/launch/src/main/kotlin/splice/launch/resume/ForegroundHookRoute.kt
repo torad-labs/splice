@@ -5,6 +5,7 @@ import io.ktor.http.ContentType
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.JsonObject
+import splice.core.client.DOOR_HOOK_KEY
 import splice.core.client.FOREGROUND_OWNER_HEADER
 import splice.core.client.FOREGROUND_OWNER_LENGTH
 import splice.core.client.ForegroundToolActivity
@@ -36,12 +37,14 @@ public class ForegroundHookRoute(
     private data class ActivityCall(val session: String, val tool: String?, val phase: ForegroundToolPhase)
 
     internal fun handle(key: String, body: JsonObject?, owner: String?) {
-        if (heads.byKey(key) == null || owner == null) return
+        if (!knownTarget(key) || owner == null) return
         val event = body?.let(::parse) ?: return
         if (owner.length == FOREGROUND_OWNER_LENGTH) {
             activity.record(ForegroundToolCall(event.session, event.tool, event.phase, owner))
         }
     }
+
+    private fun knownTarget(key: String): Boolean = key == DOOR_HOOK_KEY || heads.byKey(key) != null
 
     private fun parse(body: JsonObject): ActivityCall? {
         if (body.keys != FOREGROUND_FIELDS) return null
@@ -52,6 +55,7 @@ public class ForegroundHookRoute(
     }
 
     private fun phase(body: JsonObject): ForegroundToolPhase? = when (JsonScalars.strIfString(body["phase"])) {
+        "session_start" -> ForegroundToolPhase.SESSION_START
         "start" -> ForegroundToolPhase.START
         "end" -> ForegroundToolPhase.END
         "session_end" -> ForegroundToolPhase.SESSION_END
@@ -62,14 +66,13 @@ public class ForegroundHookRoute(
         val tool = JsonScalars.strIfString(body["tool_use_id"])
             .takeIf { it.isNotEmpty() && it.length <= MAX_TOOL_ID_CHARS }
         return when (phase) {
-            ForegroundToolPhase.SESSION_END ->
+            ForegroundToolPhase.SESSION_START, ForegroundToolPhase.SESSION_END ->
                 if (body["tool_use_id"] == kotlinx.serialization.json.JsonNull) {
                     ActivityCall(session, null, phase)
                 } else {
                     null
                 }
             ForegroundToolPhase.START, ForegroundToolPhase.END -> tool?.let { ActivityCall(session, it, phase) }
-            ForegroundToolPhase.SESSION_START -> null
         }
     }
 }

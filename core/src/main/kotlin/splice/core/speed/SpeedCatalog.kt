@@ -15,6 +15,10 @@ public class SpeedCatalog(private val roster: HeadDiscoveredModels) {
     public fun tiersOf(head: String, model: String): List<ServiceTier> =
         ListedModels.matching(roster.metadataForHead(head), model)?.serviceTiers.orEmpty()
 
+    /** True when [model] appears in [head]'s discovered catalog, regardless of whether it offers speed tiers. */
+    public fun lists(head: String, model: String): Boolean =
+        ListedModels.matching(roster.metadataForHead(head), model) != null
+
     /** The tier [model] offers on head [head] for [speed], or null: standard is no tier at all. */
     public fun tierFor(head: String, model: String, speed: Speed): ServiceTier? =
         if (speed == Speed.STANDARD) null else tiersOf(head, model).firstOrNull { it.speed == speed }

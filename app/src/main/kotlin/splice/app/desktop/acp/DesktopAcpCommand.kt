@@ -6,6 +6,8 @@
 // daemon.
 package splice.app.desktop.acp
 
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.cancel
 import splice.app.cli.peer.PEER_NAME_ENV
 import splice.core.config.KeyStorePath
 import splice.core.terminal.TerminalOutput
@@ -14,6 +16,7 @@ import splice.core.util.LogSink
 import splice.provider.antigravity.DesktopAcp
 import splice.provider.antigravity.peer.DesktopPeerWiring
 import splice.topology.TopologyStatePaths
+import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Path
 
@@ -23,6 +26,22 @@ internal class DesktopAcpCommand(private val env: EnvReader, private val err: Te
         val log = LogSink { err.line(it.trimEnd()) }
         val cwd = Path.of("").toAbsolutePath()
         val io = ProcessDispatchers().io()
+        val hookScope = LifecycleScope(io)
+        return try {
+            val hooks = DesktopAcpHooks(env, hookScope, log).build()
+            val session = DesktopAcp(args, cwd, env, io, log)
+            session.run(System.`in`, System.out, hooks, peerWiring(args, cwd, io, log))
+        } finally {
+            hookScope.cancel()
+        }
+    }
+
+    private fun peerWiring(
+        args: List<String>,
+        cwd: Path,
+        io: CoroutineDispatcher,
+        log: LogSink,
+    ): DesktopPeerWiring {
         val childEnv = DesktopPeerIdentity(env, log).childEnv(args, cwd)
         val peerName = childEnv[PEER_NAME_ENV] ?: env(PEER_NAME_ENV)?.takeIf(String::isNotBlank)
         val receiptStore = DesktopPeerReceiptStore(
@@ -31,11 +50,9 @@ internal class DesktopAcpCommand(private val env: EnvReader, private val err: Te
             peerName = peerName,
         )
         val socketConfig = DesktopPeerSocketConfig(receiptStore = receiptStore)
-        val peer = DesktopPeerWiring(
+        return DesktopPeerWiring(
             inbox = DesktopPeerSocketFactory(env, io, log, config = socketConfig),
             childEnv = childEnv,
         )
-        val session = DesktopAcp(args, cwd, env, io, log)
-        return session.run(System.`in`, System.out, peer)
     }
 }

@@ -254,7 +254,7 @@ internal class ControlPlane(
                 launchService = launch.service(home, sharing, controlPort, mcp.hubLive)
                     .also {
                         it.remotes = remoteCommands
-                        it.speeds = speeds.of(heads)
+                        it.speeds = speeds.of(heads, desktop?.servedProviders)
                         it.door = desktop?.claude
                         gatherers.attach(it, heads)
                     },

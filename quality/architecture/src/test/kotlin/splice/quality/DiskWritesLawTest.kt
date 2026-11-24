@@ -329,6 +329,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/mcp/CodexMcpTomlWriter.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/mcp/NativeCodexMcpFiles.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/mcp/NativeCodexSocketProxy.kt" to mapOf("writeAtomic0600(" to 1),
+    // Codex peer hooks installed or migrated by `splice setup` / `splice setup --update`, in the ~/.codex/hooks.json README row.
+    "app/src/main/kotlin/splice/app/capability/CodexPeerHooks.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeAccountFolders.kt" to mapOf("writeAtomic0600(" to 4),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeCredentialProfiles.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeRemovedOwnLogins.kt" to mapOf("writeAtomic0600(" to 1),
@@ -538,6 +540,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "features/share/src/main/kotlin/splice/share/ServerLogins.kt" to mapOf("writeAtomic0600(" to 1),
     // Server mode's usage ledger (Nov 16, 2026), in the README's server/ledger.jsonl row.
     "features/server/src/main/kotlin/splice/server/ledger/UsageLedger.kt" to mapOf("JsonlSink.appendLine(" to 1),
+    // Confirmed external cost intervals, in the README's server/cost-meters.jsonl row.
+    "features/server/src/main/kotlin/splice/server/ledger/MeterIntervals.kt" to mapOf("JsonlSink.appendLine(" to 1),
     // Server mode's admin audit log (Nov 22, 2026), in the README's server/audit.jsonl row.
     "features/server/src/main/kotlin/splice/server/audit/ServerAudit.kt" to mapOf("JsonlSink.appendLine(" to 1),
     // Server mode's hourly usage export to a folder (Nov 16, 2026), in the README's `[server.export]` folder row.
@@ -618,6 +622,19 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "integrations/claude-code/src/main/kotlin/splice/client/login/LoginOutcomeFile.kt" to mapOf(
         "writeAtomic0600(" to 1,
     ),
+    // Terminal launch profiles (issue #791): a profile's own Claude folder, rebuilt before each `--profile` launch: its
+    // mark, settings files, CLAUDE.md, .claude.json and plugin records, and links into ~/.claude, never written there.
+    "integrations/claude-code/src/main/kotlin/splice/client/profile/LaunchProfileBuild.kt" to
+        mapOf("writeAtomic0600(" to 2),
+    "integrations/claude-code/src/main/kotlin/splice/client/profile/ProfileFolder.kt" to mapOf("writeAtomic0600(" to 1),
+    "integrations/claude-code/src/main/kotlin/splice/client/profile/ProfileGlobalConfig.kt" to
+        mapOf("writeAtomic0600(" to 1),
+    "integrations/claude-code/src/main/kotlin/splice/client/profile/ProfileLinks.kt" to
+        mapOf("Files.createSymbolicLink(" to 2),
+    "integrations/claude-code/src/main/kotlin/splice/client/profile/ProfilePluginCache.kt" to
+        mapOf("Files.createSymbolicLink(" to 2, "Files.move(" to 2, "writeAtomic0600(" to 1),
+    "integrations/claude-code/src/main/kotlin/splice/client/profile/ProfilePlugins.kt" to
+        mapOf("writeAtomic0600(" to 1),
     "integrations/claude-code/src/main/kotlin/splice/client/resume/ResumeAcrossHeads.kt" to mapOf(
         "Files.copy(" to 3,
         "Files.move(" to 3,

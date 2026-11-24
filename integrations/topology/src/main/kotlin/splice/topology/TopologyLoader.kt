@@ -350,7 +350,7 @@ historyRetentionDays = "$HISTORY_DEFAULT_DAYS"
         if (split.tables.isEmpty()) return topology
         val messages = topology.headsSpeaking(Dialect.ANTHROPIC_PASSTHROUGH)
         val read = CapabilityDeclarations(topology.heads.keys, messages = messages).read(split.tables)
-        return topology.copy(capabilities = read.capabilities)
+        return topology.copy(extensions = topology.extensions.copy(capabilities = read.capabilities))
     }
 
     /** The decode alone, without the structural guards: ktoml's type failure becomes the safe one-key diagnosis. A

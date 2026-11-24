@@ -29,6 +29,8 @@ import splice.core.client.SPLICE_CLIENT_HEADER
 import splice.core.client.SPLICE_WRAPPER_HEADER
 import splice.core.compaction.CompactionConfig
 import splice.core.config.Knob
+import splice.core.harness.HarnessCatalog
+import splice.core.harness.HarnessConfig
 import splice.core.mode.ModeSetting
 import splice.core.model.CatalogWindows
 import splice.core.model.ClientModelPolicy
@@ -64,13 +66,18 @@ public data class Topology(
     val server: ServerConfig = ServerConfig(),
     /** custom-provider (issue #680): the door's own settings, today its named commands. */
     val door: DoorConfig = DoorConfig(),
-    /** The harness (docs/specs/harness.md): capabilities splice.toml declares, read apart from the schema decode
-     *  (CapabilityToml) and attached once found well-formed. Not part of the canonical tree the console edits. */
-    @Transient val capabilities: List<Capability> = emptyList(),
-    /** The modes (modes/README.md): each `[modes.<name>]` table splice.toml writes, read apart from the schema decode
-     *  (ModeSettingsReader) and attached once found well-formed, by mode name. */
-    @Transient val modes: Map<String, ModeSetting> = emptyMap(),
+    /** Terminal launch profiles (issue #791): the Claude folders `splice launch claude --profile <name>` runs in. */
+    val launch: LaunchConfig = LaunchConfig(),
+    /** Local additions to the shipped harness catalog. The topology editor preserves these as written. */
+    val harnesses: Map<String, HarnessConfig> = emptyMap(),
+    @Transient val extensions: TopologyExtensions = TopologyExtensions(),
 ) {
+    public val harnessCatalog: HarnessCatalog get() = HarnessCatalog(harnesses)
+
+    public val capabilities: List<Capability> get() = extensions.capabilities
+
+    public val modes: Map<String, ModeSetting> get() = extensions.modes
+
     /** Resolve a user-supplied head name — the topology key or the installed wrapper command
      *  (starter: head `openrouter`, command `claude-openrouter`) — to matching topology keys. A topology-KEY
      *  match is exact and wins as the sole result; otherwise ALL heads whose wrapper command equals

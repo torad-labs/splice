@@ -11,6 +11,8 @@ import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
+import splice.provider.antigravity.hooks.AcpLoginPrompt
+import splice.provider.antigravity.hooks.AcpSessionHooks
 import splice.provider.antigravity.peer.DesktopPeerInbox
 import splice.provider.antigravity.peer.DesktopPeerMessage
 import splice.provider.antigravity.peer.DesktopPeerOutcome
@@ -42,6 +44,7 @@ internal class DesktopSession(
     private val mcpState: McpState,
     private val bridge: McpBridge,
     private val clock: WallClock,
+    private val hooks: AcpSessionHooks = AcpSessionHooks(),
 ) : SessionControlHost {
     private val lists = DesktopLists()
     private val controls = DesktopControl(this, coordinator, mcpState, lists)
@@ -87,6 +90,7 @@ internal class DesktopSession(
     fun closeRecord() {
         closed.set(true)
         val current = parts ?: return
+        hooks.ended(current.frames.sessionId)
         current.record.remove()
         current.peerInbox?.close()
     }
@@ -152,7 +156,14 @@ internal class DesktopSession(
         unusable = res.unusable
         val resolvedId = claude.sessionId ?: claude.resume ?: res.session?.id ?: UUID.randomUUID().toString()
         val built = partsFactory.build(resolvedId)
-        val agyTurn = AgyTurn(built.frames, built.out, built.transcript, mcpState)
+        val agyTurn = AgyTurn(
+            built.frames,
+            built.out,
+            built.transcript,
+            mcpState,
+            hooks.foreground,
+            hooks.foregroundOwner,
+        )
         agyTurn.draw.model = built.look.model
         agyTurn.draw.used = used
         parts = built
@@ -166,9 +177,10 @@ internal class DesktopSession(
         if (closed.get()) {
             built.record.remove()
             built.peerInbox?.close()
-        } else {
-            built.record.write(busy = false)
+            return built
         }
+        built.record.write(busy = false)
+        hooks.opened(resolvedId, built.look.cwd, fresh = claude.resume == null)
         if (claude.resume != null) pendingHandoff = LiveHandoff().of(built.transcript.file, res.resumed)
         return built
     }
@@ -224,7 +236,18 @@ internal class DesktopSession(
         val p = ensureOpen(emptyList())
         val uuid = JsonScalars.str(line, "uuid") ?: UUID.randomUUID().toString()
         val content = (line["message"] as? JsonObject)?.get("content") ?: JsonPrimitive("")
-        submitUser(p, line, uuid, content)
+        if (!AcpLoginPrompt.matches(content)) {
+            submitUser(p, line, uuid, content)
+            return
+        }
+        // Desktop's `/login` is answered locally with Console Accounts, never sent to agy.
+        p.out(p.frames.replay(line, uuid))
+        p.transcript.user(uuid, content)
+        if (prompts.isNotEmpty()) return
+        val reply = hooks.login.open()
+        begin(p)
+        turn?.say(reply)
+        finish(null)
     }
 
     private fun submitUser(

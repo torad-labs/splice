@@ -81,7 +81,6 @@ import splice.server.ledger.ROUTE_MESSAGES
 import splice.server.signin.SigninParts
 import splice.server.signin.SigninRoute
 import splice.server.telemetry.OTLP_ROUTE
-import splice.server.telemetry.ResourceStamp
 import splice.server.telemetry.TelemetryRelay
 import splice.server.web.ServerPublicRoutes
 import splice.share.HEAD_API_ROOT
@@ -216,7 +215,7 @@ internal class ServerListener(
      *  with no relay has no such path (F8). */
     private suspend fun otlp(call: ApplicationCall, key: ServerKey, rest: List<String>) {
         val relay = telemetry ?: return noSuchPath(call)
-        relay.answer(call, rest, ResourceStamp(key.person, parts.people.team(key.person, server.teams)))
+        relay.answer(call, rest, key.person, parts.people.team(key.person, server.teams))
     }
 
     /** [path] names a served command first: its turns, or its launch. */

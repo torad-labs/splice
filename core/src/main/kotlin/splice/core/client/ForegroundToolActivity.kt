@@ -13,6 +13,9 @@ public const val FOREGROUND_OWNER_LENGTH: Int = 36
 /** Immutable client environment preserves this value even when another launch rewrites shared hook scripts. */
 public const val FOREGROUND_OWNER_ENV: String = "SPLICE_FOREGROUND_OWNER"
 
+/** Hook route key used by sessions launched through the Splice door (`/hooks/{speed,resume,foreground}/door`). */
+public const val DOOR_HOOK_KEY: String = "door"
+
 /** An opaque callback plus its transport owner. Neither identity is inferred from tool contents. */
 public data class ForegroundToolCall(
     public val sessionId: String,

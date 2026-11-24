@@ -40,6 +40,8 @@ import splice.app.provider.ServingProviders
 import splice.client.desktop.DoorSelectors
 import splice.client.models.AnthropicTiers
 import splice.core.config.StatePaths
+import splice.core.config.TurnKey
+import splice.core.speed.SessionSpeeds
 import splice.core.topology.ProviderFamilyRule
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
@@ -56,6 +58,8 @@ internal class DaemonDesktop(
     private val log: LogSink,
     /** Where Claude Desktop keeps its 3P configuration (desktop-full): the person's own, but a test's fixture home. */
     private val library: DesktopAppLibrary = DesktopAppLibrary(),
+    private val turnKey: TurnKey? = null,
+    private val sessionSpeeds: SessionSpeeds? = null,
 ) : DesktopPolicyTarget, HarnessTarget {
     private val key = DesktopKey(statePaths.desktopKeyFile, log)
     private val records = DesktopRecords(statePaths.desktopFile, log)
@@ -66,6 +70,7 @@ internal class DaemonDesktop(
         DesktopHarnessFile(statePaths.desktopHarnessesFile),
         topology.providers.mapValues { (key, provider) -> ProviderFamilyRule().of(key, provider) },
         topology.daemon.antigravity,
+        topology.harnessCatalog,
         log,
     )
 
@@ -73,7 +78,7 @@ internal class DaemonDesktop(
     private val app = DesktopAppMode(records, library, DesktopPrograms(statePaths.stateDir))
 
     /** The terminal's `claude` on this door. */
-    val claude = TerminalDoor(topology, statePaths, log)
+    val claude = TerminalDoor(topology, statePaths, log, turnKey)
 
     /** The door as another machine reaches it through the share listener (door-network). */
     val network = NetworkDoor()
@@ -99,7 +104,8 @@ internal class DaemonDesktop(
 
     /** The gateway's served providers once [open] has run; null before. */
     @Volatile
-    private var servedProviders: ServingProviders? = null
+    var servedProviders: ServingProviders? = null
+        private set
 
     /** The providers only Desktop runs (Antigravity) once [open] has run; null before. */
     @Volatile
@@ -142,10 +148,10 @@ internal class DaemonDesktop(
         switch.tidy()
         this.door = door
         publish(door, lineups.lineup())
-        val (lane, terminal) = claude.open(lineups, door)
+        val (lane, terminal) = claude.open(lineups, door, controlPort = controlPort)
         headLane.open(lineups)
         val callers = listOf(DesktopCaller(key, records, log), terminal)
-        val doorway = DesktopDoor(callers, lineups)
+        val doorway = DesktopDoor(callers, lineups, sessionSpeeds = sessionSpeeds)
         team.open(lineups, topology)
         network.open(doorway, NetworkCaller(lane, machine), lane, PickerRows(claude::rows), machine)
         opened = DesktopService(doorway, switch, lane, lineups, records)

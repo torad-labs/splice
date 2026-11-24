@@ -21,6 +21,7 @@ import splice.core.topology.TopologyFinding
 import splice.core.topology.TopologyFindings
 import splice.core.topology.TopologyRuleViolation
 import splice.core.topology.gateway.ServingBoundMove
+import splice.core.topology.toml.TomlLines
 import splice.core.util.SafeFailureText
 import splice.core.util.TopologyTypeFailure
 import java.nio.file.Path
@@ -180,29 +181,9 @@ public object ConfigFindings {
         }
     }
 
-    /** The line a finding's key path sits on: its own `key =` line inside its table, else its table's header, else
-     *  nothing. A path like heads.x.port is table heads.x, key port; a dotted key under a table is matched by its
-     *  leaf. */
-    private fun lineOf(text: String, path: String): Int? {
-        val segments = path.split('.')
-        val table = segments.dropLast(1).joinToString(".")
-        val leaf = segments.last()
-        var current = ""
-        var header: Int? = null
-        text.lineSequence().forEachIndexed { index, raw ->
-            val line = raw.trim()
-            if (line.startsWith("[") && !line.startsWith("[[")) {
-                current = line.removePrefix("[").substringBefore("]").trim().replace("\"", "")
-                if (current == table && header == null) header = index + 1
-            } else if (current == table && keyOf(line) == leaf) {
-                return index + 1
-            }
-        }
-        return header
-    }
-
-    /** The key a `key = value` line assigns, or null when the line assigns nothing. */
-    private fun keyOf(line: String): String? = line.takeIf { it.contains('=') }?.substringBefore("=")?.trim()
+    /** The line a finding's key path sits on: its own `key =` line, else its table's header, else nothing. A path
+     *  like heads.x.port is table heads.x, key port. A line inside a multi-line string is never either (TomlLines). */
+    private fun lineOf(text: String, path: String): Int? = TomlLines(text).of(path.split('.'))
 
     private val rows = ModelRowLine()
     private const val FINDING_FILE = "splice.toml"

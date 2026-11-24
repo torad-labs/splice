@@ -237,6 +237,7 @@ internal class ServerListener(
         val notice = if (isTurn) minimum.notice(call) else null
         if (!isTurn || notice != null) {
             if (!head.running()) return catalog.notRunning(call, head)
+            if (notice != null && admission.refusesNotice(call, key, HeadCommand(head))) return
             val asked = headTurn(call, key, head, path, notice.orEmpty())
             watched.turn(call, slot = null) { parts.carriers.relay.turn(call, asked) }
             return

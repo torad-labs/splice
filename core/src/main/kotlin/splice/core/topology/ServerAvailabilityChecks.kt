@@ -14,9 +14,9 @@ internal class ServerAvailabilityChecks(private val server: ServerConfig) {
     private fun state(): List<TopologyFinding> {
         val state = server.state ?: return emptyList()
         return source(state) + listOfNotNull(
-            TopologyFinding("$STATE.every_seconds", "must be a number of seconds, 1 or more")
+            TopologyFinding("$SERVER_STATE_PATH.every_seconds", "must be a number of seconds, 1 or more")
                 .takeIf { state.everySeconds < 1 },
-            TopologyFinding("$STATE.retry_after_starting", "must be 0 or more")
+            TopologyFinding("$SERVER_STATE_PATH.retry_after_starting", "must be 0 or more")
                 .takeIf { state.retryAfterStarting < 0 },
         )
     }
@@ -25,14 +25,17 @@ internal class ServerAvailabilityChecks(private val server: ServerConfig) {
     private fun source(state: ServerState): List<TopologyFinding> {
         val sources = listOfNotNull(state.file, state.url, state.command).size
         return listOfNotNull(
-            TopologyFinding(STATE, "set one state source: file, url or command").takeIf { sources == 0 },
-            TopologyFinding(STATE, "set exactly one state source: file, url or command").takeIf { sources > 1 },
-            TopologyFinding("$STATE.file", "must be the path of a state file")
+            TopologyFinding(SERVER_STATE_PATH, "set one state source: file, url or command").takeIf { sources == 0 },
+            TopologyFinding(SERVER_STATE_PATH, "set exactly one state source: file, url or command")
+                .takeIf { sources > 1 },
+            TopologyFinding("$SERVER_STATE_PATH.file", "must be the path of a state file")
                 .takeIf { state.file?.isBlank() == true },
-            TopologyFinding("$STATE.url", "must be an http(s) URL, as in \"http://box.lan:8080/state\"")
+            TopologyFinding("$SERVER_STATE_PATH.url", "must be an http(s) URL, as in \"http://box.lan:8080/state\"")
                 .takeIf { state.url?.let { url -> WebUrls.read(url.trim()) == null } == true },
-            TopologyFinding("$STATE.command", "must be a nonempty command, as in [\"/usr/local/bin/box-state\"]")
-                .takeIf { state.command?.let { argv -> argv.isEmpty() || argv.first().isBlank() } == true },
+            TopologyFinding(
+                "$SERVER_STATE_PATH.command",
+                "must be a nonempty command, as in [\"/usr/local/bin/box-state\"]",
+            ).takeIf { state.command?.let { argv -> argv.isEmpty() || argv.first().isBlank() } == true },
         )
     }
 
@@ -50,7 +53,7 @@ internal class ServerAvailabilityChecks(private val server: ServerConfig) {
     }
 }
 
-private const val STATE = "server.state"
+private const val SERVER_STATE_PATH = "server.state"
 private const val PROBE = "server.probe"
 private const val COMPLETION = "completion"
 private val KINDS = setOf("health", COMPLETION)

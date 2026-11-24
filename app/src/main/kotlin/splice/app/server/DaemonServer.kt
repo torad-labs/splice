@@ -19,6 +19,7 @@ import splice.core.perf.PerfKeys
 import splice.core.pool.UpstreamPool
 import splice.core.server.ServedTokens
 import splice.core.server.ServedTurnBoard
+import splice.core.server.UpstreamStateReading
 import splice.core.topology.Dialect
 import splice.core.topology.HourlyPrices
 import splice.core.topology.Topology
@@ -66,11 +67,15 @@ internal class DaemonServer(
     @Volatile
     private var heads: Map<String, ManagedHead> = emptyMap()
 
+    private val availability = topology.server.state?.let { UpstreamStatePoll(it, configDir) }
+
     override fun mode(): ServerMode? = running
 
     override fun absent(): String = down
 
     override fun all(): List<UpstreamPool> = pools.all()
+
+    override fun availability(): UpstreamStateReading? = availability?.reading()
 
     /** The pool of the provider [head] runs on; a provider with no head (the team door's) is asked by its own key. */
     override fun of(head: String): UpstreamPool? =
@@ -117,6 +122,7 @@ internal class DaemonServer(
             ServerMode(topology.server, folder, io, log, upstreams = this)
                 .also { it.open(address, offered, reach, configDir, secret()) }
         }.onSuccess { mode ->
+            availability?.open()
             running = mode
             metricsExport = ServedMetricsExport(config.getConfig().perfExportConfig(), mode.metrics, log)
         }.onFailure { failure ->
@@ -138,6 +144,7 @@ internal class DaemonServer(
     suspend fun close() {
         running?.close()
         running = null
+        availability?.close()
         metricsExport?.close()
         metricsExport = null
     }

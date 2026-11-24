@@ -14,6 +14,7 @@ package splice.server
 
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
+import splice.core.server.UpstreamRefusal
 import splice.core.wire.HttpStatus
 import splice.server.ledger.LedgerTurn
 import splice.share.RefusalVoice
@@ -65,7 +66,7 @@ internal class TurnAdmission(
         }
         val refused = refusal(turn)
         if (refused != null) {
-            voice.refuse(call, refused.status, refused.why)
+            refuse(call, refused)
             return null
         }
         val person = turn.key.person
@@ -79,11 +80,28 @@ internal class TurnAdmission(
         }
     }
 
+    /** An upgrade notice normally bypasses admission; unavailable upstreams still refuse the turn. */
+    suspend fun refusesNotice(call: ApplicationCall, key: ServerKey, command: ServedCommand): Boolean {
+        val refused = parts.upstreams.externalRefusal() ?: return false
+        val forbidden = parts.limits.access.refusal(key.person, command)
+        refuse(call, if (forbidden == null) external(refused) else Refusal(HttpStatus.FORBIDDEN, forbidden))
+        return true
+    }
+
+    private suspend fun refuse(call: ApplicationCall, refused: Refusal) {
+        refused.retryAfter?.let { call.response.headers.append(HttpHeaders.RetryAfter, it.toString()) }
+        voice.refuse(call, refused.status, refused.why)
+    }
+
     /** Why [turn] is refused before any cap is asked, in the order they are asked, or null when nothing refuses it. */
     private suspend fun refusal(turn: LedgerTurn): Refusal? =
         parts.books.turns.unwritable(turn)?.let { Refusal(HttpStatus.INTERNAL_SERVER_ERROR, it) }
+            ?: parts.upstreams.externalRefusal()?.let(::external)
             ?: parts.upstreams.noneUp(turn.command.key)?.let { Refusal(HttpStatus.SERVICE_UNAVAILABLE, it) }
             ?: spent(turn.key.person)?.let { Refusal(HttpStatus.BAD_REQUEST, it) }
+
+    private fun external(refusal: UpstreamRefusal): Refusal =
+        Refusal(refusal.status, refusal.message, refusal.retryAfterSeconds)
 
     /** Why [person]'s budget, or their team's, refuses their next turn; null while none blocks. Their turns that ended
      *  and are still being written are counted first, so a turn never slips past a budget its last turn spent. */
@@ -109,4 +127,4 @@ internal fun interface AdmittedRelay {
 }
 
 /** A turn refused with [status], and why. */
-private data class Refusal(val status: Int, val why: String)
+private data class Refusal(val status: Int, val why: String, val retryAfter: Long? = null)

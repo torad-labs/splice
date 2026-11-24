@@ -145,10 +145,10 @@ step "topology written" write_plan_topology
 
 # ── 3. install and cold start, as a user would ─────────────────────────────────────────────────
 install_plan() {
-  { [ -f "$ARTIFACTS/splice.jar" ] && [ -f "$ARTIFACTS/splice-launch" ]; } || { echo "no artifacts in $ARTIFACTS"; return 1; }
+  { [ -f "$CANDIDATE_JAR" ] && [ -f "$ARTIFACTS/splice-launch" ]; } || { echo "no artifacts in $ARTIFACTS"; return 1; }
   local installer="$REPO/install.sh"
   [ -f "$ARTIFACTS/install.sh" ] && installer="$ARTIFACTS/install.sh"
-  SPLICE_JAR="$ARTIFACTS/splice.jar" SPLICE_SHIM="$ARTIFACTS/splice-launch" bash "$installer" </dev/null || return 1
+  SPLICE_JAR="$CANDIDATE_JAR" SPLICE_SHIM="$ARTIFACTS/splice-launch" bash "$installer" </dev/null || return 1
   [ -x "$HOME/.local/bin/claude-planlimit" ] || { echo "claude-planlimit wrapper not linked"; return 1; }
   splice version
 }

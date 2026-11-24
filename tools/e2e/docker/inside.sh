@@ -324,7 +324,7 @@ upgrade_noop_step() {
   ver="$(splice --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+[^ ]*' | head -1)"
   [ -n "$ver" ] || ver="$(splice status </dev/null 2>&1 | strip_ansi | grep -oE 'splice [0-9][^ ]*' | head -1 | cut -d' ' -f2)"
   rm -rf "$rel"; mkdir -p "$rel"
-  cp "$ARTIFACTS/splice.jar" "$ARTIFACTS/splice-launch" "$rel/"
+  cp "$CANDIDATE_JAR" "$rel/splice.jar" && cp "$ARTIFACTS/splice-launch" "$rel/" || return 1
   (cd "$rel" && sha256sum splice.jar splice-launch > sha256sums.txt)
   before="$(sha256sum "$HOME/.local/share/splice/splice.jar" 2>/dev/null | cut -d' ' -f1)"
   out="$(SPLICE_RELEASE_BASE_URL="file://$rel" splice upgrade --to "v$ver" --now </dev/null 2>&1 | strip_ansi)"; local rc=$?

@@ -89,10 +89,10 @@ step "topology written: the runtime row as setup writes it" write_runtime_topolo
 
 # ── 3. install and cold start, as a user would ─────────────────────────────────────────────────
 install_runtime() {
-  { [ -f "$ARTIFACTS/splice.jar" ] && [ -f "$ARTIFACTS/splice-launch" ]; } || { echo "no artifacts in $ARTIFACTS"; return 1; }
+  { [ -f "$CANDIDATE_JAR" ] && [ -f "$ARTIFACTS/splice-launch" ]; } || { echo "no artifacts in $ARTIFACTS"; return 1; }
   local installer="$REPO/install.sh"
   [ -f "$ARTIFACTS/install.sh" ] && installer="$ARTIFACTS/install.sh"
-  SPLICE_JAR="$ARTIFACTS/splice.jar" SPLICE_SHIM="$ARTIFACTS/splice-launch" bash "$installer" </dev/null || return 1
+  SPLICE_JAR="$CANDIDATE_JAR" SPLICE_SHIM="$ARTIFACTS/splice-launch" bash "$installer" </dev/null || return 1
   [ -x "$HOME/.local/bin/claude-bonsai" ] || { echo "claude-bonsai wrapper not linked"; return 1; }
   # RuntimeHeadAdd plants a placeholder key the same way: the endpoint takes none.
   printf '%s' "no-key" | splice key set BONSAI_API_KEY --stdin || return 1

@@ -50,6 +50,25 @@ class McpHarnessSyncTest {
     }
 
     @Test
+    fun `a Gemini CLI home is not agy, and agy on PATH or its own folder is`() {
+        val home = tmp.resolve("gemini-cli-home")
+        val gemini = Files.createDirectories(home.resolve(".gemini").resolve("config")).parent
+        Files.writeString(gemini.resolve("settings.json"), "{}")
+        Files.writeString(gemini.resolve("config").resolve("mcp_config.json"), """{"mcpServers":{}}""")
+        val bare = McpHarnessDiscovery(home, EnvReader { null }, osName = "Linux")
+        assertFalse(McpHarness.AGY in bare.detectedHarnesses(), "~/.gemini alone is Gemini CLI's, not agy")
+
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val agy = Files.writeString(bin.resolve("agy"), "#!/bin/sh\n")
+        assertTrue(agy.toFile().setExecutable(true))
+        val onPath = EnvReader { if (it == "PATH") bin.toString() else null }
+        assertTrue(McpHarness.AGY in McpHarnessDiscovery(home, onPath, osName = "Linux").detectedHarnesses())
+
+        Files.createDirectories(gemini.resolve("antigravity"))
+        assertTrue(McpHarness.AGY in bare.detectedHarnesses())
+    }
+
+    @Test
     fun `codex toml codec preserves multiline restrictions, array tables, and non-transport subtables`() {
         val codec = CodexMcpTomlCodec()
         val original = """
@@ -312,6 +331,7 @@ class McpHarnessSyncTest {
 
     private fun seedDiscoveryFixtures(home: Path): Path {
         Files.createDirectories(home.resolve(".gemini").resolve("config"))
+        Files.createDirectories(home.resolve(".gemini").resolve("antigravity-cli"))
         Files.createDirectories(home.resolve(".codex"))
         Files.writeString(
             home.resolve(".claude.json"),
@@ -347,6 +367,7 @@ class McpHarnessSyncTest {
 
     private fun seedSyncFixtures(home: Path): Path {
         Files.createDirectories(home.resolve(".gemini").resolve("config"))
+        Files.createDirectories(home.resolve(".gemini").resolve("antigravity-cli"))
         Files.createDirectories(home.resolve(".codex"))
         Files.writeString(
             home.resolve(".claude.json"),

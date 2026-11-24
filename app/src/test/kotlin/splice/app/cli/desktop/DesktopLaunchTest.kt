@@ -4,12 +4,14 @@
 // exit code, with no daemon running.
 package splice.app.cli.desktop
 
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.desktop.record.DesktopKey
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
+import java.io.ByteArrayInputStream
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -26,14 +28,41 @@ class DesktopLaunchTest(@param:TempDir private val tmp: Path) {
             "SPLICE_CONTROL_PORT" to PORT.toString(),
             "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST" to "1",
         ) + vars
-        return DesktopLaunch(EnvReader { env[it] }, TerminalOutput { said += it })
-            .run(listOf(STATE_DIR_FLAG, tmp.resolve("state").toString()) + command)
+        return runBlocking {
+            DesktopLaunch(EnvReader { env[it] }, TerminalOutput { said += it }, acp = acp, input = nothing())
+                .run(listOf(STATE_DIR_FLAG, tmp.resolve("state").toString()) + command)
+        }
     }
 
     /** A command that writes the variable [name] as it ran with it to [out]. */
     private fun printing(name: String) = arrayOf("sh", "-c", "printf %s \"\${$name-}\" > \"\$1\"", "sh", out.toString())
 
     private fun key() = DesktopKey(tmp.resolve("state/desktop-key")) {}.get()
+
+    /** A stand-in for `splice desktop acp`: writes the arguments it was started with, and the bearer it was given. */
+    private val acp = listOf("sh", "-c", "printf '%s\\n' \"\${ANTHROPIC_AUTH_TOKEN-UNSET}\" \"\$@\" > '$out'", "acp")
+
+    private fun nothing() = ByteArrayInputStream(ByteArray(0))
+
+    @Test
+    fun `a session on an Antigravity model runs on splice desktop acp in place of Claude Code, with no key`() {
+        val claude = "/opt/claude-code/2.1.300/claude"
+        val args = listOf("--output-format", "stream-json", "--input-format", "stream-json")
+        val model = "--model=claude-antigravity--neon"
+        assertEquals(0, launch(mapOf(GATEWAY to door), claude, *args.toTypedArray(), model))
+        assertEquals(
+            listOf("UNSET", "--stands-in-for=$claude") + args + model,
+            Files.readAllLines(out),
+        )
+    }
+
+    @Test
+    fun `a stream-json session on any other model still runs Claude Code, keyed on the door`() {
+        val script = "printf %s \"\${ANTHROPIC_AUTH_TOKEN-}\" > \"\$0\""
+        val code = launch(mapOf(GATEWAY to door), "sh", "-c", script, out.toString(), "--input-format", "stream-json")
+        assertEquals(0, code)
+        assertEquals(key(), Files.readString(out))
+    }
 
     @Test
     fun `a Mantle launch on this splice's door gets the desktop key as its bearer`() {
@@ -105,8 +134,10 @@ class DesktopLaunchTest(@param:TempDir private val tmp: Path) {
             "\"\${ANTHROPIC_AUTH_TOKEN-UNSET}\" \"\${XDG_CONFIG_HOME-UNSET}\" \"\${CHROME_DESKTOP-UNSET}\" " +
             "\"\${CLAUDE_SPLICE_DESKTOP-UNSET}\" \"\${CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS-UNSET}\" " +
             "\"\${KEEP_VAR-UNSET}\" > \"\$1\""
-        val exit = DesktopLaunch(EnvReader { vars[it] }, TerminalOutput { said += it }, inherited)
-            .run(listOf(STATE_DIR_FLAG, tmp.resolve("state").toString(), "sh", "-c", script, "sh", out.toString()))
+        val exit = runBlocking {
+            DesktopLaunch(EnvReader { vars[it] }, TerminalOutput { said += it }, inherited)
+                .run(listOf(STATE_DIR_FLAG, tmp.resolve("state").toString(), "sh", "-c", script, "sh", out.toString()))
+        }
         assertEquals(0, exit)
         assertEquals("${key()}|UNSET|UNSET|UNSET|UNSET|kept", Files.readString(out))
     }
@@ -127,8 +158,10 @@ class DesktopLaunchTest(@param:TempDir private val tmp: Path) {
             "SPLICE_CONTROL_PORT" to PORT.toString(),
             GATEWAY to door,
         )
-        val exit = DesktopLaunch(EnvReader { env[it] }, TerminalOutput { said += it }, inherited)
-            .run(listOf(STATE_DIR_FLAG, tmp.resolve("state").toString(), "sh", "-c", script, "sh", out.toString()))
+        val exit = runBlocking {
+            DesktopLaunch(EnvReader { env[it] }, TerminalOutput { said += it }, inherited)
+                .run(listOf(STATE_DIR_FLAG, tmp.resolve("state").toString(), "sh", "-c", script, "sh", out.toString()))
+        }
         assertEquals(0, exit)
         assertEquals("${tmp.resolve("config")}|claude.desktop|1", Files.readString(out))
     }

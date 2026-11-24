@@ -14,6 +14,7 @@ import splice.core.mcp.McpRegistryRecord
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.util.PathProbe
+import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -21,6 +22,11 @@ import java.nio.file.Path
 private const val CLAUDE_DESKTOP_CONFIG_FILE = "claude_desktop_config.json"
 private const val DISCOVERY_CLAUDE_JSON = ".claude.json"
 private const val DISCOVERY_SERVERS_KEY = "mcpServers"
+private const val AGY_GEMINI_DIR = ".gemini"
+private const val AGY_BINARY = "agy"
+
+// The folders agy keeps under ~/.gemini, which Gemini CLI does not.
+private val AGY_FOLDERS = listOf("antigravity", "antigravity-cli")
 
 /** One MCP server discovered on disk from a harness config file. */
 internal data class DiscoveredMcpServer(
@@ -68,7 +74,7 @@ internal class McpHarnessDiscovery(
         }
     }
 
-    fun agyConfigFile(): Path = home.resolve(".gemini").resolve("config").resolve("mcp_config.json")
+    fun agyConfigFile(): Path = home.resolve(AGY_GEMINI_DIR).resolve("config").resolve("mcp_config.json")
 
     fun codexHomeDir(): Path =
         env("CODEX_HOME")?.takeIf { it.isNotBlank() }?.let(PathProbe::spelled) ?: home.resolve(".codex")
@@ -80,12 +86,20 @@ internal class McpHarnessDiscovery(
         if (Files.isRegularFile(claudeCodeFile()) || Files.isDirectory(home.resolve(UserHome.CLAUDE_DIR))) {
             add(McpHarness.CLAUDE)
         }
-        if (Files.isDirectory(home.resolve(".gemini")) || Files.isRegularFile(agyConfigFile())) {
-            add(McpHarness.AGY)
-        }
+        if (agyInstalled()) add(McpHarness.AGY)
         if (Files.isDirectory(codexHomeDir()) || Files.isRegularFile(codexConfigFile())) {
             add(McpHarness.CODEX)
         }
+    }
+
+    /** Whether Antigravity's `agy` is on this machine: on PATH, or its own folder under `~/.gemini`. Gemini CLI keeps
+     *  `~/.gemini` too, and the mcp_config.json there may be one an earlier sync wrote, so neither alone says agy. */
+    private fun agyInstalled(): Boolean {
+        val gemini = home.resolve(AGY_GEMINI_DIR)
+        if (AGY_FOLDERS.any { Files.isDirectory(gemini.resolve(it)) }) return true
+        val onPath = env("PATH").orEmpty().split(File.pathSeparator).filter(String::isNotBlank)
+            .mapNotNull { PathProbe.spelled(it)?.resolve(AGY_BINARY) }
+        return onPath.any { Files.isRegularFile(it) && Files.isExecutable(it) }
     }
 
     /** Discovers all user MCP servers from [sources] in priority order. */

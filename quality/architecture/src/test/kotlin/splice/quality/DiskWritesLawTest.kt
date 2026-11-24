@@ -117,6 +117,11 @@ internal object DiskWrites {
                 "the Codex app-server process stdin: Process.outputStream, not a file",
             ),
             NotAFile(
+                "app/src/main/kotlin/splice/app/desktop/pipe/PipeLeg.kt",
+                ".bufferedWriter(",
+                "a Code tab session's program stdin (Claude Code or the translator): Process.outputStream, not a file",
+            ),
+            NotAFile(
                 "integrations/mcp/src/main/kotlin/splice/control/mcp/McpContainment.kt",
                 "Files.writeString(",
                 "/proc/<pid>/oom_score_adj of a hosted MCP child: a kernel attribute that ends with the process",

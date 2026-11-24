@@ -28,10 +28,11 @@ import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
 
 /** Antigravity once agy has said what it offers ([join]); no provider before. Read with [config]'s limits; what each
- *  try came to goes to [log]. */
+ *  try came to goes to [log]. [enabled] is splice.toml's `[daemon] antigravity`: false never asks agy. */
 internal class AntigravityJoin(
     private val config: ConfigService,
     private val log: LogSink,
+    private val enabled: Boolean = true,
     private val waiter: Waiter = ProcessWaiter(),
 ) : ServingProviders {
     @Volatile
@@ -53,19 +54,16 @@ internal class AntigravityJoin(
      *  that fails is tried again after each of [RETRY_WAITS_MS]; a missing or signed-out agy is not, since only an
      *  install or a sign-in, and a restart, change that. */
     suspend fun join(scope: CoroutineScope, door: ServingProviders): Boolean {
+        if (!enabled) {
+            log("[antigravity] off: splice.toml's [daemon] antigravity is false, so agy is not asked\n")
+            return false
+        }
         if (door().any { it.key == ANTIGRAVITY_KEY }) {
             log("[antigravity] not served: splice.toml has a provider of its own named '$ANTIGRAVITY_KEY'\n")
             return false
         }
         val io = ProcessDispatchers().io()
-        val agy = AgyModels(log, scope, io)
-        var read: AgyRead = AgyRead.Failed("agy was not asked")
-        for ((tried, wait) in RETRY_WAITS_MS.withIndex()) {
-            waiter.wait(wait)
-            read = agy.read()
-            if (read !is AgyRead.Failed) break
-            log("[antigravity] not served (try ${tried + 1} of ${RETRY_WAITS_MS.size}): ${read.reason}\n")
-        }
+        val read = ask(AgyModels(log, scope, io))
         when (read) {
             is AgyRead.Offered -> {
                 val engine = AntigravityDoorEngine(scope, io, log)
@@ -79,6 +77,18 @@ internal class AntigravityJoin(
             is AgyRead.Failed -> Unit
         }
         return read is AgyRead.Offered
+    }
+
+    /** What [agy] offers, asked again after each of [RETRY_WAITS_MS] while a try fails. */
+    private suspend fun ask(agy: AgyModels): AgyRead {
+        var read: AgyRead = AgyRead.Failed("agy was not asked")
+        for ((tried, wait) in RETRY_WAITS_MS.withIndex()) {
+            waiter.wait(wait)
+            read = agy.read()
+            if (read !is AgyRead.Failed) break
+            log("[antigravity] not served (try ${tried + 1} of ${RETRY_WAITS_MS.size}): ${read.reason}\n")
+        }
+        return read
     }
 }
 

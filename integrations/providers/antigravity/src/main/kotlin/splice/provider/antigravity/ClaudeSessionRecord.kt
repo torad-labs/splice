@@ -1,7 +1,8 @@
 // NEW: desktop-antigravity (docs/specs/desktop-antigravity.md, decision 3). The record a `claude` keeps of its running
-// session, `<config>/sessions/<pid>.json`, kept by the translator in Claude Code's shape, so seatd finds the process
+// session, `<config>/sessions/<pid>.json`, kept by the translator in Claude Code's shape, so any tool that lists
+// running Claude sessions (and the launch pipe, which reads the session id from it for a live switch) finds the process
 // that runs a Gemini session as it finds a Claude one: the pid, the session id, the folder, when the process started
-// (and /proc's start time of it, which seatd checks against the live process), what started it, and whether a turn is
+// (and /proc's start time of it, to match against the live process), what started it, and whether a turn is
 // running. It is removed when the session ends.
 package splice.provider.antigravity
 

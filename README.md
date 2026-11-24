@@ -435,6 +435,19 @@ sessions like the terminal's, with their transcripts in the same place and each 
 Desktop's own list holds the sessions it started; its import (Settings, Import & export), which the policy leaves on,
 copies your terminal sessions into that list.
 
+With Google's `agy` installed and signed in, Desktop's picker also lists Antigravity's Gemini models. A Code tab
+session on one runs on `agy acp` through `splice desktop acp`, never on Claude Code, once Claude Code's managed settings
+name splice's launcher as their `processWrapper`: `splice desktop wrapper` shows that file as it should read and the
+command that puts it in place (it is root-owned, and splice never writes it), and `splice desktop wrapper --check` says
+whether it took. A running session can switch between an Antigravity model and any other: the launcher ends one
+program and starts the other on the same session, and the conversation so far goes with it. To leave Antigravity out
+of Desktop entirely, so the daemon never runs `agy`:
+
+```toml
+[daemon]
+antigravity = false
+```
+
 `splice desktop off` takes out exactly what `on` put in: splice's configuration and its library entry, and the
 credential program; a configuration you had applied before (or applied in Desktop since) is applied again, and a library
 folder splice made is removed. `splice uninstall --all` does the same. A managed configuration
@@ -899,7 +912,7 @@ Each of these is password-equivalent. See [credential locations](#credential-loc
 | `~/.splice/state/model-catalog.json` | The signed-in providers' current model names, descriptions, reasoning levels and windows, with missing display facts filled by splice's catalog. It holds no credentials | Only you (0600) | Replaced at daemon start and when a provider's credential or published model list changes | `StateRecords.kt` |
 | `~/.splice/state/desktop-policy-overrides.json` | The Claude Desktop policy values you set in the console (Settings, Desktop policy), laid over splice's default policy in every configuration splice gives Desktop. It holds no credentials | Only you (0600) | Kept; rewritten when you change or reset a value in Settings | `DesktopPolicyOverrides.kt` |
 | `~/.splice/state/desktop-credential` | The program Claude Desktop runs for its credential: it runs `splice desktop credential`, which prints the desktop key to it. It holds no key | Only you (0700) | Laid by `splice desktop on` and at each start while Desktop is on; removed by `off` and `splice uninstall` | `DesktopPrograms.kt` |
-| `~/.splice/state/desktop-launch` | What a managed `processWrapper` can name: it runs `splice desktop launch`, which starts the Code tab's Claude Code with the desktop key where Desktop stripped it. It holds no key | Only you (0700) | Laid and removed with `desktop-credential` | `DesktopPrograms.kt` |
+| `~/.splice/state/desktop-launch` | What a managed `processWrapper` can name: it runs `splice desktop launch`, which starts the Code tab's Claude Code with the desktop key where Desktop stripped it, runs a session on an Antigravity model on `splice desktop acp` instead, and switches a running session's program when its model moves between Antigravity and any other. `splice desktop wrapper` shows the managed setting that names it. It holds no key | Only you (0700) | Laid and removed with `desktop-credential` | `DesktopPrograms.kt` |
 | `~/.splice/state/desktop-mcp` | What Claude Desktop's `claude_desktop_config.json` names for an MCP server Splice hosts or you reach at a URL: it runs `splice mcp stdio <name>`, the stdio bridge to it, which reads the MCP access key from the state folder each time. It holds no key, address or header | Only you (0700) | Laid when a gateway profile is given a bridged server and at each such sync after; removed with `desktop-credential` | `DesktopPrograms.kt` |
 | `~/.local/share/applications/ai.torad.claude-splice.desktop` (Linux) or `~/Applications/Claude (Splice).app` (macOS) | Optional OS Applications folder launcher for side-by-side Claude Desktop (`splice launch claude-desktop`), carrying a Splice marker so user-authored launchers are never overwritten or deleted | Your umask (wrapper executable 0755) | Created when opted into during `splice setup`; removed by `splice uninstall --all` | `SideBySideLaunchers.kt` |
 | `~/.splice/state/terminal-key` | The key a `claude` session on splice's door presents there. It opens the door and nothing else, and is never logged or sent upstream | Only you (0600) | Kept; minted when missing, minted again when blank or unreadable (said in splice's log first), replaced by `splice claude head` so a session started on the door is refused from then on | `FileHeldKey.kt` |
@@ -1022,7 +1035,7 @@ These files hold settings and statistics. Custom compaction instructions and tea
 | `~/.claude-<head>/splice-sessions.json` | The sessions this head started or resumed, which a bare `-c` picks from: id, directory, transcript path and time | Only you (0600) | The newest 500 | `SessionOwnership.kt` |
 | `~/.claude/sessions/<helper pid>.json` | A registered peer's registry record, the same fields Claude Code writes for a session, so ListAgents lists it. Written only after `splice peer register` | Anyone who can read your files (0644, as Claude Code writes its own) | Until the helper exits or the peer is revoked | `PeerRegistryRecord.kt` |
 | `~/.claude/projects/<folder>/<session id>.jsonl` (under `CLAUDE_CONFIG_DIR` when Claude Desktop sets it) | A Claude Desktop session on an Antigravity model (`splice desktop acp`): its messages, agy's replies and tool results, in Claude Code's transcript format, so Desktop reopens the session with its history | Your umask | Until you delete it, or Claude Code's own cleanup removes it | `ClaudeTranscript.kt` |
-| `~/.claude/sessions/<pid>.json` (under `CLAUDE_CONFIG_DIR` when Desktop sets it) | That session's running record, the fields Claude Code writes: its pid and start time, session id, folder and whether a turn is running, so seatd finds it | Only you (0600) | Until the session ends | `ClaudeSessionRecord.kt` |
+| `~/.claude/sessions/<pid>.json` (under `CLAUDE_CONFIG_DIR` when Desktop sets it) | That session's running record, the fields Claude Code writes: its pid and start time, session id, folder and whether a turn is running, so a tool that lists running Claude sessions finds it, and `splice desktop launch` reads the session id from it for a live model switch | Only you (0600) | Until the session ends | `ClaudeSessionRecord.kt` |
 | `~/.splice/state/claude-head-wrap.json`, `~/.local/bin/claude`, and `splice-launch-owner.json` beside the installed launcher | While `claude` itself is wrapped: its real executable and the command pointed at splice. The owner locator records the home, state directory and path/port selectors, so another home can run Claude unwrapped even without a user-manager bus. Updates refresh the executable and restore the shim. Your vanilla settings and global state are not rewritten | Only you for the state and locator (0600); the command is a symlink | Wrap state lasts until unwrap, which restores the current executable. The locator stays with the install and is refreshed by reconciliation. Existing backups from older wrapping versions are copied back on unwrap and retained on disk so an interrupted unwrap can retry safely | `WrappedHead.kt`, `WrapStateStore.kt` |
 
 ### Install, upgrade and diagnostics

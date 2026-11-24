@@ -51,7 +51,7 @@ since() { tail -c +"$(($1 + 1))" "$TRANSCRIPT"; }
 # 1. install.sh start to finish, as a new user runs it
 install_all() {
   local m; m=$(mark)
-  SPLICE_JAR="$ARTIFACTS/splice.jar" SPLICE_SHIM="$ARTIFACTS/splice-launch" shown bash "$REPO/install.sh" </dev/null || return 1
+  SPLICE_JAR="$CANDIDATE_JAR" SPLICE_SHIM="$ARTIFACTS/splice-launch" shown bash "$REPO/install.sh" </dev/null || return 1
   if since "$m" | grep -qi 'node'; then echo "install.sh output mentions Node"; return 1; fi
   echo "install.sh exited 0 and its output never says node"
 }

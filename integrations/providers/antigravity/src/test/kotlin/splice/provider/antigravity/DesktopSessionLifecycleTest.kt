@@ -1,7 +1,7 @@
 // Regression tests for DesktopSession lifecycle hook ordering and idempotency:
 // 1. Shutdown before session open never emits an orphan SESSION_END and cleans up built parts.
 // 2. Shutdown racing during hooks.opened emits SESSION_START strictly before SESSION_END, once.
-// 3. Repeated/concurrent closeRecord calls emit SESSION_END at most once.
+// 3. Repeated/concurrent lifecycle.close calls emit SESSION_END at most once.
 package splice.provider.antigravity
 
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +23,8 @@ import splice.provider.antigravity.hooks.AcpSessionHooks
 import splice.provider.antigravity.hooks.AcpSessionStart
 import splice.provider.antigravity.peer.DesktopPeerInbox
 import splice.provider.antigravity.peer.DesktopPeerMessage
+import splice.provider.antigravity.skills.ClaudeSkillCatalog
+import splice.provider.antigravity.skills.SkillShelf
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Collections
@@ -44,15 +46,15 @@ internal class DesktopSessionLifecycleTest {
             foreground = ForegroundToolActivity { phases += it.phase },
         )
         lateinit var session: DesktopSession
-        val partsFactory = PartsFactory { id ->
+        val factory = partsFactory { id ->
             val built = buildParts(id, inbox)
             // Simulate JVM shutdown hook firing after parts are constructed, before ensureOpen publishes open.
-            session.closeRecord()
+            session.lifecycle.close()
             built
         }
-        session = buildSession(partsFactory, hooks)
+        session = buildSession(factory, hooks)
         val built = session.ensureOpen(emptyList())
-        session.closeRecord()
+        session.lifecycle.close()
         assertEquals(0, starts.get(), "closed session must never fire sessionStart")
         assertEquals(emptyList<ForegroundToolPhase>(), phases, "closed session must never emit orphan SESSION_END")
         assertFalse(Files.exists(recordPath()), "session record must not remain on disk")
@@ -70,14 +72,14 @@ internal class DesktopSessionLifecycleTest {
                 phases += call.phase
                 if (call.phase == ForegroundToolPhase.SESSION_START) {
                     // Simulate concurrent JVM shutdown hook firing inside hooks.opened.
-                    session.closeRecord()
+                    session.lifecycle.close()
                 }
             },
         )
-        session = buildSession(PartsFactory { id -> buildParts(id, inbox) }, hooks)
+        session = buildSession(partsFactory { id -> buildParts(id, inbox) }, hooks)
         session.ensureOpen(emptyList())
-        // Simulate normal finally block also invoking closeRecord after the hook already closed.
-        session.closeRecord()
+        // Simulate normal finally block also invoking lifecycle.close after the hook already closed.
+        session.lifecycle.close()
         assertEquals(
             listOf(ForegroundToolPhase.SESSION_START, ForegroundToolPhase.SESSION_END),
             phases,
@@ -105,14 +107,14 @@ internal class DesktopSessionLifecycleTest {
                     }
                 },
             )
-            val session = buildSession(PartsFactory { id -> buildParts(id, inbox) }, hooks)
+            val session = buildSession(partsFactory { id -> buildParts(id, inbox) }, hooks)
             val openJob = async(Dispatchers.IO) { session.ensureOpen(emptyList()) }
             assertTrue(insideOpened.await(5, TimeUnit.SECONDS), "open must enter hooks.opened")
             assertTrue(Files.exists(recordPath()), "record exists while Opening")
 
             val hookJob = async(Dispatchers.IO) {
                 hookEntered.countDown()
-                session.closeRecord()
+                session.lifecycle.close()
                 hookReturned.countDown()
             }
             assertTrue(hookEntered.await(5, TimeUnit.SECONDS))
@@ -152,20 +154,20 @@ internal class DesktopSessionLifecycleTest {
         val hooks = AcpSessionHooks(
             foreground = ForegroundToolActivity { call ->
                 phases += call.phase
-                // Re-entering closeRecord on the teardown thread itself must never self-deadlock.
-                if (call.phase == ForegroundToolPhase.SESSION_END) session.closeRecord()
+                // Re-entering lifecycle.close on the teardown thread itself must never self-deadlock.
+                if (call.phase == ForegroundToolPhase.SESSION_END) session.lifecycle.close()
             },
         )
-        session = buildSession(PartsFactory { id -> buildParts(id, inbox) }, hooks)
+        session = buildSession(partsFactory { id -> buildParts(id, inbox) }, hooks)
         session.ensureOpen(emptyList())
         assertTrue(Files.exists(recordPath()))
 
-        val normalClose = async(Dispatchers.IO) { session.closeRecord() }
+        val normalClose = async(Dispatchers.IO) { session.lifecycle.close() }
         assertTrue(insideTeardown.await(5, TimeUnit.SECONDS), "normal teardown must reach inbox cleanup")
 
         val hookJob = async(Dispatchers.IO) {
             hookEntered.countDown()
-            session.closeRecord()
+            session.lifecycle.close()
             hookReturned.countDown()
         }
         assertTrue(hookEntered.await(5, TimeUnit.SECONDS))
@@ -222,21 +224,30 @@ internal class DesktopSessionLifecycleTest {
     }
 
     @Test
-    fun `repeated closeRecord calls after open emit SESSION_END exactly once`() = runBlocking {
+    fun `repeated lifecycle close calls after open emit SESSION_END exactly once`() = runBlocking {
         val phases = Collections.synchronizedList(mutableListOf<ForegroundToolPhase>())
         val inbox = FakePeerInbox()
         val hooks = AcpSessionHooks(foreground = ForegroundToolActivity { phases += it.phase })
-        val session = buildSession(PartsFactory { id -> buildParts(id, inbox) }, hooks)
+        val session = buildSession(partsFactory { id -> buildParts(id, inbox) }, hooks)
         session.ensureOpen(emptyList())
         assertTrue(Files.exists(recordPath()), "open session must write its record")
-        session.closeRecord()
-        session.closeRecord()
+        session.lifecycle.close()
+        session.lifecycle.close()
         assertEquals(
             listOf(ForegroundToolPhase.SESSION_START, ForegroundToolPhase.SESSION_END),
             phases,
         )
         assertFalse(Files.exists(recordPath()))
         assertEquals(1, inbox.closedCount.get())
+    }
+
+    private fun shelf(): SkillShelf = SkillShelf(ClaudeSkillCatalog(project(), env(), LogSink {}))
+
+    private fun partsFactory(make: (String) -> DesktopParts): PartsFactory = object : PartsFactory {
+        override val skills = shelf()
+        override val out = DesktopOut {}
+
+        override fun build(sessionId: String) = make(sessionId)
     }
 
     private fun buildSession(partsFactory: PartsFactory, hooks: AcpSessionHooks): DesktopSession {
@@ -248,7 +259,8 @@ internal class DesktopSessionLifecycleTest {
                 override fun connected(serverName: String) = Unit
             },
         )
-        val envTarget = CoordinatorEnv(claude, strictMcp = false, cwd = project(), env = env(), log = LogSink {})
+        val envTarget =
+            CoordinatorEnv(claude, strictMcp = false, cwd = project(), env = env(), log = LogSink {}, skills = shelf())
         val started = StartedAgy(connection = null, scratch = null, reason = "no agy in lifecycle test")
         val chan = CoordinatorIo(
             started = started,

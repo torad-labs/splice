@@ -16,14 +16,18 @@ import splice.provider.antigravity.hooks.AcpSessionHooks
 import splice.provider.antigravity.peer.DesktopPeerInbox
 import splice.provider.antigravity.peer.DesktopPeerMessage
 import splice.provider.antigravity.peer.DesktopPeerOutcome
-import splice.provider.antigravity.skills.LocalSkillCatalog
+import splice.provider.antigravity.skills.SkillInvocation
+import splice.provider.antigravity.skills.SkillShelf
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
-/** Builds [DesktopParts] once the session id is known (either from Desktop's flags or agy's `session/new`). */
-internal fun interface PartsFactory {
+/** What a Desktop session has from its start, before agy opens: its local [skills] and Desktop's [out]; and the
+ *  [DesktopParts] it builds once the session id is known (either from Desktop's flags or agy's `session/new`). */
+internal interface PartsFactory {
+    val skills: SkillShelf
+    val out: DesktopOut
     fun build(sessionId: String): DesktopParts
 }
 
@@ -34,7 +38,6 @@ internal data class DesktopParts(
     val transcript: ClaudeTranscript,
     val record: ClaudeSessionRecord,
     val look: SessionLook,
-    val localSkills: LocalSkillCatalog = LocalSkillCatalog(emptyList(), emptyList()),
     val peerInbox: DesktopPeerInbox? = null,
 )
 
@@ -51,7 +54,10 @@ internal class DesktopSession(
     private val lists = DesktopLists()
     private val controls = DesktopControl(this, coordinator, mcpState, lists)
     private val prompts = HashSet<Long>()
-    private val lifecycle = SessionLifecycleGate(hooks)
+
+    /** Opens the session record and peer inbox with the session, and closes them (record file, key file, socket) when
+     *  the session ends. */
+    val lifecycle = SessionLifecycleGate(hooks)
 
     @Volatile
     private var parts: DesktopParts? = null
@@ -67,13 +73,23 @@ internal class DesktopSession(
     private var window = AGY_WINDOW
     private var used = 0L
     private var pendingHandoff: String? = null
+    private val invocation = SkillInvocation()
     private var peersClosed = false
 
-    private var agyCommands: List<AgyCommand> = emptyList()
+    /** What the `system/init` said on `initialize`, until the first turn begins. */
+    private var announced: SessionLook? = null
+
+    private var agyCommands: List<AgyCommand>? = null
 
     override val agy: AgySession? get() = session
-    override val commands: List<AgyCommand>
-        get() = lists.mergeCommands(agyCommands, parts?.localSkills?.commands.orEmpty())
+    override val skills: SkillShelf get() = partsFactory.skills
+    override val commands: List<AgyCommand> get() = lists.mergeCommands(agyCommands.orEmpty(), skills.current.typed)
+    override val nativeCommands: Set<String> get() = agyCommands.orEmpty().mapTo(HashSet(), AgyCommand::name)
+
+    /** The session's frames; before agy opens, frames under the id Desktop gave, which a control answer (naming no
+     *  session) is all they build. */
+    override val frames: DesktopFrames
+        get() = parts?.frames ?: DesktopFrames(claude.sessionId ?: claude.resume.orEmpty())
 
     /** True once Desktop asked to switch to a non-Antigravity model, so the launch pipe hands off to Claude Code. */
     var switchingOut: Boolean = false
@@ -88,11 +104,6 @@ internal class DesktopSession(
     /** Authenticated peer UDS messages, or null while no inbox is open. */
     val fromPeers: ReceiveChannel<DesktopPeerMessage>? get() = if (peersClosed) null else parts?.peerInbox?.incoming
 
-    /** Removes the session record file and closes the peer UDS inbox (key file + socket) when the session ends. */
-    fun closeRecord() {
-        lifecycle.close()
-    }
-
     /** One line Desktop wrote. */
     suspend fun desktop(line: String) {
         val message = JsonScalars.objectOrNull(Json, line) ?: return
@@ -102,7 +113,7 @@ internal class DesktopSession(
                     JsonScalars.str(message, "request_id").orEmpty(),
                     message["request"] as? JsonObject ?: JsonObject(emptyMap()),
                 )
-                if (reply != null) checkNotNull(parts).out(reply)
+                if (reply != null) (parts?.out ?: partsFactory.out)(reply)
             }
             "control_response" -> {
                 val resp = message["response"] as? JsonObject
@@ -167,11 +178,7 @@ internal class DesktopSession(
         parts = built
         turn = agyTurn
         questions = AgyQuestions(built.frames, built.out, agyTurn)
-        look = built.look.copy(
-            commands = commands,
-            skills = built.localSkills.skillNames,
-            mcpServers = mcpState.initServers(),
-        )
+        look = current
         if (!lifecycle.open(built, resolvedId, fresh = claude.resume == null)) return built
         if (claude.resume != null) pendingHandoff = LiveHandoff().of(built.transcript.file, res.resumed)
         return built
@@ -185,6 +192,14 @@ internal class DesktopSession(
             mcpServers = mcpState.initServers(),
         )
         if (model != null) turn?.draw?.model = model
+    }
+
+    override fun announce() {
+        val p = checkNotNull(parts)
+        val now = current
+        look = now
+        p.out(p.frames.init(now))
+        announced = now
     }
 
     override fun cancelOrSwitch(switchOut: Boolean) {
@@ -229,7 +244,13 @@ internal class DesktopSession(
         val uuid = JsonScalars.str(line, "uuid") ?: UUID.randomUUID().toString()
         val content = (line["message"] as? JsonObject)?.get("content") ?: JsonPrimitive("")
         if (!AcpLoginPrompt.matches(content)) {
-            submitUser(p, line, uuid, content)
+            // Before agy announces its roster, it may still own the typed command.
+            val prompt = if (agyCommands == null) {
+                content
+            } else {
+                invocation.expand(content, skills.current.typed, nativeCommands)
+            }
+            submitUser(p, line, uuid, prompt)
             return
         }
         // Desktop's `/login` is answered locally with Console Accounts, never sent to agy.
@@ -242,15 +263,17 @@ internal class DesktopSession(
         finish(null)
     }
 
+    /** Replays [line] into Desktop and the transcript as typed, then sends agy [prompt]: a typed line's skill
+     *  expansion, or a peer's text exactly as it came. */
     private fun submitUser(
         p: DesktopParts,
         line: JsonObject,
         uuid: String,
-        content: JsonElement,
+        prompt: JsonElement,
         peer: DesktopPeerMessage? = null,
     ): Boolean {
         p.out(p.frames.replay(line, uuid))
-        p.transcript.user(uuid, content)
+        p.transcript.user(uuid, (line["message"] as? JsonObject)?.get("content") ?: prompt)
         if (prompts.isEmpty()) begin(p)
         if (peer?.beginSubmit() == false) {
             if (prompts.isEmpty()) p.record.write(busy = false)
@@ -258,9 +281,9 @@ internal class DesktopSession(
         }
         val handoff = pendingHandoff
         pendingHandoff = null
-        val prompt = session?.prompt(content, handoff)
-        return if (prompt != null) {
-            prompts += prompt
+        val sent = session?.prompt(prompt, handoff)
+        return if (sent != null) {
+            prompts += sent
             true
         } else {
             if (prompts.isEmpty()) {
@@ -272,19 +295,27 @@ internal class DesktopSession(
         }
     }
 
+    /** A turn begins with `system/init`, as each turn of Claude Code's stream-json does, except the first turn after
+     *  `initialize` said it while its model, mode, commands and skills still stand (an MCP server that connected in
+     *  between is no reason to say it twice). */
     private fun begin(p: DesktopParts) {
         startedAt = clock()
         usage = lists.usage(null)
         stop = null
-        val current = (look ?: p.look).copy(
-            commands = commands,
-            skills = p.localSkills.skillNames,
-            mcpServers = mcpState.initServers(),
-        )
-        look = current
-        p.out(p.frames.init(current))
+        val now = current
+        if (announced?.copy(mcpServers = now.mcpServers) != now) announce()
+        announced = null
         p.record.write(busy = true)
     }
+
+    /** The session as `system/init` says it now: its model and mode, the merged commands, the local skills and the
+     *  MCP servers. */
+    private val current: SessionLook
+        get() = (look ?: checkNotNull(parts).look).copy(
+            commands = commands,
+            skills = skills.current.skillNames,
+            mcpServers = mcpState.initServers(),
+        )
 
     private fun answeredPrompt(message: JsonObject) {
         val error = message["error"] as? JsonObject
@@ -313,8 +344,8 @@ internal class DesktopSession(
 
     private fun update(update: JsonObject) {
         when (JsonScalars.str(update, "sessionUpdate")) {
-            "available_commands_update" -> {
-                agyCommands = lists.commands(update)
+            "available_commands_update" -> lists.commands(update)?.let { roster ->
+                agyCommands = roster
                 look = look?.copy(commands = commands)
             }
             "usage_update" -> {

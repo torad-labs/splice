@@ -1,5 +1,6 @@
 package splice.topology
 
+import splice.core.capability.TomlTree
 import splice.core.config.knobsByKey
 
 /** Fences and whole optional example blocks are parsed by the daemon's own loader. */
@@ -20,28 +21,42 @@ internal object DocumentationTopologySnippets {
         val blocks = fences.findAll(text).toList()
         blocks.forEach { block ->
             val body = block.groupValues[1]
-            // These two fragments edit existing tables. Supply their required parent fields as
-            // synthetic test context, never as copyable fake providers or heads in the document.
-            val parent = when {
-                "[heads.example.overrides]" in body && "[heads.example]" !in body -> """
-                    [heads.example]
-                    provider = "example"
-                    port = 3105
-                    discovery_prefix = "claude-example--"
-                    pinned_model = "example-model"
-                """.trimIndent()
-                "[providers.codex.quirks]" in body && "[providers.codex]" !in body -> """
-                    [providers.codex]
-                    dialect = "openai-responses"
-                    base_url = "https://example.invalid/v1"
-                    auth = { kind = "chatgpt-oauth" }
-                """.trimIndent()
-                else -> ""
+            try {
+                // A hooks fragment belongs to a mode.toml manifest, not splice.toml.
+                if (body.trimStart().startsWith("[hooks]")) {
+                    requireNotNull(TomlTree.read(body)) { "invalid mode manifest TOML" }
+                } else {
+                    checkKnobs(withDocumentContext(body))
+                }
+            } catch (e: Exception) {
+                val line = text.take(block.range.first).count { it == '\n' } + 1
+                throw IllegalArgumentException("TOML fence at line $line: ${e.message}", e)
             }
-            checkKnobs("$parent\n$body")
         }
         return blocks.size
     }
+
+    // These fragments edit existing tables. Supply required fields here rather than in copyable examples.
+    private fun withDocumentContext(body: String): String = when {
+        "[heads.example.overrides]" in body && "[heads.example]" !in body -> """
+            [heads.example]
+            provider = "example"
+            port = 3105
+            discovery_prefix = "claude-example--"
+            pinned_model = "example-model"
+        """.trimIndent() + "\n$body"
+        "[providers.codex.quirks]" in body && "[providers.codex]" !in body ->
+            "[providers.codex]\n$codexFields\n$body"
+        body.trimStart().startsWith("[providers.codex]") && "dialect =" !in body ->
+            body.replaceFirst("[providers.codex]", "[providers.codex]\n$codexFields")
+        else -> body
+    }
+
+    private val codexFields = """
+        dialect = "openai-responses"
+        base_url = "https://example.invalid/v1"
+        auth = { kind = "chatgpt-oauth" }
+    """.trimIndent()
 
     fun checkExample(text: String): Int {
         checkKnobs(text)

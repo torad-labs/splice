@@ -1,4 +1,4 @@
-// NEW: V4-262 — every file splice writes has an entry in README.md's "What splice keeps on your disk"
+// NEW: V4-262 — every file splice writes has an entry in docs/wiki/disk-and-privacy.md's "What splice keeps on your disk"
 //
 // WHY THIS EXISTS. The site said splice saves no prompts or replies unless you turn that on, and the
 // audit found six files holding content with nothing turned on. A section a reader can trust stays
@@ -39,7 +39,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 
 internal object DiskWrites {
-    const val README: String = "README.md"
+    const val README: String = "docs/wiki/disk-and-privacy.md"
     const val HEADING: String = "## What splice keeps on your disk"
 
     /** A call whose effect is a file's bytes on disk: created, replaced, appended, copied, moved or linked. */
@@ -305,7 +305,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "Files.newBufferedWriter(" to 1,
         "Files.writeString(" to 1,
     ),
-    // The manager's shipped home and owner-only write inventory, in the manager-home README row.
+    // The manager's shipped home and owner-only write inventory, in the manager-home disk page row.
     "app/src/main/kotlin/splice/app/manager/ManagerHome.kt" to mapOf(
         "FileChannel.open(" to 1,
         "Files.createTempFile(" to 1,
@@ -313,12 +313,12 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "writeAtomic0600(" to 2,
     ),
     "app/src/main/kotlin/splice/app/daemon/DaemonLock.kt" to mapOf("FileChannel.open(" to 1),
-    // The MCP hub front's environment file, in the mcp-front.env README row.
+    // The MCP hub front's environment file, in the mcp-front.env disk page row.
     "app/src/main/kotlin/splice/app/McpFrontEnv.kt" to mapOf("writeAtomic0600(" to 1),
     // Registration replacement and its content-addressed backup are owned by the extracted registration writer.
     "app/src/main/kotlin/splice/app/cli/mcp/McpServiceRegistration.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/head/HeadTraceStores.kt" to mapOf("ActivityDays(" to 1),
-    // The per-session fallback models, in the session-fallbacks.json README row.
+    // The per-session fallback models, in the session-fallbacks.json disk page row.
     "app/src/main/kotlin/splice/app/retire/HeadBackup.kt" to mapOf(
         "Files.copy(" to 3,
         "Files.createSymbolicLink(" to 2,
@@ -330,12 +330,12 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/mcp/CodexMcpTomlWriter.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/mcp/NativeCodexMcpFiles.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/mcp/NativeCodexSocketProxy.kt" to mapOf("writeAtomic0600(" to 1),
-    // Codex peer hooks installed or migrated by `splice setup` / `splice setup --update`, in the ~/.codex/hooks.json README row.
+    // Codex peer hooks installed or migrated by `splice setup` / `splice setup --update`, in the ~/.codex/hooks.json disk page row.
     "app/src/main/kotlin/splice/app/capability/CodexPeerHooks.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeAccountFolders.kt" to mapOf("writeAtomic0600(" to 4),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeCredentialProfiles.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeRemovedOwnLogins.kt" to mapOf("writeAtomic0600(" to 1),
-    // A console Claude sign-in's BROWSER script, and the links it appends, in the splice-claude-signin README row.
+    // A console Claude sign-in's BROWSER script, and the links it appends, in the splice-claude-signin disk page row.
     "app/src/main/kotlin/splice/app/auth/claude/NativeClaudeAuth.kt" to
         mapOf("Files.writeString(" to 1, "a shell redirect" to 1),
     // The door's records (Desktop's and the terminal `claude`'s lane), and settings.json with an older splice's door
@@ -346,9 +346,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/desktop/setup/DesktopAppLibrary.kt" to mapOf(".writeText(" to 1),
     "app/src/main/kotlin/splice/app/desktop/setup/DesktopLibraryFiles.kt" to
         mapOf("writeAtomic(" to 1, "writeAtomic0600(" to 1),
-    // The Desktop policy values set in the console, in the desktop-policy-overrides.json README row.
+    // The Desktop policy values set in the console, in the desktop-policy-overrides.json disk page row.
     "app/src/main/kotlin/splice/app/desktop/setup/DesktopPolicyOverrides.kt" to mapOf("writeAtomic0600(" to 1),
-    // Which program each Desktop session runs on, in the desktop-harnesses.json README row.
+    // Which program each Desktop session runs on, in the desktop-harnesses.json disk page row.
     "app/src/main/kotlin/splice/app/desktop/harness/DesktopHarnessFile.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/desktop/setup/DesktopPrograms.kt" to mapOf("writeAtomic(" to 3),
     // An extension or skill copied whole into Desktop's gateway profile: staged beside it, then moved into place.
@@ -356,23 +356,23 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         mapOf("Files.copy(" to 1, "Files.createSymbolicLink(" to 1, "Files.move(" to 1),
     "app/src/main/kotlin/splice/app/desktop/setup/SideBySideLaunchers.kt" to
         mapOf("Files.copy(" to 1, "Files.writeString(" to 4),
-    // The console launch page, 0600, documented in the console-open.html README row.
+    // The console launch page, 0600, documented in the console-open.html disk page row.
     "app/src/main/kotlin/splice/app/cli/status/ConsoleCommand.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/ConfigService.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/retired/CommandRetirements.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/retired/RetiredHeads.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/speed/SessionSpeeds.kt" to mapOf("writeAtomic0600(" to 1),
-    // Opt-in user MCP server registry and its content-addressed backups, in the mcp-registry.json README row.
+    // Opt-in user MCP server registry and its content-addressed backups, in the mcp-registry.json disk page row.
     "core/src/main/kotlin/splice/core/mcp/McpUserRegistry.kt" to mapOf("writeAtomic0600(" to 2),
     // The private MCP receipt row: two platform branches create the same lock, one atomic publication writes each entry.
     "core/src/main/kotlin/splice/core/mcp/McpToolResultFiles.kt" to mapOf(
         "FileChannel.open(" to 2,
         "writeAtomic0600(" to 1,
     ),
-    // The MCP roots verdicts, digests only, documented in the mcp-roots-bound README row.
+    // The MCP roots verdicts, digests only, documented in the mcp-roots-bound disk page row.
     "integrations/claude-code/src/main/kotlin/splice/client/mcp/McpRootsVerdicts.kt" to mapOf("writeAtomic0600(" to 1),
     // The hub's kept listings, holder records, generation-specific retirement evidence and durable drain pins,
-    // documented in the mcp-listings, mcp-hub and mcp-hub/drain-pins README rows. Replacement outcomes make an
+    // documented in the mcp-listings, mcp-hub and mcp-hub/drain-pins disk page rows. Replacement outcomes make an
     // interrupted retirement retryable without replaying it; drain pins keep an exact generation from eviction.
     "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubListings.kt" to mapOf("writeAtomic0600(" to 1),
     // Holder records and launcher gates belong to the file layer; generation exit receipts stay with their owner.
@@ -383,67 +383,67 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubHolderRetirements.kt" to mapOf("writeAtomic0600(" to 1),
     "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubDrainPins.kt" to mapOf("writeAtomic0600(" to 1),
     // Oct 13: canonical MCP publication replaces McpHubWiring's boot overwrite. One first-run create, then the
-    // no-bootstrap fence, its copy carried from mcp-hub, the active key and its binding, in their README rows.
+    // no-bootstrap fence, its copy carried from mcp-hub, the active key and its binding, in their disk page rows.
     "integrations/claude-code/src/main/kotlin/splice/client/mcp/McpAccessPublication.kt" to mapOf(
         "createNew0600(" to 1,
         "writeAtomic0600(" to 4,
     ),
     // Oct 13: selective regeneration backs up each matching file, then publishes only its revoked MCP headers.
-    // Both writes are owner-only, in the header-backups and explicitly supplied JSON-file README rows.
+    // Both writes are owner-only, in the header-backups and explicitly supplied JSON-file disk page rows.
     "integrations/claude-code/src/main/kotlin/splice/client/mcp/McpHeaderRegeneration.kt" to mapOf(
         "createNew0600(" to 1,
         "writeAtomic0600(" to 1,
     ),
-    // The hub launch file and the V4-445 file, in the mcp-hub/launch-<pid> and wrapped-mcp README rows.
+    // The hub launch file and the V4-445 file, in the mcp-hub/launch-<pid> and wrapped-mcp disk page rows.
     "integrations/claude-code/src/main/kotlin/splice/client/mcp/McpHubLaunch.kt" to mapOf("writeAtomic0600(" to 1),
     "integrations/claude-code/src/main/kotlin/splice/client/mcp/HostedMcpOverlay.kt" to mapOf("writeAtomic0600(" to 1),
-    // The file of the servers splice answers itself (the mcp modes), in the own-mcp README row.
+    // The file of the servers splice answers itself (the mcp modes), in the own-mcp disk page row.
     "integrations/claude-code/src/main/kotlin/splice/client/mcp/OwnMcpLaunch.kt" to mapOf("writeAtomic0600(" to 1),
-    // The plugin flag check's throwaway plugin and its per-version verdicts, in their README rows.
+    // The plugin flag check's throwaway plugin and its per-version verdicts, in their disk page rows.
     "integrations/claude-code/src/main/kotlin/splice/client/mcp/PluginFlagCheck.kt" to
         mapOf("Files.writeString(" to 3),
     "integrations/claude-code/src/main/kotlin/splice/client/mcp/PluginFlagVerdicts.kt" to
         mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/KeyStore.kt" to mapOf("FileChannel.open(" to 1, "writeAtomic0600(" to 1),
     // A key held in one state file: the management key and the desktop key, minted and replaced through one write,
-    // in the mgmt-key and desktop-key README rows.
+    // in the mgmt-key and desktop-key disk page rows.
     "core/src/main/kotlin/splice/core/config/FileHeldKey.kt" to mapOf("writeAtomic0600(" to 1),
-    // The digests of the keys a rotation retired, owner-only, in the retired-keys README row.
+    // The digests of the keys a rotation retired, owner-only, in the retired-keys disk page row.
     "core/src/main/kotlin/splice/core/config/RetiredKeys.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/TurnKey.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/model/ClientWindows.kt" to mapOf("Files.move(" to 1, "Files.writeString(" to 1),
     // Nov 21, 2026: a Claude Desktop session on agy keeps a `claude`'s transcript and running record, in the
-    // projects/<folder>/<session id>.jsonl and sessions/<pid>.json README rows.
+    // projects/<folder>/<session id>.jsonl and sessions/<pid>.json disk page rows.
     "integrations/providers/antigravity/src/main/kotlin/splice/provider/antigravity/ClaudeTranscript.kt" to
         mapOf("JsonlSink.appendLine(" to 2),
     "integrations/providers/antigravity/src/main/kotlin/splice/provider/antigravity/ClaudeSessionRecord.kt" to
         mapOf("writeAtomic0600(" to 1),
-    // Nov 19, 2026: what a mode keeps per session (modes/README.md), owner-only, in the modes/<mode> README row.
+    // Nov 19, 2026: what a mode keeps per session (modes/README.md), owner-only, in the modes/<mode> disk page row.
     "app/src/main/kotlin/splice/app/modes/FileModeStore.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/modes/ModArtifacts.kt" to mapOf("writeAtomic0600(" to 1),
-    // The economics backfill's covered edge kept across restarts, documented in the perf backfill edge README row.
+    // The economics backfill's covered edge kept across restarts, documented in the perf backfill edge disk page row.
     "app/src/main/kotlin/splice/app/sources/EconomicsBackfill.kt" to mapOf("writeAtomic0600(" to 1),
-    // The hourly view's judged hours kept across restarts, documented in the probe judgments README row.
+    // The hourly view's judged hours kept across restarts, documented in the probe judgments disk page row.
     "app/src/main/kotlin/splice/app/sources/ProbeJudgments.kt" to mapOf("writeAtomic0600(" to 1),
     // Nov 12, 2026: which notices about a command's last login were already sent, owner-only, in the login-alerts
-    // README row.
+    // disk page row.
     "app/src/main/kotlin/splice/app/LoginAlerting.kt" to mapOf("writeAtomic0600(" to 1),
     // Nov 12, 2026: the price table as the project's main branch last served it, owner-only, in the
-    // published-rates.tsv README row.
+    // published-rates.tsv disk page row.
     "features/lifecycle/src/main/kotlin/splice/lifecycle/prices/PriceRefresh.kt" to mapOf("writeAtomic0600(" to 1),
-    // The hourly view's settled repricing kept across restarts, documented in the reprice README row.
+    // The hourly view's settled repricing kept across restarts, documented in the reprice disk page row.
     "app/src/main/kotlin/splice/app/sources/RepriceKept.kt" to mapOf("writeAtomic0600(" to 1),
-    // The non-secret launcher declaration documented in the launch-owners README row.
+    // The non-secret launcher declaration documented in the launch-owners disk page row.
     "core/src/main/kotlin/splice/core/process/LaunchOwners.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/cli/ConfigFixOffer.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/cli/ConfigFixSession.kt" to mapOf("writeAtomic0600(" to 1),
     // Failure-handling slice 4: the fix session clears a retired knob saved in config.json, after its backup, in the
-    // config.json README row.
+    // config.json disk page row.
     "core/src/main/kotlin/splice/core/config/SavedSettings.kt" to mapOf("writeAtomic0600(" to 1),
     // upgrade-compat: the daemon's copy of a config.json before it clears a setting splice no longer reads, in the
-    // config-backups README row.
+    // config-backups disk page row.
     "integrations/topology/src/main/kotlin/splice/topology/SavedSettingsPrune.kt" to mapOf("writeAtomic0600(" to 1),
-    // The splice.toml save lock documented in the splice.toml README row.
+    // The splice.toml save lock documented in the splice.toml disk page row.
     "core/src/main/kotlin/splice/core/topology/TopologyWriter.kt" to mapOf(
         "FileChannel.open(" to 1,
         "writeAtomic0600(" to 2,
@@ -485,12 +485,12 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     ),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeLock.kt" to mapOf("FileChannel.open(" to 1),
     // A release asset streamed into its `.part` sibling in the stage and renamed onto its own name once its sha256
-    // matches (2026-11-10, replacing UpgradeRelease's whole-file write), in the releases/.staging README row.
+    // matches (2026-11-10, replacing UpgradeRelease's whole-file write), in the releases/.staging disk page row.
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeDownloadFiles.kt" to mapOf(
         "Files.move(" to 1,
         "Files.newOutputStream(" to 1,
     ),
-    // Splice's own systemd user units, each staged in a temp file and moved into place, in the systemd/user README
+    // Splice's own systemd user units, each staged in a temp file and moved into place, in the systemd/user disk page
     // row, and the record of the hub units earlier installs wrote, rewritten as they retire, in the
     // mcp-hub/units-written row.
     "features/lifecycle/src/main/kotlin/splice/lifecycle/units/SpliceUnits.kt" to mapOf(
@@ -509,12 +509,12 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "features/sessions/src/main/kotlin/splice/sessions/teams/TeamStore.kt" to mapOf("writeAtomic0600(" to 2),
     "features/sessions/src/main/kotlin/splice/sessions/registry/RememberedPanes.kt" to mapOf("writeAtomic0600(" to 1),
     "features/sessions/src/main/kotlin/splice/sessions/registry/SeenSessions.kt" to mapOf("writeAtomic0600(" to 1),
-    // The latest manager session, head and consent, in the manager.json README row.
+    // The latest manager session, head and consent, in the manager.json disk page row.
     "features/sessions/src/main/kotlin/splice/sessions/manager/ManagerPointer.kt" to mapOf("writeAtomic0600(" to 1),
-    // A peer helper's helper.json, helper.log and helper.lock (package B), in the README's state/peers row. The lock is
+    // A peer helper's helper.json, helper.log and helper.lock (package B), in the disk page's state/peers row. The lock is
     // PeerHelper.kt's; helper.json went to HelperFiles.kt and helper.log to HelperLog.kt on Oct 27, 2026, unchanged.
     "features/sessions/src/main/kotlin/splice/sessions/peer/helper/HelperFiles.kt" to mapOf("writeAtomic0600(" to 1),
-    // Oct 28, 2026: the one peer host's host.lock, host.json and start requests, in the peer-host README row.
+    // Oct 28, 2026: the one peer host's host.lock, host.json and start requests, in the peer-host disk page row.
     "app/src/main/kotlin/splice/app/peer/PeerHostFiles.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/peer/PeerHostRun.kt" to mapOf("FileChannel.open(" to 1),
     "features/sessions/src/main/kotlin/splice/sessions/peer/helper/HelperLog.kt" to mapOf(
@@ -522,7 +522,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "createNew0600(" to 1,
     ),
     "features/sessions/src/main/kotlin/splice/sessions/peer/helper/PeerHelper.kt" to mapOf("FileChannel.open(" to 1),
-    // A peer helper's registry key file and record under ~/.claude/sessions, in the README's two rows for them.
+    // A peer helper's registry key file and record under ~/.claude/sessions, in the disk page's two rows for them.
     "features/sessions/src/main/kotlin/splice/sessions/peer/helper/PeerRegistryRecord.kt" to mapOf(
         "writeAtomic0600(" to 2,
     ),
@@ -534,28 +534,28 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "writeAtomic0600(" to 1,
     ),
     "features/sessions/src/main/kotlin/splice/sessions/peer/store/PeerStore.kt" to mapOf("writeAtomic0600(" to 4),
-    // A peer's own send limit (Oct 27, 2026), in the README's limit.json row.
+    // A peer's own send limit (Oct 27, 2026), in the disk page's limit.json row.
     "features/sessions/src/main/kotlin/splice/sessions/peer/store/PeerLimits.kt" to mapOf("writeAtomic0600(" to 1),
-    // Server mode's keys and people (Nov 15, 2026), in the README's server/keys.json row.
+    // Server mode's keys and people (Nov 15, 2026), in the disk page's server/keys.json row.
     "features/share/src/main/kotlin/splice/share/StateFile.kt" to mapOf("writeAtomic0600(" to 1),
-    // A laptop's key for each server it signed in to (Nov 16, 2026), in the README's server-logins row.
+    // A laptop's key for each server it signed in to (Nov 16, 2026), in the disk page's server-logins row.
     "features/share/src/main/kotlin/splice/share/ServerLogins.kt" to mapOf("writeAtomic0600(" to 1),
-    // Server mode's usage ledger (Nov 16, 2026), in the README's server/ledger.jsonl row.
+    // Server mode's usage ledger (Nov 16, 2026), in the disk page's server/ledger.jsonl row.
     "features/server/src/main/kotlin/splice/server/ledger/UsageLedger.kt" to mapOf("JsonlSink.appendLine(" to 1),
-    // Confirmed external cost intervals, in the README's server/cost-meters.jsonl row.
+    // Confirmed external cost intervals, in the disk page's server/cost-meters.jsonl row.
     "features/server/src/main/kotlin/splice/server/ledger/MeterIntervals.kt" to mapOf("JsonlSink.appendLine(" to 1),
-    // Server mode's admin audit log (Nov 22, 2026), in the README's server/audit.jsonl row.
+    // Server mode's admin audit log (Nov 22, 2026), in the disk page's server/audit.jsonl row.
     "features/server/src/main/kotlin/splice/server/audit/ServerAudit.kt" to mapOf("JsonlSink.appendLine(" to 1),
-    // Server mode's hourly usage export to a folder (Nov 16, 2026), in the README's `[server.export]` folder row.
+    // Server mode's hourly usage export to a folder (Nov 16, 2026), in the disk page's `[server.export]` folder row.
     "features/server/src/main/kotlin/splice/server/export/FolderTarget.kt" to mapOf("writeAtomic0600(" to 1),
-    // Server mode's durable state snapshots & startup restore (Nov 22, 2026), in the README's `[server.backup]` row.
+    // Server mode's durable state snapshots & startup restore (Nov 22, 2026), in the disk page's `[server.backup]` row.
     "features/server/src/main/kotlin/splice/server/backup/FolderSnapshotTarget.kt" to mapOf("writeAtomic0600(" to 1),
     "features/server/src/main/kotlin/splice/server/backup/ServerBackupStore.kt" to mapOf("writeAtomic0600(" to 1),
     "features/turns/src/main/kotlin/splice/head/compact/Compact.kt" to mapOf("JsonlSink.appendLine(" to 1),
     "features/turns/src/main/kotlin/splice/head/compaction/CompactionRecordings.kt" to mapOf("writeAtomic0600(" to 1),
-    // A thread's capability record (Nov 17, 2026), in the README's `heads/<head>/capabilities/` row.
+    // A thread's capability record (Nov 17, 2026), in the disk page's `heads/<head>/capabilities/` row.
     "features/harness/src/main/kotlin/splice/harness/ThreadRecords.kt" to mapOf("writeAtomic0600(" to 1),
-    // A session's calls of a capability's tool (Nov 17, 2026), in the README's `capabilities/agent-calls/` row.
+    // A session's calls of a capability's tool (Nov 17, 2026), in the disk page's `capabilities/agent-calls/` row.
     "features/harness/src/main/kotlin/splice/harness/AgentRecords.kt" to mapOf("writeAtomic0600(" to 1),
     // The history-window cut rewrites the straddling generation in place: a 0600 sibling, the kept rows copied into
     // it, then one atomic move over the original. Three calls, one rewrite.
@@ -585,7 +585,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     ),
     // A day file's second roll in one UTC day moves the old .1 to the next free number before JsonlSink replaces it.
     "core/src/main/kotlin/splice/core/storage/DayGenerations.kt" to mapOf("Files.move(" to 1),
-    // A store's empty-store marker, split from ActivityDays (12fc612ac), in the README row for the .deleted markers.
+    // A store's empty-store marker, split from ActivityDays (12fc612ac), in the disk page row for the .deleted markers.
     "core/src/main/kotlin/splice/core/storage/DayFiles.kt" to mapOf("writeAtomic0600(" to 1),
     // V4-457: stable directory and store locks exclude publication, eviction, purge and retention.
     "core/src/main/kotlin/splice/core/storage/DayMutationLock.kt" to mapOf("FileChannel.open(" to 1),
@@ -641,7 +641,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "Files.copy(" to 3,
         "Files.move(" to 3,
     ),
-    // The retagged copy of a resumed session, in the same README row as ResumeAcrossHeads.
+    // The retagged copy of a resumed session, in the same disk page row as ResumeAcrossHeads.
     "integrations/claude-code/src/main/kotlin/splice/client/resume/SessionIdRetag.kt" to
         mapOf("Files.newOutputStream(" to 1),
     "integrations/claude-code/src/main/kotlin/splice/client/resume/SessionOwnership.kt" to mapOf(
@@ -716,7 +716,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "Files.move(" to 1,
         "writeAtomic0600(" to 1,
     ),
-    // The first OAuth account's name, documented in the primary.name README row.
+    // The first OAuth account's name, documented in the primary.name disk page row.
     "integrations/oauth/src/main/kotlin/splice/oauth/OAuthPrimaryAccount.kt" to mapOf("writeAtomic0600(" to 1),
     "integrations/oauth/src/main/kotlin/splice/oauth/OAuthLoginReservation.kt" to mapOf("FileChannel.open(" to 1),
     // #525 (2026-11-12): the empty hold file a retiring daemon keeps an OS lock on beside each conversation it
@@ -724,7 +724,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "integrations/providers/codex/src/main/kotlin/splice/provider/codex/state/handover/CodeModeHoldFiles.kt" to
         mapOf("FileChannel.open(" to 1),
     // #525 (2026-11-13): the list a retiring daemon leaves of the conversations it lets go, in the let-go.json
-    // README row.
+    // disk page row.
     "integrations/providers/codex/src/main/kotlin/splice/provider/codex/state/letgo/CodeModeLetGoFile.kt" to
         mapOf("writeAtomic0600(" to 1),
     // The same per-conversation file now has an atomic checkpoint plus forced cell-delta appends.
@@ -842,7 +842,7 @@ class DiskWritesLawTest {
     }
 
     @Test
-    fun `every file splice writes has an entry in the README's disk section - V4-262`() {
+    fun `every file splice writes has an entry in the disk page's disk section - V4-262`() {
         val audit = live()
         assertTrue(audit.sites.size > 40) {
             "the walk found ${audit.sites.size} writing file(s): the census is broken, and a law that reads no " +
@@ -855,7 +855,7 @@ class DiskWritesLawTest {
         }
     }
 
-    /** One module whose sources each arm replaces, audited with [rules] and the README text the arm hands in. */
+    /** One module whose sources each arm replaces, audited with [rules] and the disk page text the arm hands in. */
     private class Tree(
         val root: File,
         val rules: DiskWrites.Rules = DiskWrites.Rules(emptyList(), emptyList(), STORED),
@@ -887,8 +887,8 @@ class DiskWritesLawTest {
             assertHit(audit(readmeNaming("Store.kt", "Gone.kt")), "STALE", "Gone.kt") {
                 "a name that writes nothing is STALE"
             }
-            assertHit(audit("# splice\n"), "NO SECTION") { "a README without the section is RED" }
-            assertHit(audit(null), "NO SECTION") { "no README at all is RED" }
+            assertHit(audit("# splice\n"), "NO SECTION") { "a disk page without the section is RED" }
+            assertHit(audit(null), "NO SECTION") { "no disk page at all is RED" }
         }
     }
 

@@ -8,6 +8,7 @@ package splice.core.topology
 
 import splice.core.listen.IpLiterals
 import splice.core.topology.metering.ServerMeteringChecks
+import splice.core.topology.routing.ServerRoutingChecks
 import splice.core.util.LoopbackOverride
 import java.net.URI
 import java.net.URISyntaxException

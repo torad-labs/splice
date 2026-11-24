@@ -8,8 +8,12 @@
 // served at the team's door alone, so an alias reaches it as "door". Each is a boot finding beside every other, naming
 // its key. No alias stands for one of the listener's own routes either, even where a head's command is so named: the
 // listener answers that segment itself and never reaches the head.
-package splice.core.topology
+package splice.core.topology.routing
 
+import splice.core.client.OUTDATED_IN_CONVERSATION
+import splice.core.topology.DOOR_SEGMENT
+import splice.core.topology.Topology
+import splice.core.topology.TopologyFinding
 import splice.core.topology.toml.TomlKeys
 import splice.core.wire.HttpStatus
 

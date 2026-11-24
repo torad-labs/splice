@@ -14,7 +14,7 @@ package splice.server.client
 import io.ktor.server.application.ApplicationCall
 import splice.core.client.ClientVersion
 import splice.core.client.ClientVersionParser
-import splice.core.topology.OUTDATED_IN_CONVERSATION
+import splice.core.client.OUTDATED_IN_CONVERSATION
 import splice.core.topology.ServerClient
 import splice.core.turn.SERVED_NOTICE_HEADER
 import splice.core.turn.ServedNoticeText

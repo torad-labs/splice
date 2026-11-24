@@ -10,9 +10,9 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import splice.core.client.ClientVersion
 import splice.core.client.ClientVersionParser
+import splice.core.client.OUTDATED_IN_CONVERSATION
 import splice.core.client.SPLICE_CLIENT_HEADER
 import splice.core.topology.toml.TomlKeys
-import splice.core.wire.HttpStatus
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -130,9 +130,6 @@ public data class ServerClient(
     /** The header a laptop's version is read from. */
     public val header: String get() = versionHeader.trim().ifEmpty { SPLICE_CLIENT_HEADER }
 }
-
-/** The `outdated_status` that answers an older laptop's turn in the conversation, as a 200. */
-public const val OUTDATED_IN_CONVERSATION: Int = HttpStatus.OK
 
 /** `[server.forward_auth]`: dashboard access for admins and the emails or `@domain` rules in [allow]. */
 @Serializable

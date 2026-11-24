@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.util.JsonScalars
 import splice.core.util.WallClock
+import splice.provider.antigravity.skills.LocalSkillCatalog
 import java.util.UUID
 
 /** Builds [DesktopParts] once the session id is known (either from Desktop's flags or agy's `session/new`). */
@@ -21,6 +22,7 @@ internal data class DesktopParts(
     val transcript: ClaudeTranscript,
     val record: ClaudeSessionRecord,
     val look: SessionLook,
+    val localSkills: LocalSkillCatalog = LocalSkillCatalog(emptyList(), emptyList()),
 )
 
 /** Desktop session driven on agy via [coordinator] and [mcpState]; [clock] times turns. */
@@ -49,9 +51,11 @@ internal class DesktopSession(
     private var used = 0L
     private var pendingHandoff: String? = null
 
+    private var agyCommands: List<AgyCommand> = emptyList()
+
     override val agy: AgySession? get() = session
-    override var commands: List<AgyCommand> = emptyList()
-        private set
+    override val commands: List<AgyCommand>
+        get() = lists.mergeCommands(agyCommands, parts?.localSkills?.commands.orEmpty())
 
     /** True once Desktop asked to switch to a non-Antigravity model, so the launch pipe hands off to Claude Code. */
     var switchingOut: Boolean = false
@@ -135,7 +139,11 @@ internal class DesktopSession(
         parts = built
         turn = agyTurn
         questions = AgyQuestions(built.frames, built.out, agyTurn)
-        look = built.look.copy(commands = commands, mcpServers = mcpState.initServers())
+        look = built.look.copy(
+            commands = commands,
+            skills = built.localSkills.skillNames,
+            mcpServers = mcpState.initServers(),
+        )
         built.record.write(busy = false)
         if (claude.resume != null) pendingHandoff = LiveHandoff().of(built.transcript.file, res.resumed)
         return built
@@ -183,7 +191,11 @@ internal class DesktopSession(
         startedAt = clock()
         usage = lists.usage(null)
         stop = null
-        val current = (look ?: p.look).copy(commands = commands, mcpServers = mcpState.initServers())
+        val current = (look ?: p.look).copy(
+            commands = commands,
+            skills = p.localSkills.skillNames,
+            mcpServers = mcpState.initServers(),
+        )
         look = current
         p.out(p.frames.init(current))
         p.record.write(busy = true)
@@ -217,7 +229,7 @@ internal class DesktopSession(
     private fun update(update: JsonObject) {
         when (JsonScalars.str(update, "sessionUpdate")) {
             "available_commands_update" -> {
-                commands = lists.commands(update)
+                agyCommands = lists.commands(update)
                 look = look?.copy(commands = commands)
             }
             "usage_update" -> {

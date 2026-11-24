@@ -3,12 +3,15 @@
 // same way. The docs are declared inputs of this task (build.gradle.kts), so a doc-only edit re-runs it.
 package splice.topology
 
+import org.junit.jupiter.api.Assertions.assertAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.function.Executable
 import java.nio.file.Path
+import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.readText
 
 /** A fenced toml block, its body captured. */
@@ -41,6 +44,24 @@ class FeaturesDocumentLawTest {
                 root.resolve("app/src/main/resources/splice.example.toml").readText(),
             ) > 0,
         )
+    }
+
+    @Test
+    fun `wiki TOML snippets parse in their documented format`() {
+        val root = Path.of(checkNotNull(System.getProperty("splice.releaseDocs")))
+        val pages = root.resolve("docs/wiki").listDirectoryEntries("*.md").sorted()
+        val counts = pages.associateWith { page ->
+            runCatching { DocumentationTopologySnippets.checkDocument(page.readText()) }
+        }
+        assertAll(
+            counts.map { (page, result) ->
+                Executable {
+                    val name = root.relativize(page)
+                    result.exceptionOrNull()?.let { throw AssertionError("$name: ${it.message}", it) }
+                }
+            },
+        )
+        assertTrue(counts.values.sumOf { it.getOrThrow() } > 0, "the wiki has no TOML examples")
     }
 
     /** The one toml block in FEATURES.md section 2.3. */

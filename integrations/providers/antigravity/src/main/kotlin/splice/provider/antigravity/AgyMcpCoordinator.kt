@@ -20,13 +20,15 @@ internal interface AgyMessageSink {
     fun accept(message: JsonObject)
 }
 
-/** Static launch inputs for MCP discovery and agy session setup. */
+/** Static launch inputs for MCP discovery and agy session setup; [skillIndex] is what a new session appends to agy's
+ *  system prompt when agy offers that (null when no local skill needs listing). */
 internal data class CoordinatorEnv(
     val claude: ClaudeArgs,
     val strictMcp: Boolean,
     val cwd: Path,
     val env: EnvReader,
     val log: LogSink,
+    val skillIndex: String? = null,
 )
 
 /** Active agy process handshake and channels pumped while an ACP open/resume call runs. */
@@ -74,7 +76,7 @@ internal class AgyMcpCoordinator(
         registerSdk(merged)
         val encoded = encoder.encode(merged, bridge)
         val names = merged.map(AgyMcpSpec::name)
-        val opener = AgyOpener(conn, target.cwd.toString())
+        val opener = AgyOpener(conn, target.cwd.toString(), append = target.skillIndex?.takeIf { hello.append })
         val openJob = io.scope.async {
             opener.openSession(target.claude.resume, hello, encoded, names, target.log)
         }

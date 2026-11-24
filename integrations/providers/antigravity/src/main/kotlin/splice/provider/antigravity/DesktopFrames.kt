@@ -184,7 +184,8 @@ internal class DesktopFrames(internal val sessionId: String) {
         put(FRAME_SESSION_ID, sessionId)
     }
 
-    private fun commandsOf(commands: List<AgyCommand>): JsonArray = buildJsonArray {
+    /** [commands] as Claude Code lists a command or skill: its name, description and argument hint. */
+    fun commandsOf(commands: List<AgyCommand>): JsonArray = buildJsonArray {
         commands.forEach { command ->
             add(
                 buildJsonObject {

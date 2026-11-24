@@ -12,8 +12,9 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 
-/** Capabilities learned from agy's `initialize` handshake. */
-internal data class AgyHello(val images: Boolean)
+/** Capabilities learned from agy's `initialize` handshake: whether its prompts take [images], and whether a new
+ *  session takes text to [append] to its system prompt (`_meta.antigravity.systemPrompt.append`). */
+internal data class AgyHello(val images: Boolean, val append: Boolean = false)
 
 /** Result of opening an agy session with optional MCP servers. */
 internal data class OpenedSession(
@@ -31,11 +32,12 @@ internal sealed class AgyOpen {
 }
 
 /** Opens an agy session on [agy] in folder [cwd]; each ask waits at most [ms] when said so, and as long as it takes
- *  otherwise. */
+ *  otherwise. A new session (never one taken up again) gets [append] added to agy's system prompt when given. */
 internal class AgyOpener(
     private val agy: AcpConnection,
     private val cwd: String,
     private val ms: Long? = null,
+    private val append: String? = null,
 ) {
     private val requests = AcpRequests()
 
@@ -50,9 +52,12 @@ internal class AgyOpener(
     suspend fun sayHello(): Pair<AgyHello?, String?> {
         val hello = hello()
         if (hello !is AcpAnswer.Result) return null to (hello.spoken("agy refused:") ?: AGY_SIGN_IN)
-        val prompts = (hello.result["agentCapabilities"] as? JsonObject)?.get("promptCapabilities") as? JsonObject
+        val capabilities = hello.result["agentCapabilities"] as? JsonObject
+        val prompts = capabilities?.get("promptCapabilities") as? JsonObject
+        val antigravity = (capabilities?.get("_meta") as? JsonObject)?.get("antigravity") as? JsonObject
+        val systemPrompt = antigravity?.get("systemPrompt") as? JsonObject
         val images = JsonScalars.str(prompts, "image") == "true"
-        return AgyHello(images) to null
+        return AgyHello(images, JsonScalars.str(systemPrompt, "append") == "true") to null
     }
 
     /** Opens [resume] or a new session with [mcpServers]; if agy refuses the MCP servers, logs [serverNames] and
@@ -107,7 +112,7 @@ internal class AgyOpener(
         val signedOut = resumed is AcpAnswer.Refused && resumed.code == AUTH_REQUIRED
         if (resumed is AcpAnswer.Result) return OpenAttempt(resume, resumed, resumed = true)
         if (signedOut) return OpenAttempt(resume, resumed, resumed = false)
-        val beganNew = asked("session/new", requests.newSession(cwd, mcpServers))
+        val beganNew = asked("session/new", requests.newSession(cwd, mcpServers, append))
         val id = (beganNew as? AcpAnswer.Result)?.let { JsonScalars.str(it.result, "sessionId") }
         return OpenAttempt(id, beganNew, resumed = false)
     }

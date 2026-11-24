@@ -1,4 +1,5 @@
-// Dispatches Claude Desktop control requests for DesktopSession (initialize, set_model, interrupt, mcp_*, settings).
+// Dispatches Claude Desktop control requests for DesktopSession (initialize, set_model, interrupt, mcp_*, settings,
+// reload_skills).
 package splice.provider.antigravity
 
 import kotlinx.serialization.json.JsonObject
@@ -8,9 +9,15 @@ import splice.core.util.JsonScalars
 internal interface SessionControlHost {
     val agy: AgySession?
     val commands: List<AgyCommand>
+
+    /** The names of agy's own slash commands, which a local skill of the same name never shadows. */
+    val nativeCommands: Set<String>
     suspend fun ensureOpen(desktopSpecs: List<AgyMcpSpec>): DesktopParts
     fun agy(message: JsonObject)
     fun syncLook(model: String? = null, mode: String? = null)
+
+    /** Says the session's `system/init` now. */
+    fun announce()
     fun cancelOrSwitch(switchOut: Boolean)
 }
 
@@ -25,8 +32,12 @@ internal class DesktopControl(
         val subtype = JsonScalars.str(request, "subtype")
         return when (subtype) {
             "initialize" -> {
+                // The answer, then `system/init`, so Desktop has the session's commands and skills before any turn;
+                // the first turn does not say it again.
                 val p = host.ensureOpen(coordinator.readInitializeSpecs(request))
-                p.frames.initialized(id, host.commands, lists.models(host.agy?.catalog), mcpState.applied)
+                p.out(p.frames.initialized(id, host.commands, lists.models(host.agy?.catalog), mcpState.applied))
+                host.announce()
+                null
             }
             "set_model" -> setModel(id, request)
             "mcp_status" -> host.ensureOpen(emptyList()).frames.controlOk(id, mcpState.statusResponse())
@@ -63,6 +74,13 @@ internal class DesktopControl(
                 p.frames.controlOk(id)
             }
             "set_permission_mode", "apply_flag_settings" -> applySetting(p, id, request)
+            "reload_skills" -> {
+                // Claude Code answers with the skills it loaded; here, the local ones agy's own commands don't shadow.
+                val native = host.nativeCommands
+                val fresh = p.skills.reload().commands.filter { it.name !in native }
+                val listed = p.frames.commandsOf(lists.mergeCommands(emptyList(), fresh))
+                p.frames.controlOk(id, JsonObject(mapOf("skills" to listed)))
+            }
             else -> p.frames.controlError(id, "$subtype is not offered by a session on agy")
         }
     }

@@ -11,7 +11,8 @@ import splice.core.util.JsonScalars
 import splice.core.util.WallClock
 import splice.provider.antigravity.hooks.AcpLoginPrompt
 import splice.provider.antigravity.hooks.AcpSessionHooks
-import splice.provider.antigravity.skills.LocalSkillCatalog
+import splice.provider.antigravity.skills.SkillInvocation
+import splice.provider.antigravity.skills.SkillShelf
 import java.util.UUID
 
 /** Builds [DesktopParts] once the session id is known (either from Desktop's flags or agy's `session/new`). */
@@ -19,14 +20,14 @@ internal fun interface PartsFactory {
     fun build(sessionId: String): DesktopParts
 }
 
-/** The parts of a Desktop session that outlive its turns. */
+/** The parts of a Desktop session that outlive its turns; [skills] holds its local skills as they stand now. */
 internal data class DesktopParts(
     val frames: DesktopFrames,
     val out: DesktopOut,
     val transcript: ClaudeTranscript,
     val record: ClaudeSessionRecord,
     val look: SessionLook,
-    val localSkills: LocalSkillCatalog = LocalSkillCatalog(emptyList(), emptyList()),
+    val skills: SkillShelf,
 )
 
 /** Desktop session driven on agy via [coordinator] and [mcpState]; [clock] times turns. */
@@ -55,12 +56,17 @@ internal class DesktopSession(
     private var window = AGY_WINDOW
     private var used = 0L
     private var pendingHandoff: String? = null
+    private val invocation = SkillInvocation()
+
+    /** What the `system/init` said on `initialize`, until the first turn begins. */
+    private var announced: SessionLook? = null
 
     private var agyCommands: List<AgyCommand> = emptyList()
 
     override val agy: AgySession? get() = session
     override val commands: List<AgyCommand>
-        get() = lists.mergeCommands(agyCommands, parts?.localSkills?.commands.orEmpty())
+        get() = lists.mergeCommands(agyCommands, parts?.skills?.current?.commands.orEmpty())
+    override val nativeCommands: Set<String> get() = agyCommands.mapTo(HashSet(), AgyCommand::name)
 
     /** True once Desktop asked to switch to a non-Antigravity model, so the launch pipe hands off to Claude Code. */
     var switchingOut: Boolean = false
@@ -156,11 +162,7 @@ internal class DesktopSession(
         parts = built
         turn = agyTurn
         questions = AgyQuestions(built.frames, built.out, agyTurn)
-        look = built.look.copy(
-            commands = commands,
-            skills = built.localSkills.skillNames,
-            mcpServers = mcpState.initServers(),
-        )
+        look = current(built)
         built.record.write(busy = false)
         if (claude.resume == null && built.look.cwd.isNotBlank()) {
             hooks.sessionStart?.started(resolvedId, built.look.cwd)
@@ -180,6 +182,14 @@ internal class DesktopSession(
             mcpServers = mcpState.initServers(),
         )
         if (model != null) turn?.draw?.model = model
+    }
+
+    override fun announce() {
+        val p = checkNotNull(parts)
+        val now = current(p)
+        look = now
+        p.out(p.frames.init(now))
+        announced = now
     }
 
     override fun cancelOrSwitch(switchOut: Boolean) {
@@ -208,7 +218,7 @@ internal class DesktopSession(
         if (prompts.isEmpty()) begin(p)
         val handoff = pendingHandoff
         pendingHandoff = null
-        val prompt = session?.prompt(content, handoff)
+        val prompt = session?.prompt(invocation.expand(content, p.skills.current.commands, nativeCommands), handoff)
         if (prompt != null) {
             prompts += prompt
             return
@@ -219,19 +229,26 @@ internal class DesktopSession(
         finish(reason)
     }
 
+    /** A turn begins with `system/init`, as each turn of Claude Code's stream-json does, except the first turn after
+     *  `initialize` said it while its model, mode, commands and skills still stand (an MCP server that connected in
+     *  between is no reason to say it twice). */
     private fun begin(p: DesktopParts) {
         startedAt = clock()
         usage = lists.usage(null)
         stop = null
-        val current = (look ?: p.look).copy(
-            commands = commands,
-            skills = p.localSkills.skillNames,
-            mcpServers = mcpState.initServers(),
-        )
-        look = current
-        p.out(p.frames.init(current))
+        val now = current(p)
+        if (announced?.copy(mcpServers = now.mcpServers) != now) announce()
+        announced = null
         p.record.write(busy = true)
     }
+
+    /** The session as `system/init` says it now: its model and mode, the merged commands, the local skills and the
+     *  MCP servers. */
+    private fun current(p: DesktopParts): SessionLook = (look ?: p.look).copy(
+        commands = commands,
+        skills = p.skills.current.skillNames,
+        mcpServers = mcpState.initServers(),
+    )
 
     private fun answeredPrompt(message: JsonObject) {
         val error = message["error"] as? JsonObject

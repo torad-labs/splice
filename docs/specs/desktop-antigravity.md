@@ -13,7 +13,8 @@ record any tool that lists Claude sessions reads, and takes turns from Desktop's
 
 - **agy is never in a Claude Code loop.** For a Gemini row, the launcher runs the translator *instead of* `claude`.
 - **agy is Google's binary, unmodified.** agy signs in by itself, splice never reads `~/.gemini`, and Desktop's
-  system prompt is never sent.
+  system prompt is never sent. The only text splice adds to agy's system prompt is the local skill index (see "Local
+  skills").
 - **The translator names itself** in `clientInfo` as `splice`, never as `zed`.
 
 Prompts reach a Gemini session the ways they reach any Desktop session: Marcos typing, the Eli app, and Desktop's own
@@ -80,7 +81,8 @@ to agy:
 
 | Desktop | agy |
 |---|---|
-| `initialize` request | ACP `initialize`; answer with the models, commands, `agents: []`, output styles, account |
+| `initialize` request | ACP `initialize`; answer with the models, commands, `agents: []`, output styles, account; then `system/init` |
+| `reload_skills` | the local skills found again (see "Local skills") |
 | new session / `--resume=<id>` | `session/new` / `session/resume` |
 | `user` line, also mid-turn | `session/prompt` (agy steers a running turn) |
 | text and thinking stream, `assistant` | `agent_message_chunk`, `agent_thought_chunk` |
@@ -163,9 +165,51 @@ Each of these came up and was dropped. They stay out unless Marcos asks for them
 - **Context window:** 1,048,576 for every model, from `usage_update.size`.
 - **Modes:** `default`, `accept-edits`, `auto`, `plan`. Desktop's `bypassPermissions` maps to
   `--dangerously-skip-permissions`; `acceptEdits` to `accept-edits`; `plan` to `plan`.
-- **System prompt:** agy advertises `_meta.antigravity.systemPrompt.append`. The translator doesn't use it.
+- **System prompt:** agy advertises `agentCapabilities._meta.antigravity.systemPrompt.append: true`, and a request
+  passes `"_meta": {"antigravity": {"systemPrompt": {"append": "<text>"}}}`. The translator uses it only for the
+  skill index (see "Local skills"). A probe on Nov 24 (agy 1.5.15) showed that `session/new` takes it, while
+  `session/resume` with an append adds the new text to what the session already holds instead of replacing it.
 - **Commands:** agy's slash commands (`/goal`, `/compact`, `/plan`, `/teamwork`, `/swarm`, skills …) come in
-  `available_commands_update` and go to Desktop as the session's `commands`.
+  `available_commands_update` and go to Desktop as the session's `commands`. agy finds skills in `.agents/skills`
+  in the session folder and its parents up to the repository root, plus its own built-in ones. It doesn't read
+  `.claude/skills` or `~/.agents/skills`.
+
+## Local skills (Nov 24, 2026)
+
+A Gemini session offers the person's Claude skills and commands as a Claude Code session does, without ever reading
+or writing `~/.gemini`.
+
+- **Where they come from** (`ClaudeSkillCatalog`, nearest first, and the first one with a given name wins):
+  `.claude/skills` and `.agents/skills` in the session folder and each parent up to the repository root;
+  `<CLAUDE_CONFIG_DIR or ~/.claude>/skills`; `~/.agents/skills`; the skills in
+  `$CLAUDE_CODE_DESKTOP_SKILLS_PLUGIN_DIR/skills` that its `manifest.json` doesn't turn off; then `.claude/commands`
+  along the same walk and `<config>/commands`. They are found once when the session starts, before agy opens.
+- **Autocomplete:** the `initialize` answer's `commands` and `system/init`'s `slash_commands` list agy's commands
+  and then the local ones. On a shared name, agy's command wins. `skills` lists the local skills.
+- **`system/init`** comes right after the `initialize` answer, so Desktop has the commands before any turn. The first
+  turn doesn't say it again unless the model, mode, commands or skills changed in between. Each later turn begins with
+  it, as each of Claude Code's stream-json turns does.
+- **`/name args`:** when a message's first text is `/name args` and `name` is a local skill or command that agy
+  doesn't have, agy is sent `<command-name>/name</command-name>`, `<command-args>args</command-args>`, the skill's
+  folder (`Base directory for this skill: …`, so relative `scripts/` and `references/` paths resolve), and then the
+  body. In the body, `$ARGUMENTS` is replaced by the arguments; if the body has no `$ARGUMENTS` and there are
+  arguments, they are added after it as `ARGUMENTS: …`. In a message made of blocks, only that text block changes and
+  images stay where they were. Desktop's replay and the transcript keep what was typed. agy's own commands, and
+  `/login`, go through as before.
+- **`reload_skills`** scans the folders again and answers `{"skills": [{name, description, argumentHint}, …]}`, as
+  Claude Code does, with the local skills and commands that agy's own don't shadow. Autocomplete and `/name` use the
+  new list from then on.
+- **The skill index.** When agy offers `systemPrompt.append`, a new session (`session/new`, including the retry
+  without MCP servers) gets a short index appended to agy's system prompt. The index lists each local skill's name,
+  a one-line description and its `SKILL.md` path, so agy reads a skill when a task calls for it and loads nothing
+  otherwise. The boundary it keeps:
+  - only when `initialize` advertised the capability, and only on `session/new`, never on `session/resume` or the
+    `mcp_set_servers` resume, because agy adds a resumed append to the one the session already has;
+  - skills only, leaving out any under an `.agents/skills` folder of the session's walk, which agy lists itself;
+  - bounded to 100 entries, 160 characters per description and about 12,000 characters, then
+    `(N more skills omitted)`;
+  - never Desktop's system prompt; no `--add-dir` per skill folder (a probe with 106 `--add-dir` flags stalled
+    `agy acp`); never `~/.gemini`.
 
 ## Steps
 

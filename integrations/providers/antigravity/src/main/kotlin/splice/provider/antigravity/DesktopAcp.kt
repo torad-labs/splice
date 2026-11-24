@@ -20,6 +20,7 @@ import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.provider.antigravity.hooks.AcpSessionHooks
 import splice.provider.antigravity.skills.ClaudeSkillCatalog
+import splice.provider.antigravity.skills.SkillShelf
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -101,11 +102,12 @@ public class DesktopAcp(
         val connected = object : BridgeConnected {
             override fun connected(serverName: String) = mcpState.markConnected(serverName)
         }
+        val skills = SkillShelf(ClaudeSkillCatalog(cwd, env, log))
         McpBridge(out, connected).use { bridge ->
-            val envTarget = CoordinatorEnv(claude, STRICT_MCP_CONFIG in args, cwd, env, log)
+            val envTarget = CoordinatorEnv(claude, STRICT_MCP_CONFIG in args, cwd, env, log, skills.index())
             val chan = CoordinatorIo(started, hello, helloFailure, lines, deferredLines, scope)
             val coordinator = AgyMcpCoordinator(envTarget, chan, mcpState, bridge)
-            val factory = PartsFactory { id -> parts(id, claude, claude.model.orEmpty(), out) }
+            val factory = PartsFactory { id -> parts(id, claude, out, skills) }
             val session = DesktopSession(claude, factory, coordinator, mcpState, bridge, clock, target.hooks)
             try {
                 loop(session, lines, deferredLines, started)
@@ -123,20 +125,19 @@ public class DesktopAcp(
         }
     }
 
-    private fun parts(id: String, claude: ClaudeArgs, model: String, out: DesktopOut): DesktopParts {
+    private fun parts(id: String, claude: ClaudeArgs, out: DesktopOut, skills: SkillShelf): DesktopParts {
         val config = env(DESKTOP_CONFIG_VARIABLE)?.takeIf(String::isNotBlank)?.let(Path::of) ?: UserHome.claudeDir(env)
         val version = claude.version
         val entrypoint = env(ENTRYPOINT_VARIABLE) ?: ENTRYPOINT
         val folder = cwd.toString()
         val facts = SessionFacts(ProcessHandle.current().pid(), id, folder, version, entrypoint, env(HOST_SESSION))
-        val localSkills = ClaudeSkillCatalog(cwd, env, log).load()
         return DesktopParts(
             DesktopFrames(id),
             out,
             ClaudeTranscript(config, TranscriptOwner(id, folder, version, entrypoint), clock),
             ClaudeSessionRecord(config, facts, clock, log),
-            SessionLook(folder, model, claude.permissionMode, emptyList(), version, skills = localSkills.skillNames),
-            localSkills,
+            SessionLook(folder, claude.model.orEmpty(), claude.permissionMode, emptyList(), version),
+            skills,
         )
     }
 

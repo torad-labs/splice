@@ -132,6 +132,48 @@ internal class SkillParsingTest {
     }
 
     @Test
+    fun `a comment line between a key and its value is skipped at any indent`() {
+        val item = skill(
+            """
+            ---
+            user-invocable:
+              # Model only
+              "fAlSe"
+            disable-model-invocation:
+            # Person only
+              'TrUe'
+            description: first
+              # between continuation lines
+              second
+            ---
+            Body
+            """.trimIndent(),
+        )
+        assertEquals(SkillUse(byUser = false, byModel = false), item.use)
+        assertEquals("first second", item.description)
+    }
+
+    @Test
+    fun `a comment line inside a block or a multi-line quoted value is its text`() {
+        val item = skill(
+            """
+            ---
+            description: |
+              line one
+              # kept in the block
+              line two
+            argument-hint: "first
+              # kept in the quotes
+              last"
+            ---
+            Body
+            """.trimIndent(),
+        )
+        assertEquals("line one # kept in the block line two", item.description)
+        assertEquals("first # kept in the quotes last", item.hint)
+    }
+
+    @Test
     fun `only a space or tab before a hash starts a comment`() {
         val item = skill("---\ndescription: Keep #reference\targument-free\t# tab comment\n---\nBody\n")
         assertEquals("Keep #reference\targument-free", item.description)

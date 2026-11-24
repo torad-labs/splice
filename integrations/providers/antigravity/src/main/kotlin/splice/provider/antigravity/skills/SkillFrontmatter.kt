@@ -53,16 +53,15 @@ internal class SkillFrontmatter(private val log: LogSink) {
         return when {
             quote != null -> folded(inline, front, index).let { unquote(it, quote) ?: it }
             uncommented(inline) in BLOCK_MARKERS -> folded("", front, index)
-            else -> plain(sequenceOf(inline) + continuation(front, index))
+            else -> plain(sequenceOf(inline) + continuation(front, index).map { it.value })
         }
     }
 
     /** The line the value of the key at [keyAt] starts on: that line, or for an empty `key:` (a comment aside) the
-     *  first non-blank indented line below it, when there is one. */
+     *  first non-blank indented line below it that is no comment line, when there is one. */
     private fun valueStart(front: List<String>, keyAt: Int): Int {
         if (uncommented(front[keyAt].substringAfter(':')).isNotEmpty()) return keyAt
-        val below = continuation(front, keyAt).indexOfFirst { it.isNotBlank() }
-        return if (below < 0) keyAt else keyAt + 1 + below
+        return continuation(front, keyAt).firstOrNull { it.value.isNotBlank() }?.index ?: keyAt
     }
 
     /** A plain scalar's [lines] folded with spaces, each cut at its comment; a line that carried one ends it. */
@@ -106,12 +105,21 @@ internal class SkillFrontmatter(private val log: LogSink) {
         else -> next?.takeIf { ch == '\\' && (it == quote || it == '\\') }
     }
 
-    /** The indented lines after [index] that continue its value. */
-    private fun continuation(front: List<String>, index: Int): Sequence<String> =
-        front.asSequence().drop(index + 1).takeWhile { it.isBlank() || it.first().isWhitespace() }
+    /** The lines after [index] (with their indices) that continue its value: indented or blank ones. A comment line,
+     *  one whose text starts with `#` at any indent, is YAML's and is dropped before the run is measured, so it
+     *  neither starts a value nor ends one; inside a block or quoted scalar ([asContent]) it is text and stays. */
+    private fun continuation(
+        front: List<String>,
+        index: Int,
+        asContent: Boolean = false,
+    ): Sequence<IndexedValue<String>> =
+        front.asSequence().withIndex().drop(index + 1)
+            .filter { asContent || !it.value.trimStart().startsWith('#') }
+            .takeWhile { it.value.isBlank() || it.value.first().isWhitespace() }
 
     private fun folded(inline: String, front: List<String>, index: Int): String =
-        (sequenceOf(inline) + continuation(front, index)).map(String::trim).filter(String::isNotEmpty).joinToString(" ")
+        (sequenceOf(inline) + continuation(front, index, asContent = true).map { it.value })
+            .map(String::trim).filter(String::isNotEmpty).joinToString(" ")
 }
 
 private val BLOCK_MARKERS = setOf(">", ">-", ">+", "|", "|-", "|+")

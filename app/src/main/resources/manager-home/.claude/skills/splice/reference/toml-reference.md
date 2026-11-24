@@ -89,6 +89,7 @@ core/src/main/kotlin/splice/core/config/ConfigService.kt (coerceRejects, lines 2
 | `[compaction]` | table | your text after Claude Code's compaction prompt (live) |
 | `[providers.<key>]` | map of provider tables | one upstream each |
 | `[door]` | table | the gateway: which provider a door command runs on, and old selector prefixes it still reads (section 6.1) |
+| `[launch.profiles.<name>]` | map of profile tables | the Claude folders `splice launch claude --profile <name>` runs in (section 6.2) |
 | `[heads.<key>]` | map of head tables | one loopback port each |
 | `[projects."<root>"]` | map of project tables | standing prompts by working directory |
 | `[capabilities.<name>]` | map of capability tables | work splice runs before a session's first turn goes upstream (section 10) |
@@ -397,6 +398,34 @@ block is not read to serve a turn. These tables name what a person adds to it.
 | `[door.selector_aliases]` | map of prefix to provider key | empty | an old selector prefix read as the provider it stood for: `"claude-ollama--" = "ollama"`. A key ends `--` (after something, `claude-ollama--` or `zeta--`); the provider must be declared and the key may not be another provider's own `claude-<provider>--`. The gateway's own legacy prefixes (`claude-codex--`, `claude-grok--` for `xai`, `claude-kimi--`, `claude-muse--`, `claude-openrouter--`, `claude-fireworks--`, `claude-deepseek--`) need no entry |
 
 Source: DoorConfig.kt; SelectorAliases.kt; docs/specs/door-default.md (decision 10).
+
+### 6.2 [launch.profiles.<name>]
+
+`splice launch claude --profile <name> [args...]` (or `--profile=<name>`, before any `--`; splice takes it out of what
+Claude Code is given) starts the side-by-side launch on the door with `CLAUDE_CONFIG_DIR` at the profile's own folder,
+rebuilt from your `~/.claude` just before the session starts. `~/.claude` is read and never written. The layers, lowest
+first: Claude Code's defaults, your own config, the profile's filters below, splice's door values (its overlay and
+environment; a variable the door sets or takes out is dropped from the settings' `env`). A name splice.toml does not
+declare refuses the launch and lists the ones it does. Read at the daemon's start. Claude Code's own subcommands
+(`mcp`, `plugin`, `doctor`, …) take no `--profile`: the launcher runs them with your arguments exactly as given.
+
+| field | type | default | effect |
+|---|---|---|---|
+| `dir` | string | `~/.splice/launch-profiles/<name>` | the profile's folder, absolute or `~/…`. Boot refuses `~/.claude`, a folder inside it or one holding it, and two profiles on one folder; a launch refuses a folder that holds files without splice's `.splice-profile` mark |
+| `keep_hooks` | `"own"`, `"all"` or `"none"` | `"own"` | `own`: the hooks in your `settings.json` / `settings.local.json`, and no plugin's; `all`: those and the kept plugins' own; `none`: none |
+| `drop_hooks` | array of strings | empty | taken out of the kept hooks: an event's name (`"SessionStart"`) drops that event's hooks, any other word every settings hook whose `command` holds it |
+| `keep_plugins` | array of strings | empty | the plugins loaded, by `name@marketplace` or by name, among those you enabled; every other is written disabled. Each kept plugin is installed in the profile as links to your install, without its `hooks/` and manifest `hooks` unless `keep_hooks = "all"` |
+| `drop_blocks` | array of strings | empty | marked blocks taken out of `CLAUDE.md`: from a line `<!-- name -->`, `<!-- BEGIN name -->` or `# BEGIN name` to a line `<!-- /name -->`, `<!-- END name -->` or `# END name`, both included, each marker alone on its line. A block that never closes is kept and said at launch |
+| `drop_names` | array of strings | empty | skills, agents and commands whose file names start with one of these get no link in the profile |
+
+The folder holds `settings.json`, `settings.local.json` and `CLAUDE.md` (each removed while yours is absent),
+`.claude.json` (what Claude Code writes there is kept; what it lacks is seeded from your `~/.claude.json` without its
+Claude login; `mcpServers` is rebuilt each launch from yours over Splice's MCP registry), `plugins/`, one link per kept
+entry in `skills/`, `agents/` and `commands/` (stale links from earlier launches are removed; a file of the profile's
+own is kept and said), and `projects` and `sessions` linked to `~/.claude`'s so `--resume` sees every session.
+
+Source: core/src/main/kotlin/splice/core/topology/LaunchProfileConfig.kt; LaunchProfileChecks.kt;
+integrations/claude-code/src/main/kotlin/splice/client/profile/.
 
 ## 7. [claude]
 

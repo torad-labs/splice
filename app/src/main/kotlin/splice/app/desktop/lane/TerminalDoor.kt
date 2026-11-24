@@ -12,11 +12,13 @@ import splice.client.login.DoorLogin
 import splice.core.config.FileHeldKey
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
+import splice.core.mcp.McpUserRegistry
 import splice.core.topology.Topology
 import splice.core.util.LogSink
 import splice.launch.recipe.ClaudeDoor
 import splice.launch.recipe.DoorLaunchSpec
 import splice.launch.recipe.GatewayAt
+import splice.launch.recipe.ProfileLaunch
 
 internal class TerminalDoor(
     private val topology: Topology,
@@ -33,6 +35,12 @@ internal class TerminalDoor(
     private val records = ClaudeLaneRecords(statePaths.claudeLaneFile, log)
     private val claudeHead = TopologyClaudeHead(topology)
     private val login = DoorLogin(UserHome.claudeDir(), statePaths.doorLoginDir)
+    private val profiles = TerminalProfiles(
+        topology.launch.profiles,
+        UserHome.dir(),
+        statePaths.launchProfilesDir,
+        McpUserRegistry(statePaths),
+    )
 
     /** `claude`'s launch once [open] has run; null before. */
     @Volatile
@@ -50,6 +58,12 @@ internal class TerminalDoor(
 
     /** Side-by-side launch (`splice launch claude` / `claude-splice`); always on the door once [open] has run. */
     override suspend fun launchSideBySide(): DoorLaunchSpec? = launched?.launchSideBySide()
+
+    /** `splice launch claude --profile <name>`: the side-by-side launch over the profile's folder, rebuilt first. */
+    override suspend fun launchProfile(name: String): ProfileLaunch {
+        val side = launched?.launchSideBySide() ?: return ProfileLaunch.Refused(DOOR_CLOSED)
+        return profiles.launch(name, side)
+    }
 
     /** A launch of `[door.commands.<name>]` on the door; null for a name splice.toml gives no door command, and before
      *  [open]. */
@@ -73,3 +87,6 @@ internal class TerminalDoor(
 
 // What the terminal's key starts with, so it is told from Desktop's at a glance.
 private const val TERMINAL_KEY_PREFIX = "splice-terminal-"
+
+// What a profile's launch is told before the door has opened.
+private const val DOOR_CLOSED = "splice: the door is not open yet; try again in a moment"

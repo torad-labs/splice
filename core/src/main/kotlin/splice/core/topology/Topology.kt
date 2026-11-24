@@ -64,6 +64,8 @@ public data class Topology(
     val server: ServerConfig = ServerConfig(),
     /** custom-provider (issue #680): the door's own settings, today its named commands. */
     val door: DoorConfig = DoorConfig(),
+    /** Terminal launch profiles (issue #791): the Claude folders `splice launch claude --profile <name>` runs in. */
+    val launch: LaunchConfig = LaunchConfig(),
     /** The harness (docs/specs/harness.md): capabilities splice.toml declares, read apart from the schema decode
      *  (CapabilityToml) and attached once found well-formed. Not part of the canonical tree the console edits. */
     @Transient val capabilities: List<Capability> = emptyList(),

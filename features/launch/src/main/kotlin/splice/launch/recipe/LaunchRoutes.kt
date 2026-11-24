@@ -116,15 +116,26 @@ public class LaunchRoutes(
         answer(call, key, outcome)
     }
 
-    /** `claude` on the door (docs/specs/door-default.md, decision 2): the recipe [door] carries, over the person's own
+    /** `claude` on the door (docs/specs/door-default.md, decision 2): the recipe [plain] carries, over the person's own
      *  Claude folder. */
-    private suspend fun doorReply(call: ApplicationCall, key: String, door: DoorLaunchSpec) {
+    private suspend fun doorReply(call: ApplicationCall, key: String, plain: DoorLaunchSpec) {
         val service = requireNotNull(launchService)
-        val request = receiveLaunchRequest(call)
+        val received = receiveLaunchRequest(call)
+        // terminal launch profiles (issue #791): `splice launch claude [--profile <name>]` takes its own words out of
+        // what Claude Code is given, and runs in the profile's folder when it names one
+        val side = service.door?.takeIf { key == CLAUDE_SPLICE_COMMAND }?.let(::SideBySideLaunch)
+        val ready = when (val started = side?.start(plain, received.extraArgs)) {
+            is SideBySideLaunch.Started.Refused -> return refuse(call, key, started.reason, HttpStatusCode.BadRequest)
+            is SideBySideLaunch.Started.Ready -> started
+            null -> SideBySideLaunch.Started.Ready(plain, received.extraArgs)
+        }
+        val door = ready.spec
+        val request = received.copy(extraArgs = ready.args)
         val caller = LaunchCaller(request.cwd, null, request.inheritedConfigDir, request.launch)
         val headDirs = heads.all().mapNotNull { it.spec?.trees?.own }
         val skip = request.dangerouslySkipPermissions
-        val told = door.copy(notice = inHeadFolder(request.inheritedConfigDir, service))
+        val notices = listOfNotNull(door.notice, inHeadFolder(request.inheritedConfigDir, service))
+        val told = door.copy(notice = notices.takeIf { it.isNotEmpty() }?.joinToString("\n"))
         answer(call, key, service.onDoor.outcome(told, request.extraArgs, skip, caller, headDirs))
     }
 

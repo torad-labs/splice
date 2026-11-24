@@ -44,7 +44,9 @@ internal class DoorRecipe(
         val config = wrap.ownHome().configRootUnsets(caller.inheritedConfigDir, headDirs)
         val danger = "dangerouslySkipPermissions engaged: $DANGER".takeIf { dangerouslySkipPermissions }
         val warning = listOfNotNull(danger, door.notice).takeIf { it.isNotEmpty() }?.joinToString("\n")
-        return LaunchOutcome.Ready(LaunchEnvironment(door.env, door.unset + config).recipe(argv, warning))
+        // a variable the door sets (a profile's CLAUDE_CONFIG_DIR) is never also taken out
+        val unset = (door.unset + config).distinct() - door.env.keys
+        return LaunchOutcome.Ready(LaunchEnvironment(door.env, unset).recipe(argv, warning))
     }
 }
 

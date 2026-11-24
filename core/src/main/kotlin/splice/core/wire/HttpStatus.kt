@@ -79,6 +79,9 @@ public object HttpStatus {
     /** Unprocessable Entity; the top of the rejection window an upstream may answer a bad turn with. */
     public const val UNPROCESSABLE_ENTITY: Int = 422
 
+    /** Upgrade Required; a team server's answer to a laptop older than its minimum client, where it is set to refuse. */
+    public const val UPGRADE_REQUIRED: Int = 426
+
     /** Rate Limited; the code that arms the shared cooldown and the one clients retry on. */
     public const val TOO_MANY_REQUESTS: Int = 429
 

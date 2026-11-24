@@ -20,6 +20,7 @@ import splice.app.Daemon
 import splice.app.cli.server.ServerCommand
 import splice.app.desktop.Format
 import splice.app.desktop.FormatProvider
+import splice.core.client.SPLICE_CLIENT_HEADER
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
@@ -52,6 +53,7 @@ class ServerUpstreamAvailabilityTest {
             assertEquals(JsonNull, starting.state()["last_error"])
             assertEquals(if (pooled) listOf("gpu") else emptyList(), starting.upstreamNames())
             server.assertRefused("Booting the box.")
+            server.assertRefused("Booting the box.", clientVersion = "0.1.0")
 
             val message = "Custom maintenance notice."
             val until = "2020-01-01T00:00:00Z"
@@ -70,6 +72,7 @@ class ServerUpstreamAvailabilityTest {
             server.write("up")
             server.awaitState("up")
             server.assertServed()
+            server.assertUpgradeRequired()
         } finally {
             server.close()
             box.stop()
@@ -111,6 +114,9 @@ private class AvailabilityServer(private val dir: Path, base: String, pooled: Bo
             [server]
             listen = "127.0.0.1:$listen"
             commands = ["claude-state"]
+            [server.client]
+            minimum = "0.10.0"
+            outdated_status = 426
             [server.state]
             file = "box.state"
             every_seconds = 1
@@ -176,9 +182,9 @@ private class AvailabilityServer(private val dir: Path, base: String, pooled: Bo
         return state["state"] == JsonPrimitive(expected) && state["last_error"] == lastError
     }
 
-    fun assertRefused(message: String) {
+    fun assertRefused(message: String, clientVersion: String? = null) {
         for (route in routes) {
-            val reply = turn(route)
+            val reply = turn(route, clientVersion)
             assertEquals(503, reply.statusCode(), "${route.path}: ${reply.body()}")
             assertEquals("17", reply.headers().firstValue("Retry-After").orElse(null), route.path)
             val body = Json.parseToJsonElement(reply.body()).jsonObject
@@ -203,6 +209,13 @@ private class AvailabilityServer(private val dir: Path, base: String, pooled: Bo
         }
     }
 
+    fun assertUpgradeRequired() {
+        for (route in routes) {
+            val reply = turn(route, clientVersion = "0.1.0")
+            assertEquals(426, reply.statusCode(), "${route.path}: ${reply.body()}")
+        }
+    }
+
     private fun upstreams(): JsonObject {
         val ask = request(control, "/api/server/upstreams", MgmtKey(paths).get()).GET().build()
         val reply = http.send(ask, HttpResponse.BodyHandlers.ofString())
@@ -210,9 +223,10 @@ private class AvailabilityServer(private val dir: Path, base: String, pooled: Bo
         return Json.parseToJsonElement(reply.body()).jsonObject
     }
 
-    private fun turn(route: TurnRoute): HttpResponse<String> {
+    private fun turn(route: TurnRoute, clientVersion: String? = null): HttpResponse<String> {
         val body = """{"model":"${route.model}","max_tokens":32,"messages":[{"role":"user","content":"hi"}]}"""
         val ask = request(listen, route.path, key)
+            .apply { clientVersion?.let { header(SPLICE_CLIENT_HEADER, it) } }
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(body))
             .build()

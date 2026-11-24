@@ -55,6 +55,10 @@ internal class UpstreamPools(
     private val ticker: Ticker = ProcessTicker(),
 ) {
     private val pools = ConcurrentHashMap<String, UpstreamPool>()
+
+    // The most turns each server of a pool takes at once, server mode's `inflight_per_upstream` (#791): 0, any number.
+    @Volatile
+    private var each = 0
     private val order = ConcurrentHashMap<String, Int>()
     private val carried = ConcurrentHashMap<String, ServerHeaders>()
 
@@ -62,6 +66,13 @@ internal class UpstreamPools(
      *  any head; unset, a pool is checked as server mode always checked one, `/health` with each server up at start. */
     @Volatile
     var probe: ServerProbe = ServerProbe()
+
+    /** Each server of every pool made from now takes at most [most] turns at once, server mode's
+     *  `inflight_per_upstream` (#791). The daemon says it as it wires server mode, before any head, and so before any
+     *  pool, is built: a pool holds its cap from its first turn, whoever sends it. */
+    fun capEach(most: Int) {
+        each = most
+    }
 
     /** The pool of the provider [key], or null when it lists no upstreams. The first call for a provider makes its
      *  pool and starts its checks: a health check carries [headers], and a completion probe asks [ready], its
@@ -73,7 +84,7 @@ internal class UpstreamPools(
         return pools.computeIfAbsent(key) {
             order[key] = order.size
             val check = PoolCheck.Plan(probe).of(provider.healthSeconds, headers, ready)
-            UpstreamPool(key, provider.upstreams, log, startHealthy = check.startHealthy).also { pool ->
+            UpstreamPool(key, provider.upstreams, log, cap = each, startHealthy = check.startHealthy).also { pool ->
                 pool.upstreams.forEach { watch(Watched(pool, check), it, waitFirst = false) }
             }
         }

@@ -61,6 +61,8 @@ internal class ServerRig(
     private val clock: Clock = Clock.systemUTC(),
     private val upstreams: HeadUpstreams = object : HeadUpstreams {},
     private val waiter: Waiter = ProcessWaiter(),
+    /** What serves the team's door, for a test that opens one; none by default. */
+    private val gateway: TeamGateway? = null,
 ) {
     /** The port the listener answers on. */
     val port: Int = TestPorts.reserve()
@@ -92,7 +94,7 @@ internal class ServerRig(
         }
         val serverDir = state.resolve("server")
         ServerBackupStore(server.backup, serverDir, BackupRun(Dispatchers.IO, clock, waiter, log)).restoreIfEmpty(env)
-        val reach = ServerReach(TurnKey(MgmtKey(StatePaths(baseOverride = state))), board, env)
+        val reach = ServerReach(TurnKey(MgmtKey(StatePaths(baseOverride = state))), board, env, gateway)
         val opened = ServerMode(server, serverDir, Dispatchers.IO, log, clock, upstreams, waiter)
         mode = opened
         opened.open(ServerAddress("127.0.0.1", port), machine, reach, state, signinSecret)

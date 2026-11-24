@@ -111,7 +111,14 @@ internal class TeamDoor : TeamGateway {
                 ask.asking(route.upstream),
                 TERMINAL_DOOR,
                 null,
-                listener = ListenerSays(meta.preferredUpstream, meta.servedTurn, meta.notice, meta.keepaliveMs),
+                listener = ListenerSays(
+                    meta.preferredUpstream,
+                    meta.servedTurn,
+                    meta.notice,
+                    meta.keepaliveMs,
+                    meta.streamIdleMs,
+                ),
+                withheldHeaders = meta.withheldHeaders,
             )
             if (counting) route.provider.countTokens(call, turn) else route.provider.serve(call, turn)
         }

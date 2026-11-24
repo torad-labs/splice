@@ -127,12 +127,26 @@ class UpstreamPoolsTest {
             val first = checkNotNull(pools.of("box", box, ready) { emptyMap() })
             val second = checkNotNull(pools.of("box", box, ready) { emptyMap() })
 
-            val turn = first.lease()
+            val turn = checkNotNull(first.lease())
             assertEquals(listOf(1, 0), second.readings().map { it.inflight })
             assertEquals(listOf("gpu-1" to 1, "gpu-2" to 0), rows(pools), "the upstream list has a row for each server")
             turn.release()
             assertEquals(listOf("gpu-1" to 0, "gpu-2" to 0), rows(pools))
         }
+
+    @Test
+    fun `a pool made after server mode named its per-upstream cap holds it from its first turn`() = runTest {
+        answers["http://10.0.0.21:8080/health"] = 200
+        answers["http://10.0.0.22:8080/health"] = 200
+        val pools = pools()
+        pools.capEach(1)
+        val pool = checkNotNull(pools.of("box", box) { emptyMap() })
+
+        val held = listOf(checkNotNull(pool.lease()), checkNotNull(pool.lease()))
+        assertNull(pool.lease(), "a turn was placed past inflight_per_upstream on a pool no turn had reserved in")
+        assertEquals(listOf(1, 1), pool.readings().map { it.inflight })
+        held.forEach { it.release() }
+    }
 
     @Test
     fun `a provider that is one server has no pool, and no row in the upstream list`() = runTest {

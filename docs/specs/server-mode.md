@@ -55,7 +55,9 @@ the laptop's client can do:
    Those plans' terms are for one person. `check-config` refuses such a command in `[server] commands`, naming the
    reason. API-key and self-hosted providers are served. Whether to ever offer an opt-in is the founder's call and is
    not built.
-4. **Keys are `spk_<8 lowercase alphanumerics>_<32+ alphanumerics>`.** The first two parts are the visible prefix
+4. **Keys are `<key_prefix><8 lowercase alphanumerics>_<32 to 128 alphanumerics>`**, with `key_prefix` `spk_` unless
+   `[server] key_prefix` sets another. The server mints 40-character secrets and admits any of 32 to 128 characters, so
+   an imported key verifies by the same rule its import was checked by. The first two parts are the visible prefix
    that names the key everywhere; only a hash of the whole key is stored. No file in the server's home, its log
    included, ever holds a key or its secret.
 5. **A person is a lowercased email.** Teams come from the email's domain (`[server.teams] by_domain`) unless the
@@ -81,6 +83,8 @@ tls_cert = "/etc/splice/tls/fullchain.pem"   # or terminate TLS at a proxy:
 tls_key = "/etc/splice/tls/privkey.pem"
 trusted_proxies = ["10.0.0.0/8"]            # X-Forwarded-For / -Proto honoured only from these
 admins = ["ops@team.example"]
+admin_cidrs = ["192.0.2.0/24"]              # optional: empty preserves unrestricted admin addresses
+key_prefix = "spk_"                         # optional: only new keys use this mark
 ```
 
 - Routes on the listener: `GET /health` (open), `GET /` and `GET /<command>/launch` (as share mode serves them),
@@ -92,8 +96,17 @@ admins = ["ops@team.example"]
   `server key revoke-person <email>` (offboarding; prints how many keys it revoked).
 - Control plane (management key, loopback): `POST /api/server/keys`, `GET /api/server/keys`,
   `DELETE /api/server/keys/<prefix>`, `DELETE /api/server/people/<email>/keys`.
-- Admin over the listener (a key whose person is in `admins`): `GET/POST /server/api/keys`,
-  `DELETE /server/api/keys/<prefix>`. A non-admin key is 403.
+- Admin over the listener: `GET/POST /server/api/keys`, `DELETE /server/api/keys/<prefix>` and other
+  admin routes, including metrics, require an admin key and, when `admin_cidrs` is set, a matching client IP.
+  A trusted proxy must identify the client via `X-Forwarded-For`; a missing or invalid client address is denied.
+  The loopback control plane continues to use the management key.
+- To migrate a Splice-format key without sending the secret, an admin can
+  `POST /server/api/keys/import` with `person`, the existing public `prefix`, and the complete key's
+  SHA-256 hex `hash`. Copy any existing expiry or revocation into `expires_at` and `revoked_at` as
+  ISO-8601 timestamps. The response never includes the hash or the key. Existing hashes or prefixes return
+  409, including revoked ones. No external verifier is contacted. A `key_prefix` starts with a letter,
+  ends in `_`, and is up to 24 ASCII letters, digits, hyphens or underscores. Changing it leaves
+  existing keys usable until they expire or are revoked.
 
 ### F2 signin-server and signin-client (`signin.test.ts`, `signin-client.test.ts`)
 
@@ -103,6 +116,7 @@ issuer = "https://accounts.google.com"
 client_id = "…apps.googleusercontent.com"
 client_secret_env = "SPLICE_SIGNIN_SECRET"
 domains = ["team.example"]
+hosted_domain = "team.example"   # optional: also require the verified ID token's hd claim
 key_days = 30
 rate_per_minute = 20
 ```
@@ -111,7 +125,9 @@ rate_per_minute = 20
   scopes, domains. Never the secret.
 - `POST /server/signin/token {code, code_verifier, redirect_uri, nonce, device}` trades the code, verifies the ID
   token (JWKS signature, issuer, audience, expiry, nonce, a verified email in an allowed domain) and mints a key
-  with source `signin`, the device, and an expiry of `key_days`. Every failure is a 401 and mints nothing.
+  with source `signin`, the device, and an expiry of `key_days`. The redirect must be the client's HTTP
+  loopback callback. If `hosted_domain` is set, the signed `hd` claim must also match; a matching email
+  suffix by itself is not enough. Failed token trades mint nothing.
 - Keys are per device. On the same device the old key works until the new key's first request, then stops; other
   devices are untouched. Sign-in is rate-limited per client address (429 with `Retry-After`).
 - On the laptop: `splice login <server>` runs authorization code with PKCE through a loopback redirect and prints
@@ -231,6 +247,54 @@ every = "1h"
 - Every person with a live key has their series at 0 from startup; a person with none has no series.
 - The same series go through the operator's OTLP export (`[telemetry.operator]`). These carry person and team by
   design; the operator families described in `docs/observability/exporters.md` stay identity-free.
+
+### Load, streaming and drain (#791, `ServerLoadTest`, `ServerStreamIdleTest`)
+
+A team in front of a small fixed pool of model servers needs the pool's limits held for everyone together, a stream
+that dies mid-answer to end, and a stop that lets turns finish. Each is a setting, off by default:
+
+```toml
+[server]
+stream_idle_seconds = 0      # 0: a silent answer is waited on however long
+drain_seconds = 0            # 0: the listener's one second of grace at stop; at most 45
+
+[server.limits]
+inflight_total = 0           # the whole server's turns in flight at once; 0: no cap
+inflight_per_upstream = 0    # each server of a provider with upstreams; 0: no cap
+busy_status = 429            # or 503
+busy_retry_after = 5         # seconds
+busy_message = ""            # blank: splice's own sentence naming the cap
+```
+
+- A turn past `inflight_total`, or on a provider whose healthy upstreams each hold `inflight_per_upstream`, is
+  refused at once with `busy_status`, `Retry-After: busy_retry_after` and `busy_message` or a sentence naming the
+  cap. These caps are asked after the person's token cap and before their turns in flight and turns a minute, so a
+  turn they refuse spends none of its person's `rpm_per_person`. One slot holds both places, so a turn's end and its
+  client's hang-up each give both back, once. With `inflight_per_upstream` each admitted turn reserves a place in the pool at
+  admission, counted against the servers' room together with every lease, so turns admitted before any of them leased
+  never add up past the cap; the turn's first lease takes its place. No lease is ever given on a server that is
+  full, and a lease that holds no reserved place never takes one that is reserved: a turn that finds no place (every
+  server full, or the one with room gone down after admission) is sent nowhere and told every upstream holds its cap,
+  as a retryable overload on a command's turn and a 503 on the OpenAI route. The pool places every turn on a server with room:
+  a session whose own server is full goes to the least busy healthy one with room and keeps its home, and a person's
+  preferred server that is full gives a new session's turn to the least busy with room.
+- `drain_seconds`: from a stop's first moment every keyed request, a turn on any route (a command's, the OpenAI route,
+  the team's door) or anything else a key asks, `/server/forward-auth` included, is a 503 with `Retry-After` in its
+  client's shape, and `GET /health`
+  answers 503 `{"status":"draining"}`; the stop waits up to that long for the server's turns in flight to end, then closes the
+  listener. The drain is spent before the heads' own stop budget, which shrinks by what it took, so the daemon's whole
+  stop stays inside its cooperative cap; hence the 45-second ceiling, a boot finding past it.
+- `stream_idle_seconds`: a streamed answer silent that long after its last word is hung up on at the upstream, and the
+  stream ends with an error event (504 in the ledger), on the Messages route and the OpenAI route alike, never with an
+  ending. The relay passes a stream on event by event, so that error always follows a whole event; and a stream whose
+  connection closes before its last event's blank line ends with the relay's error event too, never half an event. On the team's door
+  the turn runs on this machine with no relay in front of it, and its own watchdog keeps the same deadline as the one
+  tier no live path holds off, counted from the model's last progress so a keepalive never renews it (504 in the
+  ledger when it ends the turn): the silent round is hung up at the upstream, resumed where the provider can continue and
+  otherwise ended with the turn's error event. The wait for the first word is a prefill and is not timed
+  (`keepalive_seconds` covers it); a keepalive comment, a `ping` event, splice's own wait notice and an OpenAI-style
+  chunk with no text, reasoning or tool call in it (the role-only first chunk) are no word. Off by default: idle is a probe, never an error,
+  and only the operator knows how long their models think in silence.
 
 ### External hourly costs
 
@@ -357,12 +421,33 @@ Drafted checks for these exist and are committed with the P2 plan once P1 has la
   the configured names or the defaults are removed; a caller without a team gets no team attribute.
   The laptop recipe sets `CLAUDE_CODE_ENABLE_TELEMETRY=1` and
   `OTEL_EXPORTER_OTLP_ENDPOINT=<server>/server/otlp` with an `otelHeadersHelper` that sends the key, and never sets
-  `OTEL_LOG_USER_PROMPTS`. Where the command's `remote-settings.json` (organisation-managed) sets a telemetry key,
-  splice adds no telemetry of its own; managed settings that set none leave the relay on.
+  `OTEL_LOG_USER_PROMPTS`. Where any of the organisation's managed settings sets a telemetry key, splice adds no
+  telemetry of its own; managed settings that set none leave the relay on. splice reads the file sources (#791): the
+  platform's `managed-settings.json` (`/etc/claude-code`, `/Library/Application Support/ClaudeCode`,
+  `C:\Program Files\ClaudeCode`) with each `managed-settings.d/*.json` beside it merged over it in filename order, as
+  Claude Code merges them (a later file's value replaces an earlier one's, `env` merges per variable, and a key a later
+  file sets to `null` is cleared), and the command's `remote-settings.json`. A malformed or unreadable file sets
+  nothing. A macOS configuration profile (the `com.anthropic.claudecode` managed preferences domain) and a Windows
+  registry policy (`HKLM` or `HKCU\SOFTWARE\Policies\ClaudeCode`) are not read: an organisation that sets its
+  telemetry only there gets splice's relay beside it unless the same keys are also in a managed settings file.
 - **F9 client version policy.** `[server.client] minimum`. Each launch sends `x-splice-client: <version>` in
   `ANTHROPIC_CUSTOM_HEADERS`. An older client's turn is answered 200 with an assistant message naming the version
   to upgrade to, streamed or not, and nothing reaches the upstream (Claude Code retries a refusal about six times
-  and shows a 200 once). A request with no version (a script) is served. The upgrade itself goes through
+  and shows a 200 once). A request with no version (a script) is served. The minimum holds on a Messages turn, a
+  door turn and a chat completion alike. From an outside source (#791): `version_header` names the header a team's
+  own launcher sends its version in (`name/1.2.3` reads as `1.2.3`); `checkin = true` mounts
+  `POST /server/client/checkin` `{"version"}` (at most 4 KiB, else 413) under a person's key, whose latest report,
+  kept in memory, stands for their turns that name none; `outdated_status` is 200 (in the conversation, an OpenAI
+  answer on the chat route), 400 or 426; `outdated_message` words the notice with `{version}` and `{minimum}`, in any
+  language: the listener hands its head the notice as RFC 8187 `UTF-8''` percent-encoded text, which the head
+  decodes. A version is read as at most 128 characters of dotted numbers, each of at most 18 digits.
+- **Path aliases (#791).** `[server.aliases]` maps one first path segment to a served command or `door`, as
+  `"/v1" = "claude-team"`. The listener rewrites the decoded segments once, before any route reads them, so
+  `/v1/chat/completions`, `/v1/models`, `/v1/messages` and `/v1/messages/count_tokens` are the command's own routes
+  with its key, caps, allowlist and minimum client. Boot refuses an alias that is not `/<segment>`, that is written
+  twice (`"/v1"` and `" /v1"`), that is `server`, `health`, `door`, a served command or the head key or command of a
+  served head, or that stands for anything but `door` or a served head. A provider `[server] commands` serves with no
+  head is served at the door alone, so an alias reaches it as `door`. The upgrade itself goes through
   `splice upgrade` and, with F15, the build the server points at: verified download, the new executable must run
   and name its version before it replaces the old, the old kept for rollback, one check at a time.
 - **F10 fixed-cost providers.** `hourly_usd` on a provider, metered from the host's live boot time read at report
@@ -412,6 +497,44 @@ plan login. The `/<command>/...` routes of the heads that exist keep working bes
   installs and joins with one command.
 - **F16 audit log** of every admin action (who created, revoked or changed what, when), and a **console Server
   page** for keys, people, teams, budgets, upstreams and usage.
+
+### Browser sign-in for dashboard forward auth
+
+Without a browser origin, `GET/HEAD /server/forward-auth` keeps accepting a Splice key as a header or
+the legacy `splice_forward_auth` cookie. For browser sign-in, set an HTTPS origin:
+
+```toml
+[server.forward_auth]
+allow = ["ada@team.example", "ops@team.example"]
+browser_origin = "https://dash.team.example"
+session_seconds = 3600
+email_header = "X-Auth-Request-Email"
+role_header = "X-Auth-Request-Role"  # optional; values are admin or user
+# A distinct web OAuth registration is optional and uses the same issuer and sign-in policy:
+# client_id = "dashboard-web-client"
+# client_secret_env = "SPLICE_DASHBOARD_OIDC_SECRET"
+```
+
+Register `https://dash.team.example/server/forward-auth/callback` with the identity provider. Use a
+separate web client if the laptop OAuth registration only permits loopback redirects. If the named secret
+variable is unset or empty, the listener refuses to start. The browser inherits
+the verified-email domains and the optional hosted-domain check from `[server.signin]`; the dashboard allowlist
+is checked after that. A configured admin CIDR restriction also applies when assigning the dashboard admin role.
+
+Expose `/server/forward-auth/login` and `/server/forward-auth/callback` on that same HTTPS origin
+without applying the forward-auth check to those two routes. Direct unauthenticated browsers to the login
+route with an optional URL-encoded same-origin path `return_to`. Use `/server/forward-auth` as the proxy's
+auth check: pass the browser cookie and a trusted client address, strip incoming identity/role headers,
+and copy them only from a successful auth response. Do not cache auth responses or pass the Splice
+auth cookie to the protected application. Header keys still work, but browser mode replaces the
+legacy key cookie with a signed, expiring, dashboard-only session cookie.
+
+Revoke a browser session from the existing key list (source `browser`) or revoke all keys for the person.
+A browser session that expires unrevoked is dropped from the key list the next time the server mints a key (each
+browser sign-in mints one), so the list holds one row per live session. A revoked session stays listed, so it can
+never be imported or signed back to life.
+Keep the identity provider's account policy current so a revoked person cannot sign in again. Restarting
+the server also invalidates browser cookies; their signing key is held only in memory.
 
 ## What stays outside splice
 

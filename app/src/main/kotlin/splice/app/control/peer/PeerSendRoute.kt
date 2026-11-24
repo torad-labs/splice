@@ -21,6 +21,7 @@ import splice.sessions.peer.PeerPrincipal
 import splice.sessions.peer.PeerSender
 import splice.sessions.peer.SendOutcome
 import splice.sessions.peer.store.PeerLimits
+import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 
 // why: spec 1.1 and 3.4, the text cap after defusing; the route refuses a longer raw text with 413 before it is built.
@@ -106,19 +107,29 @@ internal class PeerSendRoute(
         if (wait is SendAllowance.Wait) {
             return PeerReplies.refuse(HttpStatusCode.TooManyRequests, "over the send rate", wait.seconds)
         }
-        val helper = parts.helpers?.running(config.name)
+        val socket = senderSocket(config)
         val outbox = parts.outbox
-        return if (helper == null || outbox == null) {
+        return if (socket == null || outbox == null) {
             PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, HELPER_NOT_RUNNING)
         } else {
-            submit(config, target, sending, PeerSender(socket = helper.socket, name = config.name), outbox)
+            submit(config, target, sending, PeerSender(socket = socket, name = config.name), outbox)
         }
+    }
+
+    private fun senderSocket(config: PeerConfig): String? = if (config.name in store.nativeInboxes) {
+        val ownerPid = store.nativeOwners[config.name]?.pid ?: return null
+        parts.registry.read().firstOrNull {
+            it.availability != SessionAvailability.GONE && it.process.pid == ownerPid
+        }?.process?.messagingSocketPath
+    } else {
+        parts.helpers?.running(config.name)?.socket
     }
 
     private fun refusal(config: PeerConfig, target: SessionRecord, sending: Sending): PeerAnswer? {
         val moved = PeerSendRequests.targetRefusal(target, sending.request, sending.turn)
+        val ownerPid = store.nativeOwners[config.name]?.takeIf { config.name in store.nativeInboxes }?.pid
         return when {
-            target.sessionId == config.sessionId ->
+            target.sessionId == config.sessionId || (ownerPid != null && target.process.pid == ownerPid) ->
                 PeerReplies.refuse(HttpStatusCode.Conflict, "the target is this peer itself")
             !store.mayReach(config, target.name, target.sessionId) ->
                 PeerReplies.refuse(HttpStatusCode.Forbidden, "the target is outside this peer's sendTo")

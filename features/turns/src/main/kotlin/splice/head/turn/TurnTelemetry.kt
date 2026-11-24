@@ -209,7 +209,8 @@ internal class TurnTelemetry(
         }
         // V4-134: the turn's end goes to the console only once its row exists, carrying that row's
         // key, so the stream never names a row /api/perf/turns has not been handed.
-        served?.ended(drive.meta, outcomeTag, snap, ServedWay(drive.route?.served(), drive.speed))
+        val way = ServedWay(drive.route?.served(), drive.speed, drive.watchdog.timedOut)
+        served?.ended(drive.meta, outcomeTag, snap, way)
         events.turnEnded(rowTs.toString(), outcomeTag, drive.meta.scope.sessionId)
         toolsOpened(drive)
         spend.spend(rowTs, drive.upstreamModel, snap.counters, accountLabel, outcomeTag)

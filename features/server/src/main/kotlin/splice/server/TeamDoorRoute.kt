@@ -12,9 +12,11 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.httpMethod
 import splice.core.topology.ServerConfig
 import splice.core.wire.HttpStatus
+import splice.server.client.ClientMinimum
 import splice.server.ledger.ROUTE_MESSAGES
 import splice.share.HEAD_API_ROOT
 import splice.share.RefusalVoice
+import java.util.concurrent.TimeUnit
 
 internal class TeamDoorRoute(
     private val server: ServerConfig,
@@ -22,13 +24,20 @@ internal class TeamDoorRoute(
     private val minimum: ClientMinimum,
     private val admission: TurnAdmission,
     private val voice: RefusalVoice,
+    private val bound: ProviderBound,
 ) {
     private val turnPath = listOf(HEAD_API_ROOT, "messages")
     private val countPath = turnPath + "count_tokens"
     private val modelsPath = listOf(HEAD_API_ROOT, "models")
 
     /** `[server] keepalive_seconds` as the cadence a streamed turn's client is pinged at; none when it is 0. */
-    private val keepaliveMs = server.keepaliveSeconds.takeIf { it > 0 }?.let { it * KEEPALIVE_MS_PER_SECOND }
+    private val keepaliveMs = server.keepaliveSeconds.takeIf { it > 0 }?.let { TimeUnit.SECONDS.toMillis(it.toLong()) }
+
+    /** `[server] stream_idle_seconds` as the deadline on a streamed answer's silence after its first word (#791): the
+     *  door's turn runs here, with no relay in front of it to time the silence, so its own watchdog keeps the deadline;
+     *  none when it is 0. */
+    private val streamIdleMs =
+        server.streamIdleSeconds.takeIf { it > 0 }?.let { TimeUnit.SECONDS.toMillis(it.toLong()) }
 
     /** [rest], the path after `/door`, asked by [key]'s person. */
     suspend fun answer(call: ApplicationCall, key: ServerKey, rest: List<String>) {
@@ -42,20 +51,22 @@ internal class TeamDoorRoute(
         }
     }
 
-    /** A turn: one of the person's slots, or refused; an older laptop's is answered in the conversation and takes none
-     *  (F9). */
+    /** A turn: one of the person's slots, or refused; an older laptop's is answered in the conversation, or refused
+     *  with `[server.client] outdated_status`, and takes none (F9). */
     private suspend fun turn(call: ApplicationCall, key: ServerKey, gateway: TeamGateway) {
         val routed = gateway.routed(call, voice, counting = false, served()) ?: return
-        val notice = minimum.told(call)
         val provider = ProviderCommand(routed.provider, routed.names)
+        val notice = minimum.told(call, key.person)
+        val withheld = bound.withheld(call)
         if (notice != null) {
-            if (!admission.refusesNotice(call, key, provider)) routed.serve(TeamTurnMeta(notice = notice))
-            return
+            if (admission.refusesNotice(call, key, provider) || minimum.refused(call, voice, notice)) return
+            return routed.serve(TeamTurnMeta(notice = notice, withheldHeaders = withheld))
         }
         admission.served(call, key, provider, ROUTE_MESSAGES) { turn ->
             val preferred = parts.people.of(key.person).preferred
             val named = parts.books.turns.named(turn).second
-            routed.serve(TeamTurnMeta(preferred, named, keepaliveMs = keepaliveMs))
+            val said = TeamTurnMeta(preferred, named, keepaliveMs = keepaliveMs, withheldHeaders = withheld)
+            routed.serve(said.copy(streamIdleMs = streamIdleMs))
         }
     }
 
@@ -64,7 +75,7 @@ internal class TeamDoorRoute(
         val routed = gateway.routed(call, voice, counting = true, served()) ?: return
         val refusal = parts.limits.access.refusal(key.person, ProviderCommand(routed.provider, routed.names))
         if (refusal != null) return voice.refuse(call, HttpStatus.FORBIDDEN, refusal)
-        routed.serve(TeamTurnMeta())
+        routed.serve(TeamTurnMeta(withheldHeaders = bound.withheld(call)))
     }
 
     /** The models the person may pick: those of the providers this server serves and their allowlist lets them use. */
@@ -79,8 +90,5 @@ internal class TeamDoorRoute(
     /** The providers this server serves: those `[server] commands` names, by key or by a head that runs one. */
     private fun served(): ProviderFilter = ProviderFilter { _, names -> names.any { it in server.commands } }
 }
-
-// why: `[server] keepalive_seconds` is written in seconds and a turn's keepalive is counted in milliseconds.
-private const val KEEPALIVE_MS_PER_SECOND = 1_000L
 
 private const val TEAM_DOOR_SHUT = "this server's door is not open: no provider is up to serve it"

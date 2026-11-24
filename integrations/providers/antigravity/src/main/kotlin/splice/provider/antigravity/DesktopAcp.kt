@@ -13,12 +13,16 @@ import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.selects.select
 import kotlinx.serialization.json.JsonObject
+import splice.core.GATEWAY_VERSION
 import splice.core.config.UserHome
 import splice.core.util.EnvReader
 import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.provider.antigravity.hooks.AcpSessionHooks
+import splice.provider.antigravity.peer.DesktopPeerInboxFactory
+import splice.provider.antigravity.peer.DesktopPeerMessage
+import splice.provider.antigravity.peer.DesktopPeerWiring
 import splice.provider.antigravity.skills.ClaudeSkillCatalog
 import java.io.IOException
 import java.io.InputStream
@@ -46,13 +50,14 @@ public class DesktopAcp(
         input: InputStream,
         output: OutputStream,
         hooks: AcpSessionHooks = AcpSessionHooks(),
+        peer: DesktopPeerWiring = DesktopPeerWiring(),
     ): Int = coroutineScope {
         val lines = Channel<String>(Channel.UNLIMITED)
         val reader = startInputReader(input, lines)
         val claude = ClaudeArgsReader().of(args)
-        val started = AgyLaunch(agy, cwd, io).start(claude, this)
+        val started = AgyLaunch(agy, cwd, io, peer.childEnv).start(claude, this)
         try {
-            serve(ServeTarget(claude, started, hooks), lines, output, this)
+            serve(ServeTarget(claude, started, hooks, peer.inbox), lines, output)
         } finally {
             reader.shutdownNow()
             started.close(log)
@@ -83,14 +88,18 @@ public class DesktopAcp(
         return pool
     }
 
-    private data class ServeTarget(val claude: ClaudeArgs, val started: StartedAgy, val hooks: AcpSessionHooks)
+    private data class ServeTarget(
+        val claude: ClaudeArgs,
+        val started: StartedAgy,
+        val hooks: AcpSessionHooks,
+        val peerInbox: DesktopPeerInboxFactory?,
+    )
 
     private suspend fun serve(
         target: ServeTarget,
         lines: ReceiveChannel<String>,
         output: OutputStream,
-        scope: CoroutineScope,
-    ) {
+    ) = coroutineScope {
         val claude = target.claude
         val started = target.started
         val (hello, helloFailure) = started.connection?.let { AgyOpener(it, cwd.toString()).sayHello() }
@@ -103,15 +112,26 @@ public class DesktopAcp(
         }
         McpBridge(out, connected).use { bridge ->
             val envTarget = CoordinatorEnv(claude, STRICT_MCP_CONFIG in args, cwd, env, log)
-            val chan = CoordinatorIo(started, hello, helloFailure, lines, deferredLines, scope)
+            val chan = CoordinatorIo(started, hello, helloFailure, lines, deferredLines, this)
             val coordinator = AgyMcpCoordinator(envTarget, chan, mcpState, bridge)
-            val factory = PartsFactory { id -> parts(id, claude, claude.model.orEmpty(), out) }
+            val factory = PartsFactory { id -> parts(id, claude, target.peerInbox, out, this) }
             val session = DesktopSession(claude, factory, coordinator, mcpState, bridge, clock, target.hooks)
+            val stop = Executors.defaultThreadFactory().newThread { session.closeRecord() }
+            Runtime.getRuntime().addShutdownHook(stop)
             try {
                 loop(session, lines, deferredLines, started)
             } finally {
                 session.closeRecord()
+                unhook(stop)
             }
+        }
+    }
+
+    private fun unhook(stop: Thread) {
+        try {
+            Runtime.getRuntime().removeShutdownHook(stop)
+        } catch (_: IllegalStateException) {
+            // Runtime is already shutting down; the hook runs cleanup itself.
         }
     }
 
@@ -123,25 +143,49 @@ public class DesktopAcp(
         }
     }
 
-    private fun parts(id: String, claude: ClaudeArgs, model: String, out: DesktopOut): DesktopParts {
+    private fun parts(
+        id: String,
+        claude: ClaudeArgs,
+        peerInbox: DesktopPeerInboxFactory?,
+        out: DesktopOut,
+        scope: CoroutineScope,
+    ): DesktopParts {
         val config = env(DESKTOP_CONFIG_VARIABLE)?.takeIf(String::isNotBlank)?.let(Path::of) ?: UserHome.claudeDir(env)
         val version = claude.version
         val entrypoint = env(ENTRYPOINT_VARIABLE) ?: ENTRYPOINT
         val folder = cwd.toString()
-        val facts = SessionFacts(ProcessHandle.current().pid(), id, folder, version, entrypoint, env(HOST_SESSION))
+        val pid = ProcessHandle.current().pid()
+        val inbox = peerInbox?.open(config, pid, id, scope)
+        val socket = inbox?.socketPath
+        val recordVersion = if (socket != null && version == GATEWAY_VERSION) "splice-acp/$GATEWAY_VERSION" else version
+        val peerFacts = SessionPeerFacts(
+            messagingSocketPath = socket,
+            pidDomain = inbox?.pidDomain,
+            procStart = inbox?.procStart,
+            peerProtocol = ACP_PEER_PROTOCOL.takeIf { socket != null },
+        )
+        val facts = SessionFacts(pid, id, folder, recordVersion, entrypoint, env(HOST_SESSION), peerFacts)
         val localSkills = ClaudeSkillCatalog(cwd, config, log).load()
         return DesktopParts(
             DesktopFrames(id),
             out,
             ClaudeTranscript(config, TranscriptOwner(id, folder, version, entrypoint), clock),
             ClaudeSessionRecord(config, facts, clock, log),
-            SessionLook(folder, model, claude.permissionMode, emptyList(), version, skills = localSkills.skillNames),
-            localSkills,
+            SessionLook(
+                folder,
+                claude.model.orEmpty(),
+                claude.permissionMode,
+                emptyList(),
+                version,
+                skills = localSkills.skillNames,
+            ),
+            localSkills = localSkills,
+            peerInbox = inbox,
         )
     }
 
-    /** Hands Desktop's lines and agy's messages to [session], in the order each arrives, until Desktop is gone or the
-     *  session hands back to Claude Code. */
+    /** Hands Desktop's lines, agy's messages and peer UDS messages to [session], in the order each arrives, until
+     *  Desktop is gone or the session hands back to Claude Code. */
     private suspend fun loop(
         session: DesktopSession,
         lines: ReceiveChannel<String>,
@@ -163,32 +207,44 @@ public class DesktopAcp(
             session.desktop(deferredLines.removeFirst())
             return true
         }
+        return handleHeard(nextHeard(session, lines), session, started)
+    }
+
+    private suspend fun nextHeard(session: DesktopSession, lines: ReceiveChannel<String>): Heard {
         val fromAgy = session.fromAgy
-        val heard = select {
+        val fromPeers = session.fromPeers
+        return select {
             if (fromAgy != null) fromAgy.onReceiveCatching { Heard.Agy(it.getOrNull()) }
             if (!session.switchingOut) lines.onReceiveCatching { Heard.Desktop(it.getOrNull()) }
-        }
-        return when (heard) {
-            is Heard.Desktop -> {
-                val line = heard.line ?: return false
-                session.desktop(line)
-                true
+            if (!session.switchingOut && fromPeers != null) {
+                fromPeers.onReceiveCatching { Heard.Peer(it.getOrNull()) }
             }
+        }
+    }
+
+    private suspend fun handleHeard(heard: Heard, session: DesktopSession, started: StartedAgy): Boolean =
+        when (heard) {
+            is Heard.Desktop -> heard.line?.let { session.desktop(it); true } ?: false
             is Heard.Agy -> {
                 heard.message?.let(session::agy)
                     ?: session.agyEnded("agy ended" + started.connection?.lastWords().orEmpty())
                 true
             }
+            is Heard.Peer -> {
+                session.peerMessage(heard.message)
+                true
+            }
         }
-    }
 }
 
-/** What the session heard next: a line of Desktop's (null once Desktop is gone) or a message of agy's (null once agy
- *  ended). */
+/** What the session heard next: a line of Desktop's (null once Desktop is gone), a message of agy's (null once agy
+ *  ended), or a peer UDS message (null once the inbox closed). */
 private sealed class Heard {
     class Desktop(val line: String?) : Heard()
 
     class Agy(val message: JsonObject?) : Heard()
+
+    class Peer(val message: DesktopPeerMessage?) : Heard()
 }
 
 private const val DESKTOP_CONFIG_VARIABLE = "CLAUDE_CONFIG_DIR"
@@ -196,3 +252,6 @@ private const val ENTRYPOINT_VARIABLE = "CLAUDE_CODE_ENTRYPOINT"
 private const val HOST_SESSION = "CLAUDE_CODE_HOST_SESSION_ID"
 private const val ENTRYPOINT = "sdk-cli"
 private const val STREAM_LINE_END = '\n'.code
+
+// why: PeerVersions requires peerProtocol = 1 in ClaudeSessionRecord for cross-session UDS delivery.
+private const val ACP_PEER_PROTOCOL = 1

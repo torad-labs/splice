@@ -4,25 +4,21 @@ package splice.server.web
 
 import io.ktor.server.application.ApplicationCall
 import splice.core.topology.ServerConfig
-import splice.server.ServerKeys
-import splice.server.ServerPeople
 import splice.server.caller.ClientAddresses
 import splice.share.RefusalVoice
 
 internal class ServerPublicRoutes(
     server: ServerConfig,
-    keys: ServerKeys,
-    people: ServerPeople,
     addresses: ClientAddresses,
     secure: Boolean,
     voice: RefusalVoice,
+    private val forwardAuth: ForwardAuthRoute,
 ) {
-    private val forwardAuth = ForwardAuthRoute(server, keys, people, voice)
     private val installRoute = ClientInstallRoute(server, addresses, secure, voice)
 
     suspend fun answered(call: ApplicationCall, path: List<String>): Boolean = when {
         forwardAuth.asks(call, path) -> {
-            forwardAuth.answer(call)
+            forwardAuth.answer(call, path)
             true
         }
         installRoute.asks(call, path) -> {

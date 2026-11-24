@@ -12,6 +12,7 @@ import splice.app.desktop.lane.DOOR_LANE
 import splice.app.head.WrapperBinSource
 import splice.app.head.WrapperLinks
 import splice.client.ClaudeModelLists
+import splice.client.ManagedSettings
 import splice.core.config.CLAUDE_FOLDER_SETTINGS
 import splice.core.config.UserHome
 import splice.core.topology.CLAUDE_COMMAND
@@ -38,7 +39,7 @@ internal class ClaudeStartsRead(
         }
         val launcherLists = found.mapNotNull { it.configDir }.flatMap(::folderLists)
         val own = folderLists(home.resolve(UserHome.CLAUDE_DIR))
-        val managed = listOfNotNull(ClaudeModelLists.managed(os)?.let { lists(it, false) })
+        val managed = ManagedSettings(os).sources().mapNotNull { lists(it, false) }
         val lists = (headLists + own + launcherLists + managed).distinctBy { it.path.toAbsolutePath().normalize() }
         val listed = lists.map { it.path.parent.toAbsolutePath().normalize() }.toSet()
         return ClaudeStarts(

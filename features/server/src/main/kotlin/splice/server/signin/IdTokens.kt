@@ -81,10 +81,17 @@ internal class IdTokens(
         val verified = (claims["email_verified"] as? JsonPrimitive)?.let { it.booleanOrNull ?: (it.content == "true") }
         return when {
             email == null -> NO_EMAIL
-            verified != true -> "$email is not a verified email at the identity provider"
-            !signin.admits(email) -> "$email is not in a domain this server admits (${signin.domains.joinToString()})"
+            verified != true -> "the email is not verified at the identity provider"
+            !signin.admits(email) -> "the email is not in a domain this server admits"
+            !hostedDomainMatches(claims) -> "the ID token is missing the required hosted-domain claim"
             else -> null
         }
+    }
+
+    private fun hostedDomainMatches(claims: JsonObject): Boolean {
+        val required = signin.hostedDomain ?: return true
+        val claim = (claims["hd"] as? JsonPrimitive)?.takeIf { it.isString }
+        return claim?.content?.equals(required, ignoreCase = true) == true
     }
 
     /** Whether [iss] is the configured issuer. Google's tokens may name it without its scheme

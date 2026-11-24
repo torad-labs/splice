@@ -8,7 +8,9 @@ package splice.core.topology
 
 import splice.core.listen.IpLiterals
 import splice.core.topology.metering.ServerMeteringChecks
+import splice.core.topology.routing.ServerRoutingChecks
 import splice.core.util.LoopbackOverride
+import splice.core.wire.HttpStatus
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -21,6 +23,7 @@ internal class ServerChecks(
 
     fun findings(): List<TopologyFinding> = if (server.declared) {
         listen() + exclusive() + commands() + tls() + people() + limits() + client() + signin() + telemetry() +
+            ServerRoutingChecks(topology).findings() + ServerIdentityChecks(server).findings() +
             ServerLedgerChecks(server).findings() + ServerAvailabilityChecks(server).findings() +
             ServerMeteringChecks(topology).findings()
     } else {
@@ -125,37 +128,38 @@ internal class ServerChecks(
 
     private fun limits(): List<TopologyFinding> {
         val rule = "must be 0 (no cap) or more"
+        val limits = server.limits
+        val busy = setOf(HttpStatus.TOO_MANY_REQUESTS, HttpStatus.SERVICE_UNAVAILABLE)
         return listOfNotNull(
-            TopologyFinding("$SERVER_TABLE.limits.inflight_per_person", rule)
-                .takeIf { server.limits.inflightPerPerson < 0 },
-            TopologyFinding("$SERVER_TABLE.limits.rpm_per_person", rule).takeIf { server.limits.rpmPerPerson < 0 },
-            TopologyFinding("$SERVER_TABLE.limits.tpm_per_person", rule).takeIf { server.limits.tpmPerPerson < 0 },
+            TopologyFinding("$SERVER_LIMITS.inflight_per_person", rule).takeIf { limits.inflightPerPerson < 0 },
+            TopologyFinding("$SERVER_LIMITS.rpm_per_person", rule).takeIf { limits.rpmPerPerson < 0 },
+            TopologyFinding("$SERVER_LIMITS.tpm_per_person", rule).takeIf { limits.tpmPerPerson < 0 },
+            TopologyFinding("$SERVER_LIMITS.inflight_total", rule).takeIf { limits.inflightTotal < 0 },
+            TopologyFinding("$SERVER_LIMITS.inflight_per_upstream", rule).takeIf { limits.inflightPerUpstream < 0 },
+            TopologyFinding("$SERVER_LIMITS.busy_status", "must be ${busy.joinToString(" or ")}")
+                .takeIf { limits.busyStatus?.let { it !in busy } == true },
+            TopologyFinding("$SERVER_LIMITS.busy_retry_after", "must be 0 or a number of seconds")
+                .takeIf { limits.busyRetryAfter < 0 },
+            // The server's own waits, each a number of seconds where 0 turns it off.
             TopologyFinding("$SERVER_TABLE.keepalive_seconds", "must be 0 (no keepalive) or a number of seconds")
                 .takeIf { server.keepaliveSeconds < 0 },
+            TopologyFinding("$SERVER_TABLE.stream_idle_seconds", "must be 0 (no deadline) or a number of seconds")
+                .takeIf { server.streamIdleSeconds < 0 },
+            TopologyFinding(
+                "$SERVER_TABLE.drain_seconds",
+                "must be 0 (no drain) or a number of seconds up to $SERVER_DRAIN_MAX_SECONDS, which a stop waits out",
+            ).takeIf { server.drainSeconds !in 0..SERVER_DRAIN_MAX_SECONDS },
         )
     }
 
-    /** F9, F13 & F15: minimum version, http(s) download URL, and forward_auth allowlist entries. */
-    private fun client(): List<TopologyFinding> {
-        val domainShape = Regex("""^@[^@\s.]+(\.[^@\s.]+)+$""")
-        val auth = server.forwardAuth
-        val authValid = auth == null || auth.allow.all { entry ->
-            val trimmed = entry.trim()
-            PersonEmails.read(trimmed) != null || domainShape.matches(trimmed)
-        }
-        return listOfNotNull(
-            TopologyFinding("$SERVER_TABLE.client.minimum", "must be a splice version, as in \"0.10.0\"")
-                .takeIf { server.client.minimum != null && server.client.floor == null },
-            TopologyFinding(
-                "$SERVER_TABLE.client.download_url",
-                "must be an http(s) URL, as in \"https://releases.team.example/splice\"",
-            ).takeIf { server.client.downloadUrl?.let { url -> WebUrls.read(url.trim()) == null } == true },
-            TopologyFinding(
-                "$SERVER_TABLE.forward_auth.allow",
-                "each entry must be an email or @domain, as in \"ada@team.example\" or \"@team.example\"",
-            ).takeUnless { authValid },
-        )
-    }
+    private fun client(): List<TopologyFinding> = listOfNotNull(
+        TopologyFinding("$SERVER_TABLE.client.minimum", "must be a splice version, as in \"0.10.0\"")
+            .takeIf { server.client.minimum != null && server.client.floor == null },
+        TopologyFinding(
+            "$SERVER_TABLE.client.download_url",
+            "must be an http(s) URL, as in \"https://releases.team.example/splice\"",
+        ).takeIf { server.client.downloadUrl?.let { url -> WebUrls.read(url.trim()) == null } == true },
+    )
 
     /** F8: a relay forwards to a collector, named by its http(s) URL. */
     private fun telemetry(): List<TopologyFinding> {
@@ -204,7 +208,13 @@ internal class ServerChecks(
 }
 
 private const val SERVER_TABLE = "server"
+
+// why: a stop waits for the server's drain and then for the heads, and the daemon's whole cooperative stop is cut
+// at 55 s, under the service manager's own bound; the heads' part of it is 50 s, which the drain spends first
+// (Daemon.stop). A longer drain would be cut by the halt and promise turns a finish they never get.
+private const val SERVER_DRAIN_MAX_SECONDS = 45
 private const val SERVER_SIGNIN = "$SERVER_TABLE.signin"
+private const val SERVER_LIMITS = "$SERVER_TABLE.limits"
 private const val SERVER_COMMANDS = "$SERVER_TABLE.commands"
 private const val SERVER_TLS_CERT = "$SERVER_TABLE.tls_cert"
 private const val SERVER_TLS_KEY = "$SERVER_TABLE.tls_key"

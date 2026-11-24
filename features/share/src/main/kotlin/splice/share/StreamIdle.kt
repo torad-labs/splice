@@ -6,14 +6,19 @@
 // The silence is timed from the answer's last word, and only once its first word has come: the wait for the first is
 // a prefill, which `keepalive_seconds` keeps alive and nothing here ends. What carries no answer is no word: an SSE
 // comment (a keepalive), a `ping` event, which a head writes on its own to learn whether its client is still there,
-// and the head's own wait notice ("[splice] … has paused mid-answer"), which it writes while the model is silent.
-// The time goes by the relay's clock (RelayClock), so a test steps it.
+// the head's own wait notice ("[splice] … has paused mid-answer"), which it writes while the model is silent, and an
+// OpenAI-style chunk with no text, reasoning or tool call in it, such as the one naming only the role that a model
+// server sends at once and then prefills behind. The time goes by the relay's clock (RelayClock), so a test steps it.
 package splice.share
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import splice.core.failure.SPLICE_PREFIX
 import splice.core.turn.SpliceNotice
 import splice.core.util.JsonScalars
@@ -72,12 +77,36 @@ internal class AnswerWords {
         } catch (_: IllegalArgumentException) {
             null
         } ?: return data.isNotEmpty()
-        return when (JsonScalars.strOrEmpty(event[IDLE_TYPE_KEY])) {
-            in structural -> false
-            IDLE_DELTA_TYPE -> !notice(event[IDLE_DELTA_KEY] as? JsonObject)
-            else -> true
+        return (event[IDLE_CHOICES_KEY] as? JsonArray)?.any(::chatSays) ?: messagesSays(event)
+    }
+
+    /** Whether an Anthropic Messages event carries any of the answer: anything but a frame that carries none and a
+     *  head's own wait notice. */
+    private fun messagesSays(event: JsonObject): Boolean = when (JsonScalars.strOrEmpty(event[IDLE_TYPE_KEY])) {
+        in structural -> false
+        IDLE_DELTA_TYPE -> !notice(event[IDLE_DELTA_KEY] as? JsonObject)
+        else -> true
+    }
+
+    /** Whether one choice of an OpenAI-style chat chunk carries any of the answer: text, reasoning or a tool call. The
+     *  chunk a server sends first, while it still prefills, names only the role and carries none, nor does the last,
+     *  which carries only the usage. */
+    private fun chatSays(choice: JsonElement): Boolean {
+        val delta = (choice as? JsonObject)?.get(IDLE_DELTA_KEY) as? JsonObject ?: return false
+        return chatWords.any { key ->
+            when (val said = delta[key]) {
+                is JsonPrimitive -> said !is JsonNull && said.content.isNotEmpty()
+                is JsonArray -> said.isNotEmpty()
+                is JsonObject -> said.isNotEmpty()
+                null -> false
+            }
         }
     }
+
+    // The fields of a chat chunk's delta that carry the answer: its text, a refusal, the reasoning the servers that
+    // stream it send under either name, and a call to a tool, in the current shape or the old one.
+    private val chatWords =
+        listOf("content", "refusal", "reasoning_content", "reasoning", "tool_calls", "function_call")
 
     /** Whether [delta] is a head's wait notice rather than the model's: its line, or its block's signature. */
     private fun notice(delta: JsonObject?): Boolean {
@@ -96,3 +125,4 @@ private const val IDLE_DELTA_TYPE = "content_block_delta"
 private const val IDLE_DELTA_KEY = "delta"
 private const val IDLE_THINKING_KEY = "thinking"
 private const val IDLE_SIGNATURE_KEY = "signature"
+private const val IDLE_CHOICES_KEY = "choices"

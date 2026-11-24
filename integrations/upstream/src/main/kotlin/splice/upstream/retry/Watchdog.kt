@@ -174,7 +174,7 @@ public class TurnWatchdog(
      *  ceiling; a stall tier below ~45s is what pulls the cadence down, which is exactly the tier
      *  whose whole purpose is to fire sooner than the others. */
     public fun pollInterval(): Duration {
-        val tighter = minOf(budget.streamIdle, budget.firstByteTimeout, budget.stallReanchor)
+        val tighter = minOf(budget.streamIdle, budget.firstByteTimeout, budget.stallReanchor, budget.streamDeadline)
             .inWholeMilliseconds / IDLE_DIVISOR
         return tighter.coerceIn(MIN_POLL_MS, MAX_POLL_MS).milliseconds
     }
@@ -237,12 +237,14 @@ public class TurnWatchdog(
                 val seen = clientFrame()
                 // V4-116: mid-output the tier is the STALL-RE-ANCHOR one when the head armed it —
                 // min, so a head whose own streamIdle is tighter still gets the tighter of the two,
-                // and an unarmed head (INFINITE) reads exactly budget.streamIdle as before.
+                // and an unarmed head (INFINITE) reads exactly budget.streamIdle as before. #791: the
+                // operator's deadline joins the min when one is set, and no live path holds it off.
                 val idleLimit = if (seen) {
-                    minOf(budget.streamIdle, budget.stallReanchor).inWholeMilliseconds
+                    minOf(budget.streamIdle, budget.stallReanchor, budget.streamDeadline).inWholeMilliseconds
                 } else {
                     budget.firstByteTimeout.inWholeMilliseconds
                 }
+                val pastDeadline = budget.pastDeadline(idle, seen)
                 // DR-7: totalCap is NOT sampled here any more. [launchTotalCap] owns the only
                 // whole-turn cancel, and it targets the turn job; this poller now targets a single
                 // ROUND, so raising a TotalCap verdict from here would reap one round and let the
@@ -253,7 +255,7 @@ public class TurnWatchdog(
                     // stall re-anchor tier included. A model thinking in silence on a live path is held; only a path that
                     // cannot answer is reaped, and on the stall tier that reap is the re-anchor that resumes it.
                     val pingAgo = path.pingAgoMs()
-                    if (path.agrees(pingAgo, probeDispatcher)) {
+                    if (!pastDeadline && path.agrees(pingAgo, probeDispatcher)) {
                         hold(idle, idleLimit, pingAgo, seen, path.evidence)
                         continue
                     }

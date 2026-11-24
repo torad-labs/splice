@@ -63,6 +63,10 @@ internal class ScriptedBox(private val name: String) {
      *  from a generator answers 200 at once, and prefills after that. */
     @Volatile var afterHeaders: CountDownLatch? = null
 
+    /** What a streamed completion waits for after its first event and before the rest: a server that names the role
+     *  at once and then prefills behind it. */
+    @Volatile var afterFirst: CountDownLatch? = null
+
     /** The status a completion is refused with; null answers it. */
     @Volatile var refuses: Int? = null
 
@@ -91,6 +95,7 @@ internal class ScriptedBox(private val name: String) {
         gate?.countDown()
         prefill?.countDown()
         afterHeaders?.countDown()
+        afterFirst?.countDown()
         server.stop(0)
     }
 
@@ -139,6 +144,7 @@ internal class ScriptedBox(private val name: String) {
         exchange.sendResponseHeaders(200, if (cut == null) 0 else CUT_STREAM_LENGTH)
         afterHeaders?.await(GATE_SECONDS, TimeUnit.SECONDS)
         events.take(cut ?: events.size).forEachIndexed { at, event ->
+            if (at == 1) afterFirst?.await(GATE_SECONDS, TimeUnit.SECONDS)
             if (at > 0) LockSupport.parkNanos(gapMs * NANOS_PER_MS)
             exchange.responseBody.write("$event\n\n".toByteArray())
             exchange.responseBody.flush()
@@ -169,6 +175,14 @@ internal class UsageHidden : StreamEdit {
     override fun ending(): String? = DONE_EVENT.takeUnless { done }
 }
 
+/** How a rig's server waits on a streamed answer: `[server] keepalive_seconds` and `stream_idle_seconds`, whose
+ *  silences are waited out on [waiter]. */
+internal data class RigWaits(
+    val keepaliveSeconds: Int = 0,
+    val streamIdleSeconds: Int = 0,
+    val waiter: Waiter = ProcessWaiter(),
+)
+
 /** Server mode over one command, `claude-team`, whose head answers Claude Code's routes and whose provider is what
  *  [upstreams] says. The server's own lines go to [log]. */
 internal class OpenAiRig(
@@ -176,13 +190,11 @@ internal class OpenAiRig(
     upstreams: HeadUpstreams,
     limits: ServerLimits = ServerLimits(),
     log: LogSink = LogSink { },
-    /** `[server] keepalive_seconds`, whose silences are waited out on [waiter]. */
-    keepaliveSeconds: Int = 0,
-    waiter: Waiter = ProcessWaiter(),
+    waits: RigWaits = RigWaits(),
     /** Whether the command's head is running; a head that is down is never asked anything. */
     headUp: Boolean = true,
 ) {
-    private val rig = ServerRig(log = log, upstreams = upstreams, waiter = waiter)
+    private val rig = ServerRig(log = log, upstreams = upstreams, waiter = waits.waiter)
     val port = rig.port
     private val http = HttpClient.newHttpClient()
 
@@ -207,7 +219,11 @@ internal class OpenAiRig(
     private val mode = rig.open(
         state,
         listOf(StandInHead(head.address.port, up = headUp)),
-        rig.config.copy(limits = limits, keepaliveSeconds = keepaliveSeconds),
+        rig.config.copy(
+            limits = limits,
+            keepaliveSeconds = waits.keepaliveSeconds,
+            streamIdleSeconds = waits.streamIdleSeconds,
+        ),
     )
 
     fun close() {
@@ -316,6 +332,7 @@ private const val OWN_ERROR = """{"error":{"message":"%s says %d"}}"""
 private const val BOX_USAGE = """"usage":{"prompt_tokens":7}"""
 
 internal const val WORD_EVENT = """data: {"choices":[{"index":0,"delta":{"content":"hi"}}]}"""
+internal const val ROLE_EVENT = """data: {"choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}"""
 internal const val USAGE_EVENT = """data: {"choices":[],"usage":{"prompt_tokens":7}}"""
 internal const val DONE_EVENT = "data: [DONE]"
 

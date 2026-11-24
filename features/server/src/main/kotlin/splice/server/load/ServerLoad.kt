@@ -38,8 +38,10 @@ internal class ServerLoad(private val limits: ServerLimits, private val upstream
      *  must be given back when the turn ends, through the slot it holds. */
     @Synchronized
     fun begin(key: String): LimitVerdict {
-        // Asked under the lock: a turn either is counted before a drain begins, or is refused by it.
+        // Asked under the lock: a turn either is counted before a drain begins, or is refused by it. The pool is told
+        // the cap first, so the lease its head takes passes over a full server, a sticky or preferred one included.
         val pool = upstreams.pool(key)?.takeIf { limits.inflightPerUpstream > 0 }
+        pool?.holdAtMost(limits.inflightPerUpstream)
         val refused = drainRefusal() ?: overTotal() ?: pool?.let(::overPool)
         if (refused != null) return refused
         held.value += 1
@@ -65,7 +67,9 @@ internal class ServerLoad(private val limits: ServerLimits, private val upstream
         val each = limits.inflightPerUpstream
         val healthy = pool.readings().filter { it.healthy }
         val ours = onPool[pool.provider] ?: 0
-        val full = healthy.isNotEmpty() && (ours >= each * healthy.size || healthy.all { it.inflight >= each })
+        // In Long: a cap near Int.MAX_VALUE times the healthy servers would wrap negative in Int and refuse every turn.
+        val room = each.toLong() * healthy.size
+        val full = healthy.isNotEmpty() && (ours >= room || healthy.all { it.inflight >= each })
         if (!full) return null
         return busy(
             "every upstream of ${pool.provider} (${healthy.joinToString(", ") { it.name }}) already has $each turns " +
@@ -76,7 +80,7 @@ internal class ServerLoad(private val limits: ServerLimits, private val upstream
 
     /** Why a new turn is refused while the server drains, and how long its client waits; null while it serves. */
     fun drainRefusal(): LimitVerdict.Refused? = LimitVerdict.Refused(
-        "this server is stopping: it takes no new turn while the ones in flight finish; try again in " +
+        "this server is stopping: it takes no new request while the turns in flight finish; try again in " +
             "${limits.busyRetryAfter} s",
         limits.busyRetryAfter.toLong(),
         HttpStatus.SERVICE_UNAVAILABLE,

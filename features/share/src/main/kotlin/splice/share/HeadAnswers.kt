@@ -27,10 +27,10 @@
 //
 // An answer that breaks off before its end is never passed on as if it had ended (F4, "an answer the upstream cuts
 // short is an error the client sees"). One that is no stream is read whole before any of it is given, so a body that
-// breaks off is a 502 in the relay's own words. A stream read event by event has its client's stream standing between
-// two events when the server's breaks, so it ends with the relay's error event and never with the ending of a whole
-// one. A stream relayed byte for byte may have broken inside an event, where nothing well-formed can follow: it ends
-// there, as it always did. Each is said in the log, and a relay that was cancelled broke nothing off.
+// breaks off is a 502 in the relay's own words. A stream is passed on event by event, its bytes as the server wrote
+// them, so its client's stream stands between two events when the server's breaks: it ends with the relay's error
+// event and never with the ending of a whole one. Each is said in the log, and a relay that was cancelled broke nothing
+// off.
 //
 // A head's answer goes back with the head's own headers: the head is this machine's, and what it sends back it means
 // for its client. A provider's own server is not (F4, "the provider's own response headers stay at the server"): what
@@ -185,12 +185,12 @@ internal class HeadAnswers(
     private suspend fun whole(answered: Sent.Answered): ByteArray? =
         answered.response.body().use { it.whole() }.getOrElse { failure -> null.also { brokeOff(failure, answered) } }
 
-    /** [answered]'s stream, piece by piece, flushed each time: an event (or the head's keepalive ping) reaches the
-     *  other machine the moment it is written. A client that went away fails the write, and closing the body then
-     *  hangs up on the one that answered, which sees its own client leave. With an edit the pieces go through it, an
-     *  event at a time, and a stream that ended whole is given the edit's ending. A stream that broke off ends the
-     *  relay there, after the relay's error event when it is read through an edit. One silent for [ClientWait.idleMs]
-     *  after its first word is hung up on, and ends with the relay's error event ([idled]). */
+    /** [answered]'s stream, event by event, flushed each time: an event (or the head's keepalive ping) reaches the
+     *  other machine the moment its blank line is read (QuietWire). A client that went away fails the write, and
+     *  closing the body then hangs up on the one that answered, which sees its own client leave. With an edit the
+     *  events go through it, and a stream that ended whole is given the edit's ending. A stream that broke off ends
+     *  the relay there, after the relay's error event. One silent for [ClientWait.idleMs] after its first word is hung
+     *  up on, and ends with the relay's error event ([idled]). */
     private suspend fun pump(call: ApplicationCall, answered: Sent.Answered, wire: QuietWire, wait: ClientWait) {
         val edited = wait.edit?.let { EditedWire(wire, it) }
         answered.response.body().use { body ->
@@ -202,10 +202,10 @@ internal class HeadAnswers(
                             ?: return@coroutineScope idled(call, answered, wire, wait.idleMs)
                         val piece = next.getOrElse { failure ->
                             brokeOff(failure, answered)
-                            if (edited != null) wire.error(said(HttpStatus.BAD_GATEWAY, answered.cut))
+                            wire.error(said(HttpStatus.BAD_GATEWAY, answered.cut))
                             return@coroutineScope
                         }
-                        if (piece == null) return@coroutineScope edited?.end() ?: Unit
+                        if (piece == null) return@coroutineScope edited?.end() ?: wire.end()
                         idle.heard(piece)
                         if (edited == null) wire.write(piece, piece.size) else edited.write(piece, piece.size)
                     }
@@ -218,15 +218,15 @@ internal class HeadAnswers(
 
     /** [answered]'s stream fell silent for [idleMs] after its answer began (`[server] stream_idle_seconds`): its server
      *  is hung up on as the body closes, and its client hears why as the stream's error event, which Claude Code and
-     *  the OpenAI SDKs raise and retry, never as an ending. The ledger reads the turn as a 504. A stream left inside an
-     *  event the server half wrote ends there, as a cut one does: nothing well-formed can follow it. */
+     *  the OpenAI SDKs raise and retry, never as an ending. The ledger reads the turn as a 504. An event the server
+     *  left half written never reached the client (QuietWire), so the error is always one its client reads. */
     private suspend fun idled(call: ApplicationCall, answered: Sent.Answered, wire: QuietWire, idleMs: Long) {
         val seconds = TimeUnit.MILLISECONDS.toSeconds(idleMs)
         val why = "${answered.who} said nothing for ${seconds}s after its answer began (stream_idle_seconds = " +
             "$seconds), so the turn was ended; send it again"
         log("[${speaker.tag}] $why\n")
         AnsweredStatus.late(call, HttpStatus.GATEWAY_TIMEOUT)
-        if (wire.between) wire.error(said(HttpStatus.GATEWAY_TIMEOUT, why))
+        wire.error(said(HttpStatus.GATEWAY_TIMEOUT, why))
     }
 
     /** [answered]'s answer broke off before its end, with [failure], which is said in the log. */

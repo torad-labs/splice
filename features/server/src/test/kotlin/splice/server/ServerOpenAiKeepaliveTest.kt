@@ -53,7 +53,8 @@ internal class ServerOpenAiKeepaliveTest {
         upstreams: HeadUpstreams = alone,
         waiter: Waiter = clock,
     ): Pair<OpenAiRig, String> {
-        val rig = OpenAiRig(state, upstreams, keepaliveSeconds = keepaliveSeconds, waiter = waiter).also { opened = it }
+        val waits = RigWaits(keepaliveSeconds = keepaliveSeconds, waiter = waiter)
+        val rig = OpenAiRig(state, upstreams, waits = waits).also { opened = it }
         return rig to rig.keyFor("ola@example.com")
     }
 

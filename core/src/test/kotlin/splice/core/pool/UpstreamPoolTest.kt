@@ -132,6 +132,30 @@ class UpstreamPoolTest {
     }
 
     @Test
+    fun `under a per-server cap a full preferred server gives its person's turn to one with room`() {
+        val pool = pool("a", "b", "c")
+        pool.holdAtMost(1)
+        assertEquals("b", pool.lease("b").name)
+        assertEquals("a", pool.lease("b").name, "b holds its one turn, so the least busy with room takes it")
+        assertEquals("c", pool.lease("b").name)
+        assertEquals(mapOf("a" to 1, "b" to 1, "c" to 1), inflight(pool), "no server went past its cap")
+        // With every server full the turn goes where it would have; server mode refuses such a turn before this.
+        assertEquals("b", pool.lease("b").name)
+    }
+
+    @Test
+    fun `under a per-server cap a session whose server is full is served elsewhere and keeps its home`() {
+        val pool = pool("a", "b")
+        pool.holdAtMost(1)
+        val first = pool.lease(session = "s")
+        assertEquals("a", first.name)
+        assertEquals("b", pool.lease(session = "s").name, "a holds the session's first turn, so b takes the next")
+        assertEquals(mapOf("a" to 1, "b" to 1), inflight(pool))
+        first.release()
+        assertEquals("a", pool.lease(session = "s").name, "the session's prompt is cached on a, which has room again")
+    }
+
+    @Test
     fun `the list shows each server as the file spells it, and a turn is sent under its API root`() {
         val spelled = UpstreamConfig("gpu-1", "http://10.0.0.21:8080/v1/")
         val pool = UpstreamPool("box", listOf(spelled), LogSink { })

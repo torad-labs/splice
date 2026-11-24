@@ -66,13 +66,17 @@ internal class ServerLoadTest {
         LogSink { },
     )
 
-    /** The head `team` runs on [pool]'s two servers. */
+    /** The team's door, which keeps what the listener said of each turn it was handed. */
+    private val door = DoorStandIn()
+
+    /** The head `team` runs on [pool]'s two servers, and the team's door is [door]. */
     private val rig = ServerRig(
         upstreams = object : HeadUpstreams {
             override fun all(): List<UpstreamPool> = listOf(pool)
 
             override fun of(head: String): UpstreamPool? = pool.takeIf { head == "team" }
         },
+        gateway = door,
     )
 
     private fun serve(server: ServerConfig): ServerMode =
@@ -98,6 +102,15 @@ internal class ServerLoadTest {
 
     private fun turnHeld(key: String): CompletableFuture<HttpResponse<String>> =
         http.sendAsync(request(key, HELD_TURN), HttpResponse.BodyHandlers.ofString())
+
+    /** [path] asked with [key]: a POST of [body], or a GET with none. */
+    private fun ask(key: String, path: String, body: String? = null): HttpResponse<String> {
+        val request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:${rig.port}$path"))
+            .header("Content-Type", "application/json")
+            .header("x-api-key", key)
+        if (body == null) request.GET() else request.POST(HttpRequest.BodyPublishers.ofString(body))
+        return http.send(request.build(), HttpResponse.BodyHandlers.ofString())
+    }
 
     private fun health(): HttpResponse<String> = http.send(
         HttpRequest.newBuilder(URI.create("http://127.0.0.1:${rig.port}/health")).GET().build(),
@@ -162,6 +175,31 @@ internal class ServerLoadTest {
     }
 
     @Test
+    fun `a turn the server's cap refuses spends none of its person's turns a minute`() {
+        serve(rig.config.copy(limits = ServerLimits(rpmPerPerson = 1, inflightTotal = 1)))
+        val ada = rig.keyFor("ada@team.example")
+        val bo = rig.keyFor("bo@team.example")
+        val inFlight = turnHeld(ada)
+        awaitHeld(turns = 1)
+
+        val refused = turn(bo)
+        assertEquals(429, refused.statusCode(), refused.body())
+        assertTrue("inflight_total = 1" in error(refused).second, refused.body())
+
+        release.countDown()
+        assertEquals(200, inFlight.get(10, TimeUnit.SECONDS).statusCode())
+        // The server refused Bo's first turn before it started, so their one turn a minute is still theirs to start.
+        awaitUntil("Bo's one turn a minute is served") { turn(bo).statusCode() == 200 }
+    }
+
+    @Test
+    fun `a per-upstream cap too large to multiply by the healthy servers in an Int still admits a turn`() {
+        serve(rig.config.copy(limits = ServerLimits(inflightPerUpstream = Int.MAX_VALUE)))
+        val served = turn(rig.keyFor("ada@team.example"))
+        assertEquals(200, served.statusCode(), "the cap times two healthy servers wrapped below zero: ${served.body()}")
+    }
+
+    @Test
     fun `a client that hangs up frees its place under the server's cap while the head is still busy with it`() {
         serve(rig.config.copy(limits = ServerLimits(inflightTotal = 1)))
         val ada = rig.keyFor("ada@team.example")
@@ -222,6 +260,33 @@ internal class ServerLoadTest {
         val finished = inFlight.get(10, TimeUnit.SECONDS)
         assertEquals(200, finished.statusCode(), "the turn in flight was cut by the stop")
         assertTrue("from the box" in finished.body(), finished.body())
+        stopping.get(10, TimeUnit.SECONDS)
+    }
+
+    @Test
+    fun `while it drains every keyed request is a 503 with Retry-After, whatever its route`() {
+        serve(rig.config.copy(drainSeconds = 20))
+        val ada = rig.keyFor("ada@team.example")
+        val inFlight = turnHeld(ada)
+        awaitHeld(turns = 1)
+
+        val stopping = CompletableFuture.runAsync({ rig.close() }, workers)
+        awaitUntil("health says the server is draining") { health().statusCode() == 503 }
+        val asked = mapOf(
+            "a token count" to ask(ada, "/claude-team/v1/messages/count_tokens", TURN),
+            "a models list" to ask(ada, "/claude-team/v1/models"),
+            "a turn on the team's door" to ask(ada, "/door/v1/messages", TURN),
+            "the server's profile" to ask(ada, "/server/profile"),
+        )
+        for ((what, refused) in asked) {
+            assertEquals(503, refused.statusCode(), "$what: ${refused.body()}")
+            assertEquals("5", refused.headers().firstValue("retry-after").orElse(""), "$what has no Retry-After")
+            assertTrue("stopping" in error(refused).second, "$what: ${refused.body()}")
+        }
+        assertTrue(door.said.isEmpty(), "a turn reached the door while the server drained")
+
+        release.countDown()
+        assertEquals(200, inFlight.get(10, TimeUnit.SECONDS).statusCode(), "the turn in flight was cut by the drain")
         stopping.get(10, TimeUnit.SECONDS)
     }
 }

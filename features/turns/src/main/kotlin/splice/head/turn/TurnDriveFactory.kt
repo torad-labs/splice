@@ -9,6 +9,7 @@ package splice.head.turn
 
 import splice.core.auth.ClientAuthProvider
 import splice.core.perf.PerfKeys
+import splice.core.turn.WatchdogBudget
 import splice.head.HeadDeps
 import splice.head.HeadHealthCounters
 import splice.head.admission.KeyNaming
@@ -28,6 +29,7 @@ import splice.upstream.retry.NON_STREAM_HOLD_MS
 import splice.upstream.retry.RetryLedger
 import splice.upstream.retry.TurnWatchdog
 import splice.upstream.transport.RemainingTurnWait
+import kotlin.time.Duration.Companion.milliseconds
 
 internal class TurnDriveFactory(
     private val provider: Provider,
@@ -60,6 +62,16 @@ internal class TurnDriveFactory(
         return SessionWall(deps.seams.clock, inputs.t0 + minOf(inputs.clientWallMs, compaction))
     }
 
+    /** The watchdog budget [inputs]'s turn runs under. A compact turn's silence before its first output is bounded by
+     *  totalCap only — see WatchdogBudget.forCompact for the live evidence; normal turns keep the provider budget. A
+     *  turn through the team server's door also carries the server's `stream_idle_seconds` as its deadline (#791). */
+    private fun budget(inputs: TurnInputs): WatchdogBudget {
+        val live = deps.traffic.watchdog?.invoke() ?: provider.watchdog
+        val provided = if (inputs.built.meta.compact) live.forCompact() else live
+        val deadline = inputs.slot.pace.streamDeadlineMs ?: return provided
+        return provided.copy(streamDeadline = deadline.milliseconds)
+    }
+
     /** Assemble the per-turn drive around a terminal (SseEmitter for stream, CollectingTerminal for
      *  collect) and its channel — everything else (watchdog, pipeline, headers) is shape-neutral. */
     fun assembleDrive(
@@ -76,13 +88,9 @@ internal class TurnDriveFactory(
         // so a request that stamped tools_deferred=0 is VISIBLE, never silently absent.
         meta.tools.eager?.let { perf.setCount(PerfKeys.TOOLS_EAGER, it.toLong()) }
         meta.tools.deferred?.let { perf.setCount(PerfKeys.TOOLS_DEFERRED, it.toLong()) }
-        // A compact turn's silence before its first output is bounded by totalCap only — see
-        // WatchdogBudget.forCompact for the live evidence. Normal turns keep the provider budget.
-        val live = deps.traffic.watchdog?.invoke() ?: provider.watchdog
-        val budget = if (meta.compact) live.forCompact() else live
         // Paced on the head's watchdog ticker, so the wall and the cap fall on the head's own clock.
         val watchdog = TurnWatchdog(
-            budget,
+            budget(inputs),
             deps.seams.clock,
             deps.seams.watchdogTicker,
             log = { deps.log("[${provider.key}] $it") },

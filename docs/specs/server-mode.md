@@ -252,16 +252,24 @@ busy_message = ""            # blank: splice's own sentence naming the cap
 
 - A turn past `inflight_total`, or on a provider whose healthy upstreams each hold `inflight_per_upstream`, is
   refused at once with `busy_status`, `Retry-After: busy_retry_after` and `busy_message` or a sentence naming the
-  cap. These caps are asked after the person's own, and a turn they refuse gives its person's slot back at once. One
-  slot holds both places, so a turn's end and its client's hang-up each give both back, once.
-- `drain_seconds`: from a stop's first moment every new turn is a 503 with `Retry-After` and `GET /health` answers 503
-  `{"status":"draining"}`; the stop waits up to that long for the server's turns in flight to end, then closes the
+  cap. These caps are asked after the person's token cap and before their turns in flight and turns a minute, so a
+  turn they refuse spends none of its person's `rpm_per_person`. One slot holds both places, so a turn's end and its
+  client's hang-up each give both back, once. With `inflight_per_upstream` the pool also places every turn on a
+  server with room: a session's own server or a person's preferred one that is full gives the turn to the least busy
+  healthy one that has room, and stays the session's home for its next turn.
+- `drain_seconds`: from a stop's first moment every keyed request, a turn on any route (a command's, the OpenAI route,
+  the team's door) or anything else a key asks, is a 503 with `Retry-After` in its client's shape, and `GET /health`
+  answers 503 `{"status":"draining"}`; the stop waits up to that long for the server's turns in flight to end, then closes the
   listener. The drain is spent before the heads' own stop budget, which shrinks by what it took, so the daemon's whole
   stop stays inside its cooperative cap; hence the 45-second ceiling, a boot finding past it.
 - `stream_idle_seconds`: a streamed answer silent that long after its last word is hung up on at the upstream, and the
   stream ends with an error event (504 in the ledger), on the Messages route and the OpenAI route alike, never with an
-  ending. The wait for the first word is a prefill and is not timed (`keepalive_seconds` covers it); a keepalive
-  comment, a `ping` event and splice's own wait notice are no word. Off by default: idle is a probe, never an error,
+  ending. The relay passes a stream on event by event, so that error always follows a whole event. On the team's door
+  the turn runs on this machine with no relay in front of it, and its own watchdog keeps the same deadline as the one
+  tier no live path holds off: the silent round is hung up at the upstream, resumed where the provider can continue and
+  otherwise ended with the turn's error event. The wait for the first word is a prefill and is not timed
+  (`keepalive_seconds` covers it); a keepalive comment, a `ping` event, splice's own wait notice and an OpenAI-style
+  chunk with no text, reasoning or tool call in it (the role-only first chunk) are no word. Off by default: idle is a probe, never an error,
   and only the operator knows how long their models think in silence.
 
 ### External hourly costs

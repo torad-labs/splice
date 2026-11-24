@@ -50,19 +50,22 @@
 // A path is read the way a head reads one, percent-escapes decoded, and a head is handed the path as it was read
 // (RequestPaths): what a head serves as a turn is what the caps counted, however the client spelled it.
 //
-// A stop drains first (#791, `[server] drain_seconds`): from its first moment every new turn is a 503 with
-// `Retry-After` and `/health` says draining, and the stop waits, up to the drain's length, for the turns in flight to
-// end before it closes the listener. With no drain the listener gives them its one second of grace, as before.
+// A stop drains first (#791, `[server] drain_seconds`): from its first moment every keyed request, a turn on any route
+// or anything else a key asks, is a 503 with `Retry-After` in its client's shape, and `/health` says draining; the stop
+// waits, up to the drain's length, for the turns in flight to end before it closes the listener. With no drain the
+// listener gives them its one second of grace, as before.
 //
-// With `[server] stream_idle_seconds` a streamed turn whose answer falls silent that long after its first event is
-// ended with an error event, which Claude Code retries, instead of hanging (HeadAnswers). Without it, or at 0, a
-// silence is waited out however long: a model may think in silence.
+// With `[server] stream_idle_seconds` a streamed turn whose answer falls silent that long after its first word is
+// ended with an error event, which Claude Code retries, instead of hanging: on a command's routes by the relay
+// (HeadAnswers), and on the team's door by the turn's own watchdog (TeamDoorRoute). Without it, or at 0, a silence is
+// waited out however long: a model may think in silence.
 //
 // HTTP/2 is off: Claude Code speaks HTTP/1.1, and a turn's client leaving is read off its connection (WatchedRelay),
 // which is one request's on HTTP/1.1.
 package splice.server
 
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
@@ -195,8 +198,21 @@ internal class ServerListener(
         // A request refused before its route is known is still refused in the shape its client reads.
         val voiced = if (path != null && openAi.asks(call, path)) openAi.voice else voice
         val key = keyAdmission.admitted(call, voiced) ?: return
-        if (path == null) noSuchPath(call) else routed(call, key, path)
+        when {
+            drained(call, voiced) -> Unit
+            path == null -> noSuchPath(call)
+            else -> routed(call, key, path)
+        }
         parts.keys.keepUse()
+    }
+
+    /** Whether the server drains at stop, which answers every keyed request alike (#791): a 503 with `Retry-After` in
+     *  its client's shape, whatever its route, so a client or load balancer reads one answer for all of them. */
+    private suspend fun drained(call: ApplicationCall, voiced: RefusalVoice): Boolean {
+        val refused = parts.limits.load.drainRefusal() ?: return false
+        call.response.headers.append(HttpHeaders.RetryAfter, refused.retryAfterSeconds.toString())
+        voiced.refuse(call, refused.status, refused.why)
+        return true
     }
 
     /** Routes that handle their own auth or need none: health, sign-in, forward_auth, and install script. */

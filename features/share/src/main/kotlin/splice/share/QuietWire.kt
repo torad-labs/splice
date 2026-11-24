@@ -3,9 +3,14 @@
 // connection that carries nothing for that long. This is the client's side of a relayed event stream that is kept
 // alive through such a silence: whatever the relay waits on (the head's answer, or the next bytes of it), an SSE
 // comment is written each time the wait outlasts the interval. A comment is a line every SSE reader skips, so the
-// client hears only the head's events. One is written only where the stream stands between two events, never inside
-// an event the head has half written. With no interval nothing is written but the head's own bytes, which is how LAN
+// client hears only the head's events. With no interval nothing is written but the head's own bytes, which is how LAN
 // share relays.
+//
+// The head's bytes go on an event at a time: what it wrote past its last blank line is held until the line that ends
+// that event comes. An SSE reader acts on nothing before that line, so the client loses nothing by the wait, and the
+// stream always stands between two events. That is what lets a keepalive go out in a silence the head fell into
+// halfway through an event, and what lets the relay end a stream it must end (its server broke off, or fell silent past
+// `stream_idle_seconds`) with an error event its client reads, never one glued onto half of the head's.
 //
 // Whether a wait has outlasted its time is the relay's clock's to say (RelayClock). The relay asks it twice: for the
 // second a silent head is given before its client's stream is opened (ShareRelay.forward), and for each interval
@@ -64,9 +69,8 @@ internal class QuietWire(private val out: ByteWriteChannel, every: Duration?, pr
     // A little under the interval, so a keepalive's own way to the client never makes a silence longer than it.
     private val everyMs: Long? = every?.inWholeMilliseconds?.let { it - minOf(it / AHEAD_SHARE, AHEAD_MAX_MS) }
 
-    // The line ends the stream ends with: two are the blank line that ends an event, and a stream nothing was
-    // written to stands between events as well.
-    private var lineEnds = EVENT_END
+    // What the head wrote past its last whole event: the start of the next one, held until its blank line comes.
+    private var held = ByteArray(0)
 
     /** What [wait] answers, with a keepalive written each time it has taken one more interval. */
     suspend fun <T> during(wait: HeadWait<T>): T {
@@ -78,30 +82,50 @@ internal class QuietWire(private val out: ByteWriteChannel, every: Duration?, pr
         }
     }
 
-    /** Whether the stream stands between two events, where one more event may be written. */
-    val between: Boolean get() = lineEnds >= EVENT_END
-
-    /** One keepalive now, where the stream stands between two events. */
+    /** One keepalive now. */
     suspend fun keepalive() {
-        if (!between) return
         out.writeStringUtf8(KEEPALIVE)
         out.flush()
     }
 
-    /** The next [count] of the head's [bytes], to the client at once. */
+    /** The next [count] of the head's [bytes]: every event they end goes to the client at once, and what follows the
+     *  last of them is held for the bytes that end it. */
     suspend fun write(bytes: ByteArray, count: Int) {
-        out.writeFully(bytes, 0, count)
+        val heldBefore = held.size
+        val pending = held + bytes.copyOfRange(0, count)
+        val whole = wholeEvents(pending, heldBefore)
+        held = pending.copyOfRange(whole, pending.size)
+        if (whole == 0) return
+        out.writeFully(pending, 0, whole)
         out.flush()
-        val tail = (count - 1 downTo 0).takeWhile { bytes[it] == LINE_FEED || bytes[it] == CARRIAGE_RETURN }
-        val ends = tail.count { bytes[it] == LINE_FEED }
-        // A chunk that is line ends alone adds to those the stream already ended with.
-        lineEnds = if (tail.size == count) lineEnds + ends else ends
+    }
+
+    /** How many of [bytes] the events they end take: all of them up to and with the last blank line (`\n\n`, or
+     *  `\n\r\n` where lines end in `\r\n`); 0 while they end none. The first [heldBefore] were held because they
+     *  ended none, so a blank line can only end past them. */
+    private fun wholeEvents(bytes: ByteArray, heldBefore: Int): Int {
+        for (at in bytes.size - 1 downTo maxOf(heldBefore, 1)) {
+            if (bytes[at] != LINE_FEED) continue
+            val before = bytes[at - 1]
+            if (before == LINE_FEED) return at + 1
+            if (before == CARRIAGE_RETURN && bytes.getOrNull(at - 2) == LINE_FEED) return at + 1
+        }
+        return 0
+    }
+
+    /** The head's stream ended whole: what it left past its last blank line goes to the client as it came. */
+    suspend fun end() {
+        if (held.isEmpty()) return
+        out.writeFully(held, 0, held.size)
+        out.flush()
+        held = ByteArray(0)
     }
 
     /** [event], an error as the stream's client reads one (RefusalVoice.event), which ends a stream that cannot go
-     *  on: one opened before its head answered, or one its server broke off. Written where the stream stands between
-     *  two events. */
+     *  on: one opened before its head answered, one its server broke off, or one that fell silent past its deadline.
+     *  Whatever the head left half written is dropped: no reader could have acted on it. */
     suspend fun error(event: String) {
+        held = ByteArray(0)
         out.writeStringUtf8("$event\n\n")
         out.flush()
     }
@@ -125,9 +149,6 @@ internal const val LINE_FEED: Byte = 10
 
 // The byte of `\r`, which a line's end may carry beside its `\n`: it is stepped over, and only a `\n` counts.
 internal const val CARRIAGE_RETURN: Byte = 13
-
-// Line ends in a row that end an event.
-private const val EVENT_END = 2
 
 // why: a keepalive goes out a tenth of the interval early: enough for the write to reach the client inside the
 // interval, and next to nothing more traffic than the interval asks for.

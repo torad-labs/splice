@@ -165,7 +165,7 @@ internal class ServerKeepaliveTest {
     }
 
     @Test
-    fun `events are heard as the head writes them, a silence between two is kept alive, half an event is left whole`() {
+    fun `events are heard whole as the head ends them, and a silence inside a half-written one is kept alive`() {
         val key = serve(keepaliveSeconds = 1)
         val cut = DELTA.length / 2
         script = HeadScript { turn ->
@@ -181,14 +181,20 @@ internal class ServerKeepaliveTest {
         assertEquals(START, heard.block("the first event, while the head has written no more"))
         clock.pass()
         assertTrue(keepalive(heard.block("a keepalive in the silence after the first event")))
+        clock.awaitUntil("the relay waits out its next interval") { clock.parked.get() == 1 }
+        val asked = clock.asked.size
         goOn.release()
-        assertEquals(DELTA.take(cut), heard.part(cut, "the half of an event the head has written"))
-        // Two intervals: by the time the second passes, the relay has been through a whole one with the event half
-        // written, and had its chance to write into it.
+        // The head has written half of its next event and fallen silent again. No reader acts on half an event, so
+        // the relay holds it, and the stream stands between two events where the silence can be kept alive. Once the
+        // relay has read the half it waits out a fresh interval, and the time that passes then is that silence.
+        repeat(2) { headHolds() }
+        clock.awaitUntil("the relay waits again after the half event") {
+            clock.asked.size > asked && clock.parked.get() == 1
+        }
         clock.pass()
-        clock.pass()
+        assertTrue(keepalive(heard.block("a keepalive in the silence inside the half-written event")))
         goOn.release()
-        assertEquals(DELTA + STOP, heard.rest("the rest of the answer"), "something was written inside an event")
+        assertEquals(DELTA + STOP, heard.rest("the rest of the answer"), "the half event was not passed on whole")
     }
 
     @Test

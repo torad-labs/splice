@@ -6,10 +6,12 @@ package splice.dialect.anthropic
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.util.JsonScalars
 
 internal class PassthroughUserContent {
     /** [content] with a text block of [text] at its end, or null where it is neither blocks nor a string. */
@@ -19,8 +21,30 @@ internal class PassthroughUserContent {
         else -> null
     }
 
+    /** An old empty failure must still answer the original tool call on replay. Leave valid results alone. */
+    fun toolResult(block: JsonObject): JsonObject {
+        if (block["is_error"] != JsonPrimitive(true)) return block
+        return if (isEmptyContent(block[CONTENT])) {
+            JsonObject(block + (CONTENT to JsonPrimitive("Tool failed with no output.")))
+        } else {
+            block
+        }
+    }
+
+    private fun isEmptyContent(content: JsonElement?): Boolean = when (content) {
+        null, JsonNull -> true
+        is JsonArray -> content.isEmpty() || content.all(::isBlankTextBlock)
+        is JsonPrimitive -> content.isString && content.content.isBlank()
+        is JsonObject -> false
+    }
+
+    private fun isBlankTextBlock(element: JsonElement): Boolean {
+        val obj = element as? JsonObject ?: return false
+        return JsonScalars.strOrEmpty(obj[TYPE]) == TYPE_TEXT && JsonScalars.strOrEmpty(obj[TEXT]).isBlank()
+    }
+
     private fun textBlock(text: String): JsonObject = buildJsonObject {
-        put("type", "text")
-        put("text", text)
+        put(TYPE, TYPE_TEXT)
+        put(TEXT, text)
     }
 }

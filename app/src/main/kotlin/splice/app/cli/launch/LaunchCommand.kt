@@ -10,7 +10,7 @@ import splice.core.topology.CLAUDE_SPLICE_COMMAND
 import splice.core.util.EnvReader
 import java.nio.file.Files
 
-internal const val LAUNCH_USAGE: String = "claude [args...] | claude-desktop [args...]"
+internal const val LAUNCH_USAGE: String = "claude [--profile <name>] [args...] | claude-desktop [args...]"
 
 internal class LaunchCommand(
     private val env: EnvReader = EnvReader(System::getenv),

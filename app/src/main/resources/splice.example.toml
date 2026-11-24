@@ -90,6 +90,17 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # path = "/home/me/projects/app" # the session's working directory, longest path wins
 # instructions = "Summarize the migration plan in docs/plan.md first."
 
+# ── terminal launch profiles: `splice launch claude --profile <name>` ──
+# A Claude folder of the profile's own, rebuilt from your ~/.claude before each launch (never written there), so the
+# session loads only what the profile keeps. Read at the daemon's start; boot refuses a dir that is ~/.claude itself.
+# [launch.profiles.work]
+# dir = "~/.claude-work"        # default: ~/.splice/launch-profiles/<name>
+# keep_hooks = "own"            # "own": your settings files' hooks, no plugin's · "all": and kept plugins' · "none"
+# drop_hooks = ["SessionStart", "notify.sh"]  # an event's name drops that event; any other word, hooks whose command holds it
+# keep_plugins = ["code-review@claude-plugins-official"]  # none when empty
+# drop_blocks = ["team-notes"]  # CLAUDE.md blocks: <!-- name --> … <!-- /name --> or # BEGIN name … # END name
+# drop_names = ["team-", "old"]  # skills, agents and commands whose names start with these are left out
+
 # ── ChatGPT Codex subscription via OAuth ───────────────────────────────────
 [providers.codex]
 dialect = "openai-responses"

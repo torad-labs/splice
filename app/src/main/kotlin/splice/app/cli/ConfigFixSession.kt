@@ -139,7 +139,7 @@ internal class ConfigFixSession(
     private fun fixInFile(finding: TopologyFinding): Boolean? {
         val line = finding.line
         val editable = line?.takeIf { assignmentAt(it) != null }
-        val offers = FixOffers(finding, editable != null)
+        val offers = FixOffers(finding, editable != null) { move -> MoveFix(check, checked).candidate(move, line) }
         showMenu(line, offers)
         return when (val answer = prompter.ask("> ")?.trim()?.lowercase()) {
             "e" -> edit(line)
@@ -152,7 +152,7 @@ internal class ConfigFixSession(
     /** A change to the file the person chose from [offers], or false when the answer is not one that is on offer. */
     private fun changed(answer: String, offers: FixOffers, line: Int?): Boolean = when {
         answer !in offers.letters -> false
-        answer == "m" -> moveValue(requireNotNull(offers.move), line)
+        answer == "m" -> moveValue(requireNotNull(offers.move), requireNotNull(offers.moved))
         line == null -> false
         answer == "d" -> removeLine(line)
         else -> setValue(line)
@@ -188,14 +188,10 @@ internal class ConfigFixSession(
         ?.takeIf { it.contains('=') && !it.trimStart().startsWith("#") }
         ?.substringBefore('=')?.trim()
 
-    /** [move]'s value put where the gateway reads it, and, unless the head keeps it, taken off its line, while the file
-     *  still holds the bytes the finding came from ([rewrite]). */
-    private fun moveValue(move: GatewayMove, line: Int?): Boolean {
-        val moved = MoveFix(check, checked).candidate(move, line)
-        if (moved == null) {
-            output.line("  that value cannot be moved here without risking splice.toml; edit it, or move it yourself")
-            return false
-        }
+    /** [move]'s value put where the gateway reads it, and, unless the head keeps it, taken off its line, as the file
+     *  [moved] that was worked out before the move was offered, while the file still holds the bytes the finding came
+     *  from ([rewrite]). */
+    private fun moveValue(move: GatewayMove, moved: List<String>): Boolean {
         backupOnce()
         output.line("moving ${move.named} to [${move.table}]")
         rewrite { moved }

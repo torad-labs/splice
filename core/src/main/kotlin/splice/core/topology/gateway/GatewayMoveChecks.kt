@@ -11,6 +11,7 @@ package splice.core.topology.gateway
 
 import splice.core.config.Knob
 import splice.core.config.providerCarriedKnobs
+import splice.core.prompt.SystemPromptMode
 import splice.core.topology.GatewayMove
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
@@ -88,8 +89,10 @@ internal class GatewayMoveChecks(private val topology: Topology) {
 
     /** The head's standing prompt, text, file and mode, which the gateway reads as one value (HeadFallbacks): each key
      *  the head says other than its provider is a warning, and they move to the provider together, and only when every
-     *  one of them the provider says is the head's own. Moved one at a time, the key left behind would no longer be
-     *  served and turn into a new warning; moved beside a prompt the provider wrote, they would make a third prompt. */
+     *  one of them the provider says is the head's own and every head on the provider is served the same prompt. Moved
+     *  one at a time, the key left behind would no longer be served and turn into a new warning; moved beside a prompt
+     *  the provider wrote, they would make a third prompt; moved while another head is served another, that head would
+     *  read the moved keys where it says none (a mode it leaves to `append` would turn `replace`). */
     private fun prompt(key: String, head: HeadConfig, provider: ProviderConfig): List<TopologyFinding> {
         val table = "providers.${keys.render(head.provider)}"
         val gets = served.getValue(head.provider)
@@ -98,11 +101,25 @@ internal class GatewayMoveChecks(private val topology: Topology) {
             Said("system_prompt_file", head.systemPromptFile, provider.systemPromptFile, gets.systemPromptFile),
             Said("system_prompt_mode", head.systemPromptMode, provider.systemPromptMode, gets.systemPromptMode),
         )
-        val free = trio.all { it.provider == null || it.provider == it.head }
+        val own = trio.all { it.provider == null || it.provider == it.head }
+        val shared = topology.heads.values.filter { it.provider == head.provider }
+            .map { servedPrompt(it, provider) }.distinct().size == 1
         val apart = trio.filter { it.head != null && it.head != it.provider }
-        return apart.mapNotNull { said ->
-            held(key, said, table, Together(free, apart.map(Said<*>::field) - said.field))
+        val why = if (own && !shared) {
+            "another head on this provider is served another standing prompt, which a move to [$table] would " +
+                "change; set the one the gateway should serve in [$table], and on each head the one it should keep"
+        } else {
+            null
         }
+        return apart.mapNotNull { said ->
+            held(key, said, table, Together(own && shared, apart.map(Said<*>::field) - said.field, why))
+        }
+    }
+
+    /** The standing prompt [head] is served on [provider], text, file and mode, an unsaid mode being `append`
+     *  (HeadConfig.systemPromptFor). */
+    private fun servedPrompt(head: HeadConfig, provider: ProviderConfig): Prompt = head.servedOn(provider).let {
+        Prompt(it.systemPrompt, it.systemPromptFile, it.systemPromptMode ?: SystemPromptMode.APPEND)
     }
 
     /** The tiers a head names on its own model rows (`slot`), which the gateway reads from the provider's `model_slots`
@@ -131,7 +148,7 @@ internal class GatewayMoveChecks(private val topology: Topology) {
         val free = together.free
         val move = GatewayMove(table, said.field, value = null, keepsSource = false, together.companions)
             .takeIf { free }
-        val why = unserved(free, inherited = said.gateway == said.head, table)
+        val why = together.why ?: unserved(free, inherited = said.gateway == said.head, table)
         return TopologyFinding("heads.$head.${said.field}", why, move = move)
     }
 
@@ -170,7 +187,10 @@ internal class GatewayMoveChecks(private val topology: Topology) {
      *  today ([gateway]). */
     private data class Said<T : Any>(val field: String, val head: T?, val provider: T?, val gateway: T?)
 
-    /** Whether a value is [free] to move, its provider saying none of it, and the head's other keys that move with it
-     *  ([companions]). */
-    private data class Together(val free: Boolean, val companions: List<String> = emptyList())
+    /** A standing prompt as a head is served it. */
+    private data class Prompt(val text: String?, val file: String?, val mode: SystemPromptMode)
+
+    /** Whether a value is [free] to move, its provider saying none of it, the head's other keys that move with it
+     *  ([companions]), and the reason it is said when that is not the one its value alone gives ([why]). */
+    private data class Together(val free: Boolean, val companions: List<String> = emptyList(), val why: String? = null)
 }

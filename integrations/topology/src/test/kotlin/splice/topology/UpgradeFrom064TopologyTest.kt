@@ -148,6 +148,24 @@ class UpgradeFrom064TopologyTest {
     }
 
     @Test
+    fun `a head's replace is never moved to the provider while a sibling appends the same text`() {
+        val sibling = "\n[heads.sibling]\nprovider = \"realinfer\"\nport = 3313\n" +
+            "discovery_prefix = \"claude-realinfer--\"\npinned_model = \"glm-5.3-flash\"\nsystem_prompt = \"$PROMPT\"\n"
+        val head = HEAD.replace("system_prompt_mode = \"append\"", "system_prompt_mode = \"replace\"")
+        val warnings = TopologyFindings.warnings(TopologyLoader.parse(PROVIDER + head + sibling))
+        val prompt = warnings.filter { it.path.startsWith("heads.realinfer.system_prompt") }
+        val paths = prompt.map { it.path }.toSet()
+        assertEquals(setOf("heads.realinfer.system_prompt", "heads.realinfer.system_prompt_mode"), paths)
+        assertTrue(prompt.all { it.move == null }, "the sibling's append is never turned to replace: $prompt")
+        assertTrue(prompt.all { "served another standing prompt" in it.message }, "$prompt")
+
+        val same = sibling + "system_prompt_mode = \"replace\"\n"
+        val agreed = TopologyFindings.warnings(TopologyLoader.parse(PROVIDER + head + same))
+        val moves = agreed.filter { it.path.startsWith("heads.realinfer.system_prompt") }.map { it.move }
+        assertTrue(moves.all { it != null }, "heads served one prompt move it together: $agreed")
+    }
+
+    @Test
     fun `a provider value the gateway cannot serve still refuses boot`() {
         val broken = PROVIDER.replace(
             "auth = { kind = \"api-key\", env = \"REALINFER_KEY\" }",

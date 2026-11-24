@@ -309,8 +309,150 @@ class ConfigFixSessionTest {
         val fixed = session(file, root, ArrayDeque(listOf("m", "s", "m", "s")), said, advisory = true).run()
 
         assertFalse(fixed, "$said")
-        assertEquals(before, Files.readString(file), "a move that would leave the other head worse writes nothing")
-        assertTrue(said.any { it.contains("cannot be moved here without risking splice.toml") }, "$said")
+        assertEquals(before, Files.readString(file), "a move that would change the other head writes nothing")
+        assertFalse(said.any { it.contains("[m] move system_prompt") }, "no move is offered: $said")
+    }
+
+    @Test
+    fun `a prompt one head replaces with is not moved over a sibling that appends the same text`(@TempDir root: Path) {
+        val file = served(root, "", "system_prompt = \"Same words.\"\nsystem_prompt_mode = \"replace\"\n")
+        Files.writeString(
+            file,
+            Files.readString(file) + "\n[heads.two]\nprovider = \"demo\"\nport = 3102\n" +
+                "discovery_prefix = \"claude-demo--\"\npinned_model = \"m\"\nsystem_prompt = \"Same words.\"\n",
+        )
+        val before = Files.readString(file)
+        val said = mutableListOf<String>()
+
+        val fixed = session(file, root, ArrayDeque(listOf("m", "s", "m", "s")), said, advisory = true).run()
+
+        assertFalse(fixed, "$said")
+        assertEquals(before, Files.readString(file), "head two keeps appending: nothing is written")
+        assertFalse(said.any { it.contains("[m]") }, "no move is offered: $said")
+        assertTrue(said.any { it.contains("another head on this provider is served another standing prompt") }, "$said")
+    }
+
+    @Test
+    fun `a prompt every head on the provider is served the same way moves and leaves them all served as before`(
+        @TempDir root: Path,
+    ) {
+        val prompt = "system_prompt = \"Same words.\"\nsystem_prompt_mode = \"replace\"\n"
+        val file = served(root, "", prompt)
+        Files.writeString(
+            file,
+            Files.readString(file) + "\n[heads.two]\nprovider = \"demo\"\nport = 3102\n" +
+                "discovery_prefix = \"claude-demo--\"\npinned_model = \"m\"\n" + prompt,
+        )
+        val said = mutableListOf<String>()
+
+        val fixed = session(file, root, ArrayDeque(listOf("m")), said, advisory = true).run()
+
+        val text = Files.readString(file)
+        assertTrue(fixed, "$said\n$text")
+        val provider = providerSection(text)
+        assertTrue(provider.contains("system_prompt = \"Same words.\""), text)
+        assertTrue(provider.contains("system_prompt_mode = \"replace\""), text)
+        assertTrue(text.substringAfter("[heads.two]").contains("system_prompt_mode = \"replace\""), text)
+        readsClean(file, root)
+    }
+
+    /** [served] with `[providers.other]`, whose own multi-line prompt shows a `[providers.demo]` table as an example,
+     *  written ahead of the real one. */
+    private fun behindAnExample(root: Path, headExtra: String): Path {
+        val file = served(root, "", headExtra)
+        val other = "[providers.other]\ndialect = \"openai-chat\"\nbase_url = \"https://other.invalid\"\n" +
+            "auth = { kind = \"api-key\", env = \"OTHER_KEY\" }\nsystem_prompt = \"\"\"\nWrite it like this:\n" +
+            "[providers.demo]\nsystem_prompt = 'kept'\n\"\"\"\n\n[[providers.other.models]]\nid = \"o\"\n" +
+            "context_window = 1000\n\n"
+        Files.writeString(file, other + Files.readString(file))
+        return file
+    }
+
+    @Test
+    fun `a table header written inside another provider's multi-line prompt is not where a move lands`(
+        @TempDir root: Path,
+    ) {
+        val file = behindAnExample(root, "system_prompt = \"Review as the demo team.\"\n")
+        val said = mutableListOf<String>()
+
+        val fixed = session(file, root, ArrayDeque(listOf("m")), said, advisory = true).run()
+
+        val text = Files.readString(file)
+        assertTrue(fixed, "$said\n$text")
+        assertTrue(
+            text.contains("Write it like this:\n[providers.demo]\nsystem_prompt = 'kept'\n\"\"\"\n"),
+            "the other provider's prompt is unchanged: $text",
+        )
+        val real = "\n\n[providers.demo]\nsystem_prompt = \"Review as the demo team.\"\ndialect = "
+        assertTrue(text.contains(real), "it lands under the real header: $text")
+        readsClean(file, root)
+    }
+
+    @Test
+    fun `a head's multi-line prompt moves whole and a line inside it is never taken for its mode`(
+        @TempDir root: Path,
+    ) {
+        val fake = "system_prompt_mode = \"replace\"\n[providers.demo]\n"
+        val literal = "system_prompt = '''\n$fake[not.a.table]\nC:\\'''\n"
+        val basic = "system_prompt = \"\"\"\nSay \"this\".\n$fake[not.a.table]\nEnd.\"\"\"\n"
+        val mode = "system_prompt_mode = \"append\" # appended on purpose\n"
+        listOf(literal, basic).forEachIndexed { case, prompt ->
+            val dir = Files.createDirectories(root.resolve("case$case"))
+            val file = served(dir, "", prompt + mode)
+            val said = mutableListOf<String>()
+
+            val fixed = session(file, dir, ArrayDeque(listOf("m")), said, advisory = true).run()
+
+            val text = Files.readString(file)
+            assertTrue(fixed, "$said\n$text")
+            assertTrue(text.startsWith("[providers.demo]\n$prompt$mode"), "both land under the real header: $text")
+            val head = text.substringAfter("[heads.one]")
+            assertFalse(head.contains("system_prompt"), "every line of the head's prompt is taken off: $text")
+            readsClean(file, dir)
+        }
+    }
+
+    /** A splice.toml whose provider is an inline table in `[providers]`, and whose head says [headExtra]. */
+    private fun inlineProvider(root: Path, headExtra: String): Path = root.resolve("splice.toml").also {
+        Files.writeString(
+            it,
+            "[providers]\ndemo = { dialect = \"openai-chat\", base_url = \"https://demo.invalid\", " +
+                "auth = { kind = \"api-key\", env = \"DEMO_KEY\" }, " +
+                "models = [{ id = \"m\", context_window = 1000 }] }\n\n[heads.one]\nprovider = \"demo\"\n" +
+                "port = 3101\ndiscovery_prefix = \"claude-demo--\"\npinned_model = \"m\"\n" + headExtra,
+        )
+    }
+
+    @Test
+    fun `a one-line prompt moves into an inline provider table`(@TempDir root: Path) {
+        val file = inlineProvider(root, "system_prompt = \"Review as the demo team.\"\n")
+
+        val fixed = session(file, root, ArrayDeque(listOf("m")), mutableListOf(), advisory = true).run()
+
+        val text = Files.readString(file)
+        assertTrue(fixed, text)
+        val inline = "models = [{ id = \"m\", context_window = 1000 }], system_prompt = \"Review as the demo team.\" }"
+        assertTrue(text.contains(inline), text)
+        readsClean(file, root)
+    }
+
+    @Test
+    fun `no move is offered into an inline provider table for a value it cannot hold as written`(
+        @TempDir root: Path,
+    ) {
+        val multiline = "system_prompt = \"\"\"\nReview\nas the team.\"\"\"\n"
+        for (prompt in listOf(multiline, "system_prompt = \"Review.\" # why\n")) {
+            val file = inlineProvider(root, prompt)
+            val before = Files.readString(file)
+            val said = mutableListOf<String>()
+
+            val fixed = session(file, root, ArrayDeque(listOf("m", "s")), said, advisory = true).run()
+
+            assertFalse(fixed, "$said")
+            assertEquals(before, Files.readString(file), "nothing is written")
+            assertFalse(said.any { it.contains("[m]") }, "no move is offered only to be refused: $said")
+            assertFalse(said.any { it.contains("cannot be moved") }, "$said")
+        }
     }
 
     @Test

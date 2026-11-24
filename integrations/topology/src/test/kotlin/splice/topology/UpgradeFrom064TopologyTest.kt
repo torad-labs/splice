@@ -111,6 +111,29 @@ class UpgradeFrom064TopologyTest {
         assertEquals(emptyMap<String, String>(), served.tierModels())
     }
 
+    // Upgrade (Nov 24, 2026): a head reads its provider's window, tiers and knobs where it says none, so moving one
+    // head's value to the provider while a silent sibling runs on it would hand the sibling that value. The move is
+    // offered only when every head on the provider is served the same after it, as the standing prompt's already was.
+    @Test
+    fun `a value a silent sibling head would take is never offered as a move to the provider`() {
+        val quiet = "\n[heads.quiet]\nprovider = \"realinfer\"\nport = 3313\n" +
+            "discovery_prefix = \"claude-realinfer--\"\npinned_model = \"glm-5.3-flash\"\n"
+        val warnings = TopologyFindings.warnings(TopologyLoader.parse(PROVIDER + HEAD + quiet))
+        val held = listOf("context_window", "model_slots", "overrides.maxInflight", "system_prompt")
+            .map { key -> warnings.single { it.path == "heads.realinfer.$key" } }
+
+        assertTrue(held.all { it.move == null }, "nothing that would reach the quiet head is moved: $held")
+        assertTrue(held.all { "another head on this provider" in it.message }, "each says why: $held")
+
+        val same = "context_window = 400000\nmodel_slots = { opus = \"glm-5.3\", sonnet = \"glm-5.3\", " +
+            "haiku = \"glm-5.3-flash\" }\n[heads.quiet.overrides]\nmaxInflight = \"3\"\n"
+        val twin = quiet + same
+        val agreed = TopologyFindings.warnings(TopologyLoader.parse(PROVIDER + HEAD + twin))
+        val moves = listOf("context_window", "model_slots", "overrides.maxInflight")
+            .map { key -> agreed.single { it.path == "heads.realinfer.$key" }.move }
+        assertTrue(moves.all { it != null }, "heads that say the same value move it: $agreed")
+    }
+
     @Test
     fun `a provider's own value wins, and heads that disagree leave the gateway the provider's own`() {
         val own = PROVIDER.replace(

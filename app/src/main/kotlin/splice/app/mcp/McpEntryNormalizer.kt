@@ -30,6 +30,8 @@ private const val NORMALIZE_COMMAND = "command"
 internal class McpEntryNormalizer(
     private val splicePorts: Set<Int> = setOf(MCP_HUB_FRONT_PORT, Knob.CONTROL_PORT.count().toInt()),
 ) {
+    private val urlAuth = McpUrlAuthNormalizer()
+
     fun normalize(obj: JsonObject, agyShape: Boolean): JsonObject? {
         if (isDisabled(obj)) return null
         val url = JsonScalars.str(obj, "url")
@@ -48,7 +50,10 @@ internal class McpEntryNormalizer(
     fun isSpliceLoopbackEntry(entry: JsonObject): Boolean {
         val headers = entry[NORMALIZE_HEADERS] as? JsonObject
         if (hasSpliceHeader(headers)) return true
-        val rawUrl = JsonScalars.str(entry, "url") ?: return false
+        val rawUrl = JsonScalars.str(entry, "url")
+            ?: JsonScalars.str(entry, "serverUrl")
+            ?: JsonScalars.str(entry, "httpUrl")
+            ?: return false
         return matchesSpliceLoopbackUrl(rawUrl)
     }
 
@@ -74,12 +79,14 @@ internal class McpEntryNormalizer(
         }
     }
 
-    private fun normalizeHttp(url: String, type: String?, headers: JsonObject?): JsonObject = buildJsonObject {
-        put("type", if (type == "sse") "sse" else "http")
-        put("url", url)
-        val cleanHeaders = stringMap(headers)
-        if (cleanHeaders.isNotEmpty()) {
-            putJsonObject(NORMALIZE_HEADERS) { cleanHeaders.forEach { (k, v) -> put(k, v) } }
+    private fun normalizeHttp(url: String, type: String?, headers: JsonObject?): JsonObject {
+        val normalized = urlAuth.normalize(url, stringMap(headers))
+        return buildJsonObject {
+            put("type", if (type == "sse") "sse" else "http")
+            put("url", normalized.url)
+            if (normalized.headers.isNotEmpty()) {
+                putJsonObject(NORMALIZE_HEADERS) { normalized.headers.forEach { (k, v) -> put(k, v) } }
+            }
         }
     }
 

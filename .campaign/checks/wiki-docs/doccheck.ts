@@ -838,7 +838,7 @@ const CHECKS: Record<Mode, () => string[]> = {
   disk: checkDisk,
 };
 
-function main(): number {
+export function main(): number {
   const asked = process.argv[2];
   const known: Mode[] = ["links", "wiki", "readme", "disclaimers", "disk"];
   if (asked !== "all" && !known.includes(asked as Mode)) {

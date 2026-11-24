@@ -19,5 +19,5 @@
     "noUnusedParameters": true,
     "skipLibCheck": true
   },
-  "include": ["**/*.ts"]
+  "include": ["**/*.ts", "../../splice-v070-wiki-docs/scratchpad/doccheck.ts"]
 }

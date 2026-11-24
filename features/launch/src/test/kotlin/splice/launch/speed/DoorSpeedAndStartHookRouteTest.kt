@@ -29,26 +29,11 @@ import java.util.UUID
 class DoorSpeedAndStartHookRouteTest {
 
     @Test
-    fun `door speed hook switches fast and ultrafast against active ChatGPT provider`() {
+    fun `door speed hook switches fast and ultrafast on active ChatGPT model and never hijacks Claude fast`() {
         val sessions = SessionSpeeds()
-        val rosters = object : HeadDiscoveredModels {
-            override fun forHead(key: String): List<DiscoveredModel> = metadataForHead(key)
-            override fun metadataForHead(key: String): List<DiscoveredModel> = if (key == "codex") {
-                listOf(
-                    DiscoveredModel(
-                        id = "gpt-5.6-sol",
-                        runtimeMetadata = ModelRuntimeMetadata(
-                            serviceTiers = listOf(
-                                ServiceTier(id = "priority", name = "Fast", description = "2x speed"),
-                                ServiceTier(id = "ultrafast", name = "Ultrafast", description = "4x speed"),
-                            ),
-                        ),
-                    ),
-                )
-            } else {
-                emptyList()
-            }
-        }
+        sessions.ran("door-codex", "gpt-5.6-sol")
+        sessions.ran("door-claude", "claude-opus-4-6")
+        val rosters = codexRosters()
         val speeds = LaunchSpeeds(
             sessions = sessions,
             catalog = SpeedCatalog(rosters),
@@ -57,18 +42,30 @@ class DoorSpeedAndStartHookRouteTest {
         )
         val route = SpeedHookRoute(launchHeadsOf(), speeds, log = {})
 
-        val fastReply = route.decide(DOOR_HOOK_KEY, """{"session_id":"door-sess-1","prompt":"/fast"}""")
+        val fastReply = route.decide(DOOR_HOOK_KEY, """{"session_id":"door-codex","prompt":"/fast"}""")
         assertEquals("block", fastReply["decision"]?.jsonPrimitive?.content)
-        assertEquals(Speed.FAST, sessions.speedOf("door-sess-1"))
-        assertTrue("standard speed" in fastReply["reason"]?.jsonPrimitive?.content.orEmpty())
+        assertEquals(Speed.FAST, sessions.speedOf("door-codex"))
 
-        val offReply = route.decide(DOOR_HOOK_KEY, """{"session_id":"door-sess-1","prompt":"/fast off"}""")
-        assertEquals(Speed.STANDARD, sessions.speedOf("door-sess-1"))
+        val offReply = route.decide(DOOR_HOOK_KEY, """{"session_id":"door-codex","prompt":"/fast off"}""")
+        assertEquals(Speed.STANDARD, sessions.speedOf("door-codex"))
         assertTrue("standard speed" in offReply["reason"]?.jsonPrimitive?.content.orEmpty())
+
+        // Non-ChatGPT (Claude) session: /fast must pass through untouched ({}), never hijacked by Codex.
+        val claudeFast = route.decide(DOOR_HOOK_KEY, """{"session_id":"door-claude","prompt":"/fast"}""")
+        assertTrue(claudeFast.isEmpty(), "Claude /fast must pass through untouched: $claudeFast")
+
+        // Brand-new door session with no recorded model yet: /fast passes through untouched.
+        val freshFast = route.decide(DOOR_HOOK_KEY, """{"session_id":"door-fresh","prompt":"/fast"}""")
+        assertTrue(freshFast.isEmpty(), "Unrecorded door session /fast must pass through untouched: $freshFast")
+
+        // /ultrafast on a Claude session refuses naming the Claude model.
+        val claudeUltra = route.decide(DOOR_HOOK_KEY, """{"session_id":"door-claude","prompt":"/ultrafast"}""")
+        assertEquals("block", claudeUltra["decision"]?.jsonPrimitive?.content)
+        assertTrue("claude-opus-4-6" in claudeUltra["reason"]?.jsonPrimitive?.content.orEmpty())
     }
 
     @Test
-    fun `door speed hook refuses cleanly when no ChatGPT provider is active`() {
+    fun `door speed hook passes through fast and refuses ultrafast when no ChatGPT provider is active`() {
         val rosters = object : HeadDiscoveredModels {
             override fun forHead(key: String): List<DiscoveredModel> = emptyList()
             override fun metadataForHead(key: String): List<DiscoveredModel> = emptyList()
@@ -76,13 +73,16 @@ class DoorSpeedAndStartHookRouteTest {
         val speeds = LaunchSpeeds(SessionSpeeds(), SpeedCatalog(rosters), chatGpt = { null }, door = { emptyList() })
         val route = SpeedHookRoute(launchHeadsOf(), speeds, log = {})
 
-        val reply = route.decide(DOOR_HOOK_KEY, """{"session_id":"door-sess-2","prompt":"/fast"}""")
-        assertEquals("block", reply["decision"]?.jsonPrimitive?.content)
-        assertTrue("none is active on the door" in reply["reason"]?.jsonPrimitive?.content.orEmpty())
+        val fast = route.decide(DOOR_HOOK_KEY, """{"session_id":"door-sess-2","prompt":"/fast"}""")
+        assertTrue(fast.isEmpty(), "fast must pass through when no ChatGPT provider is active: $fast")
+
+        val ultra = route.decide(DOOR_HOOK_KEY, """{"session_id":"door-sess-2","prompt":"/ultrafast"}""")
+        assertEquals("block", ultra["decision"]?.jsonPrimitive?.content)
+        assertTrue("none is active on the door" in ultra["reason"]?.jsonPrimitive?.content.orEmpty())
     }
 
     @Test
-    fun `door resume and foreground routes notify SessionStarts and ForegroundTools without a head tree`() {
+    fun `door resume prefers payload provider before door fallback and notifies ForegroundTools`() {
         val starts = mutableListOf<Triple<String, String, String>>()
         val calls = mutableListOf<ForegroundToolCall>()
         val owner = UUID.randomUUID().toString()
@@ -92,14 +92,21 @@ class DoorSpeedAndStartHookRouteTest {
             foreground = { calls += it },
             starts = SessionStarts { head, sessionId, cwd ->
                 starts += Triple(head, sessionId, cwd)
-                "bound $sessionId"
+                if (head == DOOR_HOOK_KEY) "bound $sessionId" else null
             },
         )
         val fgRoute = ForegroundHookRoute(launchHeadsOf(), activity = { calls += it })
 
-        val startBody = """{"session_id":"door-sess-3","source":"startup","cwd":"/work/repo"}"""
+        val startBody = """{"session_id":"door-sess-3","source":"startup",""" +
+            """"cwd":"/work/repo","provider":"antigravity"}"""
         assertNull(resumeRoute.handle(DOOR_HOOK_KEY, startBody, owner))
-        assertEquals(listOf(Triple(DOOR_HOOK_KEY, "door-sess-3", "/work/repo")), starts)
+        assertEquals(
+            listOf(
+                Triple("antigravity", "door-sess-3", "/work/repo"),
+                Triple(DOOR_HOOK_KEY, "door-sess-3", "/work/repo"),
+            ),
+            starts,
+        )
 
         fgRoute.handle(
             DOOR_HOOK_KEY,
@@ -123,5 +130,24 @@ class DoorSpeedAndStartHookRouteTest {
             listOf(ForegroundToolPhase.SESSION_START, ForegroundToolPhase.START, ForegroundToolPhase.SESSION_END),
             calls.map { it.phase },
         )
+    }
+
+    private fun codexRosters(): HeadDiscoveredModels = object : HeadDiscoveredModels {
+        override fun forHead(key: String): List<DiscoveredModel> = metadataForHead(key)
+        override fun metadataForHead(key: String): List<DiscoveredModel> = if (key == "codex") {
+            listOf(
+                DiscoveredModel(
+                    id = "gpt-5.6-sol",
+                    runtimeMetadata = ModelRuntimeMetadata(
+                        serviceTiers = listOf(
+                            ServiceTier(id = "priority", name = "Fast", description = "2x speed"),
+                            ServiceTier(id = "ultrafast", name = "Ultrafast", description = "4x speed"),
+                        ),
+                    ),
+                ),
+            )
+        } else {
+            emptyList()
+        }
     }
 }

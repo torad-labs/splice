@@ -18,6 +18,7 @@ import splice.core.util.EnvReader
 import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.core.util.WallClock
+import splice.provider.antigravity.hooks.AcpSessionHooks
 import splice.provider.antigravity.skills.ClaudeSkillCatalog
 import java.io.IOException
 import java.io.InputStream

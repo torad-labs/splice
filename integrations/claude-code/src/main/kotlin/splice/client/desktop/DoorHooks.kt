@@ -1,6 +1,8 @@
-// NEW: door-level Claude Code hooks staged inside splice's own state folder (never touching `~/.claude`):
-// `/fast` and `/ultrafast` (`SpeedHook` -> `/hooks/speed/door`) when a ChatGPT/Codex provider is in the lineup,
-// and `SessionStart` (`DoorStartHook` -> `/hooks/resume/door`) so Teams cwd rule-binding sees door sessions.
+// NEW: door-level Claude Code hooks staged inside splice's own state folder (never touching `~/.claude` or laying
+// skills in `~/.claude/skills`):
+// - `/fast` and `/ultrafast` (`SpeedHook` -> `/hooks/speed/door`) when a ChatGPT/Codex provider is in the lineup
+//   (`/fast` passes through untouched on Claude/non-ChatGPT sessions or before a ChatGPT turn runs), and
+// - `SessionStart` (`DoorStartHook` -> `/hooks/resume/door`) so Teams cwd rule-binding sees door sessions.
 package splice.client.desktop
 
 import kotlinx.serialization.json.JsonObject

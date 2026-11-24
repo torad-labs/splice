@@ -46,10 +46,15 @@ internal class LoginCommand(
     private val claudeLabel = ClaudeLoginLabel(output)
     private val claudeCli = ClaudeCliSignIn(output)
 
-    internal suspend fun login(headArg: String?, label: String? = null, discard: Boolean = false): Boolean {
+    internal suspend fun login(
+        headArg: String?,
+        label: String? = null,
+        discard: Boolean = false,
+        openBrowser: Boolean = true,
+    ): Boolean {
         // Bare `splice login` opens Splice Console's Accounts page, the single place logins are managed.
         val bare = headArg == null && !hasLabelOptions(label, discard)
-        return if (bare) openConsole() else loginHead(headArg, label, discard)
+        return if (bare) openConsole(openBrowser) else loginHead(headArg, label, discard)
     }
 
     private fun hasLabelOptions(label: String?, discard: Boolean): Boolean = label != null || discard

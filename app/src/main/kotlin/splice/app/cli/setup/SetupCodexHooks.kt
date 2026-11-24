@@ -19,12 +19,13 @@ internal data class CodexHooksChoice(
 internal class SetupCodexHooks(private val prompts: SetupPrompts) {
     private val hooks = CodexPeerHooks()
 
-    /** Offers install or migration when Codex is installed on a TTY and `~/.codex/hooks.json` needs it. */
+    /** Offers install (opt-in, default no) or migration (default yes) when Codex is installed on a TTY. */
     fun offer(facts: SetupFacts): CodexHooksChoice {
         val reading = facts.capabilities?.harness?.takeIf { prompts.hasConsole() && it.codex != null }?.codexHooks
         val question = reading?.let(::questionFor)
         return if (reading != null && question != null) {
-            CodexHooksChoice(prompts.frame.confirm(question, true), reading)
+            val defaultYes = reading.state == CodexHooksState.NEEDS_MIGRATION
+            CodexHooksChoice(prompts.frame.confirm(question, defaultYes), reading)
         } else {
             CodexHooksChoice()
         }
@@ -45,7 +46,8 @@ internal class SetupCodexHooks(private val prompts: SetupPrompts) {
     /** For `splice setup --update`: null when nothing to offer, true when applied, false when declined or failed. */
     fun offerUpdate(reading: CodexHooksReading?): Boolean? {
         val question = reading?.let(::questionFor) ?: return null
-        return prompts.frame.confirm(question, true) && applyFile(reading)
+        val defaultYes = reading.state == CodexHooksState.NEEDS_MIGRATION
+        return prompts.frame.confirm(question, defaultYes) && applyFile(reading)
     }
 
     private fun questionFor(reading: CodexHooksReading): String? = when (reading.state) {

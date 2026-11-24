@@ -1,7 +1,8 @@
 // NEW: hooks for an in-process Antigravity ACP Desktop session: unified Console Accounts `/login`
 // interception, session-start notification (Teams rule-binding) and foreground tool activity.
+// Kept in a subpackage so `splice.provider.antigravity` stays below the package-size cap.
 // Never reads or writes `~/.gemini` (docs/specs/desktop-antigravity.md).
-package splice.provider.antigravity
+package splice.provider.antigravity.hooks
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -21,7 +22,7 @@ public fun interface AcpSessionStart {
     public fun started(sessionId: String, cwd: String)
 }
 
-/** In-process callbacks for [DesktopAcp] and [DesktopSession]. */
+/** In-process callbacks for [splice.provider.antigravity.DesktopAcp] and [splice.provider.antigravity.DesktopSession]. */
 public data class AcpSessionHooks(
     public val login: AcpLoginOpener = AcpLoginOpener { DEFAULT_ACP_LOGIN_REPLY },
     public val sessionStart: AcpSessionStart? = null,

@@ -65,15 +65,12 @@ internal class CapabilityGaps(private val facts: Capabilities, private val claud
         if (facts.harness.codex == null) return null
         val reading = facts.harness.codexHooks ?: return null
         return when (reading.state) {
-            CodexHooksState.MISSING -> Gap(
-                GapKind.CODEX_HOOKS,
-                "Codex is installed but ${reading.file} has no splice peer hooks yet",
-            )
             CodexHooksState.NEEDS_MIGRATION -> Gap(
                 GapKind.CODEX_HOOKS,
                 "${reading.file} needs peer hook migration (${reading.issues.joinToString("; ")})",
             )
-            CodexHooksState.CURRENT, CodexHooksState.UNREADABLE -> null
+            // Missing ~/.codex/hooks.json is an opt-in doctor suggestion, not a required upgrade gap.
+            CodexHooksState.MISSING, CodexHooksState.CURRENT, CodexHooksState.UNREADABLE -> null
         }
     }
 

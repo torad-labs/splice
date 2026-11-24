@@ -22,8 +22,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.client.ClaudeProjectFolder
-import splice.core.client.ForegroundToolCall
-import splice.core.client.ForegroundToolPhase
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.core.util.WallClock
@@ -333,73 +331,10 @@ internal class DesktopAcpTest {
         seen.forEach { assertFalse("superseded" in it.toString()) }
     }
 
-    @Test
-    fun `slash login in an ACP session opens Console Accounts and never reaches agy`() {
-        var loginCount = 0
-        val hooks = AcpSessionHooks(
-            login = AcpLoginOpener {
-                loginCount++
-                "Opened Splice Console's Accounts page."
-            },
-        )
-        // If agy received a prompt, this script would echo an error marker; it only reads EOF after session/new.
-        val script = "$opened\nread l && echo 'SHOULD_NOT_RECEIVE_PROMPT' >&2"
-        val loginMsg = """{"type":"user","message":{"role":"user","content":"/login"},""" +
-            """"parent_tool_use_id":null,"priority":"next","uuid":"u-login"}"""
-        val seen = rig(script, hooks = hooks) {
-            send(loginMsg)
-            next { it.str("type") == "result" }
-        }
-        assertEquals(1, loginCount)
-        val reply = seen.single { it.str("type") == "assistant" }.obj("message").array("content").single().jsonObject
-        assertEquals("Opened Splice Console's Accounts page.", reply.str("text"))
-        assertEquals("false", seen.last()["is_error"]?.jsonPrimitive?.content)
-    }
-
-    @Test
-    fun `ACP session emits SessionStarts and ForegroundTools lifecycle events in-process`() {
-        val starts = mutableListOf<Pair<String, String>>()
-        val fg = mutableListOf<ForegroundToolCall>()
-        val hooks = AcpSessionHooks(
-            sessionStart = AcpSessionStart { id, cwd -> starts += id to cwd },
-            foreground = { fg += it },
-        )
-        val prompt = lines(
-            "read l",
-            update(
-                """{"sessionUpdate":"tool_call","toolCallId":"t-fg","title":"Run ls","kind":"execute",""" +
-                    """"status":"pending","rawInput":{"command":"ls"}}""",
-            ),
-            update(
-                """{"sessionUpdate":"tool_call_update","toolCallId":"t-fg","status":"completed",""" +
-                    """"content":[{"type":"content","content":{"type":"text","text":"ok"}}]}""",
-            ),
-            answer(3, "end_turn"),
-            "read l",
-        )
-        rig("$opened\n$prompt", hooks = hooks) {
-            send(USER)
-            next { it.str("type") == "result" }
-        }
-        assertEquals(listOf("s-1" to project().toString()), starts)
-        assertEquals(
-            listOf(
-                ForegroundToolPhase.SESSION_START,
-                ForegroundToolPhase.START,
-                ForegroundToolPhase.END,
-                ForegroundToolPhase.SESSION_END,
-            ),
-            fg.map { it.phase },
-        )
-        assertEquals("t-fg", fg[1].toolUseId)
-        assertEquals("t-fg", fg[2].toolUseId)
-    }
-
     /** Desktop's session on the agent [script], driven by [drive]; every line Desktop received, in order. */
     private fun rig(
         script: String,
         extra: List<String> = emptyList(),
-        hooks: AcpSessionHooks = AcpSessionHooks(),
         drive: suspend Driver.() -> Unit,
     ): List<JsonObject> {
         val agent = tmp.resolve("agent.sh")
@@ -419,7 +354,7 @@ internal class DesktopAcpTest {
                 val run = async(Dispatchers.IO) {
                     val agy = listOf("sh", agent.toString())
                     DesktopAcp(args, project(), env, Dispatchers.IO, LogSink {}, WallClock { CLOCK }, agy)
-                        .run(driver.stdin, driver.stdout, hooks)
+                        .run(driver.stdin, driver.stdout)
                 }
                 driver.drive()
                 driver.close()

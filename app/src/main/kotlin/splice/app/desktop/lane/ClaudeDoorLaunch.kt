@@ -70,7 +70,11 @@ internal class ClaudeDoorLaunch(
 
     private fun spec(lineup: DesktopLineup, selector: String?, layLogin: Boolean): DoorLaunchSpec {
         val model = selector?.let { ids.idFor(lineup, it) }
-        val session = DoorSession(lane.door, lane.key.get(), lane.window(lineup), model)
+        // Side-by-side launches never touch ~/.claude. Only disable Claude Code's built-in /login when splice's
+        // commands/login.md is actually present (laid now or already on disk); otherwise bare /login would answer
+        // "Unknown command: /login" (docs/specs/door-default.md).
+        val disableLogin = layLogin || login.isLaid()
+        val session = DoorSession(lane.door, lane.key.get(), lane.window(lineup), model, disableLogin = disableLogin)
         val loginHooks = if (layLogin) hooks() else overlayLoginHooks()
         val target = hookTarget
         val hooksHelper = doorHooks
@@ -108,8 +112,9 @@ internal class ClaudeDoorLaunch(
     }
 
     /** Side-by-side /login hook in the `--settings` overlay alone: writes only into splice's state folder and never
-     *  touches `~/.claude`, so `splice launch claude` and `claude-splice` still catch `/login` and `/splice:login`
-     *  and open Splice Console's Accounts page. */
+     *  touches `~/.claude`. Catches `/splice:login` (when a plugin exposes it) and bare `/login` whenever splice's
+     *  `commands/login.md` is already present in `~/.claude`; without that file, `DISABLE_LOGIN_COMMAND` stays unset
+     *  so the user's own `/login` remains reachable while `splice login` / `splice console` open Console Accounts. */
     private fun overlayLoginHooks(): Map<String, List<JsonObject>> = Cancellables.runCatchingCancellable {
         login.hooks()
     }.getOrElse { failure ->

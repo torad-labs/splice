@@ -74,11 +74,12 @@ public class SpeedHookRoute(
         }
     }
 
-    private fun decideDoor(session: String, command: SpeedCommand, unchanged: String): JsonObject {
-        val chosen = doorResolve.choose(session)
-            ?: return blocked("${command.name} works on a ChatGPT provider; none is active on the door, $unchanged")
-        return blocked(switched(chosen.catalogKey, session, chosen.model, command))
-    }
+    private fun decideDoor(session: String, command: SpeedCommand, unchanged: String): JsonObject =
+        when (val resolution = doorResolve.match(session, command, unchanged)) {
+            is DoorSpeedMatch.Matched -> blocked(switched(resolution.catalogKey, session, resolution.model, command))
+            DoorSpeedMatch.PassThrough -> JsonObject(emptyMap())
+            is DoorSpeedMatch.Refused -> blocked(resolution.reason)
+        }
 
     /** What [command] does to [session], whose model is [model], said as the person reads it. */
     private fun switched(key: String, session: String, model: String, command: SpeedCommand): String {

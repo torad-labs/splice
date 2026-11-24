@@ -1,14 +1,24 @@
 // NEW: resolves `/hooks/speed/door` against the active ChatGPT/Codex provider(s) on the door, kept out of
-// SpeedHookRoute so it owns only speed-command evaluation (concentration).
+// SpeedHookRoute so it owns only speed-command evaluation (concentration). Never hijacks Claude Code's built-in
+// `/fast` when a door session is on a non-ChatGPT model or has not run a ChatGPT turn yet.
 package splice.launch.speed
 
+import splice.client.speed.SpeedCommand
 import splice.core.client.DOOR_HOOK_KEY
+import splice.core.speed.Speed
 import splice.launch.LaunchHeads
 import splice.launch.recipe.DoorSpeedTarget
 import splice.launch.recipe.LaunchSpeeds
 
-/** Resolved catalog key and model for a door `/fast` or `/ultrafast` invocation. */
-internal data class DoorSpeedChoice(val catalogKey: String, val model: String)
+/** Outcome of resolving `/hooks/speed/door` for a session. */
+internal sealed class DoorSpeedMatch {
+    data class Matched(val catalogKey: String, val model: String) : DoorSpeedMatch()
+
+    /** Let Claude Code handle its own `/fast` untouched (non-ChatGPT model or no ChatGPT turn yet). */
+    data object PassThrough : DoorSpeedMatch()
+
+    data class Refused(val reason: String) : DoorSpeedMatch()
+}
 
 /** Resolves a `/hooks/speed/door` call against the active ChatGPT/Codex provider(s) served on the door. */
 internal class DoorSpeedResolve(
@@ -17,18 +27,49 @@ internal class DoorSpeedResolve(
 ) {
     fun isDoor(key: String): Boolean = key == DOOR_HOOK_KEY
 
-    /** Chooses the active ChatGPT catalog key and model for [session], or null when none is active on the door. */
-    fun choose(session: String): DoorSpeedChoice? {
+    /** Matches [session] and [command] against active ChatGPT door providers without hijacking Claude `/fast`. */
+    fun match(session: String, command: SpeedCommand, unchanged: String): DoorSpeedMatch {
         val targets = resolveTargets()
-        if (targets.isEmpty()) return null
-        val lastModel = speeds.sessions.lastModel(session)
-        val chosen = if (lastModel != null) {
-            targets.firstOrNull { speeds.catalog.tiersOf(it.catalogKey, lastModel).isNotEmpty() } ?: targets.first()
-        } else {
-            targets.first()
+        if (targets.isEmpty()) {
+            return if (command.speed == Speed.FAST) {
+                DoorSpeedMatch.PassThrough
+            } else {
+                DoorSpeedMatch.Refused(
+                    "${command.name} works on a ChatGPT provider; none is active on the door, $unchanged",
+                )
+            }
         }
-        return DoorSpeedChoice(chosen.catalogKey, lastModel ?: chosen.pinnedModel)
+        val lastModel = speeds.sessions.lastModel(session)
+        return if (lastModel != null) {
+            matchRecordedModel(targets, lastModel, command)
+        } else if (command.speed == Speed.FAST) {
+            DoorSpeedMatch.PassThrough
+        } else {
+            val first = targets.first()
+            DoorSpeedMatch.Matched(first.catalogKey, first.pinnedModel)
+        }
     }
+
+    private fun matchRecordedModel(
+        targets: List<DoorSpeedTarget>,
+        lastModel: String,
+        command: SpeedCommand,
+    ): DoorSpeedMatch {
+        val target = targets.firstOrNull { targetMatchesModel(it, lastModel) }
+        return when {
+            target != null -> DoorSpeedMatch.Matched(target.catalogKey, lastModel)
+            command.speed == Speed.FAST -> DoorSpeedMatch.PassThrough
+            else -> DoorSpeedMatch.Refused(
+                "$lastModel does not offer ${command.speed.title}; ${command.name} is for ChatGPT models. " +
+                    "This session's speed is unchanged.",
+            )
+        }
+    }
+
+    private fun targetMatchesModel(target: DoorSpeedTarget, model: String): Boolean =
+        target.pinnedModel == model ||
+            speeds.catalog.lists(target.catalogKey, model) ||
+            speeds.catalog.tiersOf(target.catalogKey, model).isNotEmpty()
 
     private fun resolveTargets(): List<DoorSpeedTarget> {
         val fromDoor = speeds.doorTargets()

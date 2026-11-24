@@ -77,6 +77,10 @@ class SideBySideCliLaunchTest {
             assertNotNull(spec)
             assertEquals("http://127.0.0.1:3096/door", spec.env["ANTHROPIC_BASE_URL"])
             assertFalse(
+                "DISABLE_LOGIN_COMMAND" in spec.env,
+                "side-by-side must keep Claude Code /login enabled when ~/.claude/commands/login.md is absent",
+            )
+            assertFalse(
                 Files.exists(home.resolve(".claude/commands/login.md")),
                 "side-by-side launch must never write into ~/.claude",
             )

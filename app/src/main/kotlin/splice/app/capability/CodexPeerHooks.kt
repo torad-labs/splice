@@ -1,7 +1,7 @@
 // NEW: inspects and installs or migrates `~/.codex/hooks.json` for Splice's Codex peer hooks (docs/peers.md).
-// Detects legacy `sh -c 'id=$(jq ...)'` wrappers (which consume stdin so HarnessHook loses cwd) and wrong
-// SessionEnd timeouts (e.g. 30s instead of 3s), migrating them to direct `splice peer codex attach|detach`
-// while preserving all other user and hookd entries untouched. Never touches `~/.gemini`.
+// Detects legacy `sh -c` / `jq` wrappers (which consume stdin so HarnessHook loses cwd) and wrong SessionEnd
+// timeouts (e.g. 30s instead of 3s), migrating them to direct `splice peer codex attach|detach` while preserving
+// custom splice binary paths, flags, symlink targets, and all unrelated user entries. Never touches `~/.gemini`.
 package splice.app.capability
 
 import kotlinx.serialization.json.Json
@@ -22,13 +22,13 @@ import java.nio.file.Path
 
 /** What inspecting `~/.codex/hooks.json` found. */
 internal enum class CodexHooksState {
-    /** All three events run direct `splice peer codex attach|detach` with the required timeouts and no matcher. */
+    /** All three events run direct `splice peer codex attach|detach` with valid timeouts and no matcher. */
     CURRENT,
 
     /** File does not exist, or contains no splice peer codex hooks yet. */
     MISSING,
 
-    /** Present with legacy shell wrappers, wrong timeouts, unexpected matchers, or missing events. */
+    /** Present with legacy shell wrappers, wrong SessionEnd timeout, unexpected matchers, or missing events. */
     NEEDS_MIGRATION,
 
     /** File exists but is unreadable or not valid JSON; never overwritten automatically. */
@@ -124,11 +124,27 @@ internal class CodexPeerHooks {
     }
 
     private fun persist(file: Path, text: String, migrated: Boolean): CodexHooksOutcome = try {
-        file.parent?.let(Files::createDirectories)
-        SecureFile.writeAtomic0600(file, text)
+        val target = resolveWriteTarget(file)
+        target.parent?.let(Files::createDirectories)
+        if (Files.isRegularFile(target)) {
+            val backup = target.resolveSibling("${target.fileName}.bak")
+            SecureFile.writeAtomic0600(backup, Files.readString(target))
+        }
+        SecureFile.writeAtomic0600(target, text)
         CodexHooksOutcome.Written(file, migrated = migrated)
     } catch (e: IOException) {
         CodexHooksOutcome.Refused(file, e::class.simpleName ?: "IOException")
+    }
+
+    /** Follows a symlink so atomic replacement updates the link target rather than clobbering the symlink itself. */
+    private fun resolveWriteTarget(file: Path): Path {
+        if (!Files.isSymbolicLink(file)) return file
+        return try {
+            file.toRealPath()
+        } catch (_: IOException) {
+            val linkTarget = Files.readSymbolicLink(file)
+            if (linkTarget.isAbsolute) linkTarget else file.toAbsolutePath().parent.resolve(linkTarget).normalize()
+        }
     }
 
     private fun audit(file: Path, hooks: JsonObject): CodexHooksReading {
@@ -152,11 +168,11 @@ internal class CodexPeerHooks {
     }
 
     private fun auditEntry(spec: EventSpec, entry: SpliceEntry, issues: MutableList<String>) {
-        if (entry.command.trim() != spec.command) {
-            issues += "${spec.event} uses legacy wrapper instead of direct `${spec.command}`"
+        if (!CodexHookCommands.isValidDirect(entry.command, spec.verb)) {
+            issues += "${spec.event} uses legacy wrapper instead of direct `splice peer codex ${spec.verb}`"
             return
         }
-        if (entry.timeout != spec.timeoutSeconds) {
+        if (spec.exactTimeout && entry.timeout != spec.timeoutSeconds) {
             issues += "${spec.event} timeout is ${entry.timeout ?: "unset"} (expected ${spec.timeoutSeconds})"
         }
         if (!entry.matcher.isNullOrBlank()) {
@@ -172,9 +188,12 @@ internal class CodexPeerHooks {
         } else {
             return null
         }
+        val prior = spliceEntries(array).firstOrNull()
+        val command = CodexHookCommands.migrate(prior?.command, spec.verb)
+        val timeout = prior?.timeout?.takeIf { !spec.exactTimeout && it > 0 } ?: spec.timeoutSeconds
         return buildJsonArray {
             array.mapNotNull(::stripSpliceFromGroup).forEach(::add)
-            add(canonicalGroup(spec))
+            add(canonicalGroup(command, timeout))
         }
     }
 
@@ -184,7 +203,7 @@ internal class CodexPeerHooks {
         val hooksArray = group[HOOKS_ROOT_KEY] as? JsonArray ?: return group
         val kept = hooksArray.filterNot { item ->
             val cmd = (item as? JsonObject)?.let { JsonScalars.str(it, COMMAND_KEY) }
-            cmd != null && SPLICE_CODEX_PEER_NEEDLE in cmd
+            cmd != null && CodexHookCommands.isSpliceCommand(cmd)
         }
         return when {
             kept.size == hooksArray.size -> group
@@ -193,13 +212,13 @@ internal class CodexPeerHooks {
         }
     }
 
-    private fun canonicalGroup(spec: EventSpec): JsonObject = buildJsonObject {
+    private fun canonicalGroup(command: String, timeoutSeconds: Int): JsonObject = buildJsonObject {
         putJsonArray(HOOKS_ROOT_KEY) {
             add(
                 buildJsonObject {
                     put(TYPE_KEY, COMMAND_KEY)
-                    put(COMMAND_KEY, spec.command)
-                    put(TIMEOUT_KEY, spec.timeoutSeconds)
+                    put(COMMAND_KEY, command)
+                    put(TIMEOUT_KEY, timeoutSeconds)
                 },
             )
         }
@@ -207,16 +226,14 @@ internal class CodexPeerHooks {
 
     private fun spliceEntries(eventEl: JsonElement?): List<SpliceEntry> {
         val array = eventEl as? JsonArray ?: return emptyList()
-        return array.mapNotNull { it as? JsonObject }.flatMap(::entriesInGroup)
-    }
-
-    private fun entriesInGroup(group: JsonObject): List<SpliceEntry> {
-        val matcher = JsonScalars.str(group, MATCHER_KEY)
-        val items = group[HOOKS_ROOT_KEY] as? JsonArray ?: return emptyList()
-        return items.mapNotNull { item ->
-            val obj = item as? JsonObject
-            val cmd = obj?.let { JsonScalars.str(it, COMMAND_KEY) }?.takeIf { SPLICE_CODEX_PEER_NEEDLE in it }
-            if (obj != null && cmd != null) SpliceEntry(cmd, JsonScalars.int(obj, TIMEOUT_KEY), matcher) else null
+        return array.mapNotNull { it as? JsonObject }.flatMap { group ->
+            val matcher = JsonScalars.str(group, MATCHER_KEY)
+            val items = group[HOOKS_ROOT_KEY] as? JsonArray ?: return@flatMap emptyList()
+            items.mapNotNull { item ->
+                val obj = item as? JsonObject
+                val cmd = obj?.let { JsonScalars.str(it, COMMAND_KEY) }?.takeIf(CodexHookCommands::isSpliceCommand)
+                if (obj != null && cmd != null) SpliceEntry(cmd, JsonScalars.int(obj, TIMEOUT_KEY), matcher) else null
+            }
         }
     }
 
@@ -228,12 +245,17 @@ internal class CodexPeerHooks {
 
     private data class SpliceEntry(val command: String, val timeout: Int?, val matcher: String?)
 
-    private data class EventSpec(val event: String, val command: String, val timeoutSeconds: Int)
+    private data class EventSpec(
+        val event: String,
+        val verb: String,
+        val timeoutSeconds: Int,
+        val exactTimeout: Boolean,
+    )
 
     private val requiredSpecs = listOf(
-        EventSpec("SessionStart", CODEX_ATTACH_CMD, CODEX_ATTACH_TIMEOUT_S),
-        EventSpec("UserPromptSubmit", CODEX_ATTACH_CMD, CODEX_ATTACH_TIMEOUT_S),
-        EventSpec("SessionEnd", CODEX_DETACH_CMD, CODEX_DETACH_TIMEOUT_S),
+        EventSpec("SessionStart", "attach", CODEX_ATTACH_TIMEOUT_S, exactTimeout = false),
+        EventSpec("UserPromptSubmit", "attach", CODEX_ATTACH_TIMEOUT_S, exactTimeout = false),
+        EventSpec("SessionEnd", "detach", CODEX_DETACH_TIMEOUT_S, exactTimeout = true),
     )
 }
 
@@ -243,9 +265,6 @@ private const val TYPE_KEY = "type"
 private const val COMMAND_KEY = "command"
 private const val TIMEOUT_KEY = "timeout"
 private const val MATCHER_KEY = "matcher"
-private const val SPLICE_CODEX_PEER_NEEDLE = "splice peer codex"
-private const val CODEX_ATTACH_CMD = "splice peer codex attach"
-private const val CODEX_DETACH_CMD = "splice peer codex detach"
 
 // why: docs/peers.md specifies 30s for attach hooks so cold-starting the daemon on SessionStart/UserPromptSubmit succeeds.
 private const val CODEX_ATTACH_TIMEOUT_S = 30

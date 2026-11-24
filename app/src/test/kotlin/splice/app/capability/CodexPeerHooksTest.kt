@@ -5,6 +5,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -33,29 +34,47 @@ class CodexPeerHooksTest {
     }
 
     @Test
-    fun `legacy sh jq wrapper and wrong SessionEnd timeout are detected and migrated preserving user hooks`(
+    fun `custom splice binary path and flags are accepted as current and never overwritten`(@TempDir tmp: Path) {
+        val file = Files.createDirectories(tmp.resolve(".codex")).resolve("hooks.json")
+        Files.writeString(file, CUSTOM_DIRECT_HOOKS_JSON)
+
+        val reading = hooks.inspect(file)
+        assertEquals(CodexHooksState.CURRENT, reading.state, reading.issues.toString())
+        assertEquals(CodexHooksOutcome.Current(file), hooks.installOrMigrate(file))
+        assertEquals(CUSTOM_DIRECT_HOOKS_JSON, Files.readString(file))
+    }
+
+    @Test
+    fun `legacy wrapper migration preserves custom binary path, flags, user hooks, backup and symlink`(
         @TempDir tmp: Path,
     ) {
-        val file = Files.createDirectories(tmp.resolve(".codex")).resolve("hooks.json")
-        Files.writeString(file, LEGACY_HOOKS_JSON)
+        val realTarget = Files.createDirectories(tmp.resolve("shared")).resolve("hooks.json")
+        Files.writeString(realTarget, LEGACY_HOOKS_JSON)
+        val link = Files.createDirectories(tmp.resolve(".codex")).resolve("hooks.json")
+        Files.createSymbolicLink(link, realTarget)
 
-        val before = hooks.inspect(file)
+        val before = hooks.inspect(link)
         assertEquals(CodexHooksState.NEEDS_MIGRATION, before.state)
         assertTrue(before.issues.any { "legacy wrapper" in it }, before.issues.toString())
         assertTrue(before.issues.any { "SessionEnd timeout is 30 (expected 3)" in it }, before.issues.toString())
 
-        val outcome = hooks.installOrMigrate(file)
-        assertEquals(CodexHooksOutcome.Written(file, migrated = true), outcome)
-        assertEquals(CodexHooksState.CURRENT, hooks.inspect(file).state)
+        val outcome = hooks.installOrMigrate(link)
+        assertEquals(CodexHooksOutcome.Written(link, migrated = true), outcome)
+        assertEquals(CodexHooksState.CURRENT, hooks.inspect(link).state)
+        assertTrue(Files.isSymbolicLink(link), "hooks.json symlink must remain a symlink")
+        val backup = realTarget.resolveSibling("hooks.json.bak")
+        assertTrue(Files.isRegularFile(backup), "prior hooks.json must be backed up before overwrite")
+        assertEquals(LEGACY_HOOKS_JSON, Files.readString(backup))
 
-        val migrated = Json.parseToJsonElement(Files.readString(file)).jsonObject
+        val migrated = Json.parseToJsonElement(Files.readString(realTarget)).jsonObject
         assertEquals("true", migrated["customTopLevel"]?.jsonPrimitive?.content)
         val events = migrated["hooks"]!!.jsonObject
         val sessionStartText = events["SessionStart"]!!.jsonArray.toString()
-        assertTrue("hookd notify start" in sessionStartText, "user hookd entry must survive: $sessionStartText")
+        assertTrue("user-notify start" in sessionStartText, "user entry must survive: $sessionStartText")
         assertTrue("jq" !in sessionStartText, "legacy jq wrapper must be removed: $sessionStartText")
-        assertTrue("hookd notify stop" in events["Stop"]!!.jsonArray.toString())
+        assertHook(events, "SessionStart", "/opt/bin/splice peer codex attach --peer-name work", 30)
         assertHook(events, "SessionEnd", "splice peer codex detach", 3)
+        assertTrue("user-notify stop" in events["Stop"]!!.jsonArray.toString())
     }
 
     @Test
@@ -71,36 +90,49 @@ class CodexPeerHooksTest {
     }
 
     @Test
-    fun `doctor tools and capability gaps surface codex peer hooks without ever failing`(@TempDir tmp: Path) {
+    fun `missing hooks is doctor INFO not upgrade gap while legacy migration is WARN and upgrade gap`(
+        @TempDir tmp: Path,
+    ) {
         val file = tmp.resolve(".codex/hooks.json")
+        val missingFacts = factsWith(CodexHooksReading(file, CodexHooksState.MISSING))
+        val infoRow = CapabilityTools(missingFacts).readings().single { it.name == "codex peer hooks" }
+        assertEquals(ToolLevel.INFO, infoRow.level)
+        assertFalse(
+            CapabilityGaps(missingFacts, claudeWrapped = false).afterUpgrade().any { it.kind == GapKind.CODEX_HOOKS },
+        )
+
         val legacy = CodexHooksReading(
             file,
             CodexHooksState.NEEDS_MIGRATION,
             listOf("SessionEnd timeout is 30 (expected 3)"),
         )
-        val facts = Capabilities(
-            desktop = DesktopFacts(
-                program = null,
-                mode = DesktopMode.OFF,
-                sideBySideCli = false,
-                sideBySideApp = false,
-                wrapper = WrapperState.NONE,
-            ),
-            harness = HarnessFacts(
-                agy = null,
-                codex = Path.of("/usr/bin/codex"),
-                geminiShim = false,
-                synced = emptySet(),
-                codexHooks = legacy,
-            ),
-            hub = HubFacts(linux = true, on = false, systemd = true),
-            autoUpdate = false,
+        val legacyFacts = factsWith(legacy)
+        val warnRow = CapabilityTools(legacyFacts).readings().single { it.name == "codex peer hooks" }
+        assertEquals(ToolLevel.WARN, warnRow.level)
+        assertEquals(SETUP_UPDATE, warnRow.fix)
+        assertTrue(
+            CapabilityGaps(legacyFacts, claudeWrapped = false).afterUpgrade().any { it.kind == GapKind.CODEX_HOOKS },
         )
-        val row = CapabilityTools(facts).readings().single { it.name == "codex peer hooks" }
-        assertEquals(ToolLevel.WARN, row.level)
-        assertEquals(SETUP_UPDATE, row.fix)
-        assertTrue(CapabilityGaps(facts, claudeWrapped = false).afterUpgrade().any { it.kind == GapKind.CODEX_HOOKS })
     }
+
+    private fun factsWith(reading: CodexHooksReading): Capabilities = Capabilities(
+        desktop = DesktopFacts(
+            program = null,
+            mode = DesktopMode.OFF,
+            sideBySideCli = false,
+            sideBySideApp = false,
+            wrapper = WrapperState.NONE,
+        ),
+        harness = HarnessFacts(
+            agy = null,
+            codex = Path.of("/usr/bin/codex"),
+            geminiShim = false,
+            synced = emptySet(),
+            codexHooks = reading,
+        ),
+        hub = HubFacts(linux = true, on = false, systemd = true),
+        autoUpdate = false,
+    )
 
     private fun assertHook(events: kotlinx.serialization.json.JsonObject, event: String, cmd: String, timeout: Int) {
         val groups = events[event]!!.jsonArray
@@ -116,6 +148,46 @@ class CodexPeerHooksTest {
     }
 }
 
+private val CUSTOM_DIRECT_HOOKS_JSON = """
+    {
+      "hooks": {
+        "SessionStart": [
+          {
+            "hooks": [
+              {
+                "type": "command",
+                "command": "/opt/bin/splice peer codex attach --peer-name work --cwd /repo",
+                "timeout": 45
+              }
+            ]
+          }
+        ],
+        "UserPromptSubmit": [
+          {
+            "hooks": [
+              {
+                "type": "command",
+                "command": "/opt/bin/splice peer codex attach --peer-name work",
+                "timeout": 30
+              }
+            ]
+          }
+        ],
+        "SessionEnd": [
+          {
+            "hooks": [
+              {
+                "type": "command",
+                "command": "/opt/bin/splice peer codex detach --peer-name work",
+                "timeout": 3
+              }
+            ]
+          }
+        ]
+      }
+    }
+""".trimIndent()
+
 private val LEGACY_HOOKS_JSON = """
     {
       "customTopLevel": true,
@@ -123,10 +195,10 @@ private val LEGACY_HOOKS_JSON = """
         "SessionStart": [
           {
             "hooks": [
-              { "type": "command", "command": "hookd notify start", "timeout": 10 },
+              { "type": "command", "command": "user-notify start", "timeout": 10 },
               {
                 "type": "command",
-                "command": "sh -c 'id=$(jq -r .session_id); splice peer codex attach \"${'$'}id\"'",
+                "command": "sh -c 'id=$(jq -r .session_id); /opt/bin/splice peer codex attach --peer-name work \"${'$'}id\"'",
                 "timeout": 30
               }
             ]
@@ -150,7 +222,7 @@ private val LEGACY_HOOKS_JSON = """
         "Stop": [
           {
             "hooks": [
-              { "type": "command", "command": "hookd notify stop", "timeout": 5 }
+              { "type": "command", "command": "user-notify stop", "timeout": 5 }
             ]
           }
         ]

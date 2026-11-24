@@ -9,6 +9,8 @@ import splice.core.client.ForegroundToolCall
 import splice.core.client.ForegroundToolPhase
 import splice.core.util.JsonScalars
 import splice.core.util.WallClock
+import splice.provider.antigravity.hooks.AcpLoginPrompt
+import splice.provider.antigravity.hooks.AcpSessionHooks
 import splice.provider.antigravity.skills.LocalSkillCatalog
 import java.util.UUID
 
@@ -195,13 +197,11 @@ internal class DesktopSession(
         p.out(p.frames.replay(line, uuid))
         p.transcript.user(uuid, content)
         if (AcpLoginPrompt.matches(content)) {
-            val reply = hooks.login.open()
             if (prompts.isEmpty()) {
+                val reply = hooks.login.open()
                 begin(p)
                 turn?.say(reply)
                 finish(null)
-            } else {
-                turn?.say(reply)
             }
             return
         }

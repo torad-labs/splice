@@ -141,16 +141,23 @@ public class ResumeHookRoute(
             foreground?.record(ForegroundToolCall(hook.sessionId, null, ForegroundToolPhase.SESSION_START, it))
         }
         if (hook.source == STARTUP_SOURCE && hook.cwd.isNotBlank()) {
-            starts?.started(key, hook.sessionId, hook.cwd)?.let { log("[teams] ${LogSafe.str(it)}\n") }
+            val bound = if (key == DOOR_HOOK_KEY && hook.provider.isNotBlank()) {
+                starts?.started(hook.provider, hook.sessionId, hook.cwd)
+                    ?: starts?.started(key, hook.sessionId, hook.cwd)
+            } else {
+                starts?.started(key, hook.sessionId, hook.cwd)
+            }
+            bound?.let { log("[teams] ${LogSafe.str(it)}\n") }
         }
     }
 
-    /** The four fields of the hook JSON this route reads, absent ones as empty strings. */
+    /** The fields of the hook JSON this route reads, absent ones as empty strings. */
     private class ResumeCall(hook: JsonObject) {
         val source: String = JsonScalars.str(hook, "source").orEmpty()
         val sessionId: String = JsonScalars.str(hook, "session_id").orEmpty()
         val transcriptPath: String = JsonScalars.str(hook, "transcript_path").orEmpty()
         val cwd: String = JsonScalars.str(hook, "cwd").orEmpty()
+        val provider: String = JsonScalars.str(hook, "provider").orEmpty()
 
         fun invalidReason(): String? = when {
             source != RESUME_SOURCE && source != STARTUP_SOURCE ->

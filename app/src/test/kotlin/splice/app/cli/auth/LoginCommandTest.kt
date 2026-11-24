@@ -21,23 +21,35 @@ import java.nio.file.Paths
 class LoginCommandTest {
 
     @Test
-    fun `bare splice login opens Splice Console Accounts instead of printing which head`(@TempDir tmp: Path) {
-        var opened = 0
+    fun `bare splice login opens Splice Console Accounts and honours no-browser`(@TempDir tmp: Path) {
+        val opened = mutableListOf<Boolean>()
         val out = mutableListOf<String>()
         val ok = UserHome.within(tmp) {
             kotlinx.coroutines.runBlocking {
-                LoginCommand(
+                val cmd = LoginCommand(
                     output = { out += it },
-                    openConsole = {
-                        opened++
+                    openConsole = { openBrowser ->
+                        opened += openBrowser
                         true
                     },
-                ).login(headArg = null)
+                )
+                cmd.login(headArg = null) && cmd.login(headArg = null, openBrowser = false)
             }
         }
         assertTrue(ok)
-        assertEquals(1, opened, "bare `splice login` must open Splice Console Accounts")
+        assertEquals(
+            listOf(true, false),
+            opened,
+            "bare `splice login` must open Console Accounts and honour --no-browser",
+        )
         assertTrue(out.none { "which head" in it }, out.toString())
+        val parser = splice.app.cli.CommandParser()
+        assertEquals(splice.app.cli.Command.Login(null, noBrowser = false), parser.parse(arrayOf("login")))
+        assertEquals(
+            splice.app.cli.Command.Login(null, noBrowser = true),
+            parser.parse(arrayOf("login", "--no-browser")),
+        )
+        assertEquals(null, parser.parse(arrayOf("login", "codex", "--no-browser")))
     }
 
     @Test

@@ -315,7 +315,7 @@ kind = "completion"            # "health" (the default) or "completion"
 model = "team-model"           # required for a completion probe
 timeout_seconds = 30
 every_seconds = 60
-at_start = false
+at_start = true                # hold each member out until its first probe passes
 ```
 
 - `kind = "health"` keeps today's check: `GET /health` beside the member's API root, a 2xx is up, asked at its
@@ -324,9 +324,16 @@ at_start = false
   and counts it up only on a well-formed completion answer within `timeout_seconds`. It currently covers the
   chat-completions dialect, the only one pools allow, so a member whose model is wedged behind a healthy process
   stops taking turns until a completion succeeds again.
-- `at_start` is whether a member counts as up before its first probe answers. It defaults to `true`, today's
-  behaviour: a just-booted daemon serves at once and a member leaves only when a probe fails. Set it `false` to
-  hold every member out until a probe passes, which is the gate worth having with a completion probe.
+- `at_start` gates a completion probe's members at start. It defaults to `true`: every member takes no turn until
+  its first completion passes, so a just-booted daemon refuses turns on a pool none of whose members has proved its
+  model yet. Set it `false` to serve each member at once, as the health probe always does, and take it out only when
+  a probe fails. A member held out says why in the log at its first failed probe. The health probe ignores it.
+- A completion probe carries what a turn carries: the provider's configured headers and its login (an API key, a
+  credential command's token or an OAuth bearer, read as a turn reads it). Its body is the dialect's minimal
+  non-streamed request: one user message and one output token, in the field the provider's quirks name. A member is
+  up only on a 2xx whose body is a completion's envelope (for chat completions, a JSON object with a `choices`
+  array), never on the text inside it: one output token can vanish into a reasoning model's thinking. Any other
+  answer, or none within `timeout_seconds`, keeps it down, and the log line names the status and shape it saw.
 
 ## P2: the laptop side
 

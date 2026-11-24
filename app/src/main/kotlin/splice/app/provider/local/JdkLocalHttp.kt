@@ -27,6 +27,8 @@ internal class JdkLocalHttp(
     private val headers: Map<String, String> = emptyMap(),
     private val client: HttpClient =
         HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_S)).build(),
+    /** How long one request may take to answer; null bounds it by its URL, as every probe always was. */
+    private val timeout: Duration? = null,
 ) : LocalHttp {
     // A failed probe request IS the runtime being unreachable, which LocalHttp's null return spells: a transport
     // failure, a URL no request can be built for, or an interrupt. Anything else propagates.
@@ -47,7 +49,8 @@ internal class JdkLocalHttp(
         val builder = HttpRequest.newBuilder(URI(url))
             // Only the live turn may take minutes; a probe POST (Ollama /api/show) is bounded
             // like a GET, so a wedged runtime cannot hold head assembly for 120 s per model.
-            .timeout(Duration.ofSeconds(if (url.endsWith(LIVE_PATH)) LIVE_TIMEOUT_S else PROBE_TIMEOUT_S))
+            // A caller that names its own deadline (a completion readiness probe) gets that one.
+            .timeout(timeout ?: Duration.ofSeconds(if (url.endsWith(LIVE_PATH)) LIVE_TIMEOUT_S else PROBE_TIMEOUT_S))
             .header("Content-Type", "application/json")
         headers.forEach { (name, value) -> builder.header(name, value) }
         val request = builder
@@ -60,11 +63,13 @@ internal class JdkLocalHttp(
 
 /** Server mode's health checks (F4) over the JDK client: one client for every check of every pool, because a JDK
  *  client holds a selector thread of its own, made at the first check. A server still connecting after the probes'
- *  two seconds is read as down. */
+ *  two seconds is read as down. A completion readiness probe names its own deadline; a health check keeps the one its
+ *  URL gives. */
 internal class JdkHealthHttp : HealthHttp {
     private val client by lazy {
         HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_S)).build()
     }
 
-    override fun with(headers: Map<String, String>): LocalHttp = JdkLocalHttp(headers, client)
+    override fun with(headers: Map<String, String>, timeout: Duration?): LocalHttp =
+        JdkLocalHttp(headers, client, timeout)
 }

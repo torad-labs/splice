@@ -4,6 +4,7 @@
 package splice.app.control.peer
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.harness.HarnessCatalog
 import splice.sessions.peer.SendOutcome
 import splice.sessions.registry.SessionRecord
 
@@ -83,7 +84,11 @@ internal interface PeerMail {
 
 /** What packages B and C plug into the routes: the helper supervisor and the journal. Either may be absent, and the
  *  routes that need it answer 503. */
-internal data class PeerServices(val helpers: PeerHelpers? = null, val mail: PeerMail? = null)
+internal data class PeerServices(
+    val helpers: PeerHelpers? = null,
+    val mail: PeerMail? = null,
+    val harnesses: HarnessCatalog = HarnessCatalog(),
+)
 
 /** Where the routes read [PeerServices] at each request: the daemon sets them after the server is built. */
 internal fun interface PeerServiceSource {

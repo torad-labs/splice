@@ -15,7 +15,7 @@ internal const val PEER_USAGE =
         "rotate <name> | " +
         "webhook set <name> <url> [--bearer-file F] | webhook clear <name> | webhook test <name> | " +
         "limit <name> <per-minute> <burst> | limit <name> --default | " +
-        "send [--as <name>] [--id ID] [--pid P [--proc-start S]] <to> <text|-> | " +
+        "send [--as <name>] [--id ID] [--pid P [--proc-start S]] [--json] <to> <text|-> | " +
         "inbox [--as <name>] [--after N] [--limit N] [--ack] [--json] [--follow] | " +
         "status [--as <name>] <msgId> [--json] | " +
         "codex attach [<thread>] [--cwd DIR] [--codex-home DIR] [--peer-name NAME] [--json] [--hook] | " +

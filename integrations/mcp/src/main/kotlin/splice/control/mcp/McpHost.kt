@@ -120,7 +120,7 @@ public class McpHost(
     public fun answeredHere(name: String, head: String?): Boolean = own()?.answers(name, head) == true
 
     /** The protocol side of [inProcess] as it stands now: it keeps nothing between requests. */
-    private fun own(): InProcessMcpHost? = inProcess?.let { InProcessMcpHost(it, codec) }
+    private fun own(): InProcessMcpHost? = inProcess?.let { InProcessMcpHost(it) }
 
     /** GET and DELETE validate the same server-negotiated protocol as POST, including adopted sessions. */
     public fun protocolAccepted(name: String, sessionId: String?, protocolVersion: String?): Boolean =

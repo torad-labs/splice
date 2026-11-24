@@ -45,7 +45,7 @@ internal object PeerExit {
 internal sealed class PeerAnswer {
     data class Ok(val body: JsonObject) : PeerAnswer()
 
-    data class Exit(val code: Int) : PeerAnswer()
+    data class Exit(val code: Int, val body: JsonObject? = null) : PeerAnswer()
 }
 
 /** One call on the control plane; [body] goes up as JSON when there is one, and the answer is waited for [waitMs]. */

@@ -31,15 +31,17 @@ private const val RPC_BAD_PARAMS = -32602
 private const val RPC_NO_SUCH_RESOURCE = -32002
 
 /** Answers a client's POST for a server [servers] holds, and nothing for a name it does not hold. */
-internal class InProcessMcpHost(private val servers: InProcessMcp, private val codec: JsonRpcCodec) {
+public class InProcessMcpHost(private val servers: InProcessMcp) {
+    private val codec = JsonRpcCodec()
+
     // the protocol revisions spoken here, newest first: a client that asks for one of them gets it back
     private val spoken = listOf("2025-11-25", "2025-06-18", "2025-03-26")
 
     /** Whether a server called [name] is answered here for a client on [head]. */
-    fun answers(name: String, head: String?): Boolean = servers.server(name, head) != null
+    internal fun answers(name: String, head: String?): Boolean = servers.server(name, head) != null
 
     /** The reply to one POSTed [body] for [name], or null when no server of that name is answered here for [head]. */
-    fun post(name: String, sessionId: String?, body: String, head: String?): McpReply? {
+    public suspend fun post(name: String, sessionId: String?, body: String, head: String?): McpReply? {
         val server = servers.server(name, head) ?: return null
         val message = codec.parse(body)
             ?: return refusal(JsonPrimitive(0), RPC_NOT_A_REQUEST, "not a JSON-RPC object")
@@ -54,7 +56,7 @@ internal class InProcessMcpHost(private val servers: InProcessMcp, private val c
     /** Who is asked: the server's name, the server, and the client's session. */
     private data class Asked(val name: String, val server: InProcessMcpServer, val session: String?)
 
-    private fun answer(asked: Asked, message: JsonObject): McpReply {
+    private suspend fun answer(asked: Asked, message: JsonObject): McpReply {
         val id = message.getValue("id")
         val params = message["params"] as? JsonObject ?: JsonObject(emptyMap())
         return when (val method = codec.method(message)) {
@@ -95,7 +97,7 @@ internal class InProcessMcpHost(private val servers: InProcessMcp, private val c
         asked.server.instructions()?.let { put("instructions", it) }
     }
 
-    private fun called(asked: Asked, id: JsonElement, params: JsonObject): McpReply {
+    private suspend fun called(asked: Asked, id: JsonElement, params: JsonObject): McpReply {
         val tool = JsonScalars.str(params, "name")
         val known = asked.server.tools().any { JsonScalars.str(it as? JsonObject ?: return@any false, "name") == tool }
         if (tool == null || !known) return failed(id, RPC_BAD_PARAMS, "Unknown tool: ${tool.orEmpty()}")

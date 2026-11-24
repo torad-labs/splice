@@ -1,6 +1,8 @@
 package splice.core.mcp
 
 import splice.core.harness.HarnessDefinition
+import splice.core.harness.HarnessPeerConfig
+import splice.core.harness.HarnessPeerProtocol
 import splice.core.harness.HarnessProtocol
 
 /**
@@ -20,6 +22,7 @@ public enum class McpHarness(
             "Claude Code (Splice)",
             "Claude Code started through Splice's gateway, on the model the session picked",
             HarnessProtocol.CLAUDE_CODE,
+            HarnessPeerConfig(HarnessPeerProtocol.NATIVE.wire, autoSubscribe = true),
         ),
     ),
     CODEX(
@@ -30,6 +33,7 @@ public enum class McpHarness(
             "Codex CLI",
             "OpenAI's Codex CLI, started by a session launcher that reads Splice's harness map",
             HarnessProtocol.CODEX_APP_SERVER,
+            HarnessPeerConfig(HarnessPeerProtocol.CODEX.wire, autoSubscribe = true),
         ),
     ),
     AGY(
@@ -40,6 +44,7 @@ public enum class McpHarness(
             "Antigravity",
             "Google's agy, started through `splice desktop acp` in place of Claude Code",
             HarnessProtocol.ACP,
+            HarnessPeerConfig(HarnessPeerProtocol.ACP.wire, autoSubscribe = true),
         ),
     ),
 }

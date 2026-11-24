@@ -1,9 +1,10 @@
 // NEW: peer messaging (docs/specs/peer-messaging.md 1.3 and 3.3) — who a peer's send goes to, and who an inbound frame is from,
 // both read from the live registry and never from a request. A target is SessionNoteRoute's: one running record, alone on its
 // socket. A sender is `registered` when its claimed address is one live record's socket, which says where the bytes claim to
-// come from and never proves who wrote them.
+// come from and never proves who wrote them. A message is checked on its reply address, the one its recipient answers.
 package splice.sessions.note
 
+import splice.sessions.peer.InboundFrame
 import splice.sessions.peer.SenderCheck
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
@@ -48,10 +49,18 @@ public class PeerTargets(private val registry: SessionSource) {
         }
     }
 
-    /** Who a frame claiming [address] is from. A hit is the one running record on that socket, and its name and session
-     *  id are the registry's; a miss keeps only what the frame claimed. [claimedName] is kept either way. */
-    public fun byAddress(address: String?, claimedName: String? = null): SenderCheck {
-        val socket = address?.takeIf { it.startsWith("uds:") }?.removePrefix("uds:")
+    /** Who a receipt claiming [address] is from. A hit is the one running record on that socket, and its name and
+     *  session id are the registry's; a miss keeps only what the frame claimed. */
+    public fun byAddress(address: String?): SenderCheck = check(address, address, null)
+
+    /** Who [frame] is from, checked on its reply address: the one a recipient answers, and so the one `registered`
+     *  vouches for. The check's address stays the frame's receipt address, and its claimed name is kept either way. */
+    public fun ofMessage(frame: InboundFrame.Message): SenderCheck =
+        check(frame.replyAddress, frame.claimedAddress, frame.claimedName)
+
+    /** The one running record on the socket [checked] names, recorded with [address] and [claimedName]. */
+    private fun check(checked: String?, address: String?, claimedName: String?): SenderCheck {
+        val socket = checked?.takeIf { it.startsWith("uds:") }?.removePrefix("uds:")
         val record = socket?.let { path ->
             registry.read().filter {
                 it.availability != SessionAvailability.GONE && it.process.messagingSocketPath == path

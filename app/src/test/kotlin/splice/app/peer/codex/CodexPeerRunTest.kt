@@ -33,6 +33,7 @@ import splice.sessions.peer.helper.PeerHelper
 import splice.sessions.peer.helper.PeerSockets
 import splice.sessions.peer.journal.PeerInbox
 import splice.sessions.peer.journal.PeerJournal
+import splice.sessions.peer.owner.PeerOwnerProcesses
 import splice.sessions.peer.store.PeerStore
 import splice.sessions.registry.SessionRecord
 import java.nio.file.Files
@@ -42,9 +43,6 @@ import java.util.concurrent.TimeUnit
 
 private const val THREAD = "019a2f6c-4b1e-7c3d-9e8f-0a1b2c3d4e5f"
 private const val GARY = "uds:/run/user/1000/cc-socks/42.sock"
-
-// why: the stat field after the command name that holds a process's kernel start (field 22 of /proc/<pid>/stat).
-private const val START_FIELD = 19
 
 class CodexPeerRunTest {
     private val log = LogSink { }
@@ -71,11 +69,7 @@ class CodexPeerRunTest {
     /** The Gradle worker's parent stands for the Codex process that hosts the thread: a live process of this user. */
     private fun owner(): NativeProcess {
         val pid = ProcessHandle.current().parent().orElseThrow().pid()
-        val stat = Files.readString(Path.of("/proc/$pid/stat"))
-        val start = stat.substringAfterLast(')').trim().split(' ')[START_FIELD]
-        val machine = Files.readString(Path.of("/etc/machine-id")).trim()
-        val namespace = Files.readSymbolicLink(Path.of("/proc/self/ns/pid")).toString()
-        return NativeProcess(pid, start, "linux:$machine:$namespace")
+        return checkNotNull(PeerOwnerProcesses().capture(pid))
     }
 
     @Test
@@ -112,7 +106,7 @@ class CodexPeerRunTest {
             val settings = dir.resolve("settings")
             runBlocking { PeerStore(settings).attachCodex(CodexRequest(binding, dir.toString())) }
             val registry = Files.createDirectories(dir.resolve("registry"))
-            val uid = (Files.getAttribute(Path.of("/proc/self"), "unix:uid") as Int).toLong()
+            val uid = (Files.getAttribute(dir, "unix:uid") as Int).toLong()
             val sockets = PeerSockets(dir.resolve("run"), uid, System.getProperty("user.name"))
             val setup = HelperSetup("codex-$THREAD", settings, dir.resolve("state"), listOf(registry), sockets, "test")
             val start = PeerHelper(setup, WallClock { System.currentTimeMillis() }).start()

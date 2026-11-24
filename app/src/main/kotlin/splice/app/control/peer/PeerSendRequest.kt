@@ -11,6 +11,7 @@ package splice.app.control.peer
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import splice.sessions.peer.PeerSubmission
 import splice.sessions.peer.journal.MessageDigests
 import splice.sessions.registry.SessionRecord
 
@@ -34,7 +35,9 @@ internal data class PriorSend(
     val sessionId: String?,
     val name: String?,
     val address: String?,
-)
+) {
+    val submission: String get() = if (outcome == OUTBOX_SUBMITTED) PeerSubmission.ACCEPTED.wire else outcome
+}
 
 /** The process a send is pinned to: the pid its target had when it was resolved, and that pid's kernel start. */
 internal data class SendPin(val pid: Long, val procStart: String?)
@@ -83,7 +86,7 @@ internal object PeerSendRequests {
         prior == null -> IdTurn.Fresh
         prior.digest != request.digest -> IdTurn.Taken("another message was sent under this id")
         !sameTarget(prior, to) -> IdTurn.Taken("this id went to another target")
-        prior.outcome == OUTBOX_SUBMITTED -> IdTurn.Repeat
+        PeerSubmission.entries.any { it.wire == prior.submission } -> IdTurn.Repeat
         prior.outcome == OUTBOX_FAILED -> IdTurn.Unconfirmed
         else -> IdTurn.Fresh
     }

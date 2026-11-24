@@ -65,7 +65,7 @@ internal class ModeMcpServer(
 
     /** The handler's answer as a tool result. The session is the client's MCP session: the transport has no other
      *  name for who is calling, and it has neither the session's folder nor its model. */
-    override fun call(tool: String, arguments: JsonObject, session: String?): JsonObject {
+    override suspend fun call(tool: String, arguments: JsonObject, session: String?): JsonObject {
         val asked = ModeSession(session.orEmpty(), null, head.orEmpty(), "", ModeCaller.HEAD)
         val call = ModeCall(tool, arguments, asked, store)
         return when (val run = ModeFailure.run(mode.name) { mode.handler.answer(call) }) {

@@ -16,6 +16,7 @@ import splice.app.control.peer.SentRecord
 import splice.app.control.peer.WebhookTestResult
 import splice.core.util.LogSink
 import splice.core.util.WallClock
+import splice.sessions.peer.PeerSubmission
 import splice.sessions.peer.SendOutcome
 import splice.sessions.peer.journal.PeerJournal
 import splice.sessions.peer.journal.PeerOutboxLog
@@ -59,6 +60,8 @@ internal class PeerMailbox(
             }
             put("at", record.at)
             put("outcome", record.outcome)
+            put("status", status(record.outcome, receipt?.status))
+            put("reason", receipt?.detail ?: record.detail)
             put("detail", record.detail)
             if (receipt == null) {
                 put("receipt", JsonNull)
@@ -72,10 +75,23 @@ internal class PeerMailbox(
         }
     }
 
+    private fun status(outcome: String, receipt: String?): String = when (receipt) {
+        "delivered" -> PeerSubmission.DELIVERED.wire
+        "held", "queued" -> PeerSubmission.QUEUED.wire
+        "unconfirmed" -> "unconfirmed"
+        "denied", "refused", "dropped", "expired" -> "unavailable"
+        else -> when (outcome) {
+            "submitted" -> PeerSubmission.ACCEPTED.wire
+            "failed", "refused" -> "unavailable"
+            else -> outcome
+        }
+    }
+
     override fun recordSend(name: String, sent: SentRecord) {
         val outcome = sent.outcome
         val (word, detail) = when (outcome) {
-            is SendOutcome.Submitted -> "submitted" to null
+            is SendOutcome.Submitted ->
+                (if (outcome.submission == PeerSubmission.ACCEPTED) "submitted" else outcome.submission.wire) to null
             is SendOutcome.Refused -> "refused" to outcome.reason
             is SendOutcome.Failed -> "failed" to outcome.reason
         }

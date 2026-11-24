@@ -72,7 +72,8 @@ class CodexDeliveryTest {
 
     private fun receive(journal: PeerJournal, senders: Senders, id: String, text: String) = runBlocking {
         val gary = SenderCheck("gary", "s-gary", GARY, "gary", registered = true)
-        PeerInbox(journal, senders, self, log).onMessage(InboundFrame.Message(id, GARY, "gary", text), gary)
+        PeerInbox(journal, senders, self, log, receiptOnJournal = false)
+            .onMessage(InboundFrame.Message(id, GARY, "gary", text), gary)
     }
 
     /** The journal's hand-over records: the codex records that name a message. */
@@ -140,6 +141,22 @@ class CodexDeliveryTest {
         assertEquals("refused", JsonScalars.str(refused, "outcome"))
         assertEquals("thread is archived", JsonScalars.str(refused, "detail"))
         assertTrue(Triple(GARY, "m-1", DeliveryStatus.DROPPED) in senders.receipts)
+    }
+
+    @Test
+    fun `a lost Codex turn reply is unconfirmed in the sender receipt`(@TempDir dir: Path) {
+        val journal = PeerJournal(dir, log)
+        val senders = Senders()
+        receive(journal, senders, "m-1", "hello")
+        val thread = Codex(TurnStart.Unknown("reply lost after write"))
+        deliver(journal, thread, senders) { codexRecords(journal).size == 2 }
+        assertEquals("unconfirmed", JsonScalars.str(codexRecords(journal).last(), "outcome"))
+        assertEquals(
+            listOf(Triple(GARY, "m-1", "unconfirmed")),
+            senders.receipts.map { (a, id, status) ->
+                Triple(a, id, status.wire)
+            },
+        )
     }
 
     @Test

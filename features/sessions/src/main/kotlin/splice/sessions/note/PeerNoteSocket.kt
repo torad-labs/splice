@@ -198,7 +198,7 @@ public class PeerNoteSocket(
 
     /** Why [sender] cannot be written into an envelope's attributes, or null when it can. */
     private fun unwritable(sender: PeerSender): String? =
-        if (PeerWire.attributeSafe(sender.name) && PeerWire.attributeSafe(sender.socket)) {
+        if (listOf(sender.name, sender.socket, sender.replySocket).all(PeerWire::attributeSafe)) {
             null
         } else {
             "the sender's name or socket cannot be written in an envelope"

@@ -76,7 +76,8 @@ internal class HelperLoops(
     fun start() {
         val sender = PeerSender(helper.parts.socket.toString(), helper.config.name)
         val outbox = PeerNoteSocket(io, registryDirs = setup.registryDirs)
-        val inbox = PeerInbox(journal, outbox, sender, sink)
+        val binding = PeerStore(setup.settingsDir).codexThreads[setup.name]
+        val inbox = PeerInbox(journal, outbox, sender, sink, receiptOnJournal = binding == null)
         val registry = RegistryFolders(
             setup.registryDirs.map { SessionRegistry(it, RouteOfPid { SessionRoute.Unknown }) },
         )
@@ -97,9 +98,7 @@ internal class HelperLoops(
                 stop.complete(Unit)
             }
         }
-        PeerStore(setup.settingsDir).codexThreads[setup.name]?.let { binding ->
-            scope.launch { codex(binding, CodexReturns(outbox, sender)) }
-        }
+        if (binding != null) scope.launch { codex(binding, CodexReturns(outbox, sender)) }
         helper.heartbeat()
     }
 

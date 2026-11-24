@@ -42,6 +42,16 @@ class PeerStatusJsonTest {
     }
 
     @Test
+    fun `send json prints the queue acknowledgement and stays usable outside a turn`(@TempDir dir: Path) {
+        val body = """{"msgId":"$MSG_ID","status":"queued"}"""
+        val ran = withSent(dir, HttpStatus.ACCEPTED, body, mutableListOf()) { env ->
+            runStatus(listOf("send", "--as", PEER, "other", "peer data", "--json"), env)
+        }
+        assertEquals(PeerExit.DONE, ran.code, ran.err)
+        assertEquals(statusJson.parseToJsonElement(body), statusJson.parseToJsonElement(ran.out.trim()))
+    }
+
+    @Test
     fun `--json prints a send with no receipt yet with its receipt null, never as delivered`(@TempDir dir: Path) {
         val ran = withSent(dir, HttpStatus.OK, UNANSWERED_RECORD, mutableListOf()) { env ->
             runStatus(listOf("status", "--as", PEER, MSG_ID, "--json"), env)

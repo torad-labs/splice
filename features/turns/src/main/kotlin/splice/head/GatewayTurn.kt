@@ -49,13 +49,16 @@ public class GatewayTurn(
 }
 
 /** What the authenticated listener in front of the gateway says of a turn: the server its person prefers, the id it named
- *  the turn by, the notice it sends in place of the turn, and [keepaliveMs], how often it asks a streamed turn's client
- *  be sent a keepalive while the answer is silent (null or zero asks for none beyond the native disconnect probe). */
+ *  the turn by, the notice it sends in place of the turn, [keepaliveMs], how often it asks a streamed turn's client
+ *  be sent a keepalive while the answer is silent (null or zero asks for none beyond the native disconnect probe), and
+ *  [streamIdleMs], how long the answer may fall silent once the client has seen some of it before the turn's round is
+ *  ended whatever its path says (the server's `stream_idle_seconds`, #791; null or zero: no such deadline). */
 public data class ListenerSays(
     val preferredUpstream: String? = null,
     val servedTurn: String? = null,
     val notice: String? = null,
     val keepaliveMs: Long? = null,
+    val streamIdleMs: Long? = null,
 )
 
 /** A gateway turn rides on its call, so every reader of the pipeline that takes the call sees it and a head's own
@@ -77,6 +80,9 @@ internal object GatewayTurns {
      *  asked for. */
     fun clientPingMs(call: ApplicationCall): Long =
         minOf(NATIVE_CLIENT_PING_MS, of(call)?.listener?.keepaliveMs?.takeIf { it > 0L } ?: NATIVE_CLIENT_PING_MS)
+
+    /** The deadline [call]'s listener set on a silence once its client has seen content; null where it set none. */
+    fun streamDeadlineMs(call: ApplicationCall): Long? = of(call)?.listener?.streamIdleMs?.takeIf { it > 0L }
 }
 
 /** Where a request's body comes from: the gateway's, when it handed one over, else the call's own bounded read. The

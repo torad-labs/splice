@@ -75,6 +75,11 @@ public class LaunchService(
      *  daemon's, and a tree with no record in flight answers null for every launch. */
     private val moving: MovingTrust = MovingTrust(StatePaths().movingTrustDir),
 ) {
+    /** What an organisation manages for a command's config tree and this machine, which can set telemetry of its own:
+     *  the platform's managed settings, their drop-ins and the tree's remote settings (#791). Claude Code's own on this
+     *  machine; a test assigns one over a folder of its own so it never reads the machine's. */
+    internal var managed: ManagedSettings = ManagedSettings()
+
     /** Assigned by the daemon's native login owner before routes serve requests. */
     public var loginGuard: LaunchLoginGuard? = null
 
@@ -111,9 +116,6 @@ public class LaunchService(
 
     /** How the head's effort reaches the Claude Code this launch starts. */
     private val effort = LaunchEffort()
-
-    /** What an organisation manages for a command's config tree, which can set telemetry of its own. */
-    private val managed = ManagedSettings()
 
     /** V4-183 and V4-115: what a launch resumes, and what the operator is told about it. */
     private val resume = LaunchResume(resumeAcrossHeads, moving)

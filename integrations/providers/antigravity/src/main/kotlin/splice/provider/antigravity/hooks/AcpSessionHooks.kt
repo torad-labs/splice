@@ -9,6 +9,8 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.client.ForegroundToolActivity
+import splice.core.client.ForegroundToolCall
+import splice.core.client.ForegroundToolPhase
 import splice.core.util.JsonScalars
 import java.util.UUID
 
@@ -28,7 +30,18 @@ public data class AcpSessionHooks(
     public val sessionStart: AcpSessionStart? = null,
     public val foreground: ForegroundToolActivity? = null,
     public val foregroundOwner: String = UUID.randomUUID().toString(),
-)
+) {
+    /** Session [sessionId] opened in [cwd]; a [fresh] one (not a resume) is announced for Teams rule-binding. */
+    internal fun opened(sessionId: String, cwd: String, fresh: Boolean) {
+        if (fresh && cwd.isNotBlank()) sessionStart?.started(sessionId, cwd)
+        foreground?.record(ForegroundToolCall(sessionId, null, ForegroundToolPhase.SESSION_START, foregroundOwner))
+    }
+
+    /** Session [sessionId] ended. */
+    internal fun ended(sessionId: String) {
+        foreground?.record(ForegroundToolCall(sessionId, null, ForegroundToolPhase.SESSION_END, foregroundOwner))
+    }
+}
 
 /** Recognizes `/login` and `/splice:login` user prompts before they reach agy. */
 internal object AcpLoginPrompt {

@@ -19,6 +19,8 @@ import java.util.concurrent.Executor
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.locks.LockSupport
 
 /** The relay's clock in a test's hands. A wait the relay asks for ends when the test says its time has passed
  *  ([pass]), or the moment it is asked for where a silence lasts any length of time ([flies]). */
@@ -30,11 +32,29 @@ internal class SteppedClock : Waiter {
     @Volatile
     var flies = false
 
+    /** How many of the relay's waits are parked now, for the test to say their time has passed. */
+    val parked = AtomicInteger()
+
     private val passed = Channel<Unit>()
 
     override suspend fun wait(ms: Long) {
         asked += ms
-        if (!flies) passed.receive()
+        if (flies) return
+        parked.incrementAndGet()
+        try {
+            passed.receive()
+        } finally {
+            parked.decrementAndGet()
+        }
+    }
+
+    /** Back once [met] holds, which it must within the deadline any keepalive test waits to. */
+    fun awaitUntil(what: String, met: () -> Boolean) {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(HEARD_WITHIN_MS)
+        while (!met()) {
+            check(System.nanoTime() < deadline) { "never happened: $what" }
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(PARKED_POLL_MS))
+        }
     }
 
     /** The time the relay is waiting out passes. Back once the relay has seen it pass; a relay that waits for no
@@ -81,12 +101,6 @@ internal class Hearing(response: HttpResponse<InputStream>, readers: Executor) {
         return unread.substring(0, end).also { unread.delete(0, end) }
     }
 
-    /** What has come of a block its head has not finished, once [length] characters of it have. */
-    fun part(length: Int, what: String): String {
-        while (unread.length < length) check(more(what)) { "the answer ended before $what: $unread" }
-        return unread.toString()
-    }
-
     /** Everything from here to the end of the answer. */
     fun rest(what: String): String {
         var coming = more(what)
@@ -122,6 +136,9 @@ internal const val HEARD_WITHIN_MS = 20_000L
 
 // How long a test that proves an absence looks for a stream that must not open.
 internal const val NO_STREAM_WINDOW_MS = 500L
+
+// How often a test looks again for a wait of the relay's to park.
+private const val PARKED_POLL_MS = 5L
 
 // The blank line that ends an SSE event or comment.
 private const val BLOCK_END = "\n\n"

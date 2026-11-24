@@ -13,6 +13,8 @@ import splice.daemonclient.ControlReply
 import splice.daemonclient.MgmtKeyRead
 import splice.daemonclient.PostReading
 import splice.sessions.peer.codex.CodexNames
+import splice.sessions.peer.owner.PeerOwnerProcesses
+import splice.sessions.peer.store.PeerStore
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
@@ -22,7 +24,8 @@ import java.nio.file.Path
 // test waits on the receiver's 10 s timeout. 20 s covers each with room for a loaded machine.
 internal const val CALL_TIMEOUT_MS = 20_000
 
-private const val PEER_KEY_FILE_ENV = "SPLICE_PEER_KEY_FILE"
+internal const val PEER_KEY_FILE_ENV: String = "SPLICE_PEER_KEY_FILE"
+internal const val PEER_NAME_ENV: String = "SPLICE_PEER_NAME"
 
 /**
  * One control-plane call for `splice peer`: which key it presents, and how the answer becomes an exit code. The
@@ -34,6 +37,7 @@ internal class PeerCall(
     private val err: TerminalOutput,
     /** The verb whose name every refusal carries: `splice server` makes its calls through this class too. */
     private val verb: String = "peer",
+    private val ownerProcesses: PeerOwnerProcesses = PeerOwnerProcesses(),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val codexNames = CodexNames()
@@ -45,17 +49,25 @@ internal class PeerCall(
         is MgmtKeyRead.Unreadable -> fail("the management key is unreadable: ${read.reason}")
     }
 
-    /** The peer key: `SPLICE_PEER_KEY_FILE` when set, else `<settings dir>/peers/<as>/peer.key`, where `--as` defaults,
-     *  inside a Codex conversation, to that thread's codex peer. Null once printed. */
+    /** The peer key: explicit `--as <name>` first, else `SPLICE_PEER_KEY_FILE`, else `SPLICE_PEER_NAME`, else an
+     *  ancestor-owned peer registered in `<settings dir>/peers/`, else `CODEX_THREAD_ID`. Null once printed. */
     fun peerKey(asOption: String?): String? {
-        val named = env(PEER_KEY_FILE_ENV)?.let { Path.of(it) }
-        val path = named ?: keyFileOf(asOption)
-            ?: return fail("--as <name>, $PEER_KEY_FILE_ENV or a Codex conversation names the peer to act as")
+        val explicit = asOption?.takeIf(String::isNotBlank)
+        val envKeyFile = if (explicit == null) {
+            env(PEER_KEY_FILE_ENV)?.takeIf(String::isNotBlank)?.let(Path::of)
+        } else {
+            null
+        }
+        val path = envKeyFile ?: keyFileOf(explicit)
+            ?: return fail(
+                "--as <name>, $PEER_KEY_FILE_ENV, $PEER_NAME_ENV, an owner-bound harness peer, or a Codex " +
+                    "conversation names the peer to act as",
+            )
         return try {
             Files.readString(path).trim().takeIf { it.isNotEmpty() } ?: fail("the peer key file $path is empty")
         } catch (_: NoSuchFileException) {
             fail(
-                if (named == null) {
+                if (envKeyFile == null) {
                     "${path.parent?.fileName} is not a registered peer: there is no key file at $path " +
                         "(splice peer list shows them)"
                 } else {
@@ -67,11 +79,24 @@ internal class PeerCall(
         }
     }
 
-    /** `<settings dir>/peers/<as>/peer.key`, where `--as` defaults, inside a Codex conversation, to that thread's codex
-     *  peer (docs/peers.md); null when neither names one. */
-    private fun keyFileOf(asOption: String?): Path? =
-        (asOption ?: env(CODEX_THREAD_ENV)?.let(codexNames::thread)?.let(codexNames::peer))
-            ?.let { settingsDir().resolve("peers").resolve(it).resolve("peer.key") }
+    /** `<settings dir>/peers/<name>/peer.key`, resolved from explicit `--as`, `SPLICE_PEER_NAME`, an ancestor-owned
+     *  peer, or `CODEX_THREAD_ID`; null when none identifies a peer. */
+    private fun keyFileOf(asOption: String?): Path? {
+        val name = asOption
+            ?: env(PEER_NAME_ENV)?.takeIf(String::isNotBlank)
+            ?: ancestorOwnedPeer()
+            ?: env(CODEX_THREAD_ENV)?.let(codexNames::thread)?.let(codexNames::peer)
+        return name?.let { settingsDir().resolve("peers").resolve(it).resolve("peer.key") }
+    }
+
+    /** The single peer owned by the nearest matching ancestor process in `<settings dir>/peers/`, or null. */
+    private fun ancestorOwnedPeer(): String? {
+        val owners = PeerStore(settingsDir()).nativeOwners
+        if (owners.isEmpty()) return null
+        return ownerProcesses.ancestors().firstNotNullOfOrNull { ancestor ->
+            owners.entries.filter { it.value == ancestor }.singleOrNull()?.key
+        }
+    }
 
     /** `<settings dir>`: the folder holding splice.toml, where `peers/` lives. */
     fun settingsDir(): Path = KeyStorePath.defaultPath(env).toAbsolutePath().parent

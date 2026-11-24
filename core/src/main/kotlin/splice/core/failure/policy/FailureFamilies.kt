@@ -68,7 +68,7 @@ internal object FailureFamilies {
     private fun again(heals: Boolean): ClientWire.Family = if (heals) ClientWire.Family.R else ClientWire.Family.P
 
     private fun declined(why: Decline): ClientWire.Family = when (why) {
-        Decline.HeapBusy -> ClientWire.Family.R
+        Decline.HeapBusy, is Decline.UpstreamsFull -> ClientWire.Family.R
         // The caller's own credential at splice's door is a login cause: its 401 is what makes the session read its
         // key helper again, so a rotated key strands nobody (ClientWire.KEPT, record http-401).
         Decline.ReadTimeout, Decline.BadLocalKey, Decline.NotLaunched, is Decline.SpliceKeyAsLogin ->

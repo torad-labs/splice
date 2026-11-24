@@ -33,13 +33,14 @@ internal class EditedWire(private val wire: QuietWire, private val edit: StreamE
         }
     }
 
-    /** The stream ended whole: an event the server left without its blank line is one all the same, and then the
-     *  stream is given what [edit] ends it with. */
-    suspend fun end() {
-        val last = text(held.size)
+    /** The server's stream reached its end: true when it ended whole, at the blank line that ends its last event, and
+     *  then the stream is given what [edit] ends it with; false when it ended with an event that blank line never came
+     *  for, a stream cut short of which nothing more is said: the relay ends it with its error event. */
+    suspend fun end(): Boolean {
+        val whole = text(held.size).isEmpty()
         held = ByteArray(0)
-        say(last)
-        edit.ending()?.let { send(it) }
+        if (whole) edit.ending()?.let { send(it) }
+        return whole
     }
 
     private suspend fun say(event: String) {

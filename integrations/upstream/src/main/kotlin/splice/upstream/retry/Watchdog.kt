@@ -65,8 +65,15 @@ public sealed class WatchdogFired {
      *  tier's cap, so a terminal message can name the number that fired. V4-116 added a THIRD tier
      *  inside the mid-output family ([WatchdogBudget.stallReanchor], read as a min against
      *  [WatchdogBudget.streamIdle]); a holder that needs to tell the two apart compares [limitMs]
-     *  against streamIdle, which is what TurnWatchdog's own hold line does. */
-    public data class Idle(val idleMs: Long, val sawClientFrame: Boolean, val limitMs: Long) : WatchdogFired() {
+     *  against streamIdle, which is what TurnWatchdog's own hold line does. [deadline] says the operator's own deadline
+     *  ended it ([WatchdogBudget.streamDeadline], #791): the model said nothing for [limitMs] after content had reached
+     *  the client, a gateway timeout the team server's ledger records as one. */
+    public data class Idle(
+        val idleMs: Long,
+        val sawClientFrame: Boolean,
+        val limitMs: Long,
+        val deadline: Boolean = false,
+    ) : WatchdogFired() {
         override val cause: FailureCause
             get() = FailureCause.Path.Stalled(if (sawClientFrame) Stall.IDLE else Stall.FIRST_BYTE)
     }
@@ -152,6 +159,9 @@ public class TurnWatchdog(
 
     public val fired: WatchdogFired? get() = firedRef.get()
 
+    /** Whether the operator's deadline ([WatchdogBudget.streamDeadline], #791) ended the turn: a gateway timeout. */
+    public val timedOut: Boolean get() = (firedRef.get() as? WatchdogFired.Idle)?.deadline == true
+
     /** Set once, at the first poll that held a silent round on a live path; null when no poll did. */
     public val held: WatchdogHeld? get() = heldRef.get()
 
@@ -174,7 +184,7 @@ public class TurnWatchdog(
      *  ceiling; a stall tier below ~45s is what pulls the cadence down, which is exactly the tier
      *  whose whole purpose is to fire sooner than the others. */
     public fun pollInterval(): Duration {
-        val tighter = minOf(budget.streamIdle, budget.firstByteTimeout, budget.stallReanchor)
+        val tighter = minOf(budget.streamIdle, budget.firstByteTimeout, budget.stallReanchor, budget.streamDeadline)
             .inWholeMilliseconds / IDLE_DIVISOR
         return tighter.coerceIn(MIN_POLL_MS, MAX_POLL_MS).milliseconds
     }
@@ -235,19 +245,22 @@ public class TurnWatchdog(
                 if (!ticker.awaitTick(pollInterval().inWholeMilliseconds)) return@launch
                 val idle = slot.idleForMs()
                 val seen = clientFrame()
-                // V4-116: mid-output the tier is the STALL-RE-ANCHOR one when the head armed it —
-                // min, so a head whose own streamIdle is tighter still gets the tighter of the two,
-                // and an unarmed head (INFINITE) reads exactly budget.streamIdle as before.
-                val idleLimit = if (seen) {
-                    minOf(budget.streamIdle, budget.stallReanchor).inWholeMilliseconds
-                } else {
-                    budget.firstByteTimeout.inWholeMilliseconds
-                }
+                val idleLimit = budget.idleLimit(seen).inWholeMilliseconds
+                // #791: the operator's deadline counts the model's silence since its last protocol progress, which a
+                // keepalive or a ping never renews, and no live path holds it off.
+                val silent = synchronized(progressLock) { clock() - progressedAt }
+                val pastDeadline = budget.pastDeadline(silent, seen)
                 // DR-7: totalCap is NOT sampled here any more. [launchTotalCap] owns the only
                 // whole-turn cancel, and it targets the turn job; this poller now targets a single
                 // ROUND, so raising a TotalCap verdict from here would reap one round and let the
                 // fold loop open the next — spending past the cap under a name that means "stop".
                 // One breach kind per poller, each cancelling the scope it actually owns.
+                if (pastDeadline) {
+                    val deadlineMs = budget.streamDeadline.inWholeMilliseconds
+                    firedRef.compareAndSet(null, WatchdogFired.Idle(silent, true, deadlineMs, deadline = true))
+                    target.cancel()
+                    return@launch
+                }
                 if (idle >= idleLimit) {
                     // Idle is a probe, never an error (Oct 12): every tier asks the path first, the
                     // stall re-anchor tier included. A model thinking in silence on a live path is held; only a path that

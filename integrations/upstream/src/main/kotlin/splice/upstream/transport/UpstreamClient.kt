@@ -221,6 +221,8 @@ public class UpstreamClient(
         block: UpstreamHandler<T>,
         answer: LoginAnswer.Granted,
     ): LoopStep<T> {
+        // A vendor whose servers have no place under server mode's cap sends the turn nowhere (VendorRoute.noPlace).
+        ctx.recovery.route?.noPlace()?.let { return LoopStep.Done(UpstreamPost.Ended(it)) }
         val auth = state.credentials(ctx, answer.credentials, credentialCooldowns, cooldown)
         val cause = state.cooldown.terminalLimit
         // The vendor's body route moves with the place credentials just chose (VendorRoute.body).

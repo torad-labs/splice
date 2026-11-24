@@ -291,10 +291,27 @@ public data class WatchdogBudget(
      *  that never arms this tier, and for one whose continuation budget is spent (the controller
      *  declines and the round finishes with the honest error). */
     val stallReanchor: Duration = Duration.INFINITE,
+    /** The operator's own deadline on a silence after the client has seen content: server mode's
+     *  `stream_idle_seconds` (#791), set only on a turn the team server's door hands the gateway. Unlike the idle
+     *  tiers it is no probe: a round silent past it is ended whatever its path says, as the relay in front of a
+     *  command's head ends the stream it hears go silent. The round then ends the way a reaped one does, resumed where
+     *  the provider can continue and otherwise with the honest error. Off ([Duration.INFINITE]) on every other turn. */
+    val streamDeadline: Duration = Duration.INFINITE,
 ) {
     /** A compaction has no pre-output idle tier. Its prefill can be silent for minutes.
      *  The renewable [totalCap] still ends it when no protocol progress arrives for that budget.
      *  Reasoning items renew that budget even when they contain no visible summary.
      *  [streamIdle] and the optional re-anchor tier remain unchanged after client output. */
     public fun forCompact(): WatchdogBudget = copy(firstByteTimeout = Duration.INFINITE)
+
+    /** The idle tier a round is judged by: before the client has seen content ([seen]) the first-output one, and after
+     *  it the mid-output one. V4-116: that is the STALL-RE-ANCHOR tier when the head armed it — min, so a head whose
+     *  own streamIdle is tighter still gets the tighter of the two, and an unarmed head (INFINITE) reads exactly
+     *  [streamIdle] as before. [streamDeadline] is no tier of these: it is no probe ([pastDeadline]). */
+    public fun idleLimit(seen: Boolean): Duration = if (seen) minOf(streamIdle, stallReanchor) else firstByteTimeout
+
+    /** Whether a model silent for [silentMs] since its last protocol progress is past [streamDeadline]: only once the
+     *  client has seen content ([seen]), since the silence before that is a prefill. */
+    public fun pastDeadline(silentMs: Long, seen: Boolean): Boolean =
+        seen && silentMs >= streamDeadline.inWholeMilliseconds
 }

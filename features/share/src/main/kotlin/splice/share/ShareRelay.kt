@@ -59,13 +59,16 @@ public data class RelaySpeaker(val errors: RefusalVoice, val tag: String)
 /** One request for a head: its [path] under the head (`/v1/messages?beta=true`), what the listener that relays it
  *  says about it in headers of its own ([named]), such as the upstream the caller's person prefers, how often its
  *  client is sent a [keepalive] while a streamed answer is silent (null: never, and the client waits on the head),
- *  and the caller's headers the listener keeps to itself ([held], lowercase names), which the head is never handed. */
+ *  the caller's headers the listener keeps to itself ([held], lowercase names), which the head is never handed, and
+ *  how long a streamed answer may fall silent after its first word before it is ended with an error event
+ *  ([streamIdleMs]; 0: however long). */
 public data class HeadTurn(
     val head: SharedHead,
     val path: String,
     val named: Map<String, String> = emptyMap(),
     val keepalive: Duration? = null,
     val held: Set<String> = emptySet(),
+    val streamIdleMs: Long = 0L,
 )
 
 public class ShareRelay(
@@ -94,7 +97,7 @@ public class ShareRelay(
     /** [ask] asked the way [call] asked it, of the first server of [way] that takes a connection, and that server's
      *  answer given to [call]; or, once none of them took one, what [way] says of that. */
     public suspend fun outward(call: ApplicationCall, ask: OutwardAsk, way: OutwardWay) {
-        val wait = ClientWait(ask.keepalive, ask.edit, ask.whole, outside = true)
+        val wait = ClientWait(ask.keepalive, ask.edit, ask.whole, outside = true, idleMs = ask.streamIdleMs)
         answered(call, wait) { held -> taken(call, ask, way, held) }
     }
 
@@ -140,7 +143,8 @@ public class ShareRelay(
         val signed = mapOf(HttpHeaders.Authorization to "Bearer $bearer") + proof + turn.named
         val target = URI.create("http://127.0.0.1:${head.port}${turn.path}")
         val request = request(call, target, body, signed) { it !in turn.held }
-        forward(call, request, who, ClientWait(turn.keepalive?.takeIf { streamed.asks(body) }, whole = whole))
+        val every = turn.keepalive?.takeIf { streamed.asks(body) }
+        forward(call, request, who, ClientWait(every, whole = whole, idleMs = turn.streamIdleMs))
     }
 
     /** [body] for [target], with the [signed] headers in place of whatever the other machine sent under those names:

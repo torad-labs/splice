@@ -20,16 +20,44 @@ This prints the peer's name, its session id, the path of its key file and its so
 The key file is `<settings dir>/peers/gary/peer.key`, mode 0600, where the settings dir is the folder holding
 `splice.toml` (usually `~/.config/splice`).
 
-When registration runs beneath a recognized native `codex` or `claude` process, the CLI binds the peer to that
-ancestor's pid, kernel start time and process domain. Its detached helper watches that exact process's exit,
-withdraws its registry entry and socket when the owner ends, and the supervisor revokes the registration instead
-of restarting it. Daemon restarts do not end the owner. Registrations from an ordinary shell, and older peers
-without an owner binding, remain persistent until revoked; Splice does not infer an owner for them.
+When registration runs beneath a recognized native `codex`, `claude`, or `agy` process (plus any extra executable
+names listed in `SPLICE_PEER_HARNESS_PROGRAMS`), the CLI binds the peer to that ancestor's pid, kernel start time and
+process domain. Its detached helper watches that exact process's exit, withdraws its registry entry and socket when
+the owner ends, and the supervisor revokes the registration instead of restarting it. Daemon restarts do not end the
+owner. Registrations from an ordinary shell, and older peers without an owner binding, remain persistent until
+revoked; Splice does not infer an owner for them.
 
-Anything can be a peer: a bot, a script, another agent harness. Claude Code sessions are peers on their own; anything
-else registers by hand and reads its inbox or a webhook, as below. A program that wants its peer to live and die with
-it passes `--owner <pid>`: the CLI reads that process's kernel start time and binds the peer to it exactly as it binds a
-`codex` or `claude` ancestor. A pid that names no running process is refused before the daemon is called.
+Anything can be a peer: a bot, a script, another agent harness. Claude Code sessions and Desktop Antigravity
+(`splice desktop acp`) sessions open their own peer inbox sockets natively; anything else registers or attaches via
+`splice peer` and reads its inbox or a webhook, as below. A program that wants its peer to live and die with it passes
+`--owner <pid>`: the CLI reads that process's kernel start time and binds the peer to it exactly as it binds a
+`codex`, `claude`, or `agy` ancestor. A pid that names no running process is refused before the daemon is called.
+
+### Harness-agnostic `splice peer attach`
+
+Standalone CLI harnesses (`agy`, `codex`, or custom wrappers and hooks) can attach an owner-bound peer without
+per-harness plumbing:
+
+```
+splice peer attach
+eval "$(splice peer attach --env --owner $$)"
+splice peer attach --harness agy --hook
+```
+
+Options:
+
+- `[<name>]` or `--name NAME` explicit peer name; omitted, derives `<harness>-<session_id prefix|pid>` (or uses
+  `SPLICE_PEER_NAME`). When no recognized harness ancestor is found, `--owner <pid>` or an explicit `<name>` /
+  `--name NAME` is required so ordinary shells do not leak permanent orphaned peers.
+- `--cwd DIR` working directory recorded for the peer (defaults to hook payload `cwd` or the current directory).
+- `--send-to A,B,…` limits targets (defaults to `*`).
+- `--owner PID` binds the peer to that live process instead of detecting a `claude`, `codex`, `agy`, or
+  `SPLICE_PEER_HARNESS_PROGRAMS` ancestor.
+- `--harness NAME` sets the harness label and adds it to ancestor executable matching. Plain shells (`sh`, `bash`,
+  `zsh`, `fish`, `dash`) are rejected in `--harness` and ignored in `SPLICE_PEER_HARNESS_PROGRAMS`.
+- `--env` prints `export SPLICE_PEER_NAME=…` and `export SPLICE_PEER_KEY_FILE=…` (never the key itself) for wrappers.
+- `--json` prints the daemon's registration response on one line.
+- `--hook` enforces the hook contract (silent stdout, never exits 2; reads `session_id` and `cwd` from piped hook JSON).
 
 Register is safe to run every time a program starts. A register that repeats one already there answers that peer,
 `200` instead of `201`, with the same session id and key file, so the key a program saved still works. When the new
@@ -118,8 +146,12 @@ to 600 a minute and a burst of 1 to 100, and `splice peer limit <name> --default
 restarted, or a pid the kernel gave to someone else), the send is refused rather than reaching it. `--pid` alone
 checks the pid only.
 
-For scripts, `SPLICE_PEER_KEY_FILE=<path>` replaces `--as`. The key is sent as a bearer header and never appears
-in the command line or the output.
+For scripts and harness child processes, `--as` may be omitted. `splice peer send`, `inbox`, and `status` resolve
+the acting peer in this order: explicit `--as <name>`, `SPLICE_PEER_KEY_FILE=<path>`, `SPLICE_PEER_NAME=<name>`, an
+owner-bound peer owned by an ancestor process in `<settings dir>/peers/`, and finally `CODEX_THREAD_ID`. The key is
+always read from its file and sent as a bearer header, never appearing in the command line or output. Desktop Antigravity (`splice desktop acp`) auto-registers an owner-bound `nativeInbox` peer (reusing its own UDS inbox
+socket without spawning a duplicate `peer-host` helper) and exports `SPLICE_PEER_NAME` and `SPLICE_PEER_KEY_FILE` into
+`agy` automatically.
 
 ## Push each message to a webhook
 

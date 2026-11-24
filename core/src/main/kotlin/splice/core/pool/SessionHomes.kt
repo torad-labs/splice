@@ -17,8 +17,8 @@ internal class SessionHomes {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean = size > HOMES_KEPT
     }
 
-    /** The server that served [session]'s last turn, or null for a session not seen (or no longer kept). */
-    fun of(session: String): String? = homes[session]
+    /** The server that served [session]'s last turn, or null for a session not seen (or no longer kept), or none. */
+    fun of(session: String?): String? = session?.let(homes::get)
 
     /** [server] served [session]'s turn: its next turn goes there while it is healthy. */
     fun served(session: String, server: String) {

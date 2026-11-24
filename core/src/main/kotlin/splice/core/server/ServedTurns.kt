@@ -21,8 +21,10 @@ import java.util.concurrent.ConcurrentHashMap
 public data class TurnSpeed(val prefillTps: Double?, val decodeTps: Double?)
 
 /** When a turn's words came: [ttftMs] after it arrived the first did, and [stallMs] the longest it then waited for
- *  the next (F6); each null where the turn said nothing, and [stallMs] null where it streamed no words to its client. */
-public data class TurnPace(val ttftMs: Long?, val stallMs: Long? = null)
+ *  the next (F6); each null where the turn said nothing, and [stallMs] null where it streamed no words to its client.
+ *  [timedOut] says the server's own deadline on a silence after the first word ended it (`stream_idle_seconds`,
+ *  #791): a gateway timeout, whatever the turn's outcome tag reads. */
+public data class TurnPace(val ttftMs: Long?, val stallMs: Long? = null, val timedOut: Boolean = false)
 
 /** One served turn as its head saw it end. [outcome] is the head's outcome tag (splice.core.perf.OutcomeTag), tokens
  *  are null when the provider billed none, and [costUsd] is null when the model has no rate card. */

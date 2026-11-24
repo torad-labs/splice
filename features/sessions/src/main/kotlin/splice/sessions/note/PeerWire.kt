@@ -19,10 +19,10 @@ import splice.sessions.peer.PeerSender
 import splice.sessions.registry.SessionClient
 
 // why: a peer's text is a message, not a file; the spec caps it at 32 KiB after defusing (1.1), in UTF-8 bytes.
-internal const val PEER_MAX_TEXT_BYTES: Int = 32_768
+public const val PEER_MAX_TEXT_BYTES: Int = 32_768
 
 // why: one frame per line, and a 32 KiB text with its envelope and JSON escaping fits well inside 64 KiB (1.3).
-internal const val PEER_MAX_LINE_BYTES: Int = 65_536
+public const val PEER_MAX_LINE_BYTES: Int = 65_536
 
 // why: a receipt's detail is a reason, not a body; the spec bounds it at 200 characters (1.2).
 private const val MAX_DETAIL_CHARS = 200
@@ -66,10 +66,22 @@ internal object PeerVersions {
     }
 }
 
+/** Result of inspecting a connection's opening line for a PeerWire `auth` frame. */
+public sealed class PeerAuthLine {
+    /** Line is not a `{"type":"auth", ...}` frame. */
+    public data object Absent : PeerAuthLine()
+
+    /** Line is a valid `{"type":"auth","token":"..."}` frame with a string token. */
+    public data class Token(public val token: String) : PeerAuthLine()
+
+    /** Line declared `"type":"auth"` but omitted a string `"token"` (missing, null, or non-string). */
+    public data object Malformed : PeerAuthLine()
+}
+
 /** The envelope a message's content was read out of: the text inside it, and the sender attributes it claimed. */
 internal data class EnvelopeParts(val text: String, val fromAddress: String?, val fromName: String?)
 
-internal object PeerWire {
+public object PeerWire {
     // why: the element Claude Code wraps every cross-session message in, and the only tag a text is defused against.
     internal const val TAG = "cross-session-message"
 
@@ -81,19 +93,19 @@ internal object PeerWire {
     private val json = Json { ignoreUnknownKeys = true }
 
     /** [text] with each envelope tag's `<` turned into `<\`, the way Claude Code's own sender defuses a closing one. */
-    fun defuse(text: String): String = tagStart.replace(text) { "<\\" }
+    internal fun defuse(text: String): String = tagStart.replace(text) { "<\\" }
 
     /** True when [value] can sit between an attribute's quotes as written. */
-    fun attributeSafe(value: String): Boolean = !unsafeAttribute.containsMatchIn(value)
+    public fun attributeSafe(value: String): Boolean = !unsafeAttribute.containsMatchIn(value)
 
     /** The envelope around [text], defused. [fromAddress] is null for the console, which has no inbox. */
-    fun envelope(text: String, fromAddress: String?, fromName: String): String {
+    public fun envelope(text: String, fromAddress: String?, fromName: String): String {
         val from = fromAddress?.let { " from=\"$it\"" }.orEmpty()
         return "<$TAG$from from-name=\"$fromName\">\n${defuse(text)}\n</$TAG>"
     }
 
     /** Why [text] may not be sent, or null when it may: never empty or blank, at most [PEER_MAX_TEXT_BYTES] once defused. */
-    fun textRefusal(text: String): String? = when {
+    internal fun textRefusal(text: String): String? = when {
         text.isBlank() -> "the text is empty"
         defuse(text).toByteArray(Charsets.UTF_8).size > PEER_MAX_TEXT_BYTES ->
             "a text is at most $PEER_MAX_TEXT_BYTES bytes"
@@ -101,13 +113,13 @@ internal object PeerWire {
     }
 
     /** The auth line that opens a connection to a socket whose key file holds [token]. */
-    fun encodeAuth(token: String): String = buildJsonObject {
+    internal fun encodeAuth(token: String): String = buildJsonObject {
         put("type", "auth")
         put("token", token)
     }.toString() + "\n"
 
     /** A peer's message to the session [sessionId], from [sender]: `from` and `from-name` both come from the sender. */
-    fun encodeMessage(msgId: String, sessionId: String?, text: String, sender: PeerSender): String =
+    internal fun encodeMessage(msgId: String, sessionId: String?, text: String, sender: PeerSender): String =
         buildJsonObject {
             put("msgV", WIRE_VERSION)
             put("msg_id", msgId)
@@ -125,7 +137,7 @@ internal object PeerWire {
         }.toString() + "\n"
 
     /** The receipt for the message [origMsgId], from [sender]. [detail] is cut to 200 characters. */
-    fun encodeReceipt(
+    internal fun encodeReceipt(
         msgId: String,
         origMsgId: String,
         status: DeliveryStatus,
@@ -142,16 +154,20 @@ internal object PeerWire {
         detail?.let { put("status_detail", it.take(MAX_DETAIL_CHARS)) }
     }.toString() + "\n"
 
-    /** The token of an auth line, or null when [line] is not one. */
-    fun authToken(line: String): String? {
-        val obj = JsonScalars.objectOrNull(json, line) ?: return null
-        if (JsonScalars.str(obj, "type") != "auth") return null
-        return (obj["token"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+    /** Distinguishes an absent `auth` line from a valid string token or an explicit malformed `auth` frame. */
+    public fun authLine(line: String): PeerAuthLine {
+        val obj = JsonScalars.objectOrNull(json, line) ?: return PeerAuthLine.Absent
+        if (JsonScalars.str(obj, "type") != "auth") return PeerAuthLine.Absent
+        val token = (obj["token"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        return if (token != null) PeerAuthLine.Token(token) else PeerAuthLine.Malformed
     }
+
+    /** The token of an auth line, or null when [line] is not a valid string-token auth line. */
+    public fun authToken(line: String): String? = (authLine(line) as? PeerAuthLine.Token)?.token
 
     /** The frame on [line], or null for every line a helper ignores and counts: not JSON, another type, an unknown
      *  control action or status, or a user frame with no text content. */
-    fun decode(line: String): InboundFrame? {
+    public fun decode(line: String): InboundFrame? {
         val obj = JsonScalars.objectOrNull(json, line) ?: return null
         return when (JsonScalars.str(obj, "type")) {
             "user" -> message(obj)
@@ -161,7 +177,7 @@ internal object PeerWire {
     }
 
     /** The text inside an envelope and the attributes it claimed, or the whole content when it is not one envelope. */
-    fun unwrap(content: String): EnvelopeParts {
+    internal fun unwrap(content: String): EnvelopeParts {
         val match = wrapped.matchEntire(content) ?: return EnvelopeParts(content, null, null)
         val attrs = attribute.findAll(match.groupValues[1]).associate { it.groupValues[1] to it.groupValues[2] }
         return EnvelopeParts(match.groupValues[2], attrs["from"], attrs["from-name"])

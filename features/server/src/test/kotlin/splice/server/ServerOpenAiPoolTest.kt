@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.pool.UpstreamPool
 import splice.core.testing.TestPorts
+import splice.core.topology.ServerLimits
 import splice.core.topology.UpstreamConfig
 import splice.core.util.LogSink
 import java.net.http.HttpResponse
@@ -29,8 +30,12 @@ internal class ServerOpenAiPoolTest {
     private var opened: OpenAiRig? = null
     private lateinit var pool: UpstreamPool
 
-    /** Server mode over `claude-team`, whose provider is two servers at [first] and [second]. */
-    private fun serve(first: String = gpu1.base, second: String = gpu2.base): OpenAiRig {
+    /** Server mode over `claude-team`, whose provider is two servers at [first] and [second], under [limits]. */
+    private fun serve(
+        first: String = gpu1.base,
+        second: String = gpu2.base,
+        limits: ServerLimits = ServerLimits(),
+    ): OpenAiRig {
         val servers = UpstreamPool(
             "box",
             listOf(UpstreamConfig("gpu-1", first), UpstreamConfig("gpu-2", second)),
@@ -44,7 +49,7 @@ internal class ServerOpenAiPoolTest {
 
             override fun chat(head: String): ChatServer? = BoxServer(first).takeIf { head == "team" }
         }
-        return OpenAiRig(state, upstreams).also { opened = it }
+        return OpenAiRig(state, upstreams, limits).also { opened = it }
     }
 
     /** An address nothing listens on, which refuses a connection at once. */
@@ -81,6 +86,25 @@ internal class ServerOpenAiPoolTest {
         gate.countDown()
         assertEquals(200, held.get(10, TimeUnit.SECONDS).statusCode())
         rig.await("an ended completion is in flight nowhere") { pool.readings().all { it.inflight == 0 } }
+    }
+
+    @Test
+    fun `a preferred upstream that is full under inflight_per_upstream passes its person's completion on`() {
+        val rig = serve(limits = ServerLimits(inflightPerUpstream = 1))
+        val ola = rig.keyFor("ola@example.com")
+        // Ana's completion takes gpu-1, the first listed, and holds it there.
+        val gate = CountDownLatch(1).also { gpu1.gate = it }
+        val held = rig.chatLater(rig.keyFor("ana@example.com"), STREAMED_CHAT)
+        rig.await("ana's completion is in flight on gpu-1") { pool.readings().first().inflight == 1 }
+
+        // Ola prefers gpu-1, which holds all it takes: the completion goes to gpu-2, never a second one onto gpu-1.
+        rig.prefer("ola@example.com", "gpu-1")
+        assertEquals("gpu-2", answeredBy(rig.chat(ola, CHAT)))
+        gate.countDown()
+        assertEquals(200, held.get(10, TimeUnit.SECONDS).statusCode())
+        rig.await("an ended completion is in flight nowhere") { pool.readings().all { it.inflight == 0 } }
+        // With gpu-1 free again, Ola's next completion goes to the server they prefer.
+        assertEquals("gpu-1", answeredBy(rig.chat(ola, CHAT)))
     }
 
     @Test

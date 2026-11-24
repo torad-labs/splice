@@ -23,6 +23,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.client.SPLICE_CLIENT_HEADER
 import splice.core.topology.ServerClient
 import splice.core.turn.SERVED_NOTICE_HEADER
+import splice.core.turn.ServedNoticeText
 import java.net.InetSocketAddress
 import java.net.URI
 import java.net.http.HttpClient
@@ -43,7 +44,7 @@ internal class ServerClientVersionTest {
     private val head = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
         createContext("/v1/messages") { exchange ->
             val streamed = exchange.requestBody.use { it.readBytes() }.decodeToString().contains("\"stream\":true")
-            val notice = exchange.requestHeaders.getFirst(SERVED_NOTICE_HEADER)
+            val notice = exchange.requestHeaders.getFirst(SERVED_NOTICE_HEADER)?.let(ServedNoticeText()::decode)
             if (notice == null) upstream.incrementAndGet()
             answer(exchange, notice ?: "from the box", streamed)
         }

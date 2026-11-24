@@ -4,6 +4,7 @@
 // when the turn has none left, is the pool's one walk (PoolWalk), which the server listener's OpenAI route takes too.
 package splice.provider.openai
 
+import splice.core.failure.FailureCause
 import splice.core.pool.PoolWalk
 import splice.core.pool.UpstreamPool
 import splice.core.turn.Usage
@@ -11,20 +12,38 @@ import splice.upstream.Reroute
 import splice.upstream.RoundBody
 import splice.upstream.VendorRoute
 import splice.upstream.failure.FailedReply
+import splice.upstream.transport.NoPlaceLeft
+import splice.upstream.transport.TurnDeclined
+import splice.upstream.transport.UpstreamEnding
+import java.net.ConnectException
 
 /** A turn's route into [pool]: on the server that served its [session]'s last turn while that one is healthy, else on
  *  [preferred] while a server of that name is healthy, and otherwise on the healthy server with the least in flight.
  *  The turn counts as in flight on its server from its first request until it ends. [path] is the route its requests
- *  are sent to under the server's API root. */
+ *  are sent to under the server's API root. A turn server mode admitted is [served], the id its listener named it by,
+ *  and takes the place server mode reserved for it in the pool. */
 internal class PoolRoute(
     private val pool: UpstreamPool,
     preferred: String?,
     session: String?,
     private val path: String,
+    served: String? = null,
 ) : VendorRoute {
-    private val walk = PoolWalk(pool, preferred, session)
+    private val walk = PoolWalk(pool, preferred, session, served)
 
-    override fun target(): String = walk.server().url + path
+    /** No place for the turn under the pool's cap: its servers that are up all full, or none up, said as the turn that
+     *  ran out of them is (NoPlaceLeft). Null once it has its place. */
+    override fun noPlace(): UpstreamEnding? = when {
+        walk.server() != null -> null
+        pool.up -> TurnDeclined(FailureCause.Splice.Declined(pool.full()))
+        else -> NoPlaceLeft(ConnectException("no upstream of ${pool.provider} is up"), places())
+    }
+
+    // Asked only after [noPlace] found the turn a place, which it keeps until it moves or ends.
+    override fun target(): String {
+        val server = checkNotNull(walk.server()) { "a pooled turn was sent before it had a place" }
+        return server.url + path
+    }
 
     override fun unreachable(): Reroute = if (walk.moved()) Reroute.MOVED else Reroute.NOWHERE
 

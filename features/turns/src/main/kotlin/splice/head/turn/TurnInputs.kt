@@ -65,9 +65,8 @@ internal data class TurnSlot(
     val held: InflightGate.Slot,
     /** The client deadline and retained request travel with this admission slot until it is released. */
     val clientWallMs: Long = OLD_CLIENT_WALL_MS,
-    /** How often the client is pinged while it waits: the native disconnect probe, unless a listener in front of the
-     *  gateway asked for a shorter keepalive (GatewayTurns.clientPingMs). */
-    val clientPingMs: Long = NATIVE_CLIENT_PING_MS,
+    /** How the client is paced while it waits and once it has seen content (ClientPace). */
+    val pace: ClientPace = ClientPace(),
     val heapLease: HeapLease? = null,
     /** What the harness's capabilities read of the request this slot was admitted for (docs/specs/harness.md,
      *  decision 2); null reads nothing. It travels with the slot as the client deadline and the retained request do. */
@@ -91,6 +90,12 @@ internal data class TurnSlot(
      *  REQUIRED, NO DEFAULT: the wiring IS the control. */
     val markHandedOff: HandoffMark,
 )
+
+/** How a turn's client is paced: [pingMs], how often it is pinged while it waits, the native disconnect probe unless a
+ *  listener in front of the gateway asked for a shorter keepalive (GatewayTurns.clientPingMs); and [streamDeadlineMs],
+ *  the deadline such a listener set on a silence once the client has seen content (GatewayTurns.streamDeadlineMs,
+ *  #791), null on every other turn. Both are read off the call at admission, so they travel together. */
+internal data class ClientPace(val pingMs: Long = NATIVE_CLIENT_PING_MS, val streamDeadlineMs: Long? = null)
 
 /** The login a turn runs on and the quota tracker that login's usage lands in. They are chosen together and
  *  replaced together, so one value carries both. */

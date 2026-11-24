@@ -20,6 +20,7 @@ internal data class PeerFile(
     val webhook: PeerFileWebhook? = null,
     val codex: PeerFileCodex? = null,
     val owner: PeerFileOwner? = null,
+    val nativeInbox: Boolean = false,
 )
 
 /** A codex peer's thread (docs/peers.md): its id, its Codex home, and the Codex process that attached it, if any. */

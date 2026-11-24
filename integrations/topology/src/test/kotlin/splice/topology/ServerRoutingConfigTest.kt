@@ -139,6 +139,21 @@ class ServerRoutingConfigTest {
         }
     }
 
+    // #791: an inline aliases table is a table too; the decode would keep the last of a repeated key there as well.
+    @Test
+    fun `an alias key written twice in an inline aliases table is refused, and one written once boots`() {
+        val once = server("aliases = { \"/v1\" = \"claude-team\", \"/openai\" = \"door\" }") + head()
+        val ready = ConfigFindings.read(once, directory, configDir = directory)
+        val served = assertInstanceOf(ConfigRead.Ready::class.java, ready, ready.toString()).topology.server
+        assertEquals(mapOf("v1" to "claude-team", "openai" to "door"), served.aliasSegments)
+
+        val twice = server("aliases = { \"/v1\" = \"claude-team\", \"/v1\" = \"door\" }") + head()
+        val read = ConfigFindings.read(twice, directory, configDir = directory)
+        val found = assertInstanceOf(ConfigRead.Refused::class.java, read, read.toString()).findings
+        val repeated = found.single { "duplicate key /v1" in it.message }
+        assertTrue("inline table" in repeated.message, repeated.message)
+    }
+
     // #791: a client's URL resolves `.` and `..` away before it is sent, so such an alias would never be asked for;
     // an empty, nested, encoded or spaced segment is no single segment either.
     @Test

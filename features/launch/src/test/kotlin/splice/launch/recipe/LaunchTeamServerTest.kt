@@ -225,6 +225,8 @@ class LaunchTeamServerTest(@param:TempDir private val tmp: Path) {
             """{"permissions":{"deny":[tru]}}""",
             """{"permissions":01}""",
             """{"permissions":{"deny":[]}""",
+            "{\"permissions\":{\"deny\":[\"Bash(rm\t-rf)\"]}}",
+            """{"env":{},"env":invalid}""",
             """["permissions"]""",
             "\"permissions\"",
         )
@@ -234,6 +236,9 @@ class LaunchTeamServerTest(@param:TempDir private val tmp: Path) {
         }
         Files.writeString(remote, """{"permissions":{"deny":[]},"cleanupPeriodDays":30,"x":null,"y":-1.5e3}""")
         assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "valid remote settings replace it")
+        // why: Claude Code's JSON.parse keeps the last of a repeated key, so these remote settings are its source.
+        Files.writeString(remote, """{"env":123,"env":{}}""")
+        assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "the last env stands, as Claude Code's")
     }
 
     private fun platform(): Path = tmp.resolve("platform")

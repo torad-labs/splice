@@ -8,10 +8,10 @@
 // later drop-in's value replacing or, with `null`, clearing an earlier one's). Where that source sets telemetry of its
 // own (a `null` or blank value sets nothing), a launch adds none of splice's: the organisation's collector stays the
 // one the session reports to (#791 widened that read from `remote-settings.json` alone). A file that is absent, can't
-// be read, or is no JSON object as written (an unquoted word among its values included) sets nothing, as Claude Code
-// itself reads it: a `remote-settings.json` so broken leaves the platform's files the source. A macOS configuration
-// profile (`com.anthropic.claudecode`) or a Windows registry policy (`HKLM\SOFTWARE\Policies\ClaudeCode`) is not read
-// here.
+// be read, or is no JSON object as `JSON.parse` reads one (an unquoted word or a raw control character in a string
+// makes it none; a key written twice keeps its last value) sets nothing, as Claude Code itself reads it: a
+// `remote-settings.json` so broken leaves the platform's files the source. A macOS configuration profile
+// (`com.anthropic.claudecode`) or a Windows registry policy (`HKLM\SOFTWARE\Policies\ClaudeCode`) is not read here.
 package splice.client
 
 import kotlinx.serialization.json.Json
@@ -106,7 +106,8 @@ public class ManagedSettings(
         value !is JsonNull && (value !is JsonPrimitive || value.content.isNotBlank())
 
     private fun read(file: Path): JsonObject? = try {
-        JsonScalars.strictObjectOrNull(Json, Files.readString(file))
+        // why: Claude Code reads these files with `JSON.parse`, which keeps the last of a repeated key.
+        JsonScalars.strictObjectOrNull(Json, Files.readString(file), lastKeyWins = true)
     } catch (_: IOException) {
         null
     }

@@ -11,7 +11,6 @@
 package splice.core.util
 
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -80,22 +79,124 @@ public object JsonScalars {
         null
     }
 
-    /** [text] parsed by [json] as an object only when it is JSON as written. kotlinx's tree parser takes an unquoted
-     *  token as a value even when strict (`{"a":invalid}` reads "invalid"), which `JSON.parse` and every other
-     *  reader of the same file refuse; such text reads null here, as text that is no JSON at all does. */
-    public fun strictObjectOrNull(json: Json, text: String): JsonObject? = objectOrNull(json, text)?.takeIf(::written)
+    /** [text] parsed by [json] as an object only when it is JSON as RFC 8259 writes it ([JsonText]): kotlinx's tree
+     *  parser alone takes an unquoted token, a raw control character inside a string and a key written twice. With
+     *  [lastKeyWins], a repeated key keeps its last value, as `JSON.parse` reads a file another program owns. */
+    public fun strictObjectOrNull(json: Json, text: String, lastKeyWins: Boolean = false): JsonObject? =
+        objectOrNull(json, text)?.takeIf { JsonText(text, lastKeyWins).valid() }
 
-    /** Whether every value in [element], at any depth, is one JSON spells: a string, `true`, `false`, `null` or a
-     *  number in JSON's own grammar. */
-    private fun written(element: JsonElement): Boolean = when (element) {
-        is JsonObject -> element.values.all(::written)
-        is JsonArray -> element.all(::written)
-        is JsonPrimitive ->
-            element.isString || element is JsonNull || element.content in jsonBooleans ||
-                jsonNumber.matches(element.content)
+    /** [text] read once from its start; [valid] answers whether it is JSON exactly as RFC 8259 writes it. kotlinx's
+     *  tree parser takes an unquoted token, a raw control character inside a string and a key written twice (keeping
+     *  the last) without a word; this reads the raw text before it. A file another program reads (Claude Code's
+     *  managed settings, read by `JSON.parse`) keeps that program's one leniency, the last of a repeated key. */
+    private class JsonText(private val text: String, private val lastKeyWins: Boolean) {
+        private var at = 0
+
+        /** Whether [text] is one JSON value, with white space around it alone, whose strings carry no raw control
+         *  character and whose objects name no key twice unless [lastKeyWins]. */
+        fun valid(): Boolean = value(0) && space() == text.length
+
+        private fun value(depth: Int): Boolean {
+            space()
+            val char = text.getOrNull(at)
+            val spelled = char?.let(words::get)
+            return when {
+                char == '{' || char == '[' -> depth < JSON_NESTING_LIMIT && nested(char, depth + 1)
+                char == '"' -> string() != null
+                spelled != null -> word(spelled)
+                else -> number()
+            }
+        }
+
+        /** The object or array [open] at the cursor, through its closing bracket. */
+        private fun nested(open: Char, depth: Int): Boolean {
+            at++
+            space()
+            val close = if (open == '{') '}' else ']'
+            if (take(close)) return true
+            val keys = if (open == '{') HashSet<String>() else null
+            var read: Boolean
+            do {
+                read = (keys == null || member(keys)) && value(depth)
+                space()
+            } while (read && take(','))
+            return read && take(close)
+        }
+
+        /** The key and colon of one object member: false when the key is no string, or one [keys] already holds
+         *  while a repeated key is refused. */
+        private fun member(keys: MutableSet<String>): Boolean {
+            space()
+            val key = string()
+            space()
+            val fresh = key != null && (keys.add(key) || lastKeyWins)
+            return fresh && take(':')
+        }
+
+        /** The string at the cursor as it decodes, or null when it is none: unterminated, holding a raw control
+         *  character, or an escape JSON does not have. */
+        private fun string(): String? {
+            if (!take('"')) return null
+            val decoded = StringBuilder()
+            while (!take('"')) decoded.append(character() ?: return null)
+            return decoded.toString()
+        }
+
+        /** The next character of a string as it decodes, or null at the end of the text, at a raw control
+         *  character or at a bad escape. */
+        private fun character(): Char? {
+            val char = text.getOrNull(at++)
+            return when {
+                char == null || char < ' ' -> null
+                char == '\\' -> escaped()
+                else -> char
+            }
+        }
+
+        private fun escaped(): Char? {
+            val char = text.getOrNull(at++)
+            return if (char == 'u') unicode() else char?.let { escapedAs.getOrNull(escapeLetters.indexOf(it)) }
+        }
+
+        /** The four hex digits after `\u` as the character they name, or null when they are not four hex digits. */
+        private fun unicode(): Char? {
+            val digits = unicodeDigits.matchAt(text, at)?.value ?: return null
+            at += digits.length
+            return digits.hexToInt().toChar()
+        }
+
+        private fun number(): Boolean {
+            val read = jsonNumber.matchAt(text, at) ?: return false
+            at = read.range.last + 1
+            return true
+        }
+
+        private fun word(spelled: String): Boolean =
+            text.startsWith(spelled, at).also { if (it) at += spelled.length }
+
+        private fun take(char: Char): Boolean = (text.getOrNull(at) == char).also { if (it) at++ }
+
+        /** Moves the cursor past JSON's white space and answers where it now stands. */
+        private fun space(): Int {
+            while (at < text.length && text[at] in JSON_SPACE) at++
+            return at
+        }
+
+        private val words = mapOf('t' to "true", 'f' to "false", 'n' to "null")
+
+        /** The letters JSON allows after a backslash, each at the index of the character it stands for in
+         *  [escapedAs]. */
+        private val escapeLetters = "\"\\/bfnrt"
+        private val escapedAs = "\"\\/\b\u000C\n\r\t"
+
+        private val unicodeDigits = Regex("[0-9a-fA-F]{4}")
+
+        private val jsonNumber = Regex("""-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?""")
     }
-
-    private val jsonNumber = Regex("""-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?""")
-
-    private val jsonBooleans = setOf("true", "false")
 }
+
+// why: no settings file or check-in nests this deep; the cap keeps a crafted body from exhausting the stack.
+private const val JSON_NESTING_LIMIT = 512
+
+// JSON's four white-space characters, the only ones allowed between its tokens.
+private const val JSON_SPACE = " \t\n\r"

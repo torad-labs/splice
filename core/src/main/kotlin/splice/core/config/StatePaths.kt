@@ -283,6 +283,10 @@ public class StatePaths(
 
     public val claudeLaneFile: Path = stateDir.resolve("claude-lane.json")
 
+    /** The Claude Desktop policy values the person set in the console (Settings, Desktop policy), owner-only: laid
+     *  over splice's default policy in every configuration splice gives Desktop (DesktopPolicyLayers). */
+    public val desktopPolicyOverridesFile: Path = stateDir.resolve("desktop-policy-overrides.json")
+
     /** The model catalog: every model a signed-in, configured provider's own list publishes, credential-free,
      *  rewritten at daemon start/restart and on a sign-in, sign-out or provider-list change (CatalogFile). One
      *  spelling for the writer and every reader. */

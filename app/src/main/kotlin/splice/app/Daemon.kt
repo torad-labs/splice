@@ -23,6 +23,7 @@ import splice.app.daemon.HeadCatalogs
 import splice.app.daemon.TopologyWindows
 import splice.app.desktop.DaemonDesktop
 import splice.app.desktop.setup.DesktopAppLibrary
+import splice.app.desktop.setup.DesktopPolicyOverrides
 import splice.app.head.HEAD_STOP_BUDGET_MS
 import splice.app.head.HeadAgentTools
 import splice.app.head.HeadBoot
@@ -312,7 +313,11 @@ public class Daemon(
         topology,
         statePaths,
         log,
-        DesktopAppLibrary(DesktopAppConfig(statePaths.envReader), log = log),
+        DesktopAppLibrary(
+            DesktopAppConfig(statePaths.envReader),
+            overrides = DesktopPolicyOverrides(statePaths.desktopPolicyOverridesFile),
+            log = log,
+        ),
     )
     private val stopLock = Mutex()
     private var stopped = false

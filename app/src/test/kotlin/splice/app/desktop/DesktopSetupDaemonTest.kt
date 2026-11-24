@@ -10,6 +10,7 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
@@ -133,6 +134,37 @@ class DesktopSetupDaemonTest {
             val after = json.parseToJsonElement(Files.readString(configFile)).jsonObject
             val models = after.getValue("inferenceModels").jsonArray.map { it.jsonObject.str("name") }
             assertEquals(listOf("claude-opus-5-5"), models)
+        }
+    }
+
+    @Test
+    fun `a Desktop policy change reaches a side-by-side Desktop and asks for a reopen until it asks the door`(
+        @TempDir tmp: Path,
+    ) {
+        val home = Files.createDirectories(tmp.resolve("home"))
+        val fixture = mapOf(
+            "HOME" to home.toString(),
+            "XDG_CONFIG_HOME" to Files.createDirectories(tmp.resolve("config")).toString(),
+            "SPLICE_STATE_DIR" to tmp.resolve("state").toString(),
+        )
+        val fixtureEnv = EnvReader { fixture[it] }
+        // Claude (Splice) set up on the door before the daemon starts, as `splice launch claude-desktop` leaves it.
+        val profile = SideBySideDesktop(env = fixtureEnv, out = TerminalOutput {}, err = TerminalOutput {})
+            .prepareProfile("http://127.0.0.1:$controlPort/door")
+        withDaemon(tmp, home, fixtureEnv) { statePaths, mgmt ->
+            val answer = patch(mgmt, "/api/desktop/policy", """{"desktopHome":"simple"}""")
+            assertEquals("true", answer.str("restart_required"), answer.toString())
+            val configFile = profile.resolve("Claude-3p/configLibrary/splice-side-by-side.json")
+            assertEquals("simple", json.parseToJsonElement(Files.readString(configFile)).jsonObject.str("desktopHome"))
+            assertEquals("true", get(mgmt, "/api/desktop/policy").str("restart_required"), "it stays until a reopen")
+
+            val desktopKey = DesktopKey(statePaths.desktopKeyFile) {}.get()
+            val listed = client.get("http://127.0.0.1:$controlPort/door/v1/models") {
+                header("x-api-key", desktopKey)
+                header("x-splice-desktop", "app")
+            }
+            assertEquals(200, listed.status.value, listed.bodyAsText())
+            assertEquals("false", get(mgmt, "/api/desktop/policy").str("restart_required"), "reopened, it asked")
         }
     }
 
@@ -299,6 +331,16 @@ class DesktopSetupDaemonTest {
         val body = response.bodyAsText()
         assertEquals(200, response.status.value, body)
         return json.parseToJsonElement(body).jsonObject
+    }
+
+    private suspend fun patch(key: String, path: String, body: String): JsonObject {
+        val response = client.patch("http://127.0.0.1:$controlPort$path") {
+            header("Authorization", "Bearer $key")
+            setBody(body)
+        }
+        val text = response.bodyAsText()
+        assertEquals(200, response.status.value, text)
+        return json.parseToJsonElement(text).jsonObject
     }
 
     private suspend fun get(key: String, path: String): JsonObject {

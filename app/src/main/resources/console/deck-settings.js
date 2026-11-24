@@ -1,13 +1,14 @@
 /* Settings: the approved Night Deck machine (prototype settings/m-machine), on splice's live reads. Splice drawn as what
    it is: Sessions -> one gate per command -> Stalled responses -> Reasoning display back, and the system row (Usage
-   alerts, MCP servers, Modes, Storage, Projects, Splice, Advanced; Modes since Nov 21, 2026: what each mode adds to a
-   session and its switch per command, modes/README.md). Each part shows its live figure; pressing one grows its
+   alerts, MCP servers, Modes, Desktop policy, Storage, Projects, Splice, Advanced; Modes since Nov 21, 2026: what each
+   mode adds to a session and its switch per command, modes/README.md; Desktop policy since Nov 23, 2026: the Claude
+   Desktop policy keys a person sets from splice, deck-desktop-policy.js). Each part shows its live figure; pressing one grows its
    glass holding only its controls. A value is picked, never typed, unless it truly is free, and every change saves the
    moment it is made, its row saying what splice answered: Applied, At restart, or Not saved with why (the old value
    back). At rest a row names where its value comes from. The model and every read and write are deck-settings-model.js. */
 (() => {
   'use strict';
-  const { $, $$, h } = Deck, S = window.SETTINGS_LIVE, F = S.fmt, SP = window.SPLICE;
+  const { $, $$, h } = Deck, S = window.SETTINGS_LIVE, F = S.fmt, SP = window.SPLICE, DP = window.DESKTOP_POLICY;
   const mc = $('#mc'), ins = Deck.inspector(mc);
   const pc = cmd => (SP.providerOf(cmd) || {}).color || 'var(--ink-faint)';
   // a provider is named alone, as the approved page names its gates; its command is added only where two commands share it
@@ -28,11 +29,12 @@
     limits: ['planPoll', 'usageWarnPct', 'budgetDefaultAction', 'alerts', 'usageWarnTokens5h'],
     mcp: ['mcpShare', 'mcpHarnesses', 'mcpImport', 'mcpIdleTimeoutMs', 'mcpUnshared', 'mcpMaxServers', 'mcpRequestTimeoutMs', 'mcpInitializeTimeoutMs'],
     modes: [],   // no setting of /api/config: its rows are the modes GET /api/modes lists (modesLens)
+    desktop: [], // no setting of /api/config: its rows are Claude Desktop's policy, GET /api/desktop/policy (deck-desktop-policy.js)
     storage: ['transcriptView', 'keep', 'traceMaxBodyChars'],
     projects: ['projectsFolders', 'statuslineGitRoots'],
     splice: ['version', 'restart', 'debug', 'files', 'fixed'],
   };
-  const NAME = { cc: 'Sessions', reasoning: 'Reasoning display', gates: 'Concurrent requests', watch: 'Stalled responses', mcp: 'MCP servers', modes: 'Modes', storage: 'Storage', limits: 'Usage alerts', projects: 'Projects', splice: 'Splice', internals: 'Advanced' };
+  const NAME = { cc: 'Sessions', reasoning: 'Reasoning display', gates: 'Concurrent requests', watch: 'Stalled responses', mcp: 'MCP servers', modes: 'Modes', desktop: 'Desktop policy', storage: 'Storage', limits: 'Usage alerts', projects: 'Projects', splice: 'Splice', internals: 'Advanced' };
   const keysOf = item => {
     if (!item) return [];
     const ks = [];
@@ -50,12 +52,12 @@
 
   /* ---------- the parts on the field ---------- */
   const GO = '<svg class="ico" viewBox="0 0 24 24"><path d="M8 16L16 8M10 8h6v6"/></svg>';
-  function fill(el, { name, fig, unit, cap, vis, part }) {
+  function fill(el, { name, fig, unit, cap, vis, part, wait, dot }) {
     el.replaceChildren();
     const go = h('span', 'pt-go'); go.innerHTML = GO; el.append(go);
     const n = h('span', 'pt-name', name);
-    if (part && waiting(part)) n.append(h('i', 'pt-wait'));
-    else if (part && changed(part)) n.append(h('i', 'pt-changed'));
+    if (wait || (part && waiting(part))) n.append(h('i', 'pt-wait'));
+    else if (dot || (part && changed(part))) n.append(h('i', 'pt-changed'));
     const f = h('span', 'pt-fig', fig); if (unit) f.append(' ', h('small', '', unit));
     el.append(n, f);
     if (cap) el.append(h('span', 'pt-cap', cap));
@@ -104,6 +106,8 @@
     // a mode counts as on when any command has it on; the figure is how many are, of how many splice carries
     const md = S.modes, mdOn = md ? md.filter(x => Object.values(x.heads || {}).some(st => st.on)).length : null;
     fill($('[data-part="modes"]'), { part: 'modes', name: NAME.modes, fig: md ? String(mdOn) : '—', unit: md ? `of ${md.length} on` : '', cap: md ? 'Tools Splice adds to a session' : 'Not read' });
+    const dp = DP.summary();
+    fill($('[data-part="desktop"]'), { part: 'desktop', name: NAME.desktop, fig: dp.fig, unit: dp.unit, cap: dp.cap, wait: dp.waiting, dot: dp.changed });
     const st = S.data.stores, total = st.length ? st.reduce((n, s) => n + (s.bytes || 0), 0) : null;
     const sv = h('div');
     if (total) {
@@ -171,7 +175,7 @@
     anchor.setAttribute('aria-expanded', 'true');
     openPart = part; openAnchor = anchor;
     ins.openBeside(anchor, el => {
-      el.classList.toggle('wide', ['watch', 'storage', 'gates', 'limits', 'reasoning', 'cc', 'internals', 'mcp'].includes(part) || (!!anchor.dataset.gate && anchor.dataset.gate !== '*'));
+      el.classList.toggle('wide', ['watch', 'storage', 'gates', 'limits', 'reasoning', 'cc', 'internals', 'mcp', 'desktop'].includes(part) || (!!anchor.dataset.gate && anchor.dataset.gate !== '*'));
       const hd = h('div', 'hd'), gate = anchor.dataset.gate;
       if (gate && gate !== '*') hd.append(Deck.lamp('ready', pc(gate)));
       hd.append(h('h3', '', gate ? (gate === '*' ? 'No requests today' : provName(gate)) : NAME[part]));
@@ -245,6 +249,7 @@
   function lensFor(part, body) {
     if (part === 'internals') return internalsLens(body);
     if (part === 'modes') return modesLens(body);
+    if (part === 'desktop') return DP.lens(body, { commit, reopen });
     PARTS[part].map(S.item).filter(i => i && !i.adv).forEach(i => body.append(...render(i, 'main')));
   }
   function internalsLens(body) {
@@ -717,7 +722,7 @@
   clock(); setInterval(clock, 30000);
   S.onWeek(() => { if (!busy) { draw(); reopen(); } });
   /* an address names a part to open (other pages' doors: #data, #projects), and only a part this page has */
-  const HASH = { data: 'storage', storage: 'storage', projects: 'projects', mcp: 'mcp', modes: 'modes', limits: 'limits', alerts: 'limits', version: 'splice', splice: 'splice', reasoning: 'reasoning', stalls: 'watch', gates: 'gates', advanced: 'internals' };
+  const HASH = { data: 'storage', storage: 'storage', projects: 'projects', mcp: 'mcp', modes: 'modes', desktop: 'desktop', 'desktop-policy': 'desktop', limits: 'limits', alerts: 'limits', version: 'splice', splice: 'splice', reasoning: 'reasoning', stalls: 'watch', gates: 'gates', advanced: 'internals' };
   let hashDone = false;
   const openFromHash = () => {
     if (hashDone) return; hashDone = true;
@@ -729,7 +734,7 @@
     if (reading || busy || typing() || document.hidden || document.body.classList.contains('locked')) return;
     reading = true;
     try {
-      const ok = await S.read();
+      const [ok] = await Promise.all([S.read(), DP.read()]);
       if (ok) { draw(); reopen(); openFromHash(); } else $('#mcRunning').textContent = 'Not answering';
     } finally { reading = false; }
   };

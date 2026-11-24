@@ -13,6 +13,7 @@ import splice.client.Keys
 import splice.client.desktop.DesktopSettingsRead
 import splice.client.desktop.SettingsRead
 import splice.core.util.SecureFile
+import java.io.IOException
 import java.nio.file.Path
 
 internal class ProfileGlobalConfig(
@@ -25,7 +26,7 @@ internal class ProfileGlobalConfig(
 
     /** `<folder>/.claude.json` rebuilt; the names of the MCP servers it carries. */
     fun build(folder: Path): Set<String> {
-        val file = folder.resolve(GLOBAL_CONFIG)
+        val file = folder.resolve(Keys.CLAUDE_JSON)
         val own = read(file).orEmpty()
         val yours = read(personal).orEmpty().filterKeys { it !in NEVER_CARRIED }
         val seeded = yours.filterKeys { it !in own } + own
@@ -39,11 +40,15 @@ internal class ProfileGlobalConfig(
     private fun objectAt(config: Map<String, JsonElement>, key: String): Map<String, JsonElement> =
         (config[key] as? JsonObject).orEmpty()
 
-    private fun read(file: Path): JsonObject? = (DesktopSettingsRead(file).read() as? SettingsRead.Held)?.file
+    /** [file] as Claude Code holds it; null while it is not there. One that is there and can't be read stops the
+     *  launch: a profile without the person's servers and folder trust, or a profile copy written over, is never the
+     *  quiet answer. */
+    private fun read(file: Path): JsonObject? = when (val read = DesktopSettingsRead(file).read()) {
+        SettingsRead.Absent -> null
+        is SettingsRead.Held -> read.file
+        is SettingsRead.Unreadable -> throw IOException(read.why)
+    }
 }
-
-// Claude Code's global config file, named the same in the home and in a config folder.
-internal const val GLOBAL_CONFIG: String = ".claude.json"
 
 // The Claude login Claude Code keeps in the file, which a session on the door never uses.
 private val NEVER_CARRIED = setOf("oauthAccount", "primaryApiKey")

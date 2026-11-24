@@ -20,6 +20,7 @@ import splice.core.topology.LaunchProfileConfig
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
+import java.nio.file.attribute.BasicFileAttributes
 import java.nio.file.attribute.PosixFilePermissions
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
@@ -280,6 +281,72 @@ class LaunchProfileBuildTest {
         assertInstanceOf(ProfileBuilt.Refused::class.java, build(LaunchProfileConfig()))
     }
 
+    @Test
+    fun `a hook event's name drops that event only, never another event's command that holds the word`() {
+        person()
+        write(
+            claude.resolve("settings.json"),
+            """{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"done.sh"}]}],
+               "PreToolUse":[{"hooks":[{"type":"command","command":"StopGuard.sh"}]}]}}""",
+        )
+        build(LaunchProfileConfig(dropHooks = listOf("Stop")))
+        val hooks = json(folder.resolve("settings.json")).getValue("hooks").jsonObject
+        assertEquals(setOf("PreToolUse"), hooks.keys)
+    }
+
+    @Test
+    fun `another profile's folder is refused, and the profile's own is rebuilt`() {
+        person()
+        build(LaunchProfileConfig())
+        val other = LaunchProfileBuild(home, home.resolve("unused-root"), registry)
+            .build("other", LaunchProfileConfig(dir = folder.toString()), emptySet())
+        val refused = assertInstanceOf(ProfileBuilt.Refused::class.java, other)
+        assertTrue("work" in refused.reason, refused.reason)
+        assertInstanceOf(ProfileBuilt.Ready::class.java, build(LaunchProfileConfig()))
+    }
+
+    @Test
+    fun `a claude-json that can't be read stops the launch and leaves the profile's copy as it was`() {
+        person()
+        build(LaunchProfileConfig())
+        val copy = folder.resolve(".claude.json").readText()
+        write(home.resolve(".claude.json"), "{not json")
+        assertInstanceOf(ProfileBuilt.Refused::class.java, build(LaunchProfileConfig()))
+        assertEquals(copy, folder.resolve(".claude.json").readText())
+    }
+
+    @Test
+    fun `an install record whose version would leave the cache is not listed, so the plugin never loads with hooks`() {
+        person()
+        write(
+            claude.resolve("plugins/installed_plugins.json"),
+            """{"version":2,"plugins":{
+              "kept@market":[{"scope":"user","installPath":"${install("kept")}","version":"../../../escape"}]}}""",
+        )
+        build(LaunchProfileConfig(keepPlugins = listOf("kept")))
+        val installed = json(folder.resolve("plugins/installed_plugins.json")).getValue("plugins").jsonObject
+        assertEquals(emptySet<String>(), installed.keys)
+        assertFalse(Files.exists(folder.resolve("plugins/escape")))
+    }
+
+    @Test
+    fun `a rebuild leaves links and plugin mirrors that are still right in place for a running session`() {
+        person()
+        val profile = LaunchProfileConfig(keepPlugins = listOf("kept"))
+        build(profile)
+        val installed = json(folder.resolve("plugins/installed_plugins.json")).getValue("plugins").jsonObject
+        val mirror = installedAt(installed, "kept@market")
+        val skill = folder.resolve("skills/mine")
+        val before = listOf(fileKey(mirror), fileKey(skill))
+        build(profile)
+        assertEquals(before, listOf(fileKey(mirror), fileKey(skill)), "nothing still right is replaced")
+
+        write(install("kept").resolve(".claude-plugin/plugin.json"), """{"name":"kept","description":"new"}""")
+        build(profile)
+        val manifest = json(mirror.resolve(".claude-plugin/plugin.json"))
+        assertEquals("new", manifest.getValue("description").jsonPrimitive.content, "a changed plugin is rebuilt")
+    }
+
     private fun names(dir: Path): List<String> =
         Files.list(dir).use { s -> s.map { it.fileName.toString() }.sorted().toList() }
 
@@ -287,4 +354,7 @@ class LaunchProfileBuildTest {
 
     private fun installedAt(installed: JsonObject, id: String): Path =
         Path.of(installed.getValue(id).jsonArray.single().jsonObject.getValue("installPath").jsonPrimitive.content)
+
+    private fun fileKey(path: Path): Any? =
+        Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS).fileKey()
 }

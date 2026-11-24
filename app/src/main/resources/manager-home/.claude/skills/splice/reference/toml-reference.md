@@ -411,9 +411,9 @@ declare refuses the launch and lists the ones it does. Read at the daemon's star
 
 | field | type | default | effect |
 |---|---|---|---|
-| `dir` | string | `~/.splice/launch-profiles/<name>` | the profile's folder, absolute or `~/…`. Boot refuses `~/.claude`, a folder inside it or one holding it, and two profiles on one folder; a launch refuses a folder that holds files without splice's `.splice-profile` mark |
+| `dir` | string | `~/.splice/launch-profiles/<name>` | the profile's folder, absolute or `~/…`. Boot refuses `~/.claude`, a folder inside it or one holding it, and two profiles on one folder; a launch refuses a folder that holds files without splice's `.splice-profile` mark, or whose mark names another profile |
 | `keep_hooks` | `"own"`, `"all"` or `"none"` | `"own"` | `own`: the hooks in your `settings.json` / `settings.local.json`, and no plugin's; `all`: those and the kept plugins' own; `none`: none |
-| `drop_hooks` | array of strings | empty | taken out of the kept hooks: an event's name (`"SessionStart"`) drops that event's hooks, any other word every settings hook whose `command` holds it |
+| `drop_hooks` | array of strings | empty | taken out of the kept hooks: a hook event's name (`"SessionStart"`, `"Stop"`) drops that event's hooks and nothing else; any other word drops every settings hook whose `command` holds it |
 | `keep_plugins` | array of strings | empty | the plugins loaded, by `name@marketplace` or by name, among those you enabled; every other is written disabled. Each kept plugin is installed in the profile as links to your install, without its `hooks/` and manifest `hooks` unless `keep_hooks = "all"` |
 | `drop_blocks` | array of strings | empty | marked blocks taken out of `CLAUDE.md`: from a line `<!-- name -->`, `<!-- BEGIN name -->` or `# BEGIN name` to a line `<!-- /name -->`, `<!-- END name -->` or `# END name`, both included, each marker alone on its line. A block that never closes is kept and said at launch |
 | `drop_names` | array of strings | empty | skills, agents and commands whose file names start with one of these get no link in the profile |

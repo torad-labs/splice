@@ -620,8 +620,10 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         mapOf("writeAtomic0600(" to 1),
     "integrations/claude-code/src/main/kotlin/splice/client/profile/ProfileLinks.kt" to
         mapOf("Files.createSymbolicLink(" to 2),
+    "integrations/claude-code/src/main/kotlin/splice/client/profile/ProfilePluginCache.kt" to
+        mapOf("Files.createSymbolicLink(" to 2, "Files.move(" to 2, "writeAtomic0600(" to 1),
     "integrations/claude-code/src/main/kotlin/splice/client/profile/ProfilePlugins.kt" to
-        mapOf("Files.createSymbolicLink(" to 2, "writeAtomic0600(" to 1),
+        mapOf("writeAtomic0600(" to 1),
     "integrations/claude-code/src/main/kotlin/splice/client/resume/ResumeAcrossHeads.kt" to mapOf(
         "Files.copy(" to 3,
         "Files.move(" to 3,

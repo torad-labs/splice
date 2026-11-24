@@ -91,7 +91,7 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # [launch.profiles.work]
 # dir = "~/.claude-work"        # default: ~/.splice/launch-profiles/<name>
 # keep_hooks = "own"            # "own": your settings files' hooks, no plugin's · "all": and kept plugins' · "none"
-# drop_hooks = ["SessionStart", "notify.sh"]  # an event's name, or a word in a hook's command
+# drop_hooks = ["SessionStart", "notify.sh"]  # an event's name drops that event; any other word, hooks whose command holds it
 # keep_plugins = ["code-review@claude-plugins-official"]  # none when empty
 # drop_blocks = ["team-notes"]  # CLAUDE.md blocks: <!-- name --> … <!-- /name --> or # BEGIN name … # END name
 # drop_names = ["team-", "old"]  # skills, agents and commands whose names start with these are left out

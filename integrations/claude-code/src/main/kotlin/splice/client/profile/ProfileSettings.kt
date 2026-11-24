@@ -39,23 +39,27 @@ internal class ProfileSettings(private val profile: LaunchProfileConfig, private
         enabled.mapValues { (id, on) -> JsonPrimitive((on as? JsonPrimitive)?.booleanOrNull == true && keeps(id)) },
     )
 
-    /** The hooks table with the profile's drops taken out, and what is left empty removed. */
+    /** The hooks table with the profile's drops taken out, and what is left empty removed. An entry that names a hook
+     *  event (one Claude Code has, or one this table holds) drops that event's hooks and nothing else; any other entry
+     *  drops every hook whose command holds it. */
     private fun hooks(table: JsonObject): JsonObject? {
         if (profile.keepHooks == KEEP_HOOKS_NONE) return null
-        val kept = table.filterKeys { it !in profile.dropHooks }.mapNotNull { (event, groups) ->
-            val left = (groups as? JsonArray)?.mapNotNull(::group) ?: return@mapNotNull event to groups
+        val drops = profile.dropHooks.filter(String::isNotBlank)
+        val (events, words) = drops.partition { it in HOOK_EVENTS || it in table }
+        val kept = table.filterKeys { it !in events }.mapNotNull { (event, groups) ->
+            val left = (groups as? JsonArray)?.mapNotNull { group(it, words) } ?: return@mapNotNull event to groups
             (event to JsonArray(left)).takeIf { left.isNotEmpty() }
         }
         return JsonObject(kept.toMap())
     }
 
-    /** One matcher group with every hook whose command holds a dropped word taken out; null once it holds none. */
-    private fun group(element: JsonElement): JsonElement? {
+    /** One matcher group with every hook whose command holds one of [words] taken out; null once it holds none. */
+    private fun group(element: JsonElement, words: List<String>): JsonElement? {
         val group = element as? JsonObject ?: return element
         val hooks = group[Keys.HOOKS] as? JsonArray ?: return group
         val left = hooks.filterNot { hook ->
             val command = JsonScalars.str(hook as? JsonObject, HOOK_COMMAND).orEmpty()
-            profile.dropHooks.any { it.isNotBlank() && command.contains(it) }
+            words.any { command.contains(it) }
         }
         return if (left.isEmpty()) null else JsonObject(group + (Keys.HOOKS to JsonArray(left)))
     }
@@ -64,6 +68,13 @@ internal class ProfileSettings(private val profile: LaunchProfileConfig, private
 /** Claude Code's settings keys a profile filters. */
 internal const val ENABLED_PLUGINS_KEY: String = "enabledPlugins"
 private const val HOOK_COMMAND = "command"
+
+// The hook events Claude Code runs, so a drop_hooks entry naming one drops that event even when this file's hooks
+// table does not hold it, and never matches another event's commands.
+private val HOOK_EVENTS = setOf(
+    "PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest", "Notification", "UserPromptSubmit",
+    "SessionStart", "SessionEnd", "Stop", "SubagentStart", "SubagentStop", "PreCompact",
+)
 
 // A plugin's id is its name, `@`, and the marketplace it came from.
 internal const val PLUGIN_AT: Char = '@'

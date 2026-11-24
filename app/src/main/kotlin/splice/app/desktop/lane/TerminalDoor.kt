@@ -19,6 +19,7 @@ import splice.launch.recipe.ClaudeDoor
 import splice.launch.recipe.DoorLaunchSpec
 import splice.launch.recipe.GatewayAt
 import splice.launch.recipe.ProfileLaunch
+import splice.upstream.codemode.ProcessDispatchers
 
 internal class TerminalDoor(
     private val topology: Topology,
@@ -40,6 +41,7 @@ internal class TerminalDoor(
         UserHome.dir(),
         statePaths.launchProfilesDir,
         McpUserRegistry(statePaths),
+        ProcessDispatchers().io(),
     )
 
     /** `claude`'s launch once [open] has run; null before. */

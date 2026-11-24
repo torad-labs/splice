@@ -100,4 +100,12 @@ class LaunchProfilesConfigTest {
         val toml = "[launch.profiles.a]\ndir = \"~/p\"\n[launch.profiles.b]\ndir = \"~/p/\"\n"
         assertEquals(listOf("launch.profiles.a.dir", "launch.profiles.b.dir"), refusedAt(toml))
     }
+
+    @Test
+    fun `a profile with no dir is checked where the launch builds it, under splice's own root`() {
+        val clash = "[launch.profiles.a]\ndir = \"~/.splice/launch-profiles/b\"\n[launch.profiles.b]\n"
+        assertEquals(listOf("launch.profiles.a.dir", "launch.profiles.b.dir"), refusedAt(clash))
+        val apart = "[launch.profiles.x]\n[launch.profiles.y]\ndir = \"~/launch-profiles/x\"\n"
+        assertInstanceOf(ConfigRead.Ready::class.java, read(apart))
+    }
 }

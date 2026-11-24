@@ -9,6 +9,8 @@ package splice.client.profile
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import splice.client.ClaudeModelLists
+import splice.client.Keys
 import splice.client.desktop.DesktopSettingsRead
 import splice.client.desktop.SettingsRead
 import splice.core.config.UserHome
@@ -52,10 +54,10 @@ public class LaunchProfileBuild(
     /** Everything the profile carries written into [folder]; what the person should know of it. */
     private fun fill(folder: Path, profile: LaunchProfileConfig, doorOwned: Set<String>): List<String> {
         val settings = ProfileSettings(profile, doorOwned)
-        val kept = SETTINGS_FILES.flatMap { file -> settingsFile(folder, file, settings) }.toSet()
+        val kept = ClaudeModelLists.settingsFiles.flatMap { file -> settingsFile(folder, file, settings) }.toSet()
         ProfilePlugins(claudeDir, withHooks = profile.keepHooks == KEEP_HOOKS_ALL).build(folder, kept)
         val unclosed = instructions(folder, profile)
-        ProfileGlobalConfig(home.resolve(GLOBAL_CONFIG), registry).build(folder)
+        ProfileGlobalConfig(home.resolve(Keys.CLAUDE_JSON), registry).build(folder)
         val links = ProfileLinks(claudeDir, profile.dropNames).link(folder)
         return unclosed.map { "CLAUDE.md's block \"$it\" opens and never closes, so it is kept" } + links
     }
@@ -81,8 +83,8 @@ public class LaunchProfileBuild(
     /** `<folder>/CLAUDE.md`, the person's with the dropped blocks out, or none while the person has none; the markers
      *  that open there and never close. */
     private fun instructions(folder: Path, profile: LaunchProfileConfig): List<String> {
-        val source = claudeDir.resolve(INSTRUCTIONS_FILE)
-        val target = folder.resolve(INSTRUCTIONS_FILE)
+        val source = claudeDir.resolve(Keys.CLAUDE_MD)
+        val target = folder.resolve(Keys.CLAUDE_MD)
         if (!Files.isRegularFile(source)) {
             Files.deleteIfExists(target)
             return emptyList()
@@ -101,7 +103,3 @@ public sealed class ProfileBuilt {
     /** Nothing launches, for [reason]. */
     public data class Refused(val reason: String) : ProfileBuilt()
 }
-
-// The files of the person's Claude folder a profile rebuilds.
-private const val INSTRUCTIONS_FILE = "CLAUDE.md"
-private val SETTINGS_FILES = listOf("settings.json", "settings.local.json")

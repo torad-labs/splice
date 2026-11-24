@@ -4,6 +4,10 @@
 // environment is kept out of the profile's settings, and CLAUDE_CONFIG_DIR names the profile's folder.
 package splice.app.desktop.lane
 
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import splice.client.profile.LaunchProfileBuild
 import splice.client.profile.ProfileBuilt
 import splice.core.mcp.McpUserRegistry
@@ -19,13 +23,20 @@ internal class TerminalProfiles(
     private val root: Path,
     /** Splice's MCP user registry, read at each launch. */
     private val registry: McpUserRegistry,
+    /** Where a rebuild's file work runs, off the request's own thread. */
+    private val io: CoroutineDispatcher,
 ) {
+    /** One lock per profile: two launches of one profile rebuild its folder one after the other, never at once. */
+    private val rebuilding = profiles.mapValues { Mutex() }
+
     /** [side], the door's side-by-side launch, moved into profile [name]'s folder once it is rebuilt. */
-    fun launch(name: String, side: DoorLaunchSpec): ProfileLaunch {
+    suspend fun launch(name: String, side: DoorLaunchSpec): ProfileLaunch {
         val profile = profiles[name] ?: return ProfileLaunch.Refused(unknown(name))
         val owned = side.env.keys + side.unset
-        val build = LaunchProfileBuild(home, root, registry.entries())
-        return when (val built = build.build(name, profile, owned)) {
+        val built = rebuilding.getValue(name).withLock {
+            withContext(io) { LaunchProfileBuild(home, root, registry.entries()).build(name, profile, owned) }
+        }
+        return when (built) {
             is ProfileBuilt.Refused -> ProfileLaunch.Refused("splice: ${built.reason}")
             is ProfileBuilt.Ready -> ProfileLaunch.Ready(
                 side.copy(

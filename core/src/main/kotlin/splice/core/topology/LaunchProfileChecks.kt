@@ -3,14 +3,15 @@
 // rebuilt before every launch, so it may never be `~/.claude`, a folder inside it, or one that holds it (the home).
 package splice.core.topology
 
+import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import java.nio.file.Path
 
 internal class LaunchProfileChecks(
     private val topology: Topology,
     private val home: Path = UserHome.dir(),
-    /** Where a profile with no `dir` lives; only its shape matters here, so any folder outside `~/.claude` does. */
-    private val defaultRoot: Path = home.resolve(DEFAULT_ROOT_FOR_CHECKS),
+    /** Where a profile with no `dir` lives: the same root the launch builds it under. */
+    private val defaultRoot: Path = StatePaths(homeDir = home).launchProfilesDir,
 ) {
     private val claudeDir = home.resolve(UserHome.CLAUDE_DIR).normalize()
 
@@ -84,6 +85,3 @@ private const val MARKER_RULE = "each marker must fit on one line and hold no --
 private const val PREFIX_RULE = "each prefix is the start of a name, so it holds no /"
 
 private const val COMMENT_END = "-->"
-
-// Any folder outside ~/.claude stands in for the state root when only the shape of a default folder is checked.
-private const val DEFAULT_ROOT_FOR_CHECKS = "launch-profiles"

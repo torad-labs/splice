@@ -3,6 +3,10 @@
 // profile's settings, and for a name splice.toml does not declare, a refusal that names the ones it does.
 package splice.app.desktop.lane
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -34,7 +38,7 @@ class TerminalProfilesTest {
         val work = LaunchProfileConfig(dir = home.resolve("work").toString())
         val registry = McpUserRegistry(StatePaths(home.resolve("state")))
         val declared = mapOf("work" to work, "lean" to LaunchProfileConfig())
-        return TerminalProfiles(declared, home, home.resolve("root"), registry)
+        return TerminalProfiles(declared, home, home.resolve("root"), registry, Dispatchers.IO)
     }
 
     @Test
@@ -42,7 +46,7 @@ class TerminalProfilesTest {
         Files.createDirectories(home.resolve(".claude"))
         home.resolve(".claude/settings.json")
             .writeText("""{"env":{"ANTHROPIC_MODEL":"x","CLAUDE_CODE_USE_BEDROCK":"1","KEEP":"1"}}""")
-        val launch = profiles().launch("work", side)
+        val launch = runBlocking { profiles().launch("work", side) }
         val spec = assertInstanceOf(ProfileLaunch.Ready::class.java, launch).spec
         assertEquals(home.resolve("work").toString(), spec.env["CLAUDE_CONFIG_DIR"])
         assertFalse("CLAUDE_CONFIG_DIR" in spec.unset)
@@ -53,8 +57,25 @@ class TerminalProfilesTest {
 
     @Test
     fun `a profile splice-toml does not declare launches nothing and names the ones it does`() {
-        val launch = profiles().launch("nope", side)
+        val launch = runBlocking { profiles().launch("nope", side) }
         val reason = assertInstanceOf(ProfileLaunch.Refused::class.java, launch).reason
         assertTrue("nope" in reason && "lean, work" in reason, reason)
     }
+
+    @Test
+    fun `launches of one profile at once each get the whole folder, rebuilt one after the other`() {
+        Files.createDirectories(home.resolve(".claude/skills/mine"))
+        home.resolve(".claude/settings.json").writeText("""{"theme":"dark"}""")
+        val profiles = profiles()
+        val launches = runBlocking(Dispatchers.IO) {
+            (1..PARALLEL_LAUNCHES).map { async { profiles.launch("work", side) } }.awaitAll()
+        }
+        launches.forEach { assertInstanceOf(ProfileLaunch.Ready::class.java, it, it.toString()) }
+        val folder = home.resolve("work")
+        assertEquals(home.resolve(".claude/skills/mine"), Files.readSymbolicLink(folder.resolve("skills/mine")))
+        assertTrue(folder.resolve("settings.json").readText().contains("dark"))
+    }
 }
+
+// Enough launches at once that two rebuilds would meet if nothing kept them apart.
+private const val PARALLEL_LAUNCHES = 8

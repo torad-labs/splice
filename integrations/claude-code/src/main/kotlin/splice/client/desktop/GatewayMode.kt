@@ -8,7 +8,11 @@
 // option). Facts of Claude Code's dialect, so they live here with the others.
 package splice.client.desktop
 
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import splice.client.ClaudeModelLists
+import splice.client.Keys
+import splice.sessions.registry.LaunchMarker
 
 public class GatewayMode {
     /** What a gateway-mode launch sets: [base] the gateway's address, [key] its key, and [model] the selector the
@@ -33,6 +37,17 @@ public class GatewayMode {
      *  environment, so a variable this launch unsets can come back from there. Each switch is `0`, which Claude Code
      *  reads as off, and every other variable is empty, which it reads as not set (#791). No value here is a secret. */
     public val cleared: Map<String, String> = unset.associateWith { if (it in ALL_SWITCHES) SWITCH_OFF else "" }
+
+    /** The settings a head's session in gateway mode is handed over its head folder's: the folder keeps the key helper
+     *  its head's sessions read their turn key with, since a session launched before, by this splice or an older one,
+     *  holds no other credential and reads that folder at every start; this session holds the gateway's key, so the
+     *  helper is set aside here, empty, which Claude Code reads as none, and the session sends that key alone (Claude
+     *  Code warns "Both ANTHROPIC_AUTH_TOKEN and apiKeyHelper set" otherwise). Marked as splice's (LaunchMarker), so a
+     *  relaunch reads it as the launch's own and not the person's (LaunchRecipeArgs). No value here is a secret. */
+    public val helperSetAside: String = buildJsonObject {
+        put(Keys.API_KEY_HELPER, "")
+        put(LaunchMarker.SPLICE_LAUNCH_KEY, true)
+    }.toString()
 
     /** Whether [env], what a launch sets, puts its session in gateway mode: a base URL, a bearer, discovery on, and
      *  no provider switch. */

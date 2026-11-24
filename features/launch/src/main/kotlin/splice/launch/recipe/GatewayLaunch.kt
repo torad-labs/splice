@@ -6,6 +6,7 @@
 // (ProcessEnvironment.route). Split from LaunchService, which builds the rest of a head's launch as before.
 package splice.launch.recipe
 
+import splice.client.SessionHelpers
 import splice.client.desktop.FIRST_PARTY_ENV
 import splice.client.desktop.GATEWAY_BASE_URL
 import splice.client.desktop.GATEWAY_TOKEN
@@ -29,6 +30,19 @@ internal class GatewayLaunch(private val owners: LaunchOwners = LaunchOwners(Sta
      *  [spec] as it is off the gateway. */
     fun keyed(spec: LaunchSpec, at: GatewayAt?): LaunchSpec =
         at?.let { spec.copy(gateway = spec.gateway.copy(bearer = GatewayBearer.Planted(it.key))) } ?: spec
+
+    /** The helpers [keyed]'s head folder keeps: those of [keyed], with the key helper of [own], the head's spec before
+     *  [keyed] took its bearer. Upgrade (Nov 24, 2026): a session an older splice launched holds no bearer and reads
+     *  its turn key through that folder's helper at every start, so a launch on the gateway that took the helper out of
+     *  the folder left every such session "Not logged in". The session on the gateway sets it aside ([overlay]). */
+    fun folderHelpers(keyed: LaunchSpec, own: LaunchSpec): SessionHelpers =
+        keyed.helpers.copy(apiKey = own.gateway.keyHelper)
+
+    /** The --settings overlay of [own]'s session on the gateway [at] when its folder keeps a key helper
+     *  ([folderHelpers]): the helper set aside, so the session holds the gateway's key alone. Null off the gateway and
+     *  for a head with no helper. */
+    fun overlay(own: LaunchSpec, at: GatewayAt?): String? =
+        mode.helperSetAside.takeIf { at != null && own.gateway.keyHelper != null }
 
     /** The tiers [spec]'s launch plants: none on the gateway [at], which runs a tier on the session's head; a command
      *  another machine serves still plants its own. */

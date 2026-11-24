@@ -98,6 +98,36 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # [remote.claude]
 # url = "http://devbox.lan:3097/door"
 
+# ── team server: this machine as a team's front door (docs/specs/server-mode.md) ──
+# A [server] and an enabled [share] never run together; boot refuses the pair. The commands it serves must be
+# heads or providers here, on API-key or self-hosted providers only. The full table is in the spec; the two
+# upstream-availability tables below are the ones a rented GPU box usually wants.
+# [server]
+# listen = "0.0.0.0:3443"
+# commands = ["claude-team"]
+#
+# # The box says whether it is up, starting or off; while it is not up, a turn is refused with a 503 and
+# # Retry-After before anything reaches it, pooled provider or single base_url alike. Exactly one source,
+# # read every every_seconds, saying `up`, `starting`, `off` or `off until <RFC3339>` as plain text, or as
+# # JSON: {"state": "off", "until": "2026-11-24T17:00:00Z", "message": "Back at five."}
+# [server.state]
+# file = "/run/box/state"          # or: url = "http://box.lan:8080/state" · command = ["/usr/local/bin/box-state"]
+# every_seconds = 5
+# message_starting = "Upstream is starting; retry shortly."
+# message_off = "Upstream is off until {until}."
+# retry_after_starting = 30        # Retry-After while starting, and while off with no future until
+#
+# # What a pooled upstream is asked before its health is believed: "health" (the default) asks /health at the
+# # provider's health_seconds; "completion" asks the model to really complete, and needs model. With a
+# # completion probe, at_start true (the default) holds a member out until its first probe passes; false serves it
+# # at once until a probe fails.
+# [server.probe]
+# kind = "completion"
+# model = "team-model"
+# timeout_seconds = 30
+# every_seconds = 60
+# at_start = true
+
 # ── server mode: the minimum client and path aliases (docs/specs/server-mode.md, F9 and #791) ──
 # Under a [server] table (README, "Server mode"), a team's own launcher can report its version, and a client fixed on
 # a plain base path can reach a command through an alias.

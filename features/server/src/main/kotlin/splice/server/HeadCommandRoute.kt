@@ -64,7 +64,11 @@ internal class HeadCommandRoute(private val parts: ServerParts, private val rout
         val isTurn = call.request.httpMethod == HttpMethod.Post && path == turnPath
         val minimum = routing.minimum
         val told = if (isTurn) minimum.told(call, key.person) else null
-        if (told != null && minimum.refused(call, routing.voice, told)) return
+        if (told != null) {
+            val refused = routing.admission.refusesNotice(call, key, HeadCommand(head)) ||
+                minimum.refused(call, routing.voice, told)
+            if (refused) return
+        }
         if (!isTurn || told != null) {
             if (!head.running()) return routing.catalog.notRunning(call, head)
             val asked = headTurn(call, key, head, path, told?.let(minimum::notice).orEmpty())

@@ -55,13 +55,13 @@ internal class TeamDoorRoute(
      *  with `[server.client] outdated_status`, and takes none (F9). */
     private suspend fun turn(call: ApplicationCall, key: ServerKey, gateway: TeamGateway) {
         val routed = gateway.routed(call, voice, counting = false, served()) ?: return
+        val provider = ProviderCommand(routed.provider, routed.names)
         val notice = minimum.told(call, key.person)
         val withheld = bound.withheld(call)
         if (notice != null) {
-            if (minimum.refused(call, voice, notice)) return
+            if (admission.refusesNotice(call, key, provider) || minimum.refused(call, voice, notice)) return
             return routed.serve(TeamTurnMeta(notice = notice, withheldHeaders = withheld))
         }
-        val provider = ProviderCommand(routed.provider, routed.names)
         admission.served(call, key, provider, ROUTE_MESSAGES) { turn ->
             val preferred = parts.people.of(key.person).preferred
             val named = parts.books.turns.named(turn).second

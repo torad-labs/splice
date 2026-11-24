@@ -9,14 +9,21 @@
 package splice.server
 
 import io.ktor.http.HttpStatusCode
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.pool.UpstreamPool
 import splice.core.server.AnswerReading
 import splice.core.server.ServedTokens
+import splice.core.server.UpstreamRefusal
+import splice.core.server.UpstreamState
+import splice.core.server.UpstreamStatePolicy
+import splice.core.server.UpstreamStateReading
+import splice.core.topology.ServerState
 import splice.share.StreamEdit
 import splice.share.WholeEdit
+import java.time.Clock
 
 /** The daemon's pools: one for each provider that lists `[[providers.<p>.upstreams]]` and has a head. A daemon whose
  *  providers are each one server has none, which is what the defaults answer. */
@@ -26,6 +33,9 @@ public interface HeadUpstreams {
 
     /** The pool the head [head] sends its turns to, by its key in splice.toml; null when its provider is one server. */
     public fun of(head: String): UpstreamPool? = null
+
+    /** The server-wide external signal, if configured, including for providers with no pool. */
+    public fun availability(): UpstreamStateReading? = null
 
     /** The provider of the head [head] as an OpenAI-style client's requests reach it; null when that provider does
      *  not speak openai-chat, which is what the default answers. */
@@ -70,7 +80,12 @@ public data class ChatAsk(
     val model: String? = null,
 )
 
-public class UpstreamApi(private val upstreams: HeadUpstreams) {
+public class UpstreamApi(
+    private val upstreams: HeadUpstreams,
+    state: ServerState? = null,
+    private val clock: Clock = Clock.systemUTC(),
+) {
+    private val policy = state?.let(::UpstreamStatePolicy)
 
     /** Every upstream as it reads now: `{"upstreams": [{"provider", "name", "url", "healthy", "inflight"}]}`. */
     public fun list(): ServerAnswer {
@@ -92,8 +107,28 @@ public class UpstreamApi(private val upstreams: HeadUpstreams) {
                     }
                 },
             )
+            upstreams.availability()?.let { put("state", stateRow(it)) }
         }
         return ServerAnswer.Done(HttpStatusCode.OK, body)
+    }
+
+    internal fun externalRefusal(): UpstreamRefusal? =
+        upstreams.availability()?.let { policy?.refusal(it.signal, clock.instant()) }
+
+    private fun stateRow(reading: UpstreamStateReading): JsonObject = buildJsonObject {
+        val signal = reading.signal
+        put(
+            "state",
+            when (signal.state) {
+                UpstreamState.Up -> "up"
+                UpstreamState.Starting -> "starting"
+                is UpstreamState.Off -> "off"
+            },
+        )
+        put("until", (signal.state as? UpstreamState.Off)?.until?.toString())
+        put("message", policy?.refusal(signal, clock.instant())?.message ?: signal.message)
+        put("last_error", reading.lastError)
+        put("last_checked", reading.lastChecked?.toString())
     }
 
     /** The names a person can be set to prefer: every upstream of every pool, once each. */

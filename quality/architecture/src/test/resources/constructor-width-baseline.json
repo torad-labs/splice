@@ -106,9 +106,9 @@
       "reason": "server ledger, 2026-11-16: @Serializable mirror of one usage ledger row (docs/specs/server-mode.md F5), the line written to usage.jsonl and exported field by field; grouping its fields would change the format"
     },
     "core/src/main/kotlin/splice/core/topology/Topology.kt Topology": {
-      "params": 14,
+      "params": 15,
       "subsystems": 4,
-      "reason": "modes, 2026-11-21: modes, splice.toml's [modes.<name>] tables, read apart from the schema decode and attached once well-formed, as capabilities are (modes/README.md), which adds splice.core.mode. Before that, the door's own table, 2026-11-21: door, splice.toml's [door] (the selector aliases the gateway reads and its named commands). The class mirrors splice.toml's top-level tables one field each, the outside-format exception to LongParameterList (2026-10-09)"
+      "reason": "terminal launch profiles, 2026-11-23: launch, splice.toml's [launch] (its [launch.profiles.<name>] tables, the Claude folders `splice launch claude --profile` runs in). Before that, modes, 2026-11-21: modes, splice.toml's [modes.<name>] tables, read apart from the schema decode and attached once well-formed, as capabilities are (modes/README.md), which adds splice.core.mode. Before that, the door's own table, 2026-11-21: door, splice.toml's [door] (the selector aliases the gateway reads and its named commands). The class mirrors splice.toml's top-level tables one field each, the outside-format exception to LongParameterList (2026-10-09)"
     }
   }
 }

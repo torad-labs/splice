@@ -13,9 +13,7 @@ import splice.core.topology.TopologyKnobLayer
 import splice.core.util.EnvReader
 import java.io.IOException
 import java.nio.file.Files
-import java.nio.file.InvalidPathException
 import java.nio.file.Path
-import java.nio.file.Paths
 
 public class TopologyStatePaths(
     private val envReader: EnvReader = EnvReader(System::getenv),
@@ -31,17 +29,8 @@ public class TopologyStatePaths(
      *  daemon's working directory. */
     public fun of(topology: Topology?): StatePaths {
         val declared = topology?.daemon?.stateDir?.takeIf { it.isNotBlank() } ?: return fromEnvironment()
-        // The parameter is `_` because the exception is DELIBERATELY unused: an unparseable path is
-        // the documented fallback above, not a swallowed failure.
-        val path = try {
-            when {
-                declared == "~" -> homeDir
-                declared.startsWith("~/") -> homeDir.resolve(declared.removePrefix("~/"))
-                else -> Paths.get(declared)
-            }
-        } catch (_: InvalidPathException) {
-            return fromEnvironment()
-        }
+        // an unparseable path is the documented fallback above, not a swallowed failure
+        val path = UserHome.declared(declared, homeDir) ?: return fromEnvironment()
         return StatePaths(baseOverride = path)
     }
 

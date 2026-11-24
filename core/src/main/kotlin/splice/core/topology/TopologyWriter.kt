@@ -419,7 +419,7 @@ private class TopologyChecks(
             topology.telemetry.operator.findings() +
             topology.providers.mapNotNull { (key, provider) -> provider.forwarded.finding(key) } +
             CustomProviderChecks(topology, configDir).findings() + DoorChecks(topology).findings() +
-            GatewayMoveChecks(topology).findings()
+            LaunchProfileChecks(topology).findings() + GatewayMoveChecks(topology).findings()
 
     /** An auth kind its provider's dialect cannot carry, asked the way head assembly asks it ([AuthCompatibility]), so
      *  the pairing refuses boot with every other finding instead of skipping that head behind a running daemon. */

@@ -89,36 +89,8 @@ internal class AcpSkillsTest {
         val home = tmp.resolve("home")
         val project = tmp.resolve("work")
         Files.createDirectories(project)
-        writeSkill(
-            home.resolve(".claude/skills/audit"),
-            "---\ndescription: Run quality audit\nargument-hint: \"[--mode skill]\"\n---\nBody\n",
-        )
-        writeSkill(
-            home.resolve(".claude/skills/goal"),
-            "---\ndescription: Local shadowed goal\n---\nBody\n",
-        )
-        writeSkill(
-            project.resolve(".agents/skills/harden"),
-            "---\ndescription: Adversarial audit\n---\nBody\n",
-        )
-        writeCommand(home.resolve(".claude/commands/eli.md"), "---\ndescription: Ask Eli\n---\nBody\n")
-
-        val sessionJson =
-            """{"sessionId":"s-1","modes":{"currentModeId":"default"},"configOptions":[""" +
-                """{"id":"model","currentValue":"gemini-4-neon",""" +
-                """"options":[{"value":"gemini-4-neon","name":"Gemini 4 Neon"}]}]}"""
-        val agyCmd = """echo '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":""" +
-            """{"sessionUpdate":"available_commands_update","availableCommands":[""" +
-            """{"name":"goal","description":"Agy native goal","input":{"hint":"<goal>"}}]}}'"""
-        val script = listOf(
-            """read l; echo '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}'""",
-            """read l; $agyCmd; echo '{"jsonrpc":"2.0","id":2,"result":$sessionJson}'""",
-            "read l",
-            """echo '{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}'""",
-            "read l",
-        ).joinToString("\n")
-        val agent = tmp.resolve("agent.sh")
-        Files.writeString(agent, script)
+        seedSkillsAndCommands(home, project)
+        val agent = writeMockAgyAgent(tmp.resolve("agent.sh"))
         val args = listOf(
             "--output-format",
             "stream-json",
@@ -143,6 +115,35 @@ internal class AcpSkillsTest {
         assertTrue(listOf("goal", "audit", "harden", "eli").all { it in slash }, slash.toString())
         assertTrue(listOf("audit", "harden", "goal").all { it in skills }, skills.toString())
         assertFalse("eli" in skills)
+    }
+
+    private fun seedSkillsAndCommands(home: Path, project: Path) {
+        writeSkill(
+            home.resolve(".claude/skills/audit"),
+            "---\ndescription: Run quality audit\nargument-hint: \"[--mode skill]\"\n---\nBody\n",
+        )
+        writeSkill(home.resolve(".claude/skills/goal"), "---\ndescription: Local shadowed goal\n---\nBody\n")
+        writeSkill(project.resolve(".agents/skills/harden"), "---\ndescription: Adversarial audit\n---\nBody\n")
+        writeCommand(home.resolve(".claude/commands/eli.md"), "---\ndescription: Ask Eli\n---\nBody\n")
+    }
+
+    private fun writeMockAgyAgent(agent: Path): Path {
+        val sessionJson =
+            """{"sessionId":"s-1","modes":{"currentModeId":"default"},"configOptions":[""" +
+                """{"id":"model","currentValue":"gemini-4-neon",""" +
+                """"options":[{"value":"gemini-4-neon","name":"Gemini 4 Neon"}]}]}"""
+        val agyCmd = """echo '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":""" +
+            """{"sessionUpdate":"available_commands_update","availableCommands":[""" +
+            """{"name":"goal","description":"Agy native goal","input":{"hint":"<goal>"}}]}}}'"""
+        val script = listOf(
+            """read l; echo '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}'""",
+            """read l; $agyCmd; echo '{"jsonrpc":"2.0","id":2,"result":$sessionJson}'""",
+            "read l",
+            """echo '{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}'""",
+            "read l",
+        ).joinToString("\n")
+        Files.writeString(agent, script)
+        return agent
     }
 
     private fun driveSession(

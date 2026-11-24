@@ -10,7 +10,6 @@ import splice.core.util.TopologyRefusal
 import splice.modes.api.FoundMode
 import splice.modes.api.ModeCatalog
 import splice.modes.api.ModeCatalogReader
-import java.io.IOException
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
@@ -44,26 +43,25 @@ internal class ExternalModes(
         return LoadedMods(catalog, findings, loaded)
     }
 
-    private fun readJar(mod: ModJar, findings: MutableList<TopologyFinding>): LoadedMod? = try {
-        val artifact = artifacts.acquire(mod, directory)
+    private fun readJar(mod: ModJar, findings: MutableList<TopologyFinding>): LoadedMod? {
+        val field = if (mod.path == null) "url" else "path"
+        val artifact = Cancellables.runCatchingBestEffort { artifacts.acquire(mod, directory) }.getOrElse { failure ->
+            findings += when (failure) {
+                is ModFileFailure -> mod.finding(failure.reason, failure.field.ifEmpty { field })
+                is NoSuchFileException -> mod.finding("JAR file does not exist", field)
+                else -> mod.finding("could not read mod source", field)
+            }
+            return null
+        }
         val entries = Cancellables.runCatchingBestEffort { ModJarEntries.read(artifact.bytes) }.getOrElse { failure ->
-            if (failure is ModFileFailure) throw failure
-            throw ModFileFailure("archive is not a valid JAR", if (mod.path == null) "url" else "path")
+            val reason = (failure as? ModFileFailure)?.reason ?: "archive is not a valid JAR"
+            findings += mod.finding(reason, field)
+            return null
         }
         val loader = ModJarClassLoader(parent, entries)
         val catalog = ModeCatalogReader(loader, requireLocalProviders = true).read()
         if (catalog.listed.isEmpty()) findings += mod.finding("archive has no modes in splice-modes/index")
-        LoadedMod(mod, artifact.path, artifact.takeIf { it.downloaded }, catalog)
-    } catch (failure: ModFileFailure) {
-        findings += mod.finding(failure.reason, failure.field)
-        null
-    } catch (_: NoSuchFileException) {
-        findings += mod.finding("JAR file does not exist", "path")
-        null
-    } catch (_: IOException) {
-        val field = if (mod.path == null) "url" else "path"
-        findings += mod.finding("could not read mod source", field)
-        null
+        return LoadedMod(mod, artifact.path, artifact.takeIf { it.downloaded }, catalog)
     }
 }
 

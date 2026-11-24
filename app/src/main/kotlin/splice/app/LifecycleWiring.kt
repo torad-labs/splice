@@ -7,6 +7,7 @@ package splice.app
 import splice.app.capability.CapabilityAftercare
 import splice.app.cli.AdminSupport
 import splice.app.cli.ConfigFixOffer
+import splice.app.modes.ModeBoot
 import splice.app.provider.local.LocalRowBootFindings
 import splice.core.GATEWAY_VERSION
 import splice.core.config.RunningJar
@@ -21,6 +22,7 @@ import splice.launch.install.InstallLayout
 import splice.lifecycle.prices.PriceRefresh
 import splice.lifecycle.prices.PriceRefreshSettings
 import splice.lifecycle.restart.ConfigRepair
+import splice.lifecycle.restart.RestartChecks
 import splice.lifecycle.restart.RestartCommand
 import splice.lifecycle.start.DaemonColdStart
 import splice.lifecycle.units.UpgradeUnits
@@ -56,22 +58,23 @@ internal object LifecycleWiring {
         launchJar: RunningJar = jar,
         now: Boolean = false,
         waitAll: Boolean = false,
-    ): Boolean =
-        RestartCommand(
+    ): Boolean {
+        val env = EnvReader(System::getenv)
+        val command = RestartCommand(
             output,
             errors,
-            EnvReader(System::getenv),
+            env,
             launchJar,
             repair = ConfigRepair { ConfigFixOffer().offer() },
-            runtimes = LocalRowBootFindings(EnvReader(System::getenv)),
-        ).let { command ->
-            val sockets = InstallWiring.listenerSockets(EnvReader(System::getenv))
-            if (sockets == null) {
-                command.restart(expectedVersion, waitForCompactions, now = now, waitAll = waitAll)
-            } else {
-                command.restart(expectedVersion, waitForCompactions, sockets, now = now, waitAll = waitAll)
-            }
+            checks = RestartChecks(ModeBoot().beside(env), LocalRowBootFindings(env)),
+        )
+        val sockets = InstallWiring.listenerSockets(env)
+        return if (sockets == null) {
+            command.restart(expectedVersion, waitForCompactions, now = now, waitAll = waitAll)
+        } else {
+            command.restart(expectedVersion, waitForCompactions, sockets, now = now, waitAll = waitAll)
         }
+    }
 
     fun ensureDaemon(port: Int): Boolean =
         DaemonColdStart(output, errors, EnvReader(System::getenv), jar).ensureDaemon(port)

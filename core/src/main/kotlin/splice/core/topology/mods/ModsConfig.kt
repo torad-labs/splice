@@ -1,6 +1,7 @@
 package splice.core.topology.mods
 
 import splice.core.topology.TopologyFinding
+import java.net.URI
 
 /** Pinned mode archives declared outside the canonical topology schema. */
 public data class ModsConfig(
@@ -13,7 +14,7 @@ public data class ModsConfig(
 public data class ModJar(
     val name: String,
     val path: String?,
-    val url: String?,
+    val url: URI?,
     val sha256: String,
     val index: Int,
     val lines: Map<String, Int>,

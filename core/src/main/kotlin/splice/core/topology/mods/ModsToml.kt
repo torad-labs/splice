@@ -6,6 +6,9 @@ import splice.core.topology.TopologyFinding
 import splice.core.topology.toml.TomlEntry
 import splice.core.topology.toml.TomlKind
 import splice.core.topology.toml.TomlScan
+import splice.core.topology.validPortRange
+import java.net.URI
+import java.net.URISyntaxException
 
 /** Reads and blanks the mod tables in place, leaving line numbers of all other settings alone. */
 public class ModsToml(private val text: String) {
@@ -128,12 +131,16 @@ public class ModsToml(private val text: String) {
             return name
         }
 
-        private fun source(findings: MutableList<TopologyFinding>): Pair<String?, String?>? {
+        private fun source(findings: MutableList<TopologyFinding>): Pair<String?, URI?>? {
+            val path = values["path"]
+            val address = values["url"]?.let(::ModUrl)
+            address?.problem?.let { findings += issue("url", it) }
+            val url = address?.uri
             if (("path" in values) == ("url" in values)) {
                 findings += issue("", "declare exactly one of path or url")
                 return null
             }
-            return (values["path"] to values["url"]).takeUnless { (path, url) -> (path ?: url) == null }
+            return (path to url).takeUnless { path == null && url == null }
         }
 
         private fun issue(key: String, message: String): TopologyFinding {
@@ -143,6 +150,28 @@ public class ModsToml(private val text: String) {
     }
 }
 
+/** A mod's fetch address is validated as a declaration, without asking the network. */
+private class ModUrl(raw: String) {
+    private val parsed = try {
+        URI(raw).parseServerAuthority()
+    } catch (_: URISyntaxException) {
+        null
+    }
+
+    val problem = when {
+        parsed == null -> "expected a valid HTTP or HTTPS URL"
+        parsed.scheme?.lowercase() !in WEB_SCHEMES || parsed.host == null -> "expected an HTTP or HTTPS URL with a host"
+        parsed.rawUserInfo != null -> "URL must not contain embedded credentials"
+        invalidPort(parsed) -> "URL port must be in $validPortRange"
+        else -> null
+    }
+    val uri: URI? = parsed.takeIf { problem == null }
+
+    private fun invalidPort(uri: URI): Boolean =
+        if (uri.port == -1) uri.rawAuthority.endsWith(':') else uri.port !in validPortRange
+}
+
+private val WEB_SCHEMES = setOf("http", "https")
 private const val MODS_ROOT = "mods"
 private val JAR_TABLE = listOf(MODS_ROOT, "jar")
 private val DIR_KEY = listOf(MODS_ROOT, "dir")

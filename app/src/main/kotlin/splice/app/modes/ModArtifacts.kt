@@ -6,9 +6,7 @@ import splice.core.util.Cancellables
 import splice.core.util.SecureFile
 import java.io.IOException
 import java.io.InputStream
-import java.net.HttpURLConnection
 import java.net.URI
-import java.net.URISyntaxException
 import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
@@ -33,43 +31,14 @@ internal class ModArtifacts(private val stateDir: Path) {
         return artifact
     }
 
-    private fun urlJar(pin: String, url: String): PinnedMod {
-        val address = address(url)
+    private fun urlJar(pin: String, address: URI): PinnedMod {
         val path = stateDir.resolve("mod-$pin.jar")
         val cached = try {
             read(path)
         } catch (_: NoSuchFileException) {
             null
         }
-        return if (cached == null) PinnedMod(path, download(address), true) else PinnedMod(path, cached, false)
-    }
-
-    private fun address(raw: String): URI {
-        val uri = try {
-            URI(raw)
-        } catch (_: URISyntaxException) {
-            throw ModFileFailure("expected an HTTP or HTTPS URL", "url")
-        }
-        val web = uri.scheme?.lowercase() in HTTP_SCHEMES && uri.host != null
-        if (!web || uri.userInfo != null) {
-            throw ModFileFailure("expected an HTTP or HTTPS URL without embedded credentials", "url")
-        }
-        return uri
-    }
-
-    private fun download(address: URI): ByteArray {
-        val connection = address.toURL().openConnection() as HttpURLConnection
-        try {
-            connection.instanceFollowRedirects = false
-            connection.connectTimeout = MOD_TIMEOUT_MS
-            connection.readTimeout = MOD_TIMEOUT_MS
-            if (connection.responseCode !in HTTP_OK_START..HTTP_OK_END) {
-                throw ModFileFailure("download did not return success; use a direct URL", "url")
-            }
-            return connection.inputStream.use(::bounded)
-        } finally {
-            connection.disconnect()
-        }
+        return if (cached == null) PinnedMod(path, ModDownload.read(address), true) else PinnedMod(path, cached, false)
     }
 
     private fun read(path: Path): ByteArray {
@@ -96,7 +65,7 @@ internal data class PinnedMod(val path: Path, val bytes: ByteArray, val download
 /** A local archive must be contained by its directory even after resolving symbolic links. */
 internal class ModDirectory(private val config: ModsConfig, private val configDir: Path) {
     private val configured = config.dir != null || config.jars.any { it.path?.let(::isRelative) == true }
-    val root: Result<Path?> = Cancellables.runCatchingCancellable { if (configured) root() else null }
+    val root: Result<Path?> = Cancellables.runCatchingBestEffort { if (configured) root() else null }
 
     fun jar(raw: String): Path {
         val declared = path(raw)
@@ -164,14 +133,4 @@ internal class ModDirectory(private val config: ModsConfig, private val configDi
 internal class ModFileFailure(val reason: String, val field: String = "") : IOException(reason)
 
 // Bound the raw bytes held during verification, before any ZIP expansion.
-private const val MAX_JAR_BYTES = 32 * 1024 * 1024
-
-// A stalled source should be a finding rather than keeping preflight or startup waiting indefinitely.
-private const val MOD_TIMEOUT_MS = 10_000
-
-// HTTP defines successful responses as 2xx, inclusive of both endpoints.
-private const val HTTP_OK_START = 200
-
-// The final status in HTTP's successful class.
-private const val HTTP_OK_END = 299
-private val HTTP_SCHEMES = setOf("http", "https")
+internal const val MAX_JAR_BYTES = 32 * 1024 * 1024

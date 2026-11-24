@@ -313,17 +313,22 @@ leave its boundary. Only archives listed explicitly are loaded.
 Use the [mode packaging contract](../../modes/README.md#how-splice-finds-a-mode) for the service descriptor,
 mode index, and manifest. The configured `name` identifies the archive, not the modes it contributes.
 Use each manifest's mode name in `[modes.<name>]`. No discovered mode, server, or offered tool name can
-overlap another mode's claim. Bundle dependencies in the JAR rather than listing them in a manifest
-`Class-Path`. A JAR can be at most 32 MiB on disk and 64 MiB expanded.
+overlap another mode's claim. Compile against splice's mode API and the libraries its types use, such as
+Kotlin serialization JSON. The daemon's classpath always wins; bundle only dependencies it doesn't already
+provide, or relocate private dependencies that need a different version. Don't bundle entries under
+`splice/core/` or `splice/modes/api/`, or reference other JARs in a manifest `Class-Path`.
+A JAR can be at most 32 MiB on disk and 64 MiB expanded.
 
-URL entries use a direct HTTP(S) URL without embedded credentials or redirects. The daemon downloads into memory,
+URL entries use a direct HTTP(S) URL without embedded credentials or redirects. The entire download, including
+the response body, has a ten-second deadline. The daemon downloads into memory,
 checks the pin and the catalog, then writes `<state>/mod-<sha256>.jar` atomically with mode 0600. A matching
 cache works without network access. A bad cache is a finding, not permission to replace it; remove the bad cache
 to fetch the same pin again. To upgrade, set the new trusted pin (and URL, if it changed), then restart.
 Remove the entry and restart to stop loading it; unneeded cached versions can be removed separately.
 
-`splice check-config` does the same verification, even for a cold URL, without writing a cache. Boot refuses
-with the collected findings before listeners bind. On success it logs the loaded paths and verified pins.
+`splice check-config` verifies pins and discovers modes, even for a cold URL, without writing a cache.
+`splice restart` runs the same checks before stopping the existing daemon. On successful boot splice logs the
+loaded paths and verified pins. Management route ownership is checked when the daemon mounts its control router.
 Only configure JARs you trust with everything the daemon can access. Pinning verifies the chosen bytes;
 the class loader is not a sandbox, and configuration verification instantiates the registered providers too.
 

@@ -1,6 +1,8 @@
 package splice.app.modes
 
 import com.sun.net.httpserver.HttpServer
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -13,22 +15,30 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.DaemonProcess
 import splice.app.cli.CONFIG_REFUSED_EXIT
 import splice.app.cli.ConfigPreflight
+import splice.core.config.RunningJar
 import splice.core.server.ModAnswer
 import splice.core.server.ModCaller
 import splice.core.server.ModRequest
 import splice.core.server.ModResponse
+import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.util.TopologyRefusal
+import splice.harness.agent.AgentSession
+import splice.lifecycle.restart.RestartChecks
+import splice.lifecycle.restart.RestartCommand
 import splice.modes.api.Mode
 import splice.modes.api.ModeAnswer
 import splice.modes.api.ModeCall
 import java.io.ByteArrayOutputStream
 import java.net.InetSocketAddress
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
 import java.security.MessageDigest
 import java.util.HexFormat
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.jar.JarEntry
 import java.util.jar.JarOutputStream
 
@@ -59,6 +69,104 @@ class ExternalModesTest {
         val request = ModRequest("GET", listOf("demo"), caller, emptyMap(), emptyMap(), ByteArray(0))
         val answer = assertInstanceOf(ModAnswer.Answered::class.java, ModeServerRoutes(modes).answer("demo", request))
         assertEquals("from the pinned archive", answer.response?.text())
+    }
+
+    @Test
+    fun `a mod bundling JsonObject can answer a real tool call with daemon JSON`(@TempDir root: Path) {
+        val fixture = ModFixture(root)
+        val jsonClass = "kotlinx/serialization/json/JsonObject.class"
+        val bytes = modJar(extras = mapOf(jsonClass to classBytes(jsonClass)))
+        fixture.store("demo.jar", bytes)
+        fixture.config(modRow("demo", "path", "demo.jar", pin(bytes)))
+
+        val start = DaemonProcess().prepare(fixture.env)
+        val modes = DaemonModes(start.boot.modes.catalog, start.loaded.topology.modes, listOf("head"), fixture.state)
+        val input = JsonObject(mapOf("value" to JsonPrimitive("through the mode API")))
+        val answer = ModeTools(modes, "head").answer(
+            "mcp__ext_demo__echo",
+            input,
+            AgentSession("session", null, "head", "model", "head"),
+        )
+        assertFalse(answer.error, answer.text)
+        assertEquals("through the mode API", answer.text)
+    }
+
+    @Test
+    fun `an invalid URL port a missing jar and a wrong pin are all reported`(@TempDir root: Path) {
+        val fixture = ModFixture(root)
+        val bytes = modJar()
+        fixture.store("wrong.jar", modJar(message = "different content"))
+        fixture.config(
+            modRow("url", "url", "http://127.0.0.1:70000/a.jar", pin(bytes)) +
+                modRow("missing", "path", "missing.jar", pin(bytes)) +
+                modRow("wrong", "path", "wrong.jar", pin(bytes)),
+        )
+        fixture.assertRefuses(
+            "mods.jar[1].url",
+            "URL port must be in 1..65535",
+            "mods.jar[2].path",
+            "JAR file does not exist",
+            "mods.jar[3].sha256",
+            "SHA-256 does not match",
+        )
+    }
+
+    @Test
+    fun `archives cannot write into the core or modes API namespace even in versioned entries`(@TempDir root: Path) {
+        val fixture = ModFixture(root)
+        val core = modJar(extras = mapOf("splice/core/Injected.class" to byteArrayOf(0)))
+        val api = modJar(extras = mapOf("META-INF/versions/21/splice/modes/api/Injected.class" to byteArrayOf(0)))
+        fixture.store("core.jar", core)
+        fixture.store("api.jar", api)
+        fixture.config(modRow("core", "path", "core.jar", pin(core)) + modRow("api", "path", "api.jar", pin(api)))
+        fixture.assertRefuses(
+            "mods.jar[1].path",
+            "mods.jar[2].path",
+            "reserved splice.core or splice.modes.api packages",
+        )
+    }
+
+    @Test
+    fun `restart refuses a missing mod before stopping anything`(@TempDir root: Path) {
+        val fixture = ModFixture(root)
+        fixture.store("other.jar", modJar())
+        fixture.config(modRow("missing", "path", "missing.jar", pin(modJar())))
+        val lines = mutableListOf<String>()
+        val output = TerminalOutput { lines += it }
+        val checks = RestartChecks(ModeBoot().beside(fixture.env))
+        val command = RestartCommand(output, output, fixture.env, RunningJar { null }, checks = checks)
+
+        assertFalse(command.restart())
+        val said = lines.joinToString("\n")
+        assertTrue("mods.jar[1].path" in said, said)
+        assertTrue("nothing was stopped" in said, said)
+    }
+
+    @Test
+    fun `a server dripping bytes cannot keep a mod download alive past its deadline`() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val drip = Executors.newSingleThreadScheduledExecutor()
+        server.createContext("/slow.jar") { exchange ->
+            exchange.sendResponseHeaders(200, 0)
+            drip.scheduleAtFixedRate(
+                {
+                    exchange.responseBody.write(0)
+                    exchange.responseBody.flush()
+                },
+                0,
+                50,
+                TimeUnit.MILLISECONDS,
+            )
+        }
+        server.start()
+        try {
+            val url = URI("http://127.0.0.1:${server.address.port}/slow.jar")
+            val error = assertThrows<ModFileFailure> { ModDownload.read(url, deadlineMs = 2_000) }
+            assertEquals("download exceeded its deadline", error.reason)
+        } finally {
+            drip.shutdownNow()
+            server.stop(0)
+        }
     }
 
     @Test
@@ -245,28 +353,49 @@ private fun modRow(name: String, source: String, location: String, pin: String) 
 private fun pin(bytes: ByteArray): String =
     HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
 
-private fun modJar(name: String = "demo", message: String = "from the pinned archive"): ByteArray {
-    val type = PinnedDemoMode::class.java
-    val classEntry = type.name.replace('.', '/') + ".class"
-    val classBytes = requireNotNull(type.classLoader.getResourceAsStream(classEntry)).use { it.readBytes() }
+private fun modJar(
+    name: String = "demo",
+    message: String = "from the pinned archive",
+    extras: Map<String, ByteArray> = emptyMap(),
+): ByteArray {
+    val original = "splice/app/modes/PinnedDemoMode"
+    val packed = "splice/app/modes/PackedDemoMode"
+    val bytecode = relocateDemo(classBytes("$original.class"), original, packed)
     val bytes = ByteArrayOutputStream()
     JarOutputStream(bytes).use { jar ->
         jar.put("splice-modes/index", "$name\n".toByteArray())
-        jar.put("META-INF/services/splice.modes.api.Mode", "${type.name}\n".toByteArray())
+        jar.put("META-INF/services/splice.modes.api.Mode", "${packed.replace('/', '.')}\n".toByteArray())
         jar.put(
             "splice-modes/$name/mode.toml",
             """
             name = "$name"
             summary = "Pinned mod fixture"
             server = "ext_$name"
-            handler = "${type.name}"
-            tools = []
+            handler = "${packed.replace('/', '.')}"
+            tools = ["echo"]
             """.trimIndent().toByteArray(),
         )
-        jar.put(classEntry, classBytes)
+        jar.put("$packed.class", bytecode)
+        jar.put("splice-modes/$name/tools/echo.json", """{"type":"object"}""".toByteArray())
+        jar.put("splice-modes/$name/tools/echo.md", "Echoes the value.".toByteArray())
         jar.put("pinned-demo.txt", message.toByteArray())
+        extras.forEach { (path, data) -> jar.put(path, data) }
     }
     return bytes.toByteArray()
+}
+
+private fun classBytes(path: String): ByteArray =
+    requireNotNull(PinnedDemoMode::class.java.classLoader.getResourceAsStream(path)).use { it.readBytes() }
+
+/** A compiled fixture under a binary name that only the archive provides; both names have the same UTF-8 length. */
+private fun relocateDemo(bytes: ByteArray, original: String, packed: String): ByteArray {
+    val before = original.toByteArray()
+    val after = packed.toByteArray()
+    check(before.size == after.size)
+    for (at in 0..bytes.size - before.size) {
+        if (before.indices.all { bytes[at + it] == before[it] }) after.copyInto(bytes, destinationOffset = at)
+    }
+    return bytes
 }
 
 private fun JarOutputStream.put(name: String, bytes: ByteArray) {
@@ -276,7 +405,8 @@ private fun JarOutputStream.put(name: String, bytes: ByteArray) {
 }
 
 class PinnedDemoMode : Mode {
-    override fun answer(call: ModeCall): ModeAnswer = ModeAnswer.Text("pinned demo")
+    override fun answer(call: ModeCall): ModeAnswer =
+        ModeAnswer.Text((call.input["value"] as? JsonPrimitive)?.content.orEmpty())
 
     override fun resource(uri: String): String? =
         javaClass.getResourceAsStream("/pinned-demo.txt")?.use { it.readBytes().decodeToString() }

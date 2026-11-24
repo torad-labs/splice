@@ -17,8 +17,8 @@ import java.util.jar.Manifest
 import java.util.zip.CRC32
 
 /**
- * One loader per pinned archive. Classes are child-first so two mods can bundle different versions of a dependency,
- * except the JDK and shared API/core types, whose identity must come from the parent. Mode registration and files
+ * One parent-first loader per pinned archive. API types, including their JSON types, keep the identity of the
+ * daemon's classpath. Mods can supply classes missing from that classpath. Mode registration and files
  * belong only to this archive. No file URLs are opened: lazy class/resource reads use the same bytes that were pinned,
  * including in a cold, read-only preflight. The loader has no open archive or file handles to keep alive.
  */
@@ -26,19 +26,6 @@ internal class ModJarClassLoader(
     parent: ClassLoader,
     private val entries: Map<String, ByteArray>,
 ) : URLClassLoader(emptyArray(), parent) {
-    override fun loadClass(name: String, resolve: Boolean): Class<*> {
-        if (PARENT_FIRST.any(name::startsWith)) return super.loadClass(name, resolve)
-        return synchronized(getClassLoadingLock(name)) {
-            val loaded = findLoadedClass(name) ?: if (classEntry(name) in entries) {
-                findClass(name)
-            } else {
-                super.loadClass(name, false)
-            }
-            if (resolve) resolveClass(loaded)
-            loaded
-        }
-    }
-
     override fun findClass(name: String): Class<*> {
         val bytes = entries[classEntry(name)] ?: throw ClassNotFoundException(name)
         return defineClass(name, bytes, 0, bytes.size)
@@ -72,12 +59,20 @@ internal object ModJarEntries {
         val files = linkedMapOf<String, ByteArray>()
         var remaining = MAX_EXPANDED_BYTES
         for (entry in zip.entries) {
+            checkPackage(entry.name)
             val data = entryBytes(zip, entry, remaining)
             if (files.put(entry.name, data) != null) throw IOException("duplicate mod archive entry")
             remaining -= data.size
         }
         val multiRelease = files[JarFile.MANIFEST_NAME]?.let(::multiRelease) == true
         if (multiRelease) files + runtimeEntries(files) else files
+    }
+
+    private fun checkPackage(name: String) {
+        val resource = if (name.startsWith(VERSIONS)) name.removePrefix(VERSIONS).substringAfter('/', "") else name
+        if (PROTECTED_PACKAGES.any(resource::startsWith)) {
+            throw ModFileFailure("archive entries may not use the reserved splice.core or splice.modes.api packages")
+        }
     }
 
     private fun entryBytes(zip: ZipFile, entry: ZipArchiveEntry, remaining: Int): ByteArray {
@@ -131,4 +126,4 @@ private const val FIRST_VERSIONED_RELEASE = 9
 
 // Each loaded archive is retained in memory; cap expansion even for a small, highly compressed JAR.
 private const val MAX_EXPANDED_BYTES = 64 * 1024 * 1024
-private val PARENT_FIRST = listOf("java.", "javax.", "jdk.", "splice.modes.api.", "splice.core.")
+private val PROTECTED_PACKAGES = listOf("splice/core/", "splice/modes/api/")

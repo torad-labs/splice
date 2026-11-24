@@ -384,10 +384,13 @@
     b.disabled = harnessSaving || DH.busy();
     return b;
   }
-  /** Antigravity's own section: a provider only Claude Desktop runs, drawn while agy serves it or while it is off */
+  /** Antigravity's own section: a provider only Claude Desktop runs, drawn while agy serves it, while it is off, and
+   *  while a change to it waits for a restart or was refused */
   function antigravity() {
     const fam = DH.family('antigravity');
-    if (!fam || !(fam.configured === true || !fam.enabled)) return null;
+    // kept while a change waits for the daemon to start again or splice refused one, so the press never hides its answer
+    const held = (DH.data && DH.data.restart_required) || DH.error(fam ? fam.family : 'antigravity');
+    if (!fam || !(fam.configured === true || !fam.enabled || held)) return null;
     const s = h('section', 'sec prov'); s.style.setProperty('--pc', 'var(--ink-faint)');
     const hd = h('div', 'hd'); hd.append(h('span', 'lamp'), h('b', '', fam.title), h('span', 'cmd', 'Desktop only'));
     s.append(hd, harnessRow({ harness: fam.harness, name: DH.name(fam.harness), enabled: fam.enabled }, fam));
@@ -826,7 +829,7 @@
   const setClock = () => { $('#clock').textContent = Deck.clock(); };
   setClock(); setInterval(setClock, 15000);
   let busy = false;
-  const readNow = async () => { if (busy || document.hidden || document.body.classList.contains('locked')) return; busy = true; try { await read(); } finally { busy = false; } };
+  const readNow = async () => { if (busy || harnessSaving || document.hidden || document.body.classList.contains('locked')) return; busy = true; try { await read(); } finally { busy = false; } };
   SPLICE.ready.then(readNow);
   setInterval(readNow, READ_MS);
   addEventListener('splice:signed-in', readNow);

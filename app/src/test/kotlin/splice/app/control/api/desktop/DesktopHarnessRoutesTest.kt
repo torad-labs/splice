@@ -1,8 +1,9 @@
-// GET and PATCH /api/desktop/harnesses on a loopback control port, over a fixture harness map with a ChatGPT provider,
-// a Claude one and a Grok one: what Settings and Accounts read (each family's harness and who chose it, every prefix's
-// switch), what a PATCH refuses whole and leaves unwritten, what one keeps (the console's choice, owner-only, in the
-// one file a Desktop session launcher reads), a reset, a restart that only Antigravity's switch needs, and a file
-// splice can't read, which is reported and never written over.
+// GET and PATCH /api/desktop/harnesses on a loopback control port, over a fixture harness map with two ChatGPT
+// providers (one whose family splice.toml spells its own way), a Claude one and a Grok one: what Settings and Accounts
+// read (each family's harness and who chose it, every prefix's switch), what a PATCH refuses whole and leaves
+// unwritten, what one keeps (the console's choice, owner-only, in the one file a Desktop session launcher reads), a
+// reset, a restart that only Antigravity's switch needs, a file splice can't read, which is reported and never written
+// over, and a console choice that is no valid choice, which the daemon's start names before it drops it.
 package splice.app.control.api.desktop
 
 import io.ktor.client.HttpClient
@@ -62,7 +63,9 @@ private class FixtureTarget(override val harnesses: DesktopHarnesses, var served
 class DesktopHarnessRoutesTest {
     private val client = HttpClient(CIO) { expectSuccess = false }
     private val json = Json { ignoreUnknownKeys = true }
-    private val providers = mapOf("codex" to "openai", "claude" to "anthropic", "grok" to "xai")
+
+    // "work" is a ChatGPT provider whose splice.toml writes its family its own way
+    private val providers = mapOf("codex" to "openai", "work" to "Codex", "claude" to "anthropic", "grok" to "xai")
     private lateinit var server: EmbeddedServer<NettyApplicationEngine, *>
     private lateinit var baseUrl: String
     private lateinit var mgmtKey: String
@@ -128,7 +131,7 @@ class DesktopHarnessRoutesTest {
         assertEquals(listOf("claude-code", "codex"), gpt.getValue("choices").jsonArray.map { it.jsonPrimitive.content })
         assertFalse(gpt.getValue("toggleable").jsonPrimitive.boolean)
         assertTrue(gpt.getValue("configured").jsonPrimitive.boolean, "a ChatGPT provider is in splice.toml")
-        assertEquals(listOf("codex"), gpt.getValue("providers").jsonArray.map { it.jsonPrimitive.content })
+        assertEquals(listOf("codex", "work"), gpt.getValue("providers").jsonArray.map { it.jsonPrimitive.content })
 
         val agy = family(body, "antigravity")
         assertTrue(agy.getValue("enabled").jsonPrimitive.boolean)
@@ -139,6 +142,7 @@ class DesktopHarnessRoutesTest {
         assertEquals("claude-code", switches.getValue("claude-codex--").str("harness"))
         assertEquals("claude-code", switches.getValue("claude-oai--").str("harness"))
         assertEquals("openai", switches.getValue("claude-oai--").str("family"))
+        assertEquals("openai", switches.getValue("claude-work--").str("family"), "a family is read however it is cased")
         assertEquals("claude-code", switches.getValue("claude-grok--").str("harness"))
         assertEquals(JsonNull, switches.getValue("claude-grok--").getValue("family"))
         assertEquals("antigravity", switches.getValue("claude-antigravity--").str("harness"))
@@ -242,6 +246,18 @@ class DesktopHarnessRoutesTest {
         harnesses(antigravity = null).publish()
         val again = json.parseToJsonElement(Files.readString(file)).jsonObject
         assertEquals("codex", switches(again).getValue("claude-codex--").str("harness"))
+    }
+
+    @Test
+    fun `the daemon's start names a console choice that is no valid choice before it drops it`() {
+        Files.createDirectories(file.parent)
+        val bad = """{"family":"openai","harness":"vim","enabled":true,"set_by":"console"}"""
+        Files.writeString(file, """{"version":1,"families":[$bad]}""")
+        val said = mutableListOf<String>()
+        DesktopHarnesses(DesktopHarnessFile(file), providers, null) { said += it }.publish()
+        assertTrue(said.single().contains("not valid: [openai]"), said.toString())
+        val rewritten = switches(json.parseToJsonElement(Files.readString(file)).jsonObject)
+        assertEquals("claude-code", rewritten.getValue("claude-codex--").str("harness"))
     }
 
     private fun harnesses(antigravity: Boolean?): DesktopHarnesses =

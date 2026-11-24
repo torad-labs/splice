@@ -15,6 +15,8 @@ const HARNESSES = [
 type Choice = { harness?: string; enabled?: boolean };
 let held: Record<string, Choice> = {};
 let served = true;
+/** whether Antigravity was on when the stub daemon started; a switch that differs waits for a restart */
+let booted = true;
 /** a PATCH waits for this before it is answered, while a test holds it */
 let hold: Promise<void> | null = null;
 /** what GET answers instead of the map, while a test sets it */
@@ -41,7 +43,7 @@ const snapshot = () => {
       { prefix: "claude-antigravity--", provider: "antigravity", family: "antigravity", ...agy },
     ],
     file: "desktop-harnesses.json", overrides_error: null, ignored: [],
-    restart_required: held.antigravity?.enabled === false,
+    restart_required: agy.enabled !== booted,
   };
 };
 
@@ -79,7 +81,7 @@ afterAll(async () => {
   await browser?.close();
   s?.stop();
 });
-beforeEach(() => { held = {}; served = true; hold = null; fail = null; s.calls.length = 0; });
+beforeEach(() => { held = {}; served = true; booted = true; hold = null; fail = null; s.calls.length = 0; });
 
 async function settings(): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
@@ -193,6 +195,21 @@ test("Accounts shows each provider's harness, and GPT's Codex opt-in and Antigra
     await expect(section(page, "Antigravity").locator(".harness .st")).toHaveText("Off");
     await expect(section(page, "Antigravity")).toContainText("Restart splice to apply");
     bunExpect(patches()[1]!.body).toEqual({ antigravity: { enabled: false } });
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("Accounts keeps Antigravity's section through Turn on, with the restart it waits for, before agy serves it", async () => {
+  served = false; booted = false; held = { antigravity: { enabled: false } };
+  const page = await accounts();
+  try {
+    await expect(section(page, "Antigravity").locator(".harness .st")).toHaveText("Off");
+    await section(page, "Antigravity").getByRole("button", { name: /Turn on/ }).click();
+    await expect(section(page, "Antigravity").locator(".harness .st")).toHaveText("Antigravity");
+    await expect(section(page, "Antigravity")).toContainText("Restart splice to apply");
+    await expect(section(page, "Antigravity").getByRole("button", { name: /Turn off/ })).toBeEnabled();
+    bunExpect(patches()[0]!.body).toEqual({ antigravity: { enabled: true } });
   } finally {
     await page.close();
   }

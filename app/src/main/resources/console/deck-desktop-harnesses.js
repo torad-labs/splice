@@ -24,8 +24,13 @@ window.DESKTOP_HARNESSES = (() => {
   const SWITCH = [{ v: false, label: 'Off' }, { v: true, label: 'On' }];
   const SET_BY = { console: 'Set here', 'splice.toml': 'From splice.toml', default: 'Default' };
 
+  /** bumped by every read and save as it starts, and by a save as it lands: a read answered after a newer read or save
+   *  began is stale, and never draws over the map that save returned */
+  let generation = 0;
   H.read = async () => {
+    const mine = ++generation;
     const res = await API.get('/api/desktop/harnesses');
+    if (mine !== generation) return res.ok;
     H.status = res.status;
     if (res.ok && res.body && Array.isArray(res.body.families)) H.data = res.body;
     else if (res.status === 404) H.data = null;
@@ -42,7 +47,9 @@ window.DESKTOP_HARNESSES = (() => {
   H.of = (key, family) => {
     if (!H.data) return null;
     const sw = H.data.switches.find(s => s.provider === key);
-    const fam = sw && sw.family ? H.family(sw.family) : family === 'openai' || family === 'codex' ? H.family('openai') : null;
+    // a family is read however it is cased, and a `codex` family is OpenAI's, as the daemon reads both (HarnessFamily)
+    const named = String(family || '').toLowerCase();
+    const fam = sw && sw.family ? H.family(sw.family) : named === 'openai' || named === 'codex' ? H.family('openai') : null;
     const harness = sw ? sw.harness : fam ? fam.harness : H.data.default_harness;
     const enabled = sw ? sw.enabled !== false : fam ? fam.enabled !== false : true;
     return { harness, name: H.name(harness), enabled, family: fam };
@@ -52,8 +59,9 @@ window.DESKTOP_HARNESSES = (() => {
   H.save = async changes => {
     if (saving) return { state: 'busy' };
     saving = true;
+    ++generation;
     let res;
-    try { res = await API.patch('/api/desktop/harnesses', changes); } finally { saving = false; }
+    try { res = await API.patch('/api/desktop/harnesses', changes); } finally { saving = false; ++generation; }
     if (!res.ok || !res.body || !Array.isArray(res.body.families)) {
       const per = res.body && res.body.families && typeof res.body.families === 'object' && !Array.isArray(res.body.families) ? res.body.families : {};
       const said = why(res);

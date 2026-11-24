@@ -86,8 +86,7 @@ internal class DesktopHarnesses(
     fun switches(states: List<FamilyState>): List<HarnessSwitch> {
         val byFamily = states.associateBy { it.family }
         val served = providers.entries.flatMap { (key, family) ->
-            val chosen = HarnessFamily.entries.firstOrNull { it.family != null && it.family == family }
-            val state = chosen?.let(byFamily::get)
+            val state = HarnessFamily.entries.firstOrNull { it.claims(family) }?.let(byFamily::get)
             val canonical = GatewaySelectorPrefixes.canonical(key)
             listOf(canonical, ClientModelNames.prefixOf(canonical)).map { prefix ->
                 val choice = state?.choice ?: HarnessChoice(DesktopHarness.CLAUDE_CODE, enabled = true)
@@ -114,11 +113,17 @@ internal class DesktopHarnesses(
         put("switches", JsonArray(switches(states).map(::switchJson)))
     }
 
-    /** The map written again as it resolves now, at the daemon's start; a file that can't be read is left as it is. */
+    /** The map written again as it resolves now, at the daemon's start; a file that can't be read is left as it is. A
+     *  console choice the file holds that is no valid choice is named in [log] before the rewrite drops it. */
     fun publish() {
         when (val read = file.read()) {
             is HarnessFileRead.Unreadable -> log("[desktop] harnesses: ${read.why}; left as it is\n")
-            is HarnessFileRead.Held -> saveQuietly(read.choices)
+            is HarnessFileRead.Held -> {
+                if (read.ignored.isNotEmpty()) {
+                    log("[desktop] harnesses: dropped console choices that are not valid: ${read.ignored}\n")
+                }
+                saveQuietly(read.choices)
+            }
         }
     }
 

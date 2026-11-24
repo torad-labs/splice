@@ -24,14 +24,14 @@ internal enum class DesktopHarness(val wire: String, val title: String, val desc
     ),
 }
 
-/** A model family whose Desktop sessions have a harness of their own to choose or switch. [family] is the provider
- *  family splice gives its providers (ProviderFamilyRule), null for one no splice.toml provider carries. A family that
- *  is not [toggleable] is always routed; only its harness changes. */
+/** A model family whose Desktop sessions have a harness of their own to choose or switch. [providerFamilies] are the
+ *  provider families it claims (ProviderFamilyRule's, or a `family` written in splice.toml), in lowercase: none for one
+ *  no splice.toml provider carries. A family that is not [toggleable] is always routed; only its harness changes. */
 internal enum class HarnessFamily(
     val wire: String,
     val title: String,
     val description: String,
-    val family: String?,
+    val providerFamilies: Set<String>,
     val default: DesktopHarness,
     val choices: List<DesktopHarness>,
     val toggleable: Boolean,
@@ -41,7 +41,7 @@ internal enum class HarnessFamily(
         "GPT models",
         "Sessions on a ChatGPT or OpenAI model. Claude Code through Splice runs them on the GPT model; Codex CLI is " +
             "for a session launcher that starts Codex instead, and only when you choose it",
-        "openai",
+        setOf("openai", "codex"),
         DesktopHarness.CLAUDE_CODE,
         listOf(DesktopHarness.CLAUDE_CODE, DesktopHarness.CODEX),
         toggleable = false,
@@ -51,11 +51,15 @@ internal enum class HarnessFamily(
         "Antigravity",
         "Sessions on Antigravity's Gemini models, which only agy runs. Off leaves Antigravity out of Desktop and the " +
             "daemon never runs agy",
-        null,
+        emptySet(),
         DesktopHarness.ANTIGRAVITY,
         listOf(DesktopHarness.ANTIGRAVITY),
         toggleable = true,
     ),
+    ;
+
+    /** Whether a provider of [family], however splice.toml or ProviderFamilyRule cases it, is one of this family's. */
+    fun claims(family: String?): Boolean = family?.lowercase() in providerFamilies
 }
 
 /** The harnesses and families by the ids the file and the API spell them in. */

@@ -42,7 +42,7 @@ internal class ModeSwitch(private val modes: DaemonModes) {
         val wanted = change.applied(modes.settings[mode.name] ?: ModeSetting())
         return when (val written = ModeTableWrite(writer).write(mode.name, wanted)) {
             is TopologyWriteResult.Written -> {
-                val empty = wanted.on == null && wanted.heads.isEmpty()
+                val empty = wanted == ModeSetting()
                 modes.follow(if (empty) modes.settings - mode.name else modes.settings + (mode.name to wanted))
                 Switched.Done(mode)
             }
@@ -110,7 +110,7 @@ internal class ModeSwitch(private val modes: DaemonModes) {
                 val perHead = heads.entries.fold(current.heads) { acc, (head, tri) ->
                     tri.value?.let { acc + (head to it) } ?: (acc - head)
                 }
-                return ModeSetting(everyHead, perHead)
+                return current.copy(on = everyHead, heads = perHead)
             }
         }
     }

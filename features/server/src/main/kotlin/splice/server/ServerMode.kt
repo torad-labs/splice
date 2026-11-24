@@ -7,6 +7,7 @@ package splice.server
 import kotlinx.coroutines.CoroutineDispatcher
 import splice.core.config.TurnKey
 import splice.core.server.ServedTurnBoard
+import splice.core.server.ServerModRoutes
 import splice.core.topology.ServerAddress
 import splice.core.topology.ServerConfig
 import splice.core.util.EnvReader
@@ -31,13 +32,15 @@ internal class ServedHeads(private val all: SharedHeads, private val commands: L
 }
 
 /** How the listener reaches this machine's heads: the turn key they admit, and the board they say on how each turn the
- *  listener handed them went (F5); the environment a bucket export's key is read from (F5); and the [gateway] that
- *  serves a team's turns at `/door` on the providers, with no head, once the daemon opened it. */
+ *  listener handed them went (F5); the environment a bucket export's key is read from (F5); the [gateway] that
+ *  serves a team's turns at `/door` on the providers, with no head, once the daemon opened it; and the [mods] that
+ *  answer key holders under `/server/mod/<name>/...`, when the daemon carries modes. */
 public data class ServerReach(
     val turnKey: TurnKey,
     val served: ServedTurnBoard = ServedTurnBoard(),
     val env: EnvReader = EnvReader { null },
     val gateway: TeamGateway? = null,
+    val mods: ServerModRoutes? = null,
 )
 
 public class ServerMode(

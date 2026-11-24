@@ -81,7 +81,7 @@ public object ConfigFindings {
             CapabilityDeclarations(topology?.heads?.keys, messages = messages).read(split.tables)
         }
         val modes = { topology: Topology? ->
-            ModeSettingsReader(topology?.heads?.keys, beside.modes?.names).read(modeTables.tables)
+            ModeSettingsReader(topology?.heads?.keys, beside.modes?.names, served(topology)).read(modeTables.tables)
         }
         // A structural finding is answered BEFORE any decode: a head roster written as an array of strings sends the
         // decoder into the loop the preflight exists to prevent, so the decoder never sees such a file.
@@ -109,6 +109,15 @@ public object ConfigFindings {
         val warnings = TopologyFindings.warnings(topology)
             .map { it.copy(line = lineOf(text, it.path)) } + beside.retired?.warnings(topology).orEmpty()
         return refused(checks + OperatorTelemetryFindings.of(topology) + local + elsewhere(topology), ready, warnings)
+    }
+
+    /** The first path segments the server's listener serves its commands at: each `[server] commands` entry, and for
+     *  one a head runs, that head's key and command, either of which reaches it there; null without a topology. */
+    private fun served(topology: Topology?): Set<String>? = topology?.let { read ->
+        read.server.commands.flatMap { command ->
+            val keys = read.resolveHeadKeys(command)
+            listOf(command) + keys + keys.mapNotNull { read.heads[it]?.claude?.command }
+        }.toSet()
     }
 
     /** A knob finding keeps boot's own reason as written (the console writer pins its exact text); the boot

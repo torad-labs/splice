@@ -112,6 +112,13 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # drop_blocks = ["team-notes"]  # CLAUDE.md blocks: <!-- name --> … <!-- /name --> or # BEGIN name … # END name
 # drop_names = ["team-", "old"]  # skills, agents and commands whose names start with these are left out
 
+# ── modes: turn a mode on or off, per head, and on a team server (modes/README.md) ──
+# `splice setup`, the console's Settings > Modes and `PUT /api/modes/<name>` write this table; its keys are optional.
+# [modes.template]
+# on = true                   # every head; heads = { kimi = false } overrides one
+# server_routes = true        # with [server]: key holders reach the mode at /server/mod/template/... (default false)
+# server_admin_only = true    # and only the people [server] admins names (default false)
+
 # ── ChatGPT Codex subscription via OAuth ───────────────────────────────────
 [providers.codex]
 dialect = "openai-responses"

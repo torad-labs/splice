@@ -77,6 +77,8 @@ The manifest's `on` is the default. splice.toml overrides it per mode:
 [modes.<name>]
 on = true                  # every head
 heads = { kimi = false }   # per head
+server_routes = true       # on a team server: key holders reach it at /server/mod/<name>/...
+server_admin_only = true   # and only the server's admins
 ```
 
 For a mode and a head, in this order: a head outside the manifest's non-empty `only`, or on its `off`, is never
@@ -163,3 +165,8 @@ worker = { kind = "http", url = "http://127.0.0.1:9100/hook", auth_env = "HOOK_K
 - `routes` lists the management routes the mode answers (`ModeRoute`: method, path, and a handler from a
   `ModeRequest` to a `ModeResponse`). splice serves them under `/api/` behind the management key; two modes, or a mode
   and splice, claiming one path refuses boot.
+- `serve(request)` answers a team server's key holders under `/server/mod/<name>/...`, once splice.toml's
+  `[modes.<name>] server_routes` is true (`server_admin_only = true` keeps it to the server's admins). The
+  `ModRequest` names who is asking (`caller`: person, team, admin) and never their key, and carries the method, the
+  path after the mode's name, a few headers, the query and the body; the answer is a `ModResponse` (status, content
+  type, body), or null for a path the mode does not have. See docs/specs/server-mode.md, "Mode routes".

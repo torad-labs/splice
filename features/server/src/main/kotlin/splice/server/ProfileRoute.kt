@@ -18,6 +18,7 @@ import io.ktor.server.response.respondText
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import splice.core.server.SERVER_ROOT
 import splice.core.topology.ServerConfig
 import splice.core.wire.HTTPS_SCHEME
 import splice.core.wire.HTTP_SCHEME

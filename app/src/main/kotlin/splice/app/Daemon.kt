@@ -45,6 +45,7 @@ import splice.app.head.books.BooksKeys
 import splice.app.modes.DaemonModes
 import splice.app.modes.ModeBoot
 import splice.app.modes.ModeHooks
+import splice.app.modes.ModeServerRoutes
 import splice.app.modes.ModeTools
 import splice.app.probe.LocalWindowRefresh
 import splice.app.provider.AntigravityJoin
@@ -385,7 +386,7 @@ public class Daemon(
         // door-network: it answers the door too, which opens below, so a turn that comes first is told to wait.
         share.open(desktop.network)
         // And the server listener, with its keys: `splice server key create` asks the control plane for them.
-        server.open(heads, headServerFactory.served, desktop.team)
+        server.open(heads, headServerFactory.served, desktop.team, modes?.let(::ModeServerRoutes))
         controlPlane.serverMode = server
         // The desktop door, on the control port, choosing among these heads.
         desktop.open(providers, antigravity, controlPort, controlPlane.modelRosters)

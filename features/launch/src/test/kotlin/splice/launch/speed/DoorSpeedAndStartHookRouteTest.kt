@@ -65,6 +65,33 @@ class DoorSpeedAndStartHookRouteTest {
     }
 
     @Test
+    fun `door speed hook unmatches Codex after a session switches to Claude or a non-ChatGPT provider`() {
+        val sessions = SessionSpeeds()
+        val speeds = LaunchSpeeds(
+            sessions = sessions,
+            catalog = SpeedCatalog(codexRosters()),
+            chatGpt = { null },
+            door = { listOf(DoorSpeedTarget("codex", "gpt-5.6-sol")) },
+        )
+        val route = SpeedHookRoute(launchHeadsOf(), speeds, log = {})
+
+        sessions.ran("door-switch", "gpt-5.6-sol", provider = "codex")
+        val codexFast = route.decide(DOOR_HOOK_KEY, """{"session_id":"door-switch","prompt":"/fast"}""")
+        assertEquals("block", codexFast["decision"]?.jsonPrimitive?.content)
+        assertEquals(Speed.FAST, sessions.speedOf("door-switch"))
+
+        // Switching the same session to Claude unmatches Codex so Claude Code handles /fast natively.
+        sessions.ran("door-switch", "claude-opus-4-6", provider = "claude")
+        val afterClaude = route.decide(DOOR_HOOK_KEY, """{"session_id":"door-switch","prompt":"/fast"}""")
+        assertTrue(afterClaude.isEmpty(), "switching back to Claude must pass /fast through: $afterClaude")
+
+        // Even if another non-ChatGPT provider runs the same model slug, lastProvider prevents matching Codex.
+        sessions.ran("door-switch", "gpt-5.6-sol", provider = "openai")
+        val afterOpenAi = route.decide(DOOR_HOOK_KEY, """{"session_id":"door-switch","prompt":"/fast"}""")
+        assertTrue(afterOpenAi.isEmpty(), "non-ChatGPT provider must pass /fast through: $afterOpenAi")
+    }
+
+    @Test
     fun `door speed hook passes through fast and refuses ultrafast when no ChatGPT provider is active`() {
         val rosters = object : HeadDiscoveredModels {
             override fun forHead(key: String): List<DiscoveredModel> = emptyList()
@@ -130,6 +157,26 @@ class DoorSpeedAndStartHookRouteTest {
             listOf(ForegroundToolPhase.SESSION_START, ForegroundToolPhase.START, ForegroundToolPhase.SESSION_END),
             calls.map { it.phase },
         )
+    }
+
+    @Test
+    fun `door foreground hook accepts session_start phase with null tool_use_id for resumed ACP sessions`() {
+        val calls = mutableListOf<ForegroundToolCall>()
+        val owner = UUID.randomUUID().toString()
+        val fgRoute = ForegroundHookRoute(launchHeadsOf(), activity = { calls += it })
+
+        fgRoute.handle(
+            DOOR_HOOK_KEY,
+            buildJsonObject {
+                put("session_id", "door-resumed")
+                put("tool_use_id", JsonNull)
+                put("phase", "session_start")
+            },
+            owner,
+        )
+        assertEquals(listOf(ForegroundToolPhase.SESSION_START), calls.map { it.phase })
+        assertNull(calls.single().toolUseId)
+        assertEquals(owner, calls.single().owner)
     }
 
     private fun codexRosters(): HeadDiscoveredModels = object : HeadDiscoveredModels {

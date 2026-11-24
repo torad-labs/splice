@@ -78,6 +78,46 @@ class CodexPeerHooksTest {
     }
 
     @Test
+    fun `jq in binary path, quoted spaces, and extra handler fields survive inspect and partial migration`(
+        @TempDir tmp: Path,
+    ) {
+        val file = Files.createDirectories(tmp.resolve(".codex")).resolve("hooks.json")
+        Files.writeString(file, JQ_PATH_PARTIAL_HOOKS_JSON)
+
+        val before = hooks.inspect(file)
+        assertEquals(CodexHooksState.NEEDS_MIGRATION, before.state)
+        assertEquals(listOf("missing splice peer hook on SessionEnd"), before.issues)
+
+        assertEquals(CodexHooksOutcome.Written(file, migrated = true), hooks.installOrMigrate(file))
+        assertEquals(CodexHooksState.CURRENT, hooks.inspect(file).state)
+
+        val migrated = Json.parseToJsonElement(Files.readString(file)).jsonObject
+        val events = migrated["hooks"]!!.jsonObject
+        val expectedCmd = "/opt/jq-tools/splice peer codex attach --cwd '/tmp/work folder' --peer-name review"
+        assertHook(events, "SessionStart", expectedCmd, 30)
+        val entry = events["SessionStart"]!!.jsonArray.single().jsonObject["hooks"]!!.jsonArray.single().jsonObject
+        assertEquals("Attaching peer...", entry["statusMessage"]?.jsonPrimitive?.content)
+        assertHook(events, "SessionEnd", "splice peer codex detach", 3)
+    }
+
+    @Test
+    fun `legacy wrapper migration preserves jq binary path, quoted spaces, and extra handler fields`(
+        @TempDir tmp: Path,
+    ) {
+        val file = Files.createDirectories(tmp.resolve(".codex")).resolve("hooks.json")
+        Files.writeString(file, LEGACY_QUOTED_WRAPPER_JSON)
+
+        assertEquals(CodexHooksOutcome.Written(file, migrated = true), hooks.installOrMigrate(file))
+        assertEquals(CodexHooksState.CURRENT, hooks.inspect(file).state)
+
+        val events = Json.parseToJsonElement(Files.readString(file)).jsonObject["hooks"]!!.jsonObject
+        val expectedCmd = """/opt/jq-tools/splice peer codex attach --cwd "/tmp/work folder" --peer-name review"""
+        assertHook(events, "SessionStart", expectedCmd, 30)
+        val entry = events["SessionStart"]!!.jsonArray.single().jsonObject["hooks"]!!.jsonArray.single().jsonObject
+        assertEquals("Custom status", entry["statusMessage"]?.jsonPrimitive?.content)
+    }
+
+    @Test
     fun `malformed hooks json is reported unreadable and never overwritten`(@TempDir tmp: Path) {
         val file = Files.createDirectories(tmp.resolve(".codex")).resolve("hooks.json")
         val broken = "{ not valid json"
@@ -223,6 +263,56 @@ private val LEGACY_HOOKS_JSON = """
           {
             "hooks": [
               { "type": "command", "command": "user-notify stop", "timeout": 5 }
+            ]
+          }
+        ]
+      }
+    }
+""".trimIndent()
+
+private val JQ_PATH_PARTIAL_HOOKS_JSON = """
+    {
+      "hooks": {
+        "SessionStart": [
+          {
+            "hooks": [
+              {
+                "type": "command",
+                "command": "/opt/jq-tools/splice peer codex attach --cwd '/tmp/work folder' --peer-name review",
+                "timeout": 30,
+                "statusMessage": "Attaching peer..."
+              }
+            ]
+          }
+        ],
+        "UserPromptSubmit": [
+          {
+            "hooks": [
+              {
+                "type": "command",
+                "command": "/opt/jq-tools/splice peer codex attach --cwd '/tmp/work folder' --peer-name review",
+                "timeout": 30,
+                "statusMessage": "Attaching peer..."
+              }
+            ]
+          }
+        ]
+      }
+    }
+""".trimIndent()
+
+private val LEGACY_QUOTED_WRAPPER_JSON = """
+    {
+      "hooks": {
+        "SessionStart": [
+          {
+            "hooks": [
+              {
+                "type": "command",
+                "command": "sh -c 'id=$(jq -r .session_id); /opt/jq-tools/splice peer codex attach --cwd \"/tmp/work folder\" --peer-name review \"${'$'}id\"'",
+                "timeout": 30,
+                "statusMessage": "Custom status"
+              }
             ]
           }
         ]

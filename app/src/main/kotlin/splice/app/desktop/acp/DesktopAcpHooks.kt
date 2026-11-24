@@ -87,10 +87,10 @@ internal class DesktopAcpHooks(
 
     private fun notifyForeground(call: ForegroundToolCall) {
         val phase = when (call.phase) {
+            ForegroundToolPhase.SESSION_START -> "session_start"
             ForegroundToolPhase.START -> "start"
             ForegroundToolPhase.END -> "end"
             ForegroundToolPhase.SESSION_END -> "session_end"
-            ForegroundToolPhase.SESSION_START -> return
         }
         val body = JsonWire.string(
             buildJsonObject {

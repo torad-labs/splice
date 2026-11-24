@@ -41,6 +41,7 @@ import splice.client.desktop.DoorSelectors
 import splice.client.models.AnthropicTiers
 import splice.core.config.StatePaths
 import splice.core.config.TurnKey
+import splice.core.speed.SessionSpeeds
 import splice.core.topology.ProviderFamilyRule
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
@@ -58,6 +59,7 @@ internal class DaemonDesktop(
     /** Where Claude Desktop keeps its 3P configuration (desktop-full): the person's own, but a test's fixture home. */
     private val library: DesktopAppLibrary = DesktopAppLibrary(),
     private val turnKey: TurnKey? = null,
+    private val sessionSpeeds: SessionSpeeds? = null,
 ) : DesktopPolicyTarget, HarnessTarget {
     private val key = DesktopKey(statePaths.desktopKeyFile, log)
     private val records = DesktopRecords(statePaths.desktopFile, log)
@@ -148,7 +150,7 @@ internal class DaemonDesktop(
         val (lane, terminal) = claude.open(lineups, door, controlPort = controlPort)
         headLane.open(lineups)
         val callers = listOf(DesktopCaller(key, records, log), terminal)
-        val doorway = DesktopDoor(callers, lineups)
+        val doorway = DesktopDoor(callers, lineups, sessionSpeeds = sessionSpeeds)
         team.open(lineups, topology)
         network.open(doorway, NetworkCaller(lane, machine), lane, PickerRows(claude::rows), machine)
         opened = DesktopService(doorway, switch, lane, lineups, records)

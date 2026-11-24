@@ -53,10 +53,15 @@ public data class DoorSession(
     public fun env(): Map<String, String> = told() + (GATEWAY_TOKEN to key)
 
     /** What the launch takes out of the environment it inherits: every other way to a provider, every model list but
-     *  the gateway's, and a starting model when the gateway names none. */
+     *  the gateway's, a starting model when the gateway names none, and `DISABLE_LOGIN_COMMAND`/`DISABLE_LOGOUT_COMMAND`
+     *  when [disableLogin] is false so an inherited value cannot break Claude Code's built-in `/login`. */
     public fun unset(): List<String> = buildList {
         addAll(gateway.unset)
         if (model == null) add(DESKTOP_MODEL)
+        if (!disableLogin) {
+            add(LOGIN_OFF)
+            add(LOGOUT_OFF)
+        }
     }
 
     /** What the launch's `--settings` overlay carries in its `env` (#791): a person's settings `env` is applied over
@@ -66,6 +71,10 @@ public data class DoorSession(
     public fun settingsEnv(): Map<String, String> = buildMap {
         putAll(gateway.cleared)
         if (model == null) put(DESKTOP_MODEL, "")
+        if (!disableLogin) {
+            put(LOGIN_OFF, "0")
+            put(LOGOUT_OFF, "0")
+        }
         putAll(told())
     }
 

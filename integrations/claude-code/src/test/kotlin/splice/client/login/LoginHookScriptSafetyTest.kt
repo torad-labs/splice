@@ -17,6 +17,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.client.speed.SpeedHook
+import splice.core.client.DOOR_HOOK_KEY
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
@@ -191,6 +193,21 @@ class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
         assertTrue("Splice Console's Accounts page" in script, script)
         assertTrue("splice console" in script, script)
         assertTrue("<head> login" !in script, script)
+    }
+
+    @Test
+    fun `door speed hook fails open for slash fast and blocks slash ultrafast when daemon is offline`() {
+        assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
+        val header = write(tmp, "auth.hdr", "Authorization: Bearer test\n")
+        val body = SpeedHook.script(controlPort = 1, authHeaderFile = header, headKey = DOOR_HOOK_KEY)
+        val script = write(tmp, "door-speed.sh", body)
+
+        val fast = run(script, """{"prompt":"/fast"}""", tmp)
+        assertEquals(0, fast.exit, fast.err)
+        assertEquals("", fast.out, "offline door /fast must fail open so Claude Code's native /fast still works")
+
+        val ultraReason = decision(run(script, """{"prompt":"/ultrafast"}""", tmp))
+        assertTrue("daemon did not answer" in ultraReason, ultraReason)
     }
 
     // The one value that CANNOT be quoted away — it is a bare command word in the generated hook —

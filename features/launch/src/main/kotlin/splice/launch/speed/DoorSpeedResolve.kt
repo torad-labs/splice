@@ -40,8 +40,9 @@ internal class DoorSpeedResolve(
             }
         }
         val lastModel = speeds.sessions.lastModel(session)
+        val lastProvider = speeds.sessions.lastProvider(session)
         return if (lastModel != null) {
-            matchRecordedModel(targets, lastModel, command)
+            matchRecordedModel(targets, lastModel, lastProvider, command)
         } else if (command.speed == Speed.FAST) {
             DoorSpeedMatch.PassThrough
         } else {
@@ -53,9 +54,14 @@ internal class DoorSpeedResolve(
     private fun matchRecordedModel(
         targets: List<DoorSpeedTarget>,
         lastModel: String,
+        lastProvider: String?,
         command: SpeedCommand,
     ): DoorSpeedMatch {
-        val target = targets.firstOrNull { targetMatchesModel(it, lastModel) }
+        val target = if (lastProvider != null) {
+            targets.firstOrNull { it.catalogKey == lastProvider }
+        } else {
+            targets.firstOrNull { targetMatchesModel(it, lastModel) }
+        }
         return when {
             target != null -> DoorSpeedMatch.Matched(target.catalogKey, lastModel)
             command.speed == Speed.FAST -> DoorSpeedMatch.PassThrough

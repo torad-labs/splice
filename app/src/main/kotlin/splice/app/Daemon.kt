@@ -315,6 +315,7 @@ public class Daemon(
             log = log,
         ),
         turnKey = TurnKey(mgmtKey),
+        sessionSpeeds = controlPlane.providerAssembly.sessionSpeeds,
     )
 
     /** desktop-antigravity: Antigravity, a provider only Claude Desktop runs, once agy says what it offers; never asked

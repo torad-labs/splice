@@ -8,6 +8,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -181,19 +182,15 @@ internal class CodexPeerHooks {
     }
 
     private fun updateEvent(existing: JsonElement?, spec: EventSpec): JsonArray? {
-        val array = if (existing == null) {
-            JsonArray(emptyList())
-        } else if (existing is JsonArray) {
-            existing
-        } else {
-            return null
-        }
-        val prior = spliceEntries(array).firstOrNull()
+        val array = if (existing == null) JsonArray(emptyList()) else existing as? JsonArray ?: return null
+        val entries = spliceEntries(array)
+        if (entries.singleOrNull()?.let(spec::isCurrent) == true) return array
+        val prior = entries.firstOrNull()
         val command = CodexHookCommands.migrate(prior?.command, spec.verb)
         val timeout = prior?.timeout?.takeIf { !spec.exactTimeout && it > 0 } ?: spec.timeoutSeconds
         return buildJsonArray {
             array.mapNotNull(::stripSpliceFromGroup).forEach(::add)
-            add(canonicalGroup(command, timeout))
+            add(canonicalGroup(prior?.rawObject, command, timeout))
         }
     }
 
@@ -212,15 +209,13 @@ internal class CodexPeerHooks {
         }
     }
 
-    private fun canonicalGroup(command: String, timeoutSeconds: Int): JsonObject = buildJsonObject {
-        putJsonArray(HOOKS_ROOT_KEY) {
-            add(
-                buildJsonObject {
-                    put(TYPE_KEY, COMMAND_KEY)
-                    put(COMMAND_KEY, command)
-                    put(TIMEOUT_KEY, timeoutSeconds)
-                },
-            )
+    private fun canonicalGroup(prior: JsonObject?, command: String, timeoutSeconds: Int): JsonObject {
+        val handler = LinkedHashMap<String, JsonElement>(prior ?: emptyMap())
+        handler[TYPE_KEY] = JsonPrimitive(COMMAND_KEY)
+        handler[COMMAND_KEY] = JsonPrimitive(command)
+        handler[TIMEOUT_KEY] = JsonPrimitive(timeoutSeconds)
+        return buildJsonObject {
+            putJsonArray(HOOKS_ROOT_KEY) { add(JsonObject(handler)) }
         }
     }
 
@@ -232,7 +227,11 @@ internal class CodexPeerHooks {
             items.mapNotNull { item ->
                 val obj = item as? JsonObject
                 val cmd = obj?.let { JsonScalars.str(it, COMMAND_KEY) }?.takeIf(CodexHookCommands::isSpliceCommand)
-                if (obj != null && cmd != null) SpliceEntry(cmd, JsonScalars.int(obj, TIMEOUT_KEY), matcher) else null
+                if (obj != null && cmd != null) {
+                    SpliceEntry(cmd, JsonScalars.int(obj, TIMEOUT_KEY), matcher, obj)
+                } else {
+                    null
+                }
             }
         }
     }
@@ -243,14 +242,24 @@ internal class CodexPeerHooks {
         null
     }
 
-    private data class SpliceEntry(val command: String, val timeout: Int?, val matcher: String?)
+    private data class SpliceEntry(
+        val command: String,
+        val timeout: Int?,
+        val matcher: String?,
+        val rawObject: JsonObject,
+    )
 
     private data class EventSpec(
         val event: String,
         val verb: String,
         val timeoutSeconds: Int,
         val exactTimeout: Boolean,
-    )
+    ) {
+        fun isCurrent(entry: SpliceEntry): Boolean =
+            CodexHookCommands.isValidDirect(entry.command, verb) &&
+                (!exactTimeout || entry.timeout == timeoutSeconds) &&
+                entry.matcher.isNullOrBlank()
+    }
 
     private val requiredSpecs = listOf(
         EventSpec("SessionStart", "attach", CODEX_ATTACH_TIMEOUT_S, exactTimeout = false),

@@ -133,9 +133,29 @@ class DesktopAcpHooksTest {
         assertEquals("t-fg", fg[2].toolUseId)
     }
 
+    @Test
+    fun `resumed ACP session still refreshes ForegroundTools SESSION_START without firing SessionStarts`() {
+        val starts = mutableListOf<Pair<String, String>>()
+        val fg = mutableListOf<ForegroundToolCall>()
+        val hooks = AcpSessionHooks(
+            sessionStart = AcpSessionStart { id, cwd -> starts += id to cwd },
+            foreground = { fg += it },
+            foregroundOwner = "owner-resumed",
+        )
+        val prompt = listOf("read l", answer(3, "end_turn"), "read l").joinToString("\n")
+        rig("$opened\n$prompt", hooks, extraArgs = listOf("--resume=s-1")) {
+            send(USER)
+            next { it.str("type") == "result" }
+        }
+        assertEquals(emptyList<Pair<String, String>>(), starts, "resumed ACP session must not re-run SessionStarts")
+        assertEquals(listOf(ForegroundToolPhase.SESSION_START, ForegroundToolPhase.SESSION_END), fg.map { it.phase })
+        assertEquals("owner-resumed", fg.first().owner)
+    }
+
     private fun rig(
         script: String,
         hooks: AcpSessionHooks,
+        extraArgs: List<String> = emptyList(),
         drive: suspend Driver.() -> Unit,
     ): List<JsonObject> {
         val agent = tmp.resolve("agent.sh")
@@ -147,7 +167,7 @@ class DesktopAcpHooksTest {
             "--model=claude-antigravity--gem-4-neon",
             "--permission-mode=default",
             "--stands-in-for=/home/me/.config/Claude/claude-code/2.1.328/10f24c9cfcbf/claude",
-        )
+        ) + extraArgs
         val env = EnvReader { name -> if (name == "HOME") tmp.resolve("home").toString() else null }
         val driver = Driver()
         runBlocking {

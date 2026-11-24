@@ -55,6 +55,7 @@ public class ForegroundHookRoute(
     }
 
     private fun phase(body: JsonObject): ForegroundToolPhase? = when (JsonScalars.strIfString(body["phase"])) {
+        "session_start" -> ForegroundToolPhase.SESSION_START
         "start" -> ForegroundToolPhase.START
         "end" -> ForegroundToolPhase.END
         "session_end" -> ForegroundToolPhase.SESSION_END
@@ -65,14 +66,13 @@ public class ForegroundHookRoute(
         val tool = JsonScalars.strIfString(body["tool_use_id"])
             .takeIf { it.isNotEmpty() && it.length <= MAX_TOOL_ID_CHARS }
         return when (phase) {
-            ForegroundToolPhase.SESSION_END ->
+            ForegroundToolPhase.SESSION_START, ForegroundToolPhase.SESSION_END ->
                 if (body["tool_use_id"] == kotlinx.serialization.json.JsonNull) {
                     ActivityCall(session, null, phase)
                 } else {
                     null
                 }
             ForegroundToolPhase.START, ForegroundToolPhase.END -> tool?.let { ActivityCall(session, it, phase) }
-            ForegroundToolPhase.SESSION_START -> null
         }
     }
 }

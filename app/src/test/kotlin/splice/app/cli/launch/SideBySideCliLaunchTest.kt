@@ -5,6 +5,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -54,49 +55,26 @@ class SideBySideCliLaunchTest {
         @TempDir home: Path,
     ) = runBlocking {
         UserHome.within(home) {
-            val env = EnvReader { null }
-            val log = LogSink {}
-            val statePaths = StatePaths(envReader = env)
-            val published = PublishedCatalog(
-                CatalogBuild(),
-                CatalogFile(statePaths.modelCatalogFile, log),
-                kotlinx.coroutines.Dispatchers.IO,
-            )
-            val header = Files.createDirectories(statePaths.stateDir).resolve("turn-auth-header")
-            Files.writeString(header, "Authorization: Bearer test\n")
-            val hookTarget = ResumeHookTarget(3096, AuthHeaderFile { header })
-            val providers = DesktopProviders(
-                serving = ServingProviders { listOf(fakeChatGptProvider()) },
-                desktopOnly = ServingProviders { emptyList() },
-                aliases = SelectorAliases(emptyList()),
-                published = published,
-            )
-            val terminal = TerminalDoor(Topology(), statePaths, log)
-            terminal.open(providers, "http://127.0.0.1:3096/door", hookTarget)
+            val (statePaths, terminal) = openTerminal(listOf(fakeChatGptProvider()), withHookTarget = true)
             val spec = requireNotNull(terminal.launchSideBySide())
             assertNotNull(spec)
             assertEquals("http://127.0.0.1:3096/door", spec.env["ANTHROPIC_BASE_URL"])
-            assertFalse(
-                "DISABLE_LOGIN_COMMAND" in spec.env,
-                "side-by-side must keep Claude Code /login enabled when ~/.claude/commands/login.md is absent",
-            )
-            assertFalse(
-                Files.exists(home.resolve(".claude/commands/login.md")),
-                "side-by-side launch must never write into ~/.claude",
-            )
-            assertFalse(
-                Files.exists(home.resolve(".claude")),
-                "side-by-side launch must not even create ~/.claude",
-            )
+            assertFalse("DISABLE_LOGIN_COMMAND" in spec.env)
+            assertTrue("DISABLE_LOGIN_COMMAND" in spec.unset && "DISABLE_LOGOUT_COMMAND" in spec.unset)
+            assertFalse(Files.exists(home.resolve(".claude/commands/login.md")))
+            assertFalse(Files.exists(home.resolve(".claude")))
+
             val overlay = Json.parseToJsonElement(spec.overlay).jsonObject
+            val overlayEnv = overlay["env"]!!.jsonObject
+            assertEquals("0", overlayEnv["DISABLE_LOGIN_COMMAND"]?.jsonPrimitive?.content)
+            assertEquals("0", overlayEnv["DISABLE_LOGOUT_COMMAND"]?.jsonPrimitive?.content)
             val hooks = overlay["hooks"]!!.jsonObject
             val ups = hooks["UserPromptSubmit"]!!.jsonArray.toString()
             val start = hooks["SessionStart"]!!.jsonArray.toString()
             assertTrue("splice-login-hook.sh" in ups, "overlay must carry /login hook: $ups")
             assertTrue("splice-speed-hook.sh" in ups, "overlay must carry /fast hook when ChatGPT is active: $ups")
             assertTrue("splice-door-start-hook.sh" in start, "overlay must carry SessionStart hook: $start")
-            val speedScript = Files.readString(statePaths.doorLoginDir.resolve("splice-speed-hook.sh"))
-            assertTrue("/hooks/speed/door" in speedScript, speedScript)
+            assertTrue("/hooks/speed/door" in Files.readString(statePaths.doorLoginDir.resolve("splice-speed-hook.sh")))
             val startScript = Files.readString(statePaths.doorLoginDir.resolve("splice-door-start-hook.sh"))
             assertTrue("/hooks/resume/door" in startScript, startScript)
         }
@@ -107,25 +85,7 @@ class SideBySideCliLaunchTest {
         @TempDir home: Path,
     ) = runBlocking {
         UserHome.within(home) {
-            val env = EnvReader { null }
-            val log = LogSink {}
-            val statePaths = StatePaths(envReader = env)
-            val published = PublishedCatalog(
-                CatalogBuild(),
-                CatalogFile(statePaths.modelCatalogFile, log),
-                kotlinx.coroutines.Dispatchers.IO,
-            )
-            val header = Files.createDirectories(statePaths.stateDir).resolve("turn-auth-header")
-            Files.writeString(header, "Authorization: Bearer test\n")
-            val hookTarget = ResumeHookTarget(3096, AuthHeaderFile { header })
-            val providers = DesktopProviders(
-                serving = ServingProviders { emptyList() },
-                desktopOnly = ServingProviders { emptyList() },
-                aliases = SelectorAliases(emptyList()),
-                published = published,
-            )
-            val terminal = TerminalDoor(Topology(), statePaths, log)
-            terminal.open(providers, "http://127.0.0.1:3096/door", hookTarget)
+            val (_, terminal) = openTerminal(emptyList(), withHookTarget = true)
             val spec = requireNotNull(terminal.launchSideBySide())
             val hooks = Json.parseToJsonElement(spec.overlay).jsonObject["hooks"]!!.jsonObject
             val ups = hooks["UserPromptSubmit"]!!.jsonArray.toString()
@@ -133,6 +93,51 @@ class SideBySideCliLaunchTest {
             assertFalse("splice-speed-hook.sh" in ups, "no ChatGPT provider -> no speed hook: $ups")
             assertTrue("splice-door-start-hook.sh" in hooks["SessionStart"]!!.jsonArray.toString())
         }
+    }
+
+    @Test
+    fun `launchSideBySide disables built-in login when splice login command is already laid`(
+        @TempDir home: Path,
+    ) = runBlocking {
+        UserHome.within(home) {
+            val commands = Files.createDirectories(home.resolve(".claude/commands"))
+            Files.writeString(commands.resolve("login.md"), "SPLICE_CODEX_LOGIN \$ARGUMENTS\n")
+            val (_, terminal) = openTerminal(listOf(fakeChatGptProvider()), withHookTarget = false)
+            val spec = requireNotNull(terminal.launchSideBySide())
+            assertEquals("1", spec.env["DISABLE_LOGIN_COMMAND"])
+            assertFalse("DISABLE_LOGIN_COMMAND" in spec.unset)
+            val overlayEnv = Json.parseToJsonElement(spec.overlay).jsonObject["env"]!!.jsonObject
+            assertEquals("1", overlayEnv["DISABLE_LOGIN_COMMAND"]?.jsonPrimitive?.content)
+        }
+    }
+
+    private suspend fun openTerminal(
+        served: List<ServedProvider>,
+        withHookTarget: Boolean,
+    ): Pair<StatePaths, TerminalDoor> {
+        val log = LogSink {}
+        val statePaths = StatePaths(envReader = EnvReader { null })
+        val published = PublishedCatalog(
+            CatalogBuild(),
+            CatalogFile(statePaths.modelCatalogFile, log),
+            kotlinx.coroutines.Dispatchers.IO,
+        )
+        val hookTarget = if (withHookTarget) {
+            val header = Files.createDirectories(statePaths.stateDir).resolve("turn-auth-header")
+            Files.writeString(header, "Authorization: Bearer test\n")
+            ResumeHookTarget(3096, AuthHeaderFile { header })
+        } else {
+            null
+        }
+        val providers = DesktopProviders(
+            serving = ServingProviders { served },
+            desktopOnly = ServingProviders { emptyList() },
+            aliases = SelectorAliases(emptyList()),
+            published = published,
+        )
+        val terminal = TerminalDoor(Topology(), statePaths, log)
+        terminal.open(providers, "http://127.0.0.1:3096/door", hookTarget)
+        return statePaths to terminal
     }
 
     private fun fakeChatGptProvider(): ServedProvider = object : ServedProvider {

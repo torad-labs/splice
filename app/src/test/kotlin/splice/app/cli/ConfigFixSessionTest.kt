@@ -290,6 +290,28 @@ class ConfigFixSessionTest : ConfigFixRig() {
     }
 
     @Test
+    fun `a prompt one head appends unsaid and its sibling says append moves one key at a time`(@TempDir root: Path) {
+        val file = served(root, "", "system_prompt = \"Same words.\"\n")
+        Files.writeString(
+            file,
+            Files.readString(file) + "\n[heads.two]\nprovider = \"demo\"\nport = 3102\n" +
+                "discovery_prefix = \"claude-demo--\"\npinned_model = \"m\"\nsystem_prompt = \"Same words.\"\n" +
+                "system_prompt_mode = \"append\"\n",
+        )
+        val said = mutableListOf<String>()
+
+        val fixed = session(file, root, ArrayDeque(listOf("m", "m")), said, advisory = true).run()
+
+        val text = Files.readString(file)
+        assertTrue(fixed, "each move is offered and leaves the gateway served the same prompt: $said\n$text")
+        assertFalse(said.any { it.contains("serves the provider with none") }, "$said")
+        val provider = providerSection(text)
+        assertTrue(provider.contains("system_prompt = \"Same words.\""), text)
+        assertTrue(provider.contains("system_prompt_mode = \"append\""), text)
+        readsClean(file, root)
+    }
+
+    @Test
     fun `tiers named on the head's model rows move to the provider and the head keeps its allowlist`(
         @TempDir root: Path,
     ) {

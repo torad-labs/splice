@@ -98,14 +98,15 @@ internal class GatewayMoveChecks(private val topology: Topology) {
     private fun prompt(key: String, head: HeadConfig, provider: ProviderConfig): List<TopologyFinding> {
         val table = "providers.${keys.render(head.provider)}"
         val gets = served.getValue(head.provider)
+        // The mode the gateway serves, an unsaid one being `append`: a head's `append` is what it serves either way.
+        val gateway = Prompt(gets.systemPrompt, gets.systemPromptFile, gets.systemPromptMode ?: SystemPromptMode.APPEND)
         val trio = listOf(
             Said("system_prompt", head.systemPrompt, provider.systemPrompt, gets.systemPrompt),
             Said("system_prompt_file", head.systemPromptFile, provider.systemPromptFile, gets.systemPromptFile),
-            Said("system_prompt_mode", head.systemPromptMode, provider.systemPromptMode, gets.systemPromptMode),
+            Said("system_prompt_mode", head.systemPromptMode, provider.systemPromptMode, gateway.mode),
         )
         val own = trio.all { it.provider == null || it.provider == it.head }
         val heads = topology.heads.values.filter { it.provider == head.provider }.map { servedPrompt(it, provider) }
-        val gateway = Prompt(gets.systemPrompt, gets.systemPromptFile, gets.systemPromptMode ?: SystemPromptMode.APPEND)
         val kept = heads.all { it == gateway }
         val apart = trio.filter { it.head != null && it.head != it.provider }
         val why = when {

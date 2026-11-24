@@ -1,8 +1,8 @@
 // NEW: head-catalog (gw-check). Claude Code's ways of laying a model list in `/model` beside or in place of what its
 // gateway discovery finds, as facts of its dialect: the settings keys (an allowlist and its switch, picker rows, a tier
 // mapping), the variables a settings file's `env` can set (each tier's model, name and description, the small model,
-// a custom option), the cache it keeps in a Claude folder's .claude.json, and where an organisation's managed settings
-// live. `splice claude check` names each it finds; nothing here writes.
+// a custom option), and the cache it keeps in a Claude folder's .claude.json; where an organisation's managed settings
+// live is ManagedSettings' (#791). `splice claude check` names each it finds; nothing here writes.
 package splice.client
 
 import kotlinx.serialization.SerializationException
@@ -11,7 +11,6 @@ import kotlinx.serialization.json.JsonObject
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
 
 public object ClaudeModelLists {
     /** The settings keys that lay a model list. */
@@ -32,13 +31,6 @@ public object ClaudeModelLists {
 
     /** The settings files of a Claude folder that can carry a list: its settings and its local settings. */
     public val settingsFiles: List<String> = listOf(Keys.SETTINGS_FILE_NAME, "settings.local.json")
-
-    /** Where an organisation's managed settings live on this machine, by Claude Code's own paths. */
-    public fun managed(osName: String): Path? = when {
-        osName.startsWith("Linux") -> Paths.get("/etc/claude-code/managed-settings.json")
-        osName.startsWith("Mac") -> Paths.get("/Library/Application Support/ClaudeCode/managed-settings.json")
-        else -> null
-    }
 
     /** The lists a settings object lays: each key by name, and each variable of its `env` as `env.<name>`. */
     public fun inSettings(settings: JsonObject): List<String> {

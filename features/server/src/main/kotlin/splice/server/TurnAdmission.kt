@@ -8,6 +8,11 @@
 // every turn is a 500: splice's own failure, never served uncounted (F5). And first, a turn on a command its person
 // may not use is a 403 naming the command, and reaches no head (F12).
 //
+// The server's own caps (#791, ServerLoad) are asked after a person's tokens and before their turns: a turn past
+// `inflight_total`, or on a provider whose healthy upstreams each hold `inflight_per_upstream`, is answered with
+// `busy_status` and `Retry-After` and spends none of its person's turns a minute. While the server drains at stop, the
+// listener refuses every keyed request, turns included, with a 503 and `Retry-After` before any of this is asked.
+//
 // Both routes open and close a turn here (served), so every turn on either leaves its row in the ledger however it
 // ends: refused, relayed to its end, or left by its client.
 package splice.server
@@ -53,9 +58,11 @@ internal class TurnAdmission(
         return null
     }
 
-    /** The slot [turn] takes, or null with it refused: one past a cap (a minute's tokens first, then the turns in flight
-     *  and a minute's turns), before that one past a budget that blocks, before that one whose provider has no server
-     *  up, before that one splice cannot record, and first one whose command is not running. */
+    /** The slot [turn] takes, or null with it refused: one past a cap ([capped]), before that one past a budget that
+     *  blocks, before that one whose provider has no server up, before that one splice cannot record, and first one
+     *  whose command is not running. A turn that arrives while the server drains never reaches here: the listener
+     *  refuses every keyed request then (ServerListener), and one that slips in as the drain begins is refused by the
+     *  server's own cap ([capped]). */
     private suspend fun admitted(call: ApplicationCall, turn: LedgerTurn): TurnSlot? {
         if (!turn.command.running()) {
             // A command of splice's own that is down is splice's failure, never the upstream's (F5).
@@ -68,14 +75,29 @@ internal class TurnAdmission(
             voice.refuse(call, refused.status, refused.why)
             return null
         }
-        val person = turn.key.person
-        return when (val verdict = overTokens(person) ?: parts.limits.begin(person)) {
+        return when (val verdict = capped(turn)) {
             is LimitVerdict.Admitted -> verdict.slot
             is LimitVerdict.Refused -> {
                 call.response.headers.append(HttpHeaders.RetryAfter, verdict.retryAfterSeconds.toString())
-                voice.refuse(call, HttpStatus.TOO_MANY_REQUESTS, verdict.why)
+                voice.refuse(call, verdict.status, verdict.why)
                 null
             }
+        }
+    }
+
+    /** [turn]'s places under every cap: a minute's tokens first, which takes nothing, then the server's turns in flight
+     *  (#791), then its person's turns in flight and a minute's turns. The server's place is taken before the person's
+     *  because a person's place spends one of their minute's turns, which giving it back does not return: a turn the
+     *  server refuses must cost its person nothing. When the person's caps refuse, the server's place is given back at
+     *  once, so a refused turn holds nothing. */
+    private suspend fun capped(turn: LedgerTurn): LimitVerdict {
+        val person = turn.key.person
+        overTokens(person)?.let { return it }
+        val shared = parts.limits.load.begin(turn.command.key, turn.id)
+        if (shared !is LimitVerdict.Admitted) return shared
+        return when (val own = parts.limits.begin(person)) {
+            is LimitVerdict.Admitted -> LimitVerdict.Admitted(own.slot.joined(shared.slot))
+            is LimitVerdict.Refused -> own.also { shared.slot.release() }
         }
     }
 

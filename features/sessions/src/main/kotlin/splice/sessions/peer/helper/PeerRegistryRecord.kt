@@ -66,6 +66,17 @@ public class PeerRegistryFiles(internal val directories: List<Path>) {
         }
     }.all { it }
 
+    /** Writes the 0600 `<pid>.<sha256(socket)>.key` file holding [token] and [identity] into [dir]. */
+    public fun writeKey(dir: Path, identity: HelperIdentity, socket: Path, token: String) {
+        val encoded = encode(RegistryKeyFile(token, identity.procStart, identity.pidDomain))
+        SecureFile.writeAtomic0600(key(dir, identity.pid, socket), encoded)
+    }
+
+    /** Removes the `<pid>.<sha256(socket)>.key` file from [dir], if present. */
+    public fun removeKey(dir: Path, pid: Long, socket: Path) {
+        Files.deleteIfExists(key(dir, pid, socket))
+    }
+
     internal fun encode(record: RegistryRecordFile): String =
         json.encodeToString(RegistryRecordFile.serializer(), record)
 
@@ -111,15 +122,12 @@ public class PeerRegistryRecord(
     }
 
     /** Writes the key file holding [token], then the record, into each directory; the reason when one failed. */
-    public fun publish(token: String): String? {
-        val key = files.encode(RegistryKeyFile(token, identity.procStart, identity.pidDomain))
-        return Cancellables.runCatchingCancellable {
-            for (dir in files.directories) {
-                SecureFile.writeAtomic0600(files.key(dir, identity.pid, socket), key)
-                writeRecord(dir, clock())
-            }
-        }.exceptionOrNull()?.let { "the registry record cannot be written: ${SafeFailureText.render(it)}" }
-    }
+    public fun publish(token: String): String? = Cancellables.runCatchingCancellable {
+        for (dir in files.directories) {
+            files.writeKey(dir, identity, socket, token)
+            writeRecord(dir, clock())
+        }
+    }.exceptionOrNull()?.let { "the registry record cannot be written: ${SafeFailureText.render(it)}" }
 
     /** Rewrites `updatedAt` and `statusUpdatedAt` in every record, so no reader takes the peer for a stale session. */
     public fun heartbeat(): String? {

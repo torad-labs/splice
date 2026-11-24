@@ -17,10 +17,16 @@ record any tool that lists Claude sessions reads, and takes turns from Desktop's
   skills").
 - **The translator names itself** in `clientInfo` as `splice`, never as `zed`.
 
-Prompts reach a Gemini session the ways they reach any Desktop session: Marcos typing, the Eli app, and Desktop's own
-paths (`send_message`, dispatch, scheduled tasks). **The gap stays (Marcos, Nov 21, 2026):** T3 Code has the same
-openings, and nothing in splice offers them as a way for agents to reach Gemini. A Gemini session may also orchestrate
-other models.
+Prompts reach a Gemini session through Marcos typing, the Eli App, Desktop's own paths (`send_message`, dispatch,
+scheduled tasks), and Splice's local peer messaging (`splice peer` / `PeerNoteSocket` via `splice desktop acp`'s
+in-process UDS inbox and ACP `session/prompt`, framed as `<cross-session-message>`). Marcos approved keeping this
+inbound peer inbox on Nov 23, 2026 (reversing the Nov 21 note that kept inbound Splice peer delivery out) so `agy`
+sessions can both send and receive `splice peer` messages natively while preserving all three rules above (`agy`
+unmodified, never in a Claude Code loop, never reading or writing `~/.gemini`, `clientInfo: splice`). Every inbound
+peer connection is checked against `SO_PEERCRED` same-user ownership and constant-time `peerToken` validation when an
+`auth` line is sent (see section 3 and `docs/peers.md`, "Trust boundary"), and every inbound peer message stays wrapped
+in a defused `<cross-session-message>` envelope so it is explicitly distinguished from direct human prompts and carries
+peer-message rather than human-operator authority. A Gemini session may also orchestrate other models.
 
 ## Wiring
 
@@ -72,8 +78,26 @@ the Java runtime gives it up) to it (`PrivilegeEscape`, `EscapedLaunch`).
 The translator plays the role of `claude` for Desktop. It reads and writes the same stream-json and writes the same
 transcript and session files, so a tool that knows Claude sessions finds a Gemini one the same way. `install.sh` also
 lays a shim called `claude` in `~/.local/lib/splice/gemini/` that `exec`s `splice desktop acp`, for a launcher of the
-person's own that swaps the `claude` program by name; `splice desktop launch` needs none. Claude's peer socket isn't
-opened, so a peer message to a Gemini session isn't delivered.
+person's own that swaps the `claude` program by name; `splice desktop launch` needs none.
+
+When a session opens, `splice desktop acp` binds an owner-only peer Unix domain socket (`DesktopPeerSocketFactory`,
+matching Splice's `PeerWire` / `PeerNoteSocket` contract: 0700 socket folder, 0600 socket, 0600
+`<pid>.<sha256(socket)>.key` holding `peerToken`, `SO_PEERCRED` same-user check) and advertises
+`messagingSocketPath`, `pidDomain`, `procStart` and `peerProtocol: 1` in `<config>/sessions/<pid>.json`. Every
+connection must pass `SO_PEERCRED` same-user verification; when a sender opens with an `auth` line its `peerToken` is
+compared in constant time (a bad token returns `denied`), while same-user frames without an `auth` line are accepted
+after `SO_PEERCRED` verification, matching Claude Code's Linux contract and `PeerHelper` (the trust boundary is the
+local Unix user, and claimed `from` / `from-name` attributes never prove identity beyond same-user; see `docs/peers.md`,
+"Trust boundary"). Incoming `user` frames are always re-wrapped in a defused `<cross-session-message>` envelope — never
+promoted to bare human prompts — so peer messages remain visibly distinct from human instructions and carry peer rather
+than human-operator authority under the session's active permission mode. Accepted frames replay into Desktop's
+stream-json and transcript, steer `agy`'s `session/prompt` directly (bypassing slash-command interception such as
+`/login`), expire atomically on delivery timeout so a timed-out frame is never delivered after a `dropped` receipt, and
+return `delivered` / `dropped` / `refused` / `denied` receipts over `PeerNoteSocket`. On exit, the session record, key
+file and socket are removed. For outbound peer calls, `DesktopPeerIdentity` best-effort registers an owner-bound
+`nativeInbox` peer pointing at the live `splice desktop acp` process (no duplicate `peer-host` helper or `ListAgents`
+entry; auto-retiring on exit) and injects `SPLICE_PEER_NAME` and `SPLICE_PEER_KEY_FILE` into `agy`'s environment so
+`agy` can run `splice peer send` without `--as`. Nothing touches `~/.gemini` and `agy` runs unmodified.
 
 The translator starts `agy acp` (`--add-dir` passed on;
 `--dangerously-skip-permissions` when Desktop's mode is `bypassPermissions`) and sends it ACP `initialize` at once,
@@ -132,9 +156,11 @@ Each of these came up and was dropped. They stay out unless Marcos asks for them
   door's, in `DesktopLineup.desktopOnly`, because `DoorCatalog` builds Desktop's list from served providers.
 - **No change to `DoorRouting`.** It already refuses a model it doesn't serve.
 - **No profile for the translator in any session tool.** It keeps Claude Code's session files.
-- **No sender check of any kind** in the translator.
+- **No sender check of any kind** on Desktop's stream-json stdin (the peer UDS inbox enforces `SO_PEERCRED` same-user
+  and constant-time `peerToken` verification when an `auth` line is sent, and keeps inbound peer frames wrapped in
+  `<cross-session-message>` rather than bare human prompts).
 - **No filtering of prompts Desktop writes itself:** `send_message`, dispatch, scheduled tasks, usage-limit
-  auto-resume and the skipped-form line. They are part of the gap.
+  auto-resume and the skipped-form line.
 - **No queueing of mid-turn messages for Send now / Cancel.** agy steers at once.
 - **No Gemini API-key provider for agents.** The OpenRouter Gemini row already covers it.
 - **No mapping file of session ids.** The probe showed agy's session ids are uuids, so agy's id is the session id.

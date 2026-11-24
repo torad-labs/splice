@@ -87,9 +87,15 @@ class PeerWireTest {
     }
 
     @Test
-    fun `an auth line yields its token and no other line does`() {
+    fun `an auth line yields its token and distinguishes absent from malformed auth`() {
         assertEquals("ab12", PeerWire.authToken("{\"type\":\"auth\",\"token\":\"ab12\"}"))
         assertNull(PeerWire.authToken("{\"type\":\"auth\",\"token\":12}"))
         assertNull(PeerWire.authToken("{\"type\":\"user\",\"token\":\"ab12\"}"))
+        assertEquals(PeerAuthLine.Token("ab12"), PeerWire.authLine("{\"type\":\"auth\",\"token\":\"ab12\"}"))
+        assertEquals(PeerAuthLine.Malformed, PeerWire.authLine("{\"type\":\"auth\",\"token\":12}"))
+        assertEquals(PeerAuthLine.Malformed, PeerWire.authLine("{\"type\":\"auth\"}"))
+        assertEquals(PeerAuthLine.Malformed, PeerWire.authLine("{\"type\":\"auth\",\"token\":null}"))
+        assertEquals(PeerAuthLine.Absent, PeerWire.authLine("{\"type\":\"user\",\"token\":\"ab12\"}"))
+        assertEquals(PeerAuthLine.Absent, PeerWire.authLine("not json"))
     }
 }

@@ -7,6 +7,8 @@ import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
 import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.OpenOption
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.util.concurrent.ConcurrentHashMap
@@ -17,7 +19,8 @@ internal object JsonlLocks {
     val monitors = ConcurrentHashMap<Path, Any>()
 
     // The `.lock` sibling is made 0600: it holds no byte, and a lock others may open is a lock others may hold.
-    private val LOCK_OPTIONS = setOf(StandardOpenOption.CREATE, StandardOpenOption.WRITE)
+    private val LOCK_OPTIONS: Set<OpenOption> =
+        setOf(StandardOpenOption.CREATE, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS)
 
     /** Run [held] holding [file]'s lock. It is handed null when the cross-process lock was not had within
      *  [LOCK_WAIT_MS]: the caller then goes on without it, each as it says. */

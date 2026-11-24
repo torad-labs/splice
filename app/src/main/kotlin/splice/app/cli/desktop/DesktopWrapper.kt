@@ -11,6 +11,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.app.desktop.setup.DesktopPrograms
+import splice.client.ManagedSettings
 import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
@@ -30,13 +31,7 @@ internal class DesktopWrapper(
     managedFile: Path? = null,
 ) {
     private val windows = osName.lowercase().startsWith("windows")
-    private val managed: Path = managedFile ?: Path.of(
-        when {
-            osName.lowercase().startsWith("mac") -> MAC_MANAGED
-            windows -> WINDOWS_MANAGED
-            else -> LINUX_MANAGED
-        },
-    )
+    private val managed: Path = managedFile ?: ManagedSettings(osName).file
 
     private val launch: Path get() = DesktopPrograms(StatePaths(envReader = env).stateDir).launch
 
@@ -98,11 +93,6 @@ internal class DesktopWrapper(
         return settings
     }
 }
-
-// Where Claude Code reads its managed settings, per platform.
-private const val LINUX_MANAGED = "/etc/claude-code/managed-settings.json"
-private const val MAC_MANAGED = "/Library/Application Support/ClaudeCode/managed-settings.json"
-private const val WINDOWS_MANAGED = "C:\\Program Files\\ClaudeCode\\managed-settings.json"
 
 private val PRETTY = Json { prettyPrint = true }
 

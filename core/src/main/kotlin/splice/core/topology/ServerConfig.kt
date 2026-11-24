@@ -10,6 +10,9 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import splice.core.client.ClientVersion
 import splice.core.client.ClientVersionParser
+import splice.core.client.OUTDATED_IN_CONVERSATION
+import splice.core.client.SPLICE_CLIENT_HEADER
+import splice.core.topology.toml.TomlKeys
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -31,6 +34,13 @@ public data class ServerConfig(
     /** How often a streamed turn's client is sent an SSE keepalive while its answer is silent, as a model server
      *  prefilling a long prompt is; the stream is opened to the client at once for it. 0 sends none. */
     @SerialName("keepalive_seconds") val keepaliveSeconds: Int = 0,
+    /** How long a streamed turn's answer may fall silent after its first event before it is ended with an error event
+     *  (#791). 0 waits on it however long, which is the default: a model may think in silence, and only the operator
+     *  knows how long theirs does. */
+    @SerialName("stream_idle_seconds") val streamIdleSeconds: Int = 0,
+    /** How long a stop waits for the turns in flight to finish, refusing new ones and answering `/health` as draining,
+     *  before it closes the listener (#791). 0 gives them the listener's one second of grace, as before. */
+    @SerialName("drain_seconds") val drainSeconds: Int = 0,
     /** What the same tokens would cost on a hosted model, beside each report's own cost (F5). */
     val reference: ServerReference = ServerReference(),
     /** Which team a person is on when the operator set none for them (decision 5). */
@@ -52,6 +62,9 @@ public data class ServerConfig(
     /** `[server.backup]` (F14): durable state snapshots (`keys.json`, `people.json`, `budgets.json`, `ledger.jsonl`,
      *  `audit.jsonl`) written on a schedule and restored fail-closed on a fresh disk. */
     val backup: ServerBackup = ServerBackup(),
+    /** `[server.aliases]` (#791): a first path segment, as `"/v1"`, mapped to a served command or `"door"`, so a client
+     *  that cannot change its base path reaches `/<command>/v1/...` (or the team's door) at `/v1/...`. */
+    val aliases: Map<String, String> = emptyMap(),
     /** The addresses and prefixes allowed to use the listener's admin privileges. Empty is unrestricted. */
     @SerialName("admin_cidrs") val adminCidrs: List<String> = emptyList(),
     /** The mark on newly minted keys. Stored keys keep working when it changes. */
@@ -74,6 +87,16 @@ public data class ServerConfig(
         return ServerPem(configDir.resolve(cert), configDir.resolve(key))
     }
 
+    /** [aliases] by the one path segment each answers, its `/` dropped, to the command or door it stands for. A key is
+     *  written quoted, as `"/v1"`, and ktoml hands a quoted key back with its quotes. */
+    public val aliasSegments: Map<String, String>
+        get() {
+            val keys = TomlKeys()
+            return aliases.entries.associate { (prefix, target) ->
+                keys.unquote(prefix).trim().removePrefix("/") to target.trim()
+            }
+        }
+
     /** Whether [person], a lowercased email, administers this server. */
     public fun admin(person: String): Boolean = admins.any { PersonEmails.read(it) == person }
 }
@@ -88,7 +111,24 @@ public data class ServerLimits(
     /** Tokens, prompt and answer, of one person's turns that ended in the last minute, past which their next turn waits
      *  (F12). */
     @SerialName("tpm_per_person") val tpmPerPerson: Int = 0,
+    /** Turns the whole server may have in flight at once, everyone's together (#791). */
+    @SerialName("inflight_total") val inflightTotal: Int = 0,
+    /** Turns each server of a provider that is several (`[[providers.<p>.upstreams]]`) may have in flight at once: a
+     *  turn is refused while every healthy one holds this many (#791). */
+    @SerialName("inflight_per_upstream") val inflightPerUpstream: Int = 0,
+    /** The status a turn refused by [inflightTotal] or [inflightPerUpstream] is answered with: 429 (null, the default,
+     *  which Claude Code and the OpenAI SDKs back off and retry on) or 503 (the server is full, which a load balancer
+     *  reads as "try another"). */
+    @SerialName("busy_status") val busyStatus: Int? = null,
+    /** The seconds that refusal's `Retry-After` names. */
+    @SerialName("busy_retry_after") val busyRetryAfter: Int = DEFAULT_BUSY_RETRY_AFTER,
+    /** The sentence that refusal says in place of splice's own; blank says splice's. */
+    @SerialName("busy_message") val busyMessage: String = "",
 )
+
+// why: a short turn on a small pool ends in seconds; five is long enough not to hammer a full server and short
+// enough that a freed slot is taken soon after it frees.
+private const val DEFAULT_BUSY_RETRY_AFTER = 5
 
 /** `[server.client]` (F9, F15): the oldest splice a laptop may run against this server, and optionally where laptops
  *  fetch the client build its policy wants. [minimum] is a dotted splice version, as in "0.10.0"; null lets every
@@ -97,9 +137,22 @@ public data class ServerLimits(
 public data class ServerClient(
     val minimum: String? = null,
     @SerialName("download_url") val downloadUrl: String? = null,
+    /** #791: the request header a laptop's launcher names its version in; blank reads `x-splice-client`. */
+    @SerialName("version_header") val versionHeader: String = "",
+    /** #791: what an older laptop's turn is answered with: 200 says the notice in the conversation, 400 or 426
+     *  (Upgrade Required) refuses the turn with it. */
+    @SerialName("outdated_status") val outdatedStatus: Int = OUTDATED_IN_CONVERSATION,
+    /** #791: what an older laptop is told, `{version}` and `{minimum}` filled in; blank says splice's own words. */
+    @SerialName("outdated_message") val outdatedMessage: String = "",
+    /** #791: whether a laptop may report its version once with `POST /server/client/checkin`, for a launcher that
+     *  sends no version on each turn. */
+    val checkin: Boolean = false,
 ) {
     /** [minimum] as a version compared number by number, or null when none is set or it is no version. */
     public val floor: ClientVersion? get() = ClientVersionParser().parse(minimum)
+
+    /** The header a laptop's version is read from. */
+    public val header: String get() = versionHeader.trim().ifEmpty { SPLICE_CLIENT_HEADER }
 }
 
 /** `[server.forward_auth]`: dashboard access for admins and the emails or `@domain` rules in [allow]. */

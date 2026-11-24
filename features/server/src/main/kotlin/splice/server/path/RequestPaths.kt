@@ -7,7 +7,7 @@
 //
 // So the listener decides everything on the segments as a head reads them, and a head is handed a path spelled back
 // from those segments, never the client's own text. A head cannot read a path another way than the listener judged it.
-package splice.server
+package splice.server.path
 
 import io.ktor.http.URLDecodeException
 import io.ktor.http.decodeURLPart

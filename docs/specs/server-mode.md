@@ -248,6 +248,54 @@ every = "1h"
 - The same series go through the operator's OTLP export (`[telemetry.operator]`). These carry person and team by
   design; the operator families described in `docs/observability/exporters.md` stay identity-free.
 
+### Load, streaming and drain (#791, `ServerLoadTest`, `ServerStreamIdleTest`)
+
+A team in front of a small fixed pool of model servers needs the pool's limits held for everyone together, a stream
+that dies mid-answer to end, and a stop that lets turns finish. Each is a setting, off by default:
+
+```toml
+[server]
+stream_idle_seconds = 0      # 0: a silent answer is waited on however long
+drain_seconds = 0            # 0: the listener's one second of grace at stop; at most 45
+
+[server.limits]
+inflight_total = 0           # the whole server's turns in flight at once; 0: no cap
+inflight_per_upstream = 0    # each server of a provider with upstreams; 0: no cap
+busy_status = 429            # or 503
+busy_retry_after = 5         # seconds
+busy_message = ""            # blank: splice's own sentence naming the cap
+```
+
+- A turn past `inflight_total`, or on a provider whose healthy upstreams each hold `inflight_per_upstream`, is
+  refused at once with `busy_status`, `Retry-After: busy_retry_after` and `busy_message` or a sentence naming the
+  cap. These caps are asked after the person's token cap and before their turns in flight and turns a minute, so a
+  turn they refuse spends none of its person's `rpm_per_person`. One slot holds both places, so a turn's end and its
+  client's hang-up each give both back, once. With `inflight_per_upstream` each admitted turn reserves a place in the pool at
+  admission, counted against the servers' room together with every lease, so turns admitted before any of them leased
+  never add up past the cap; the turn's first lease takes its place. No lease is ever given on a server that is
+  full, and a lease that holds no reserved place never takes one that is reserved: a turn that finds no place (every
+  server full, or the one with room gone down after admission) is sent nowhere and told every upstream holds its cap,
+  as a retryable overload on a command's turn and a 503 on the OpenAI route. The pool places every turn on a server with room:
+  a session whose own server is full goes to the least busy healthy one with room and keeps its home, and a person's
+  preferred server that is full gives a new session's turn to the least busy with room.
+- `drain_seconds`: from a stop's first moment every keyed request, a turn on any route (a command's, the OpenAI route,
+  the team's door) or anything else a key asks, `/server/forward-auth` included, is a 503 with `Retry-After` in its
+  client's shape, and `GET /health`
+  answers 503 `{"status":"draining"}`; the stop waits up to that long for the server's turns in flight to end, then closes the
+  listener. The drain is spent before the heads' own stop budget, which shrinks by what it took, so the daemon's whole
+  stop stays inside its cooperative cap; hence the 45-second ceiling, a boot finding past it.
+- `stream_idle_seconds`: a streamed answer silent that long after its last word is hung up on at the upstream, and the
+  stream ends with an error event (504 in the ledger), on the Messages route and the OpenAI route alike, never with an
+  ending. The relay passes a stream on event by event, so that error always follows a whole event; and a stream whose
+  connection closes before its last event's blank line ends with the relay's error event too, never half an event. On the team's door
+  the turn runs on this machine with no relay in front of it, and its own watchdog keeps the same deadline as the one
+  tier no live path holds off, counted from the model's last progress so a keepalive never renews it (504 in the
+  ledger when it ends the turn): the silent round is hung up at the upstream, resumed where the provider can continue and
+  otherwise ended with the turn's error event. The wait for the first word is a prefill and is not timed
+  (`keepalive_seconds` covers it); a keepalive comment, a `ping` event, splice's own wait notice and an OpenAI-style
+  chunk with no text, reasoning or tool call in it (the role-only first chunk) are no word. Off by default: idle is a probe, never an error,
+  and only the operator knows how long their models think in silence.
+
 ### External hourly costs
 
 Provider `hourly_usd` still follows the splice host's uptime. Add a named `[server.cost_meters.<name>]` table only
@@ -302,12 +350,33 @@ Drafted checks for these exist and are committed with the P2 plan once P1 has la
   the configured names or the defaults are removed; a caller without a team gets no team attribute.
   The laptop recipe sets `CLAUDE_CODE_ENABLE_TELEMETRY=1` and
   `OTEL_EXPORTER_OTLP_ENDPOINT=<server>/server/otlp` with an `otelHeadersHelper` that sends the key, and never sets
-  `OTEL_LOG_USER_PROMPTS`. Where the command's `remote-settings.json` (organisation-managed) sets a telemetry key,
-  splice adds no telemetry of its own; managed settings that set none leave the relay on.
+  `OTEL_LOG_USER_PROMPTS`. Where any of the organisation's managed settings sets a telemetry key, splice adds no
+  telemetry of its own; managed settings that set none leave the relay on. splice reads the file sources (#791): the
+  platform's `managed-settings.json` (`/etc/claude-code`, `/Library/Application Support/ClaudeCode`,
+  `C:\Program Files\ClaudeCode`) with each `managed-settings.d/*.json` beside it merged over it in filename order, as
+  Claude Code merges them (a later file's value replaces an earlier one's, `env` merges per variable, and a key a later
+  file sets to `null` is cleared), and the command's `remote-settings.json`. A malformed or unreadable file sets
+  nothing. A macOS configuration profile (the `com.anthropic.claudecode` managed preferences domain) and a Windows
+  registry policy (`HKLM` or `HKCU\SOFTWARE\Policies\ClaudeCode`) are not read: an organisation that sets its
+  telemetry only there gets splice's relay beside it unless the same keys are also in a managed settings file.
 - **F9 client version policy.** `[server.client] minimum`. Each launch sends `x-splice-client: <version>` in
   `ANTHROPIC_CUSTOM_HEADERS`. An older client's turn is answered 200 with an assistant message naming the version
   to upgrade to, streamed or not, and nothing reaches the upstream (Claude Code retries a refusal about six times
-  and shows a 200 once). A request with no version (a script) is served. The upgrade itself goes through
+  and shows a 200 once). A request with no version (a script) is served. The minimum holds on a Messages turn, a
+  door turn and a chat completion alike. From an outside source (#791): `version_header` names the header a team's
+  own launcher sends its version in (`name/1.2.3` reads as `1.2.3`); `checkin = true` mounts
+  `POST /server/client/checkin` `{"version"}` (at most 4 KiB, else 413) under a person's key, whose latest report,
+  kept in memory, stands for their turns that name none; `outdated_status` is 200 (in the conversation, an OpenAI
+  answer on the chat route), 400 or 426; `outdated_message` words the notice with `{version}` and `{minimum}`, in any
+  language: the listener hands its head the notice as RFC 8187 `UTF-8''` percent-encoded text, which the head
+  decodes. A version is read as at most 128 characters of dotted numbers, each of at most 18 digits.
+- **Path aliases (#791).** `[server.aliases]` maps one first path segment to a served command or `door`, as
+  `"/v1" = "claude-team"`. The listener rewrites the decoded segments once, before any route reads them, so
+  `/v1/chat/completions`, `/v1/models`, `/v1/messages` and `/v1/messages/count_tokens` are the command's own routes
+  with its key, caps, allowlist and minimum client. Boot refuses an alias that is not `/<segment>`, that is written
+  twice (`"/v1"` and `" /v1"`), that is `server`, `health`, `door`, a served command or the head key or command of a
+  served head, or that stands for anything but `door` or a served head. A provider `[server] commands` serves with no
+  head is served at the door alone, so an alias reaches it as `door`. The upgrade itself goes through
   `splice upgrade` and, with F15, the build the server points at: verified download, the new executable must run
   and name its version before it replaces the old, the old kept for rollback, one check at a time.
 - **F10 fixed-cost providers.** `hourly_usd` on a provider, metered from the host's live boot time read at report

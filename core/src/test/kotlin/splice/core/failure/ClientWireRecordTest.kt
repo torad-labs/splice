@@ -145,7 +145,7 @@ private object Section11 {
     }
 
     private fun declined(why: Decline): Fam? = when (why) {
-        Decline.HeapBusy -> Fam.R
+        Decline.HeapBusy, is Decline.UpstreamsFull -> Fam.R
         Decline.ReadTimeout -> null
         is Decline.Preflight -> Fam.T
         // The credential the session sent splice itself: a login cause, answered 401 so the client reads its key

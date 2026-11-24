@@ -8,13 +8,16 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 internal const val PEER_USAGE =
-    "register <name> [--cwd DIR] [--send-to A,B] [--owner PID] | list [--json] | revoke <name> [--purge] | " +
+    "register <name> [--cwd DIR] [--send-to A,B] [--owner PID] | " +
+        "attach [<name>] [--name NAME] [--cwd DIR] [--send-to A,B] [--owner PID] [--harness NAME] " +
+        "[--env] [--json] [--hook] | " +
+        "list [--json] | revoke <name> [--purge] | " +
         "rotate <name> | " +
         "webhook set <name> <url> [--bearer-file F] | webhook clear <name> | webhook test <name> | " +
         "limit <name> <per-minute> <burst> | limit <name> --default | " +
-        "send --as <name> [--id ID] [--pid P [--proc-start S]] <to> <text|-> | " +
-        "inbox --as <name> [--after N] [--limit N] [--ack] [--json] [--follow] | " +
-        "status --as <name> <msgId> [--json] | " +
+        "send [--as <name>] [--id ID] [--pid P [--proc-start S]] <to> <text|-> | " +
+        "inbox [--as <name>] [--after N] [--limit N] [--ack] [--json] [--follow] | " +
+        "status [--as <name>] <msgId> [--json] | " +
         "codex attach [<thread>] [--cwd DIR] [--codex-home DIR] [--peer-name NAME] [--json] [--hook] | " +
         "codex detach [<thread>] [--purge] [--hook]"
 

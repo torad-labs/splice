@@ -15,8 +15,9 @@
 //     never add up past the cap; the turn's first lease takes the place, and its end gives back one never taken;
 //   - a health check that fails takes a server out, and so does a connection it refuses, at once and before the next
 //     check; only a health check that passes brings it back;
-//   - with none healthy a lease is still given, on the least busy of them all: whoever sends a turn anyway then hears
-//     the server's own answer. The server listener asks [UpstreamPool.up] first and refuses the turn itself.
+//   - with none healthy and no cap a lease is still given, on the least busy of them all: whoever sends a turn anyway
+//     then hears the server's own answer. Under a cap none is given on a server that is down. The server listener
+//     asks [UpstreamPool.up] first and refuses the turn itself.
 //
 // A server starts healthy, so a daemon that just booted serves before its first check lands; the first check and the
 // first refused connection correct that within moments. The pool holds no network: what checks health tells it
@@ -50,12 +51,15 @@ public class UpstreamPool(
     public val provider: String,
     upstreams: List<UpstreamConfig>,
     private val log: LogSink,
+    /** The most turns each server takes at once, server mode's `inflight_per_upstream` (#791), held from the pool's
+     *  first lease; 0 takes any number. */
+    cap: Int = 0,
 ) {
     private val members = upstreams.map(::UpstreamMember)
     private val homes = SessionHomes()
 
     // The most turns each server takes at once (server mode's `inflight_per_upstream`); 0 takes any number.
-    private var each = 0
+    private var each = cap
 
     // The turns server mode admitted that have not leased yet, by the id it named each by: each holds a place.
     private val reservations = HashSet<String>()
@@ -91,13 +95,14 @@ public class UpstreamPool(
     }
 
     /** A place on the server a turn goes to now: the one that served [session]'s last turn while it is healthy, else
-     *  [preferred] while a server of that name is healthy, else the healthy one with the least in flight; with none
-     *  healthy, the least busy of them all. Under a cap ([reserve]) a server that is full is passed over: a session
-     *  whose home is full goes to the least busy healthy server with room and keeps its home, since its prompt is
-     *  cached there. A [turn] server mode reserved a place for takes it here; any other lease takes a place only where
-     *  one is left beside the reserved ones. Under a cap no lease is ever given on a server that is full: with no place
-     *  left, null, and the turn is sent nowhere ([full] says why to its person). A healthy server chosen for a [session] with no
-     *  healthy home is where its next turn goes. The turn counts as in flight there until the lease is released. */
+     *  [preferred] while a server of that name is healthy, else the healthy one with the least in flight; with no cap
+     *  and none healthy, the least busy of them all. Under a cap a server that is full is passed over: a session whose
+     *  home is full goes to the least busy healthy server with room and keeps its home, since its prompt is cached
+     *  there. A [turn] server mode reserved a place for takes it here; any other lease takes a place only where one is
+     *  left beside the reserved ones. Under a cap no lease is ever given on a server that is full or down: with no place
+     *  left, null, and the turn is sent nowhere ([full] says why to its person while one is up). A healthy server
+     *  chosen for a [session] with no healthy home is where its next turn goes. The turn counts as in flight there until
+     *  the lease is released. */
     @Synchronized
     public fun lease(preferred: String? = null, session: String? = null, turn: String? = null): UpstreamLease? {
         val reserved = turn != null && reservations.remove(turn)
@@ -120,14 +125,14 @@ public class UpstreamPool(
         else -> open.firstOrNull { it.config.name == preferred } ?: open.minBy { it.inflight }
     }
 
-    /** The servers a lease may take: the healthy ones, or with none healthy all of them (whoever sends a turn anyway
-     *  hears the server's own answer). Under a cap only those under it, and only for a lease holding a reserved place
-     *  or while a place is left beside the reserved ones: null when that leaves none, so no lease is given past it. */
+    /** The servers a lease may take: the healthy ones, or with no cap and none healthy all of them (whoever sends a
+     *  turn anyway hears the server's own answer). Under a cap only healthy ones under it, and only for a lease holding
+     *  a reserved place or while a place is left beside the reserved ones: null when that leaves none, so no lease is
+     *  given past the cap or on a server that is down. */
     private fun open(healthy: List<UpstreamMember>, reserved: Boolean): List<UpstreamMember>? {
-        val candidates = healthy.ifEmpty { members }
-        if (each <= 0) return candidates
-        val roomy = candidates.filter { it.inflight < each }
-        val spare = reserved || room(candidates) > reservations.size
+        if (each <= 0) return healthy.ifEmpty { members }
+        val roomy = healthy.filter { it.inflight < each }
+        val spare = reserved || room(healthy) > reservations.size
         return roomy.takeIf { spare && it.isNotEmpty() }
     }
 

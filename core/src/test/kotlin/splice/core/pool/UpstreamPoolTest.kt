@@ -21,8 +21,8 @@ private fun UpstreamPool.taken(
 class UpstreamPoolTest {
     private val logged = mutableListOf<String>()
 
-    private fun pool(vararg names: String): UpstreamPool =
-        UpstreamPool("box", names.map { UpstreamConfig(it, "http://$it.lan:8080/v1") }, LogSink { logged += it })
+    private fun pool(vararg names: String, cap: Int = 0): UpstreamPool =
+        UpstreamPool("box", names.map { UpstreamConfig(it, "http://$it.lan:8080/v1") }, LogSink { logged += it }, cap)
 
     private fun inflight(pool: UpstreamPool): Map<String, Int> = pool.readings().associate { it.name to it.inflight }
 
@@ -198,6 +198,24 @@ class UpstreamPoolTest {
         pool.checked("b", healthy = false, said = "HTTP 503")
         assertNull(pool.lease(turn = "admitted"), "the only healthy server, a, is full: the turn must be sent nowhere")
         assertEquals(mapOf("a" to 1, "b" to 0), inflight(pool), "no server went past its cap")
+    }
+
+    @Test
+    fun `a pool given its cap when it is made holds it from its first lease, before any turn is reserved`() {
+        val pool = pool("a", "b", cap = 1)
+        assertEquals("a", pool.taken().name)
+        assertEquals("b", pool.taken().name)
+        assertNull(pool.lease(), "a lease on a fresh pool went past its cap")
+        assertEquals(mapOf("a" to 1, "b" to 1), inflight(pool), "no server went past its cap")
+    }
+
+    @Test
+    fun `a reserved turn whose every server went down is given none, the server that went down included`() {
+        val pool = pool("a")
+        assertTrue(pool.reserve("admitted", 1), "a has a place")
+        pool.checked("a", healthy = false, said = "HTTP 503")
+        assertNull(pool.lease(turn = "admitted"), "a turn was placed on a server that is down")
+        assertEquals(mapOf("a" to 0), inflight(pool), "nothing was leased")
     }
 
     @Test

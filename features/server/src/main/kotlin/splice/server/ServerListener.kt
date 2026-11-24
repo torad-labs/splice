@@ -30,7 +30,13 @@
 // its person may not use is a 403 `permission_error` naming it (CommandAccess). Every error is in the Anthropic
 // shape, so Claude Code prints its message. A turn from a laptop whose splice is older than `[server.client] minimum`
 // is answered 200 by its head, in the conversation, with what to upgrade to, and reaches no upstream and no cap
-// (ClientMinimum).
+// (ClientMinimum); `[server.client]` may name another version header, refuse it with 400 or 426 instead, word the
+// notice, and take a laptop's version once at `POST /server/client/checkin` (ClientCheckins, #791). A chat completion
+// and a door turn meet the same minimum.
+//
+// `[server.aliases]` (#791) lets a client that cannot change its base path reach a command or the door at a plain
+// prefix: with `"/v1" = "claude-team"`, `/v1/chat/completions` is `/claude-team/v1/chat/completions`. The path is
+// rewritten once as it is read, before any route judges it (PathAliases).
 //
 // A person's key is the server's secret on the way out as well. A head sends its provider the caller's headers that
 // provider's `forward_headers` names, and one of those whose value holds a key this server issued, the caller's own
@@ -47,7 +53,8 @@
 // JSON body as before. An OpenAI-style client's streamed completion is kept alive the same way (OpenAiRoute).
 //
 // A path is read the way a head reads one, percent-escapes decoded, and a head is handed the path as it was read
-// (RequestPaths): what a head serves as a turn is what the caps counted, however the client spelled it.
+// (RequestPaths): what a head serves as a turn is what the caps counted, however the client spelled it. A command's
+// own routes, its turns and its launch, are HeadCommandRoute's.
 //
 // HTTP/2 is off: Claude Code speaks HTTP/1.1, and a turn's client leaving is read off its connection (WatchedRelay),
 // which is one request's on HTTP/1.1.
@@ -68,7 +75,6 @@ import io.ktor.server.netty.NettyApplicationEngine
 import io.ktor.server.request.httpMethod
 import io.ktor.server.response.respondText
 import kotlinx.coroutines.CoroutineDispatcher
-import splice.core.pool.PREFERRED_UPSTREAM_HEADER
 import splice.core.topology.DOOR_SEGMENT
 import splice.core.topology.ServerAddress
 import splice.core.topology.ServerConfig
@@ -78,7 +84,10 @@ import splice.http.listen.HttpListenerThreads
 import splice.server.caller.AdminAccess
 import splice.server.caller.ClientAddresses
 import splice.server.caller.KeyAdmission
-import splice.server.ledger.ROUTE_MESSAGES
+import splice.server.client.ClientCheckins
+import splice.server.client.ClientMinimum
+import splice.server.path.PathAliases
+import splice.server.path.RequestPaths
 import splice.server.signin.SigninAttempts
 import splice.server.signin.SigninRoute
 import splice.server.telemetry.OTLP_ROUTE
@@ -86,12 +95,8 @@ import splice.server.telemetry.TelemetryRelay
 import splice.server.web.BrowserForwardAuth
 import splice.server.web.ForwardAuthRoute
 import splice.server.web.ServerPublicRoutes
-import splice.share.HEAD_API_ROOT
-import splice.share.HEAD_LAUNCH_ROUTE
-import splice.share.HeadTurn
 import splice.share.RefusalVoice
 import splice.share.ShareCatalog
-import splice.share.SharedHead
 import java.security.KeyStore
 import kotlin.time.Duration.Companion.seconds
 
@@ -132,21 +137,21 @@ internal class ServerListener(
     private val watched = WatchedRelay()
     private val paths = RequestPaths()
     private val admission = TurnAdmission(parts, voice, catalog, watched)
-    private val bound = ProviderBound(parts.keys, log)
-    private val minimum = ClientMinimum(server.client)
-    private val teamDoor = TeamDoorRoute(server, parts, minimum, admission, voice, bound)
+    private val checkins = ClientCheckins(server.client, voice)
+    private val minimum = ClientMinimum(server.client, checkins)
+    private val aliases = PathAliases(server)
+    private val teamDoor = TeamDoorRoute(server, parts, minimum, admission, voice, ProviderBound(parts.keys, log))
 
     /** How often a streamed turn's client is sent a keepalive while its answer is silent; null sends none. */
     private val keepalive = server.keepaliveSeconds.takeIf { it > 0 }?.seconds
-    private val openAi = OpenAiRoute(parts, io, log, keepalive)
+    private val openAi = OpenAiRoute(parts, io, log, keepalive, minimum)
+    private val routing = HeadRouting(voice, catalog, admission, watched, minimum, keepalive)
+    private val heads = HeadCommandRoute(parts, routing, log)
     private val profile = ProfileRoute(server, parts.heads, io, addresses, secure = tls != null)
     private val telemetry = server.telemetry?.let { TelemetryRelay(it, voice, log) }
 
     /** The path the telemetry relay answers under (F8). */
     private val otlpRoute = listOf(SERVER_ROOT, OTLP_ROUTE)
-
-    /** The path, after the command, of the one request that runs a turn on the Messages route. */
-    private val turnPath = listOf(HEAD_API_ROOT, "messages")
 
     @Volatile
     private var engine: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -185,7 +190,8 @@ internal class ServerListener(
     }
 
     private suspend fun answer(call: ApplicationCall) {
-        val path = paths.read(call)
+        // An alias (#791) is read as the path it stands for once, here, so every route after judges that path.
+        val path = paths.read(call)?.let(aliases::rewrite)
         if (answeredOpen(call, path)) return
         // A request refused before its route is known is still refused in the shape its client reads.
         val voiced = if (path != null && openAi.asks(call, path)) openAi.voice else voice
@@ -214,6 +220,7 @@ internal class ServerListener(
             path.isEmpty() && call.request.httpMethod == HttpMethod.Get -> catalog.directory(call)
             path.isEmpty() -> noSuchPath(call)
             profile.asks(call, path) -> profile.answer(call, key)
+            checkins.asks(call, path) -> checkins.answer(call, key)
             path.take(2) == otlpRoute -> otlp(call, key, path.drop(2))
             else -> beyond(call, key, path)
         }
@@ -224,7 +231,7 @@ internal class ServerListener(
         when (path.first()) {
             SERVER_ROOT -> admin.answer(call, key, path.drop(1))
             DOOR_SEGMENT -> teamDoor.answer(call, key, path.drop(1))
-            else -> if (!openAi.answered(call, key, path)) command(call, key, path)
+            else -> if (!openAi.answered(call, key, path)) heads.answer(call, key, path)
         }
     }
 
@@ -233,50 +240,6 @@ internal class ServerListener(
     private suspend fun otlp(call: ApplicationCall, key: ServerKey, rest: List<String>) {
         val relay = telemetry ?: return noSuchPath(call)
         relay.answer(call, rest, key.person, parts.people.team(key.person, server.teams))
-    }
-
-    /** [path] names a served command first: its turns, or its launch. */
-    private suspend fun command(call: ApplicationCall, key: ServerKey, path: List<String>) {
-        val head = catalog.named(call, path.first()) ?: return
-        val rest = path.drop(1)
-        when {
-            rest.firstOrNull() == HEAD_API_ROOT -> turn(call, key, head, rest)
-            rest == listOf(HEAD_LAUNCH_ROUTE) && call.request.httpMethod == HttpMethod.Get -> catalog.launch(call, head)
-            else -> noSuchPath(call)
-        }
-    }
-
-    /** Relays [path] to [head] for [key]'s person. A turn takes one of the person's slots first, or is refused, and
-     *  leaves its row in the ledger however it ends; one from an older laptop is its head's to answer (F9). */
-    private suspend fun turn(call: ApplicationCall, key: ServerKey, head: SharedHead, path: List<String>) {
-        val isTurn = call.request.httpMethod == HttpMethod.Post && path == turnPath
-        // An older laptop's turn is answered by its head with what to upgrade to, and takes no slot (F9).
-        val notice = if (isTurn) minimum.notice(call) else null
-        if (!isTurn || notice != null) {
-            if (!head.running()) return catalog.notRunning(call, head)
-            val asked = headTurn(call, key, head, path, notice.orEmpty())
-            watched.turn(call, slot = null) { parts.carriers.relay.turn(call, asked) }
-            return
-        }
-        admission.served(call, key, HeadCommand(head), ROUTE_MESSAGES) { turn ->
-            val asked = headTurn(call, key, head, path, mapOf(parts.books.turns.named(turn)))
-            parts.carriers.relay.turn(call, asked)
-        }
-    }
-
-    /** [path] as [head] is handed it for [key]'s person, with [named] beside the upstream they prefer. */
-    private fun headTurn(
-        call: ApplicationCall,
-        key: ServerKey,
-        head: SharedHead,
-        path: List<String>,
-        named: Map<String, String>,
-    ): HeadTurn {
-        val preferred = parts.people.of(key.person).preferred
-        val chosen = listOfNotNull(preferred?.let { PREFERRED_UPSTREAM_HEADER to it }).toMap()
-        // The head sends its provider the headers `forward_headers` names, and knows none of this server's keys.
-        val held = bound.keyed(call, parts.upstreams.forwarded(head.key))
-        return HeadTurn(head, paths.spell(path) + bound.query(paths.query(call)), chosen + named, keepalive, held)
     }
 
     private suspend fun noSuchPath(call: ApplicationCall) {

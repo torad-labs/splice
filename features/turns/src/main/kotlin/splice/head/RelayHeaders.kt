@@ -11,12 +11,15 @@ import splice.core.turn.ASKED_MODEL_HEADER
 import splice.core.turn.GATHERS_FOR_HEADER
 import splice.core.turn.SERVED_NOTICE_HEADER
 import splice.core.turn.SERVED_TURN_HEADER
+import splice.core.turn.ServedNoticeText
 import splice.core.turn.TURN_DOOR_HEADER
 import splice.core.turn.TurnAgent
 import splice.core.turn.TurnRelay
 import splice.core.turn.turnDoors
 
 internal object RelayHeaders {
+    private val noticeText = ServedNoticeText()
+
     /** What a head's relay says of [call]'s turn. A head sits behind a relay that strips these headers from the caller
      *  and sets its own, so its call's headers are the relay's: the server its person prefers among the provider's
      *  upstreams, the id the listener named the turn by (so the turn tells it how it went, server mode's ledger, F5),
@@ -49,13 +52,16 @@ internal object RelayHeaders {
         )
     }
 
-    /** The notice a listener sent in place of [call]'s turn, to be answered locally: the relay's header for a head, the
-     *  gateway's own value for a gateway turn. */
+    /** The notice a listener sent in place of [call]'s turn, to be answered locally: the relay's header for a head (its
+     *  text decoded, ServedNoticeText), the gateway's own value for a gateway turn. */
     fun notice(call: ApplicationCall): String? {
         val turn = GatewayTurns.of(call)
-        val said = if (turn == null) call.request.headers[SERVED_NOTICE_HEADER] else turn.listener.notice
+        val said = if (turn == null) relayed(call) else turn.listener.notice
         return said?.takeIf(String::isNotBlank)
     }
+
+    private fun relayed(call: ApplicationCall): String? =
+        call.request.headers[SERVED_NOTICE_HEADER]?.let(noticeText::decode)
 
     private fun workedFor(headers: Headers): String? = headers[GATHERS_FOR_HEADER]?.takeIf { it.isNotBlank() }
 

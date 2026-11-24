@@ -8,6 +8,7 @@ package splice.core.topology
 
 import splice.core.listen.IpLiterals
 import splice.core.topology.metering.ServerMeteringChecks
+import splice.core.topology.routing.ServerRoutingChecks
 import splice.core.util.LoopbackOverride
 import java.net.URI
 import java.net.URISyntaxException
@@ -23,8 +24,8 @@ internal class ServerChecks(
 
     fun findings(): List<TopologyFinding> = if (server.declared) {
         listen() + exclusive() + commands() + tls() + people() + limits() + client() + signin() + telemetry() +
-            ServerIdentityChecks(server).findings() + ServerLedgerChecks(server).findings() +
-            ServerMeteringChecks(topology).findings()
+            ServerRoutingChecks(topology).findings() + ServerIdentityChecks(server).findings() +
+            ServerLedgerChecks(server).findings() + ServerMeteringChecks(topology).findings()
     } else {
         emptyList()
     }

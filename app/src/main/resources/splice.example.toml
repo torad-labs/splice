@@ -87,6 +87,18 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # [remote.claude]
 # url = "http://devbox.lan:3097/door"
 
+# ── server mode: the minimum client and path aliases (docs/specs/server-mode.md, F9 and #791) ──
+# Under a [server] table (README, "Server mode"), a team's own launcher can report its version, and a client fixed on
+# a plain base path can reach a command through an alias.
+# [server.client]
+# minimum = "0.10.0"
+# version_header = "x-team-launcher"   # read the version here instead of x-splice-client ("team-launcher/0.10.2" reads as 0.10.2)
+# outdated_status = 426                 # 200 (default) tells an older laptop in the conversation; 400 or 426 refuses its turn
+# outdated_message = "Run team-update: {version} is older than {minimum}."
+# checkin = true                        # POST /server/client/checkin {"version": "0.10.2"}, kept per person in memory
+# [server.aliases]
+# "/v1" = "claude-team"                 # /v1/chat/completions, /v1/models, /v1/messages are claude-team's; or = "door"
+
 # ── compaction instructions: your text after Claude Code's own summarizer prompt ──
 # Most specific scope wins and REPLACES the others (project+model > project > model > global);
 # absent inherits; instructions = "" opts out. Text inline or file = "~/path". Compaction requests

@@ -12,7 +12,7 @@ import splice.app.desktop.setup.DesktopMode
 import splice.app.desktop.setup.DesktopPrograms
 import splice.app.desktop.setup.SideBySideDesktop
 import splice.app.desktop.setup.SideBySideLaunchers
-import splice.client.ClaudeModelLists
+import splice.client.ManagedSettings
 import splice.client.desktop.DesktopAppConfig
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.CLAUDE_SPLICE_COMMAND
@@ -26,12 +26,12 @@ import splice.topology.TopologyStatePaths
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** [managed] is Claude Code's managed settings file on this OS (ClaudeModelLists.managed), where a processWrapper is
- *  named; null where Claude Code reads none. */
+/** [managed] is Claude Code's managed settings file on this OS (ManagedSettings.file), where a processWrapper is
+ *  named; null reads none. */
 internal class DesktopFactsRead(
     private val env: EnvReader,
     private val osName: String,
-    private val managed: Path? = ClaudeModelLists.managed(osName),
+    private val managed: Path? = ManagedSettings(osName).file,
 ) {
     private val quiet = TerminalOutput { }
 

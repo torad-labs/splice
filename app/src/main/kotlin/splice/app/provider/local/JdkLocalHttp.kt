@@ -7,6 +7,8 @@ import splice.app.server.HealthHttp
 import splice.upstream.transport.LocalHttp
 import splice.upstream.transport.LocalHttpReply
 import java.io.IOException
+import java.net.HttpURLConnection.HTTP_MULT_CHOICE
+import java.net.HttpURLConnection.HTTP_OK
 import java.net.URI
 import java.net.URISyntaxException
 import java.net.http.HttpClient
@@ -43,20 +45,41 @@ internal class JdkLocalHttp(
         null
     }
 
+    /** The external state probe needs a bounded answer, without waiting for a non-2xx body at all. */
+    fun getBounded(url: String, maxBytes: Int): LocalHttpReply {
+        val reply = client.send(request("GET", url, null), HttpResponse.BodyHandlers.ofInputStream())
+        return reply.body().use { stream ->
+            val status = reply.statusCode()
+            val body = if (status in HTTP_OK until HTTP_MULT_CHOICE) {
+                val bytes = stream.readNBytes(maxBytes + 1)
+                if (bytes.size > maxBytes) throw LocalHttpBodyTooLarge()
+                bytes.decodeToString(throwOnInvalidSequence = true)
+            } else {
+                ""
+            }
+            LocalHttpReply(status, body)
+        }
+    }
+
     private fun send(method: String, url: String, body: String?): LocalHttpReply {
+        val reply = client.send(request(method, url, body), HttpResponse.BodyHandlers.ofString())
+        return LocalHttpReply(reply.statusCode(), reply.body())
+    }
+
+    private fun request(method: String, url: String, body: String?): HttpRequest {
         val builder = HttpRequest.newBuilder(URI(url))
             // Only the live turn may take minutes; a probe POST (Ollama /api/show) is bounded
             // like a GET, so a wedged runtime cannot hold head assembly for 120 s per model.
             .timeout(Duration.ofSeconds(if (url.endsWith(LIVE_PATH)) LIVE_TIMEOUT_S else PROBE_TIMEOUT_S))
             .header("Content-Type", "application/json")
         headers.forEach { (name, value) -> builder.header(name, value) }
-        val request = builder
+        return builder
             .method(method, body?.let(HttpRequest.BodyPublishers::ofString) ?: HttpRequest.BodyPublishers.noBody())
             .build()
-        val reply = client.send(request, HttpResponse.BodyHandlers.ofString())
-        return LocalHttpReply(reply.statusCode(), reply.body())
     }
 }
+
+internal class LocalHttpBodyTooLarge : IOException("HTTP body is too large")
 
 /** Server mode's health checks (F4) over the JDK client: one client for every check of every pool, because a JDK
  *  client holds a selector thread of its own, made at the first check. A server still connecting after the probes'

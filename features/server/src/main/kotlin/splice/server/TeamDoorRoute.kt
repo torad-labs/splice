@@ -47,8 +47,11 @@ internal class TeamDoorRoute(
     private suspend fun turn(call: ApplicationCall, key: ServerKey, gateway: TeamGateway) {
         val routed = gateway.routed(call, voice, counting = false, served()) ?: return
         val notice = minimum.told(call)
-        if (notice != null) return routed.serve(TeamTurnMeta(notice = notice))
         val provider = ProviderCommand(routed.provider, routed.names)
+        if (notice != null) {
+            if (!admission.refusesNotice(call, key, provider)) routed.serve(TeamTurnMeta(notice = notice))
+            return
+        }
         admission.served(call, key, provider, ROUTE_MESSAGES) { turn ->
             val preferred = parts.people.of(key.person).preferred
             val named = parts.books.turns.named(turn).second

@@ -69,7 +69,7 @@ public class ServerMode(
     public val keyApi: KeyApi = KeyApi(keys, log, audit)
 
     /** The upstreams as they read now, as the control plane lists them. */
-    public val upstreamApi: UpstreamApi = UpstreamApi(upstreams)
+    public val upstreamApi: UpstreamApi = UpstreamApi(upstreams, server.state, clock)
 
     /** Each person's settings, as the CLI and the control plane set them. */
     public val personApi: PersonApi = PersonApi(people, log, upstreamApi, server.commands, audit)

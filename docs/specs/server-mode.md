@@ -298,10 +298,14 @@ retry_after_starting = 30
   upstream, in the route's own error shape, carrying `message_starting` or `message_off` (`{until}` is replaced by
   the `until` the source named). The refusal's `Retry-After` is `retry_after_starting` while starting; while off
   until a future `until` it is the seconds remaining until then, never less than one; while off with an `until`
-  absent or already past it falls back to `retry_after_starting`.
+  absent or already past it falls back to `retry_after_starting`. Only a new `up` signal resumes service; an
+  elapsed `until` is not an `up` signal.
+- Before the first valid reading the signal is assumed up. If a read fails or returns invalid output, the server
+  keeps the last valid signal and tries again at the next poll. The API reports the latest check time and error.
 - The signal is the server's, not a pool's: it holds for a pooled provider and for a provider on a single
-  `base_url` alike, on the Messages, door and OpenAI routes. The current state is shown beside the pooled
-  upstreams in `GET /api/server/upstreams`, including on a server with no pooled provider at all.
+  `base_url` alike, on the Messages, door and OpenAI routes. When configured, `GET /api/server/upstreams` has a
+  top-level `state` object with `state`, `until`, `message`, `last_error`, and `last_checked`, including on a
+  server with no pooled provider at all.
 
 ### The readiness probe (`[server.probe]`)
 

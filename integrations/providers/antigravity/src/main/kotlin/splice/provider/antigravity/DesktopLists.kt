@@ -31,9 +31,10 @@ internal class DesktopLists {
         }
     }
 
-    /** The commands of an `available_commands_update`. */
-    fun commands(update: JsonObject): List<AgyCommand> =
-        (update["availableCommands"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.mapNotNull { command ->
+    /** The roster of an `available_commands_update`, or null when no list was announced. */
+    fun commands(update: JsonObject): List<AgyCommand>? {
+        val commands = update["availableCommands"] as? JsonArray ?: return null
+        return commands.mapNotNull { it as? JsonObject }.mapNotNull { command ->
             JsonScalars.str(command, "name")?.let { name ->
                 AgyCommand(
                     name,
@@ -42,13 +43,14 @@ internal class DesktopLists {
                 )
             }
         }
+    }
 
     /** Merges [agy] native slash commands with [local] Claude skills and commands, keeping the first entry per name. */
     fun mergeCommands(agy: List<AgyCommand>, local: List<LocalSkillItem>): List<AgyCommand> {
         val merged = LinkedHashMap<String, AgyCommand>()
         agy.forEach { merged.putIfAbsent(it.name, it) }
         local.forEach { item ->
-            merged.putIfAbsent(item.name, AgyCommand(item.name, item.description, item.hint))
+            merged.putIfAbsent(item.name, AgyCommand(item.name, item.menuDescription, item.hint))
         }
         return merged.values.toList()
     }

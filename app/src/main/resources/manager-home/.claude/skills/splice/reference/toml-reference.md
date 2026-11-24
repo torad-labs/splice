@@ -35,7 +35,7 @@ refuses the window) keeps the windows already in force and says why in the daemo
 Source: integrations/topology/src/main/kotlin/splice/topology/TopologyLoader.kt (lines 226-290);
 Topology.kt (withoutLiveKeys, lines 99-108); app/src/main/kotlin/splice/app/daemon/TopologyWindows.kt (header,
 lines 1-23); splice.example.toml (lines 3-7, 74-75).
-README "Long-session reliability" says every other key is read only at boot; the code also reads `mcp_share`,
+docs/wiki/architecture-and-troubleshooting.md "Long-session reliability" says every other key is read only at boot; the code also reads `mcp_share`,
 `update_channel`, `auto_update` and `[compaction]` live. web-console.md section 2.3 (line 96) names only a
 model's `context_window` as live. The example's lines 500-501 say a window edit reaches running sessions after
 `splice restart`, against its own lines 5-6. The list above is the code's.
@@ -565,4 +565,4 @@ features/harness/src/main/kotlin/splice/harness/; docs/specs/harness.md.
 | retries and timeouts | the retry and timeout knobs, section 4 | `reliability-mcp-install.md` |
 | updates | `[daemon] update_channel`, `auto_update` | `reliability-mcp-install.md` |
 
-Source: README.md (lines 274-291, budgets; lines 342-437, accounts); docs/specs/web-console.md (line 521, Teams in state).
+Source: `docs/wiki/console-and-sessions.md#daily-budgets`, `docs/wiki/providers-and-accounts.md#account-pools`; docs/specs/web-console.md (line 521, Teams in state).

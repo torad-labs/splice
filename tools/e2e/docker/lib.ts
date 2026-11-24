@@ -129,7 +129,8 @@ const verbs: Record<string, (argv: readonly string[]) => void> = {
    *  head-catalog: every head's command starts Claude Code in gateway mode at the Splice gateway, in the
    *  head's own folder, on the head's own model as the gateway lists it. The launch writes no model list
    *  and no picker (no availableModels, model, enforceAvailableModels, tier slots or the options cache),
-   *  and the one window every gateway session holds is planted; the session holds the terminal's key,
+   *  and the head's own window (its pinned row's, the one its turns name to the gateway) is planted; the
+   *  session holds the terminal's key,
    *  never the management key. The launch still packages the head (status line, /login command, its
    *  hook), and the status line reads the turn-key header file. */
   "head-contract"(argv) {

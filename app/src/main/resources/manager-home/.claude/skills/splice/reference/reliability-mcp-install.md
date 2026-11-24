@@ -220,7 +220,7 @@ Source: `Knob.kt` (the header comment on which knobs are live, and the `MAX_INFL
   work around it.
 
 Source: `features/lifecycle/.../restart/RestartCommand.kt` header; `features/lifecycle/.../restart/RestartAfterCompactions.kt`
-header; `features/lifecycle/.../start/DaemonLaunch.kt` line 157; `README.md` lines 374, 1018-1022; `CHANGELOG.md` 164-168,
+header; `features/lifecycle/.../start/DaemonLaunch.kt` line 157; `docs/wiki/architecture-and-troubleshooting.md#long-session-reliability`, `docs/wiki/mcp-hub-and-sync.md#the-hub-front-and-holders`; `CHANGELOG.md` 164-168,
 1208-1210; `docs/specs/mcp-hub.md` lines 61-65, 230-235.
 
 ## 2. MCP: the host and the hub
@@ -243,7 +243,7 @@ session starts its own MCP servers` and Claude Code runs its own.
 `docs/specs/mcp-hub.md` is the approved design plus proofs on Claude Code 2.1.296. Read it for the why.
 Where it says "will", trust the code and `CHANGELOG.md` 160-186. The hub port 3095 is a constant in the code.
 
-Source: `README.md` 809-832; `CHANGELOG.md` 232-258; `integrations/mcp/.../hub/McpHubGate.kt` 23-52;
+Source: `docs/wiki/mcp-hub-and-sync.md#where-the-hub-runs`; `CHANGELOG.md` 232-258; `integrations/mcp/.../hub/McpHubGate.kt` 23-52;
 `app/.../McpHubWiring.kt` 100-111; `app/.../ControlLaunchWiring.kt` 43; `features/diagnostics/.../DoctorClientVersion.kt` 28-62;
 `integrations/claude-code/.../mcp/McpHubLaunch.kt` 40.
 
@@ -268,7 +268,7 @@ To add a server, the person runs Claude Code's own command (`claude mcp add`; it
 Scope `user` reaches every session. Then the server appears under Settings > MCP once a session starts.
 Never read `~/.claude.json` into the conversation: server entries often carry API keys in `env`.
 
-Source: `app/.../McpHostingWiring.kt` 53-94; `README.md` 815-832, 675; `core/.../topology/Topology.kt` 140-148;
+Source: `app/.../McpHostingWiring.kt` 53-94; `docs/wiki/mcp-hub-and-sync.md#shared-mcp-hosting`; `core/.../topology/Topology.kt` 140-148;
 `app/.../control/mount/McpMount.kt` 32-77; `docs/specs/mcp-hub.md` lines 22-48.
 
 ### 2.3 The keys that govern hosting
@@ -284,7 +284,7 @@ Source: `app/.../McpHostingWiring.kt` 53-94; `README.md` 815-832, 675; `core/...
 | `[defaults] mcpSlice` | `app-mcp.slice` | the systemd slice servers spawn into. Restart |
 
 Source: `core/.../topology/Topology.kt` 140-148; `Knob.kt` (the shared MCP hosting entries and `MCP_SLICE`); `app/.../McpHostingWiring.kt` 36-48;
-`app/src/main/resources/splice.example.toml` lines 3-7, 29-42, 951-955; `README.md` 818-822, 847-852.
+`app/src/main/resources/splice.example.toml` lines 3-7, 29-42, 951-955; `docs/wiki/mcp-hub-and-sync.md#defaults-and-restarts`.
 
 ### 2.4 The hub's files
 
@@ -299,7 +299,7 @@ Source: `core/.../topology/Topology.kt` 140-148; `Knob.kt` (the shared MCP hosti
 `splice setup` with sharing on enables and starts `splice-mcp-front.socket`, but only over units splice itself
 wrote. Otherwise setup prints the command. Until the socket is on, each session starts its own servers.
 
-Source: `README.md` 659-661, 675-688, 743; `CHANGELOG.md` 154-156, 243-258; `app/.../InstallWiring.kt` 28-111;
+Source: `docs/wiki/mcp-hub-and-sync.md#systemd-units`, `docs/wiki/disk-and-privacy.md#settings-and-statistics`; `CHANGELOG.md` 154-156, 243-258; `app/.../InstallWiring.kt` 28-111;
 `install.sh` 504-510.
 
 ### 2.5 See an MCP server's state
@@ -366,7 +366,7 @@ never reruns lost source. `keepCodeModeWork = "false"` keeps the journal in memo
 scripts. A script splice cannot match to the conversation falls back to the client's own history, with one
 `[code-mode]` log line.
 
-Source: `README.md` 911-959; `core/.../topology/QuirksConfig.kt` 70-90; `core/.../topology/Topology.kt` 222-247;
+Source: `docs/wiki/modes-and-extensions.md#code-mode-for-chatgpt`; `core/.../topology/QuirksConfig.kt` 70-90; `core/.../topology/Topology.kt` 222-247;
 `app/src/main/resources/splice.example.toml` 145-169; `Knob.kt` (the `KEEP_CODE_MODE_WORK` entry).
 
 ## 4. Architecture brief
@@ -389,7 +389,7 @@ Source: `README.md` 911-959; `core/.../topology/QuirksConfig.kt` 70-90; `core/..
    failed or cut stream is never shown as a clean answer.
 7. Perf rows, the trace and usage are written to the state dir.
 
-Source: `app/src/main/dist/bin/splice-launch` header; `README.md` 998-1016; `features/launch/.../recipe/LaunchService.kt`
+Source: `app/src/main/dist/bin/splice-launch` header; `docs/wiki/architecture-and-troubleshooting.md#a-turn-step-by-step`; `features/launch/.../recipe/LaunchService.kt`
 339-392 (`buildEnv`); `features/turns/.../head/HeadServer.kt` 1-18; `AGENTS.md` lines 35-43 (honest failures).
 
 ### 4.2 The processes
@@ -419,7 +419,7 @@ Source: `ControlServer.kt` 1-8, 211-229, 305-336; `features/turns/.../head/HeadE
   `splice.example.toml`.
 - `quality/`: architecture laws. The module graph is law (`gradle/module-law.txt`).
 
-Source: `README.md` 1054-1081; `gradle/module-law.txt`; `settings.gradle.kts`.
+Source: `docs/wiki/architecture-and-troubleshooting.md#layout`; `gradle/module-law.txt`; `settings.gradle.kts`.
 
 ### 4.4 Where state lives
 
@@ -434,13 +434,13 @@ Source: `README.md` 1054-1081; `gradle/module-law.txt`; `settings.gradle.kts`.
 
 The manager reads nothing in the state dir by hand: it holds `mgmt-key` and `console-open.html`, which carries the management key. Use `splice logs`, `splice status` and `splice doctor` instead. The paths here are for explanation.
 
-The example file's `state_dir` comment (lines 15-17) now says the same default, `~/.splice/state` (`StatePaths.kt` 202); logs sit in the folder beside it. Stale docs on this: `README.md` says other keys are read only at boot, but the code re-reads `mcp_share`, `update_channel`, `auto_update` and the `[compaction]` tables live.
+The example file's `state_dir` comment (lines 15-17) now says the same default, `~/.splice/state` (`StatePaths.kt` 202); logs sit in the folder beside it. `mcp_share`, `update_channel`, `auto_update` and the `[compaction]` tables are read live; see `docs/wiki/configuration-reference.md#which-changes-take-effect-live`.
 
 On this machine the state dir is `~/.claude-codex/state`, so the logs are in `~/.claude-codex/logs`. Run
 `splice doctor`: it reports which root is live and warns about a root it could not read.
 
 Source: `core/.../config/StatePaths.kt` 45-55, 153-258; `core/.../topology/Topology.kt` 130;
-`app/src/main/resources/splice.example.toml` 13-17, 1041-1045; `README.md` 562-574, 732-740.
+`app/src/main/resources/splice.example.toml` 13-17, 1041-1045; `docs/wiki/disk-and-privacy.md#what-splice-keeps-on-your-disk`.
 
 ## 5. Install, upgrade, rollback
 
@@ -475,7 +475,7 @@ Source: `install.sh` lines 7-16, 93-147, 273-352, 397-417, 488-521, 569-592.
 | `splice check-config` | the boot findings pass, no daemon. Exit 0 clean, exit 3 on any finding, all listed |
 
 Source: `app/.../cli/CommandParser.kt` 77-201; `app/.../InstallWiring.kt` 92-111; `app/.../manager/ManagerHome.kt` 1-10; `features/diagnostics/.../doctor/DoctorCommand.kt`
-64-75, 239-251; `app/.../cli/ConfigPreflight.kt` 21-51; `README.md` 160, 352-360.
+64-75, 239-251; `app/.../cli/ConfigPreflight.kt` 21-51; `docs/wiki/getting-started.md#guided-setup`, `docs/wiki/configuration-reference.md#check-configuration`.
 
 ### 5.3 Upgrade, auto-update and the beta channel
 
@@ -505,8 +505,7 @@ the first moment no turn is in flight, or after the bounded wait (30 min). It ac
 exists. One try per version per daemon. Any other value of `update_channel` is a config finding.
 
 Source: `features/lifecycle/.../upgrade/UpgradeArgs.kt` 10-60; `UpgradeAuto.kt` 1-70; `UpgradeLayout.kt` 28-62;
-`UpgradeCommand.kt` 44-48; `core/.../topology/Topology.kt` 146-148; `TopologyWriter.kt` 386-391; `README.md` 104-120,
-738-740; `app/src/main/resources/splice.example.toml` 37-42.
+`UpgradeCommand.kt` 44-48; `core/.../topology/Topology.kt` 146-148; `TopologyWriter.kt` 386-391; `docs/wiki/upgrading-to-0.7.0.md#upgrade-step-by-step`; `app/src/main/resources/splice.example.toml` 37-42.
 
 ### 5.4 Backup and rollback
 
@@ -514,13 +513,13 @@ Source: `features/lifecycle/.../upgrade/UpgradeArgs.kt` 10-60; `UpgradeAuto.kt` 
   Or re-run the installer pinned to the older tag: `curl -fsSL <release>/install.sh | env SPLICE_VERSION=vX.Y.Z bash`.
 - A failed `install.sh` restores the old jar and shim by itself. If it cannot, it keeps the backups and prints the
   commands that finish the restore.
-- Operator convention, not in code or the README: copy the jar to a dated name before replacing it by hand,
+- Operator convention, not part of the supported rollback: copy the jar to a dated name before replacing it by hand,
   `cp -p ~/.local/share/splice/splice.jar ~/.local/share/splice/splice.jar.bak-<date>`. The person's own
   `splice.jar.bak-<stamp>-pre-<sha>` files on this machine follow it. Offer it; do not assume it exists.
 - `splice.toml` backups: console edits keep the ten newest in `<state>/config-backups/`. `splice add` keeps none.
   A hand copy beside the file is the manager's convention (`operations.md`).
 
-Source: `install.sh` 422-470, 529-569; `README.md` 114, 662-663; `UpgradeActivation.kt` 1-45.
+Source: `install.sh` 422-470, 529-569; `docs/wiki/upgrading-to-0.7.0.md#roll-back-to-064`; `UpgradeActivation.kt` 1-45.
 
 ### 5.5 Uninstall
 
@@ -552,7 +551,7 @@ Never run `splice logs --follow` (it never returns). `splice trace` and `splice 
 content: ask first. A log line can quote up to 200 characters of an upstream error body. Never paste a key you
 find in output.
 
-Source: `features/diagnostics/.../logs/LogsCommand.kt` 1-45, 163-169; `README.md` 600-601, 362-365;
+Source: `features/diagnostics/.../logs/LogsCommand.kt` 1-45, 163-169; `docs/wiki/architecture-and-troubleshooting.md#logs-and-records`;
 `app/.../cli/status/StatusCommand.kt` 41-72.
 
 ### 6.2 What `splice status` says
@@ -588,10 +587,10 @@ Source: `app/.../head/HeadBoot.kt` 28-60; `core/.../topology/TopologyMessages.kt
 `app/.../cli/auth/KeyCommand.kt` 1-6; `app/.../cli/status/ConsoleCommand.kt` 49-72; `app/src/main/resources/console/api.js` 29-147;
 `CHANGELOG.md` 183-184, 274-280, 1211-1212, 1952-1955; `app/.../daemon/TopologyWindows.kt` 1-22;
 `core/.../model/ModelCatalog.kt` 6-30, 216-288; `app/src/main/resources/splice.example.toml` 460-469, 512-524;
-`README.md` 172-185, 372-376, 1024; `features/lifecycle/.../restart/RestartCommand.kt` 1-6.
+`docs/wiki/architecture-and-troubleshooting.md#common-problems`; `features/lifecycle/.../restart/RestartCommand.kt` 1-6.
 
 The example file's comment near `splice.example.toml` line 525 says a window edit needs `splice restart`. The
-header at lines 5-6, the README and `TopologyWindows.kt` say it does not. The code wins: no restart.
+header at lines 5-6 and `TopologyWindows.kt` say it does not. The code wins: no restart.
 
 ### 6.4 When the table does not answer
 

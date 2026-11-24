@@ -71,19 +71,25 @@ internal class GatewayMoveChecks(private val topology: Topology) {
     private fun serving(key: String, head: HeadConfig, provider: ProviderConfig): List<TopologyFinding> {
         val table = "providers.${keys.render(head.provider)}"
         val gets = served.getValue(head.provider)
+        val heads = topology.heads.values.filter { it.provider == head.provider }.map { it.servedOn(provider) }
+        val window = Said("context_window", head.contextWindow, provider.contextWindow, gets.contextWindow)
+        val slots = Said(
+            "model_slots",
+            head.modelSlots.ifEmpty { null },
+            provider.modelSlots.ifEmpty { null },
+            gets.modelSlots.ifEmpty { null },
+        )
+        val tiers = moving(
+            provider.modelSlots.isEmpty(),
+            heads.map { it.tierModels().ifEmpty { null } },
+            gets.tierModels.ifEmpty { null },
+            table,
+        )
+        val windows = moving(window.provider == null, heads.map { it.contextWindow }, window.gateway, table)
         return listOfNotNull(
-            held(key, Said("context_window", head.contextWindow, provider.contextWindow, gets.contextWindow), table),
-            held(
-                key,
-                Said(
-                    "model_slots",
-                    head.modelSlots.ifEmpty { null },
-                    provider.modelSlots.ifEmpty { null },
-                    gets.modelSlots.ifEmpty { null },
-                ),
-                table,
-            ),
-            embeddedTiers(key, head, provider),
+            held(key, window, table, windows),
+            held(key, slots, table, tiers),
+            embeddedTiers(key, head, provider, tiers),
         ) + prompt(key, head, provider)
     }
 
@@ -130,16 +136,40 @@ internal class GatewayMoveChecks(private val topology: Topology) {
     }
 
     /** The tiers a head names on its own model rows (`slot`), which the gateway reads from the provider's `model_slots`
-     *  instead. They move as that map and the head keeps its allowlist and its slots as they are. */
-    private fun embeddedTiers(key: String, head: HeadConfig, provider: ProviderConfig): TopologyFinding? {
+     *  instead. They move as that map, when [tiers] says the provider's tiers are free to move, and the head keeps its
+     *  allowlist and its slots as they are. */
+    private fun embeddedTiers(
+        key: String,
+        head: HeadConfig,
+        provider: ProviderConfig,
+        tiers: Together,
+    ): TopologyFinding? {
         val table = "providers.${keys.render(head.provider)}"
         val said = head.tierModels()
         if (head.models.orEmpty().none { it.slot != null } || said == provider.tierModels) return null
-        val free = provider.modelSlots.isEmpty()
+        val free = tiers.free
         val map = said.entries.joinToString(", ", "{ ", " }") { (slot, id) -> "${keys.render(slot)} = ${quoted(id)}" }
         val move = GatewayMove(table, "model_slots", map, keepsSource = true).takeIf { free }
-        val why = unserved(free, inherited = served[head.provider]?.tierModels == said, table)
+        val why = tiers.why ?: unserved(free, inherited = served[head.provider]?.tierModels == said, table)
         return TopologyFinding("heads.$key.models", why, move = move)
+    }
+
+    /** Whether a head's value is free to move to its provider's [table]: the provider says none of it ([unsaid]), and
+     *  every head on the provider is served what the gateway serves ([each], each head's value as it is served
+     *  today, against [gateway]), the rule [prompt] keeps for the standing prompt. A head reads its provider's value
+     *  where it says none, so a move while another head says none, or another value the gateway does not serve, would
+     *  change how that head is served (upgrade, Nov 24, 2026: a 0.6.4 sibling head took the moved window, tiers and
+     *  knobs as its own). */
+    private fun <T : Any> moving(unsaid: Boolean, each: List<T?>, gateway: T?, table: String): Together {
+        val kept = each.all { it == gateway }
+        val why = when {
+            !unsaid || kept -> null
+            gateway == null -> unserved(free = true, inherited = false, table)
+            else ->
+                "another head on this provider is served another value, which a move to [$table] would change; set " +
+                    "the one the gateway should serve in [$table], and on each head the one it should keep"
+        }
+        return Together(unsaid && kept, why = why)
     }
 
     /** A warning when the head says [said]'s field and its provider does not say the same. It moves to the provider's
@@ -162,11 +192,6 @@ internal class GatewayMoveChecks(private val topology: Topology) {
     /** [text] as a TOML string, which a value is and a key need not be. */
     private fun quoted(text: String): String = "\"${keys.escape(text)}\""
 
-    /** Whether [knob] is a warning of this check: one a provider carries (providerCarriedKnobs). A capture or console
-     *  knob stays with a head, and a daemon-wide one a head already cannot set, whose own finding offers the move for the
-     *  serving bounds a provider may carry (TopologyChecks.knobs). */
-    private fun servedByProvider(knob: Knob): Boolean = knob in providerCarriedKnobs
-
     /** Why a head's value is a warning: what the gateway serves today, and what it would serve once the head goes. */
     private fun unserved(free: Boolean, inherited: Boolean, table: String): String = when {
         !free -> "[$table] says another, which the gateway serves; the head keeps its own for its command"
@@ -178,17 +203,24 @@ internal class GatewayMoveChecks(private val topology: Topology) {
                 "set the one it should serve in [$table]"
     }
 
-    /** Each override the gateway reads that the head sets and its provider does not say the same. */
-    private fun overrides(key: String, head: HeadConfig, provider: ProviderConfig): List<TopologyFinding> =
-        head.overrides.mapNotNull { (knob, value) ->
-            val known = Knob.entries.firstOrNull { it.key == knob }?.takeIf(::servedByProvider)
+    /** Each override the gateway reads that the head sets and its provider does not say the same. Only a knob a
+     *  provider carries (providerCarriedKnobs) is one: a capture or console knob stays with a head, and a daemon-wide
+     *  one a head already cannot set, whose own finding offers the move for the serving bounds a provider may carry
+     *  (TopologyChecks.knobs). */
+    private fun overrides(key: String, head: HeadConfig, provider: ProviderConfig): List<TopologyFinding> {
+        val heads = topology.heads.values.filter { it.provider == head.provider }
+        return head.overrides.mapNotNull { (knob, value) ->
+            val known = Knob.entries.firstOrNull { it.key == knob }?.takeIf { it in providerCarriedKnobs }
             if (known == null || provider.overrides[knob] == value) return@mapNotNull null
-            val free = knob !in provider.overrides
             val table = "providers.${keys.render(head.provider)}.overrides"
-            val move = GatewayMove(table, knob, value = null, keepsSource = false).takeIf { free }
-            val why = unserved(free, inherited = served[head.provider]?.overrides?.get(knob) == value, table)
+            val gateway = served[head.provider]?.overrides?.get(knob)
+            val each = heads.map { it.overrides[knob] ?: provider.overrides[knob] }
+            val together = moving(knob !in provider.overrides, each, gateway, table)
+            val move = GatewayMove(table, knob, value = null, keepsSource = false).takeIf { together.free }
+            val why = together.why ?: unserved(together.free, inherited = gateway == value, table)
             TopologyFinding("heads.$key.overrides.$knob", why, move = move)
         }
+    }
 
     /** One value as a head says it ([head]), as its provider says it ([provider]) and as the gateway serves it
      *  today ([gateway]). */

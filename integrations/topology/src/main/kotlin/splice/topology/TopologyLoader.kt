@@ -14,13 +14,10 @@ import kotlinx.serialization.descriptors.SerialKind
 import kotlinx.serialization.descriptors.StructureKind
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
-import splice.core.capability.CapabilityDeclarations
-import splice.core.capability.CapabilityToml
 import splice.core.config.RetiredKnob
 import splice.core.config.UserHome
 import splice.core.config.retiredKnobsByKey
 import splice.core.perf.HISTORY_DEFAULT_DAYS
-import splice.core.topology.Dialect
 import splice.core.topology.Topology
 import splice.core.topology.TopologyFinding
 import splice.core.util.Cancellables
@@ -337,21 +334,7 @@ historyRetentionDays = "$HISTORY_DEFAULT_DAYS"
     public fun sha256Hex(bytes: ByteArray): String =
         java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
-    public fun parse(text: String): Topology {
-        // Structural guards ktoml lacks (duplicate models keys, reopened tables, string rosters)
-        // live in TomlStructurePreflight — extracted with its masker, 2026-08-31 concentration.
-        // The capability tables are read apart (CapabilityToml); those found well-formed ride the topology, and a
-        // wrong one is boot's to refuse (ConfigFindings).
-        // The `[modes.<name>]` tables are read apart the same way (modes/README.md).
-        val split = CapabilityToml.split(text)
-        val modes = ModeTables.split(split.rest)
-        TomlStructurePreflight.check(modes.rest)
-        val topology = ModeTables.attached(decode(modes.rest), modes.tables)
-        if (split.tables.isEmpty()) return topology
-        val messages = topology.headsSpeaking(Dialect.ANTHROPIC_PASSTHROUGH)
-        val read = CapabilityDeclarations(topology.heads.keys, messages = messages).read(split.tables)
-        return topology.copy(extensions = topology.extensions.copy(capabilities = read.capabilities))
-    }
+    public fun parse(text: String): Topology = TopologyFileParts(text).parse()
 
     /** The decode alone, without the structural guards: ktoml's type failure becomes the safe one-key diagnosis. A
      *  provider that lists upstreams in place of a base_url reads its first upstream's as its own from here on. */

@@ -8,7 +8,6 @@ import splice.app.provider.local.LocalRowBootFindings
 import splice.core.util.EnvReader
 import splice.topology.BootSettings
 import splice.topology.LocalRowFindings
-import splice.topology.RetiredSettings
 
 internal class BootRead(private val env: EnvReader) {
     /** The one catalog of the modes this jar carries. */
@@ -18,5 +17,5 @@ internal class BootRead(private val env: EnvReader) {
     fun runtimes(): LocalRowFindings = LocalRowBootFindings(env)
 
     /** What boot reads beside the file: the retired knobs still set, and the modes' findings and names. */
-    fun beside(): BootSettings = BootSettings(RetiredSettings(env), modes.found())
+    fun beside(): BootSettings = modes.beside(env)
 }

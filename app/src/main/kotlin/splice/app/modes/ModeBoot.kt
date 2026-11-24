@@ -5,20 +5,48 @@ package splice.app.modes
 
 import splice.core.mode.FoundModes
 import splice.core.topology.TopologyFinding
+import splice.core.util.EnvReader
+import splice.core.util.LogSink
 import splice.modes.api.ModeCatalog
 import splice.modes.api.ModeCatalogReader
+import splice.topology.BootSettings
+import splice.topology.RetiredSettings
+import splice.topology.TopologyStatePaths
 
 /** The catalog of the jar [loader] reads, and what boot is handed of it. */
-internal class ModeBoot(loader: ClassLoader = ClassLoader.getSystemClassLoader()) {
-    val catalog: ModeCatalog = ModeCatalogReader(loader).read()
+internal class ModeBoot(private val loader: ClassLoader = ClassLoader.getSystemClassLoader()) {
+    private val builtIn = ModeCatalogReader(loader).read()
+    private var external: LoadedMods? = null
+    val catalog: ModeCatalog get() = external?.catalog ?: builtIn
+
+    fun beside(env: EnvReader): BootSettings {
+        val paths = TopologyStatePaths(env)
+        return BootSettings(RetiredSettings(env)) { mods, configDir, topology ->
+            external = if (mods.dir != null || mods.jars.isNotEmpty()) {
+                ExternalModes(loader, builtIn, mods, configDir, paths.of(topology).stateDir).read()
+            } else {
+                null
+            }
+            found()
+        }
+    }
+
+    /** Called only for daemon boot after a clean read and after its state directory is secured. */
+    fun persist() {
+        external?.persist()
+    }
+
+    fun log(log: LogSink) {
+        external?.log(log)
+    }
 
     /** The names of the modes found, every one the index lists (a broken one too, so a table naming it is not also
      *  told it names no mode), and each catalog finding, named by its mode. */
-    fun found(): FoundModes {
-        val findings = catalog.findings.map { said ->
+    private fun found(): FoundModes {
+        val findings = builtIn.findings.map { said ->
             val mode = said.substringBefore(':').removePrefix("mode ").trim()
             TopologyFinding("mode $mode", said.substringAfter(':').trim(), origin = TopologyFinding.Origin.Mode(mode))
         }
-        return FoundModes(catalog.listed.toSet(), findings)
+        return FoundModes(catalog.listed.toSet(), findings + external?.findings.orEmpty())
     }
 }

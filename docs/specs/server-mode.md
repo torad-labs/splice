@@ -268,6 +268,48 @@ Read separate meter lines with `splice server usage report --format json`: each 
 in `provider` and `source: "external"`. Their costs contribute to `fixed_usd` and `actual_usd`, not the token
 charges or per-person budgets. The history is in `[server.backup]` snapshots, not the per-turn usage export.
 
+### External mode JARs
+
+Declare each JAR at the top level of `splice.toml`. This works whether or not the team listener is configured.
+
+```toml
+[mods]
+dir = "mods"                         # optional; default: mods/ beside splice.toml
+
+[[mods.jar]]
+name = "inventory-release"
+path = "inventory.jar"
+sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[mods.jar]]
+name = "reports-release"
+url = "https://downloads.example.org/splice/reports-1.2.jar"
+sha256 = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+```
+
+Use a unique `name`, exactly one of `path` or `url`, and the trusted SHA-256 of the exact JAR (64 hex
+digits, either case). Relative paths are confined to `dir`, which is itself relative to the config directory
+unless absolute. An absolute JAR path outside `dir` uses its own parent as the directory boundary.
+Directories cannot be world-writable, a mod directory cannot itself be a symlink, and a JAR symlink cannot
+leave its boundary. Only archives listed explicitly are loaded.
+
+Use the [mode packaging contract](../../modes/README.md#how-splice-finds-a-mode) for the service descriptor,
+mode index, and manifest. The configured `name` identifies the archive, not the modes it contributes.
+Use each manifest's mode name in `[modes.<name>]`. No discovered mode, server, or offered tool name can
+overlap another mode's claim. Bundle dependencies in the JAR rather than listing them in a manifest
+`Class-Path`. A JAR can be at most 32 MiB on disk and 64 MiB expanded.
+
+URL entries use a direct HTTP(S) URL without embedded credentials or redirects. The daemon downloads into memory,
+checks the pin and the catalog, then writes `<state>/mod-<sha256>.jar` atomically with mode 0600. A matching
+cache works without network access. A bad cache is a finding, not permission to replace it; remove the bad cache
+to fetch the same pin again. To upgrade, set the new trusted pin (and URL, if it changed), then restart.
+Remove the entry and restart to stop loading it; unneeded cached versions can be removed separately.
+
+`splice check-config` does the same verification, even for a cold URL, without writing a cache. Boot refuses
+with the collected findings before listeners bind. On success it logs the loaded paths and verified pins.
+Only configure JARs you trust with everything the daemon can access. Pinning verifies the chosen bytes;
+the class loader is not a sandbox, and configuration verification instantiates the registered providers too.
+
 ## P2: the laptop side
 
 Drafted checks for these exist and are committed with the P2 plan once P1 has landed.

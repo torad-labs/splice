@@ -7,7 +7,7 @@ import splice.core.server.HistogramPoint
 import splice.core.server.MetricFamily
 import splice.core.server.MetricLabels
 import splice.core.server.MetricSnapshot
-import splice.core.topology.metering.DEFAULT_SERVER_METRICS_PREFIX
+import splice.core.topology.DEFAULT_SERVER_METRICS_PREFIX
 
 internal class PrometheusExposition(private val prefix: String) {
     fun render(snapshot: MetricSnapshot): String = buildString {

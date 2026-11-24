@@ -2,7 +2,7 @@ package splice.server.ledger
 
 import kotlinx.coroutines.runInterruptible
 import splice.core.process.ProcessTree
-import splice.core.topology.metering.ServerCostMeter
+import splice.core.topology.ServerCostMeter
 import java.io.IOException
 import java.net.HttpURLConnection.HTTP_MULT_CHOICE
 import java.net.HttpURLConnection.HTTP_OK
@@ -62,6 +62,11 @@ internal class MeterSignals(private val configDir: Path) {
     }
 }
 
+// why: a probe answers a yes/no about local or LAN state, so five seconds is ample for a healthy source, and well under
+// the default sixty-second poll so a hung one cannot stack probes; the gap tolerance adds it to the poll period.
 internal const val METER_PROBE_SECONDS = 5L
+
+// why: a file signal is the word `true` with maybe a newline; reading at most 64 bytes refuses a file that holds
+// anything else (a log, a binary) without ever loading it.
 private const val MAX_SIGNAL_BYTES = 64
 private val ACTIVE_STATUS = HTTP_OK until HTTP_MULT_CHOICE

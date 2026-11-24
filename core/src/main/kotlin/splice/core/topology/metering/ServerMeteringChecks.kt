@@ -1,19 +1,25 @@
 package splice.core.topology.metering
 
-import splice.core.topology.ServerConfig
+import splice.core.topology.ServerCostMeter
+import splice.core.topology.Topology
 import splice.core.topology.TopologyFinding
+import splice.core.topology.validPortRange
 import java.net.URI
 import java.net.URISyntaxException
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
 
-internal class ServerMeteringChecks(private val server: ServerConfig) {
+internal class ServerMeteringChecks(private val topology: Topology) {
+    private val server = topology.server
+
     fun findings(): List<TopologyFinding> = listOfNotNull(prefix(), identity()) +
         server.costMeters.flatMap { (name, meter) -> meter(name, meter) }
 
     private fun prefix(): TopologyFinding? =
-        TopologyFinding("server.metrics_prefix", "must be a Prometheus name prefix (letters, digits, _, or :)")
-            .takeUnless { METRIC_PREFIX.matches(server.metricsPrefix) }
+        TopologyFinding(
+            "server.metrics_prefix",
+            "must be a Prometheus name prefix (letters, digits, _, or :) that does not start with the reserved __",
+        ).takeUnless { METRIC_PREFIX.matches(server.metricsPrefix) && !server.metricsPrefix.startsWith("__") }
 
     private fun identity(): TopologyFinding? {
         val names = server.telemetry?.identityAttributes ?: return null
@@ -29,6 +35,8 @@ internal class ServerMeteringChecks(private val server: ServerConfig) {
         return listOfNotNull(
             TopologyFinding("server.cost_meters", "meter names must use letters, digits, underscores or hyphens")
                 .takeUnless { METER_NAME.matches(name) },
+            TopologyFinding(key, "must not share a provider's name: the report keys every hourly cost row by name")
+                .takeIf { name in topology.providers },
             TopologyFinding("$key.hourly_usd", "must be a finite, nonnegative USD rate")
                 .takeUnless { meter.hourlyUsd?.let { it.isFinite() && it >= 0.0 } == true },
             TopologyFinding("$key.poll_seconds", "must be positive").takeUnless { meter.pollSeconds > 0 },
@@ -62,12 +70,11 @@ internal class ServerMeteringChecks(private val server: ServerConfig) {
     private fun validUrl(text: String): Boolean = try {
         val uri = URI(text)
         uri.scheme in setOf("http", "https") && uri.host != null && uri.userInfo == null && uri.fragment == null &&
-            uri.port in -1..MAX_PORT
+            (uri.port == -1 || uri.port in validPortRange)
     } catch (_: URISyntaxException) {
         false
     }
 }
 
-private const val MAX_PORT = 65_535
 private val METRIC_PREFIX = Regex("[A-Za-z_:][A-Za-z0-9_:]*")
 private val METER_NAME = Regex("[A-Za-z0-9][A-Za-z0-9_-]*")

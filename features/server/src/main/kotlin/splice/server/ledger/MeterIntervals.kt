@@ -80,4 +80,6 @@ internal class MeterIntervals(private val file: Path) {
 }
 
 internal const val COST_METER_FILE = "cost-meters.jsonl"
+
+// why: intervals are stamped in epoch milliseconds and rates are per hour; a Double so the division keeps fractions.
 private const val MILLIS_PER_HOUR = 3_600_000.0

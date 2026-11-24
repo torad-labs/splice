@@ -10,9 +10,6 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import splice.core.client.ClientVersion
 import splice.core.client.ClientVersionParser
-import splice.core.topology.metering.DEFAULT_SERVER_METRICS_PREFIX
-import splice.core.topology.metering.OtlpIdentityAttributes
-import splice.core.topology.metering.ServerCostMeter
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -130,6 +127,28 @@ public data class ServerTelemetry(
     /** [forwardTo] as the base each signal's path is put after, with no trailing slash. */
     public val collector: String get() = forwardTo.trim().trimEnd('/')
 }
+
+/** Trusted resource key names for the authenticated person's identity and team in relayed OTLP. */
+@Serializable
+public data class OtlpIdentityAttributes(
+    val person: String = "splice.person",
+    val email: String = "user.email",
+    val team: String = "splice.team",
+)
+
+/** The literal every server Prometheus series starts with when `[server] metrics_prefix` is absent. */
+public const val DEFAULT_SERVER_METRICS_PREFIX: String = "splice_server_"
+
+/** `[server.cost_meters.<name>]`: one opt-in hourly meter. Exactly one source, [file], [url] or [argv], must be set.
+ *  [hourlyUsd] reads as TOML dollars, so `hourly_usd = 3` is as good as `3.0`. */
+@Serializable
+public data class ServerCostMeter(
+    @Serializable(with = TomlDollars::class) @SerialName("hourly_usd") val hourlyUsd: Double? = null,
+    @SerialName("poll_seconds") val pollSeconds: Int = 60,
+    val file: String? = null,
+    val url: String? = null,
+    val argv: List<String>? = null,
+)
 
 /** `[server.signin]` (F2): the OpenID Connect provider a team member signs in with, the client this server is
  *  registered there as, the email domains it admits, how long a key minted by a sign-in lives, and how many sign-ins

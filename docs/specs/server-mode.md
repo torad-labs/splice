@@ -225,7 +225,8 @@ every = "1h"
   (the longest wait for the upstream's next chunk after the first token), gauges `splice_server_inflight{person}`
   and `splice_server_inflight_limit{person}`.
 - `[server] metrics_prefix = "team_gateway_"` replaces the literal `splice_server_` prefix on this scrape,
-  including HELP, TYPE and histogram series. Include your own separator. It does not rename the operator OTLP
+  including HELP, TYPE and histogram series. Include your own separator; a prefix starting with `__`, which
+  Prometheus reserves, is refused. It does not rename the operator OTLP
   export or the gateway's identity-free metrics.
 - Every person with a live key has their series at 0 from startup; a person with none has no series.
 - The same series go through the operator's OTLP export (`[telemetry.operator]`). These carry person and team by
@@ -234,7 +235,8 @@ every = "1h"
 ### External hourly costs
 
 Provider `hourly_usd` still follows the splice host's uptime. Add a named `[server.cost_meters.<name>]` table only
-for a separate resource. Each table requires a nonnegative USD hourly rate and exactly one of these signals:
+for a separate resource, named apart from every provider key (the report rows both by name). Each table
+requires a nonnegative USD hourly rate and exactly one of these signals:
 
 ```toml
 [server.cost_meters.gpu]

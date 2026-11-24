@@ -238,6 +238,38 @@ class ServerConfigFindingsTest {
     }
 
     @Test
+    fun `a whole-number meter rate boots as dollars, as a provider's does`() {
+        val lines = """
+            [server.cost_meters.gpu]
+            hourly_usd = 3
+            file = "not-yet-present"
+        """.trimIndent()
+        val read = ConfigFindings.read(server(lines) + head(), directory, configDir = directory)
+        val config = assertInstanceOf(ConfigRead.Ready::class.java, read, read.toString()).topology.server
+        assertEquals(3.0, config.costMeters.getValue("gpu").hourlyUsd)
+    }
+
+    @Test
+    fun `a metrics prefix may not start with the double underscore Prometheus reserves`() {
+        assertEquals(
+            listOf("server.metrics_prefix"),
+            refused(server("metrics_prefix = \"__team_\"") + head()).map { it.path },
+        )
+    }
+
+    @Test
+    fun `a cost meter may not take a provider's key, which the report's hourly rows are keyed by`() {
+        val lines = """
+            [server.cost_meters.box]
+            hourly_usd = 1.0
+            file = "not-yet-present"
+        """.trimIndent()
+        val findings = refused(server(lines) + head())
+        assertEquals(listOf("server.cost_meters.box"), findings.map { it.path })
+        assertTrue(findings.single().message.contains("provider"), findings.single().message)
+    }
+
+    @Test
     fun `a sign-in table boots with its issuer, client, domains and key days, and a loopback issuer may be http`() {
         val lines = """
             [server.signin]

@@ -14,7 +14,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
-import splice.core.topology.metering.OtlpIdentityAttributes
+import splice.core.topology.OtlpIdentityAttributes
 
 /** The authenticated identity a relay writes on each resource in either encoding. */
 internal class ResourceStamp(person: String, team: String?, names: OtlpIdentityAttributes) {

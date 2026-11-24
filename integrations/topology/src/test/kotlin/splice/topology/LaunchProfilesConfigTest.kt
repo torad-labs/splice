@@ -120,6 +120,21 @@ class LaunchProfilesConfigTest {
     }
 
     @Test
+    fun `boot refuses claude_json links into the profile or Gemini, including a parent step before a missing leaf`() {
+        for (protectedDir in listOf(".claude-work", ".gemini")) {
+            val dir = home.resolve(protectedDir)
+            val sub = Files.createDirectories(dir.resolve("sub"))
+            val file = Files.writeString(dir.resolve(".claude.json"), "{}")
+            val alias = Files.createSymbolicLink(home.resolve("$protectedDir-state"), file)
+            val subAlias = Files.createSymbolicLink(home.resolve("$protectedDir-sub"), sub)
+            for (source in listOf(alias.toString(), "$subAlias/../.claude.json", "$subAlias/../missing.json")) {
+                val toml = "[launch.profiles.work]\ndir = \"~/.claude-work\"\nclaude_json = \"$source\"\n"
+                assertEquals(listOf("launch.profiles.work.claude_json"), refusedAt(toml), source)
+            }
+        }
+    }
+
+    @Test
     fun `a claude_json that is absolute or starts with ~- is accepted, ~-claude's own included`() {
         val absolute = home.resolve("state/.claude.json").toString()
         for (file in listOf(absolute, "~/.claude/.claude.json", "~/.claude.json")) {

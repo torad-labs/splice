@@ -9,8 +9,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.topology.LaunchProfileConfig
@@ -123,6 +125,62 @@ class LaunchProfileStateTest {
             build(claude.toString(), LaunchProfileConfig(claudeJson = named))
             assertEquals(setOf("named", "registered"), servers(), named)
         }
+    }
+
+    @Test
+    fun `claude_json through a dangling link to the output refuses before creating the profile`() {
+        val output = folder.resolve(".claude.json")
+        val link = Files.createSymbolicLink(home.resolve("source.json"), home.relativize(output))
+        val profile = LaunchProfileConfig(claudeJson = "~/source.json")
+        val refused = assertInstanceOf(ProfileBuilt.Refused::class.java, build(null, profile))
+        assertTrue("claude_json" in refused.reason && "~/source.json" in refused.reason, refused.reason)
+        assertFalse(Files.exists(folder))
+
+        assertInstanceOf(ProfileBuilt.Ready::class.java, build(null))
+        state(output, "unchanged")
+        val before = output.readText()
+        assertInstanceOf(ProfileBuilt.Refused::class.java, build(null, profile))
+        assertEquals(before, link.readText())
+        assertTrue(Files.isSymbolicLink(link))
+    }
+
+    @Test
+    fun `claude_json with a parent step through a link into the profile is refused`() {
+        assertInstanceOf(ProfileBuilt.Ready::class.java, build(null))
+        val sub = Files.createDirectory(folder.resolve("sub"))
+        val link = Files.createSymbolicLink(home.resolve("sub-link"), sub)
+        val output = folder.resolve(".claude.json")
+        state(output, "unchanged")
+        val before = output.readText()
+        val profile = LaunchProfileConfig(claudeJson = "$link/../.claude.json")
+        val refused = assertInstanceOf(ProfileBuilt.Refused::class.java, build(null, profile))
+        assertTrue("claude_json" in refused.reason && "$link/../.claude.json" in refused.reason, refused.reason)
+        assertEquals(before, output.readText())
+    }
+
+    @Test
+    fun `the shell's config folder follows a link before walking back to its parent`() {
+        state(home.resolve(".claude.json"), "home")
+        val misleading = home.resolve("misleading")
+        val personal = home.resolve("personal")
+        state(misleading.resolve(".claude.json"), "unrelated")
+        state(personal.resolve(".claude.json"), "personal")
+        val sub = Files.createDirectory(personal.resolve("sub"))
+        val link = Files.createSymbolicLink(misleading.resolve("link"), sub)
+        assertInstanceOf(ProfileBuilt.Ready::class.java, build("$link/.."))
+        assertEquals(setOf("personal", "registered"), servers())
+    }
+
+    @Test
+    fun `the shell's config file linking to the profile's output is passed over`() {
+        state(home.resolve(".claude.json"), "home")
+        assertInstanceOf(ProfileBuilt.Ready::class.java, build(null))
+        val output = folder.resolve(".claude.json")
+        state(output, "stale")
+        Files.createDirectory(claude)
+        Files.createSymbolicLink(claude.resolve(".claude.json"), output)
+        assertInstanceOf(ProfileBuilt.Ready::class.java, build(claude.toString()))
+        assertEquals(setOf("home", "registered"), servers())
     }
 
     @Test

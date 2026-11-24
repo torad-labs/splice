@@ -51,8 +51,9 @@ public class LaunchProfileBuild(
         inheritedConfigDir: String? = null,
     ): ProfileBuilt {
         val folder = folderOf(name, profile)
-        val state = ProfileStateSource(home, defaultRoot, headDirs).of(profile, folder, inheritedConfigDir)
         return try {
+            val source = ProfileStateSource(home, defaultRoot, headDirs, folder)
+            val state = source.of(profile, inheritedConfigDir) ?: return source.refusal(profile)
             ProfileFolder(home).prepare(folder, name, profile)?.let { return ProfileBuilt.Refused(it) }
             ProfileBuilt.Ready(folder, fill(folder, profile, doorOwned, state))
         } catch (failure: IOException) {

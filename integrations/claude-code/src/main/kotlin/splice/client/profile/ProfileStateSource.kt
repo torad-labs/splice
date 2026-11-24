@@ -14,33 +14,45 @@ import java.nio.file.Path
 
 internal class ProfileStateSource(
     private val home: Path,
-    /** Where a profile with no `dir` lives. */
     defaultRoot: Path,
-    /** Every head's Claude folder. */
     headDirs: List<Path>,
+    folder: Path,
 ) {
-    private val profilesRoot = PathProbe.real(defaultRoot)
+    // A head sharing ~/.claude is using the person's own folder, not a copy.
+    private val claude = root(home.resolve(UserHome.CLAUDE_DIR))
+    private val protectedDirs = listOf(folder, defaultRoot, home.resolve(".gemini"))
+    private val excludedRoots = (protectedDirs + headDirs.filterNot { root(it) == claude })
+        .flatMap { listOf(it.toAbsolutePath().normalize(), root(it)) }.toSet()
 
-    /** The heads' folders, through every link; `~/.claude` is the person's own even where a head shares it. */
-    private val heads = PathProbe.real(home.resolve(UserHome.CLAUDE_DIR)).let { yours ->
-        headDirs.map(PathProbe::real).filterNot { it == yours }.toSet()
+    private val fallback = home.resolve(Keys.CLAUDE_JSON)
+
+    /** The checked source, or null when the named file (or the fallback) is not safe to use. */
+    fun of(profile: LaunchProfileConfig, inherited: String?): Path? {
+        val named = profile.claudeJson
+        if (named != null) return checked(UserHome.declared(named, home))
+        val fromShell = inherited?.let { UserHome.declared(it, home) }?.resolve(Keys.CLAUDE_JSON)
+        return checked(fromShell) ?: checked(fallback)
     }
 
-    /** The file [profile], rebuilt in [folder], is seeded from, for a launch whose shell held [inherited] as
-     *  CLAUDE_CONFIG_DIR (null while it held none). */
-    fun of(profile: LaunchProfileConfig, folder: Path, inherited: String?): Path {
-        val named = profile.claudeJson?.takeIf(String::isNotBlank)?.let { UserHome.declared(it, home) }
-        return named ?: personal(inherited, folder)?.resolve(Keys.CLAUDE_JSON) ?: home.resolve(Keys.CLAUDE_JSON)
+    fun refusal(profile: LaunchProfileConfig): ProfileBuilt.Refused {
+        val source = profile.claudeJson?.let { "claude_json '$it'" } ?: "default source '$fallback'"
+        return ProfileBuilt.Refused("$source must resolve outside profile, head and ~/.gemini folders")
     }
 
-    /** [inherited] as a Claude folder of the person's own, through every link; null when it is unset, blank or
-     *  relative, or is (or is inside) [folder], a profile's or a head's. */
-    private fun personal(inherited: String?, folder: Path): Path? {
-        val dir = inherited?.takeIf(String::isNotBlank)?.let { UserHome.declared(it, home) }
-            ?.takeIf { it.isAbsolute }?.let(PathProbe::real)
-        return dir?.takeUnless { it.startsWith(folder) || profiles(it) || it in heads }
+    private fun checked(file: Path?): Path? {
+        if (file == null || !file.isAbsolute) return null
+        val entry = PathProbe.realEntry(file)
+        val real = PathProbe.resolved(file)
+        val target = real ?: PathProbe.throughLinks(file)
+        if (entry == null || target == null) return null
+        val forbidden = listOf(file.normalize(), entry, target).any(::excluded)
+        // A missing component before '..' can make the literal path unreadable even if its projected target exists.
+        return (real ?: file).takeUnless { forbidden }
     }
 
-    /** Whether [dir] is a profile's folder: under the default root, or marked for one wherever its `dir` put it. */
-    private fun profiles(dir: Path): Boolean = dir.startsWith(profilesRoot) || Files.exists(dir.resolve(PROFILE_MARK))
+    private fun excluded(path: Path): Boolean =
+        excludedRoots.any(path::startsWith) ||
+            generateSequence(path.parent) { it.parent }.any { Files.exists(it.resolve(PROFILE_MARK)) }
+
+    private fun root(path: Path): Path = PathProbe.throughLinks(path) ?: path.toAbsolutePath().normalize()
 }

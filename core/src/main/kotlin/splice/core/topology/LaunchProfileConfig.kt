@@ -118,21 +118,30 @@ internal class LaunchProfileChecks(
      *  from it, so the person's servers would be gone after one launch) or in `~/.gemini`. */
     private fun claudeJson(name: String, profile: LaunchProfileConfig): TopologyFinding? {
         val raw = profile.claudeJson ?: return null
-        val file = sourceFile(raw)
+        val paths = sourceFile(raw)
         val folder = PathProbe.real(profile.folder(name, home, defaultRoot))
         val why = when {
             raw.isBlank() -> "is blank"
-            file == null -> SOURCE_RULE
-            file.startsWith(folder) -> "is inside the profile's own folder, whose .claude.json is rebuilt from it"
-            file.startsWith(PathProbe.real(home.resolve(GEMINI_FOLDER))) -> "is inside ~/$GEMINI_FOLDER"
+            paths == null -> SOURCE_RULE
+            paths.any { it.startsWith(folder) } ->
+                "is inside the profile's own folder, whose .claude.json is rebuilt from it"
+            inGemini(paths) -> "is inside ~/$GEMINI_FOLDER"
             else -> null
         }
         return why?.let { TopologyFinding("launch.profiles.$name.claude_json", "$it; $SOURCE_HINT") }
     }
 
-    /** The file [raw] names, through every link on the way; null unless it is absolute or starts with `~/`. */
-    private fun sourceFile(raw: String): Path? =
-        UserHome.declared(raw, home)?.takeIf { raw != HOME_MARK && it.isAbsolute }?.let(PathProbe::real)
+    private fun inGemini(paths: List<Path>): Boolean {
+        val gemini = home.resolve(GEMINI_FOLDER)
+        val roots = listOfNotNull(gemini, PathProbe.throughLinks(gemini))
+        return paths.any { path -> roots.any(path::startsWith) }
+    }
+
+    /** Both the entry [raw] names and where it leads; null unless it is absolute or starts with `~/`. */
+    private fun sourceFile(raw: String): List<Path>? =
+        UserHome.declared(raw, home)?.takeIf { raw != HOME_MARK && it.isAbsolute }?.let { file ->
+            listOfNotNull(file.normalize(), PathProbe.realEntry(file), PathProbe.throughLinks(file))
+        }
 
     private fun keepHooks(name: String, profile: LaunchProfileConfig): TopologyFinding? =
         TopologyFinding(

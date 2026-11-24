@@ -425,7 +425,7 @@ Claude login; `mcpServers` is rebuilt each launch from yours over Splice's MCP r
 entry in `skills/`, `agents/` and `commands/` (stale links from earlier launches are removed; a file of the profile's
 own is kept and said), and `projects` and `sessions` linked to `~/.claude`'s so `--resume` sees every session.
 
-Source: core/src/main/kotlin/splice/core/topology/LaunchProfileConfig.kt; LaunchProfileChecks.kt;
+Source: core/src/main/kotlin/splice/core/topology/LaunchProfileConfig.kt (with LaunchProfileChecks);
 integrations/claude-code/src/main/kotlin/splice/client/profile/.
 
 ## 7. [claude]

@@ -15,7 +15,7 @@ Verbs: cli.md. Where a doc in the repo disagrees with the code, the code wins; t
 - A session is a Claude Code process. Splice launches some, reads all of them from Claude Code's registry, and types only into
   the ones it opened.
 
-Source: `README.md` "How it works"; `app/src/main/resources/splice.example.toml:14,571-797`; `core/.../config/Knob.kt:350`.
+Source: `docs/wiki/architecture-and-troubleshooting.md` "How it works"; `app/src/main/resources/splice.example.toml:14,571-797`; `core/.../config/Knob.kt:350`.
 
 ## How the person opens the console
 
@@ -168,7 +168,7 @@ Source: `models.js:13-14,139-187,270-330,429-466,654-707,768-916,1096`, `setting
 - `splice login`, `splice key set`, `splice add` are the person's to run. Give the exact command, wait.
 - Never read, print or copy these files. Name a key by its variable. `splice status` and `splice doctor` show presence only.
 
-Source: `README.md` "Credential locations", "Troubleshooting"; `app/.../cli/auth/LoginCommand.kt:38-176`.
+Source: `docs/wiki/providers-and-accounts.md` "Credential locations", "Troubleshooting"; `app/.../cli/auth/LoginCommand.kt:38-176`.
 
 ### More than one account per provider (the pool)
 
@@ -187,7 +187,7 @@ claudex login --label work        # the person runs it; adds an account beside t
   sessions, and "Next". A chosen name wins; else the provider-proved email; else a plan word with a number ("Max", "Max 2").
   No account id is shown.
 
-Source: `README.md` "More than one ChatGPT, Grok, Kimi or Muse account"; `features/accounts/.../pool/AccountNaming.kt:49-58`;
+Source: `docs/wiki/providers-and-accounts.md` "More than one ChatGPT, Grok, Kimi or Muse account"; `features/accounts/.../pool/AccountNaming.kt:49-58`;
 `accounts.js:47,387,425,772-782`.
 
 ### Rotation and quota exhaustion
@@ -207,7 +207,7 @@ Source: `README.md` "More than one ChatGPT, Grok, Kimi or Muse account"; `featur
 "Why is claude-grok out of quota?" Run `splice status` and `splice sessions` for the account rows, then say which account is out
 and when it resets. A head with one account has no pool: the fix is a second login or the reset.
 
-Source: `README.md` "More than one ChatGPT, Grok, Kimi or Muse account", "Plan usage in Claude Code"; `docs/specs/v0.4.0.md`
+Source: `docs/wiki/providers-and-accounts.md` "More than one ChatGPT, Grok, Kimi or Muse account", "Plan usage in Claude Code"; `docs/specs/v0.4.0.md`
 section 11 (Superseded 2026-10-03; Deviations 2026-10-10); repo `CLAUDE.md` "Code rules"; `accounts.js:369-376,801-828`.
 
 ### Pins, Claude accounts, budgets
@@ -226,7 +226,7 @@ section 11 (Superseded 2026-10-03; Deviations 2026-10-10); repo `CLAUDE.md` "Cod
   turn until midnight; a running turn finishes; a Compare send is refused too). Plan-account turns do not count; an unpriced model
   counts as unpriced, so the day can read low. Stored in `budgets.json`, applies within a second.
 
-Source: `README.md` "Pin a head or a session to an account", "More than one Claude login on claude", "Daily budgets";
+Source: `docs/wiki/providers-and-accounts.md` "Pin a head or a session to an account", "More than one Claude login on claude", "Daily budgets";
 `app/.../auth/claude/ClaudeAccountFolders.kt:1-30`; `accounts.js:451-533,645-659,1183-1191`.
 
 ## Models and routing
@@ -245,7 +245,7 @@ Source: `README.md` "Pin a head or a session to an account", "More than one Clau
 - Providers shows the rows (each command's glass); "Not served" means the provider no longer lists a declared row. `splice models` is the CLI view.
 
 Source: `features/launch/.../recipe/LaunchService.kt:1-12,340-352`, `LaunchModelEnvironment.kt:12-60`, `core/.../model/ModelCatalog.kt:183-202`,
-`README.md` "API-key starter: OpenRouter", `models.js:13-14,429,438,920`. Row and slot fields: toml-reference.md.
+`docs/wiki/getting-started.md` "API-key starter: OpenRouter", `models.js:13-14,429,438,920`. Row and slot fields: toml-reference.md.
 
 ### Model ids and the tier suffix
 
@@ -281,7 +281,7 @@ at its own real window.
    is boot-only, and doctor reports the file stale until `splice restart`.
 
 Source: `ModelCatalog.kt:15-30,204-282`, `ClientSpelling.kt:1-40`, `LaunchModelEnvironment.kt:55-70`, `LaunchService.kt:349`,
-`README.md` "Long-session reliability".
+`docs/wiki/architecture-and-troubleshooting.md` "Long-session reliability".
 
 ### Reasoning effort is part of the cache key
 
@@ -315,7 +315,7 @@ and "Signed out" appear when a plan limit or a missing credential ended the turn
 reads "Working · <time>", "Compacting · <time>" or "In line · <time>" (queued at splice's gate). Stale is not dead: a long foreground tool
 can outlast the window.
 
-Source: `docs/specs/v0.4.0.md` section 4, `README.md` "Heads that see each other", `features/sessions/.../registry/SessionRegistry.kt:23,29,243`,
+Source: `docs/specs/v0.4.0.md` section 4, `docs/wiki/peers-and-harnesses.md` "Heads that see each other", `features/sessions/.../registry/SessionRegistry.kt:23,29,243`,
 `console/kit.js:346-386`, `sessions.js:247,897-905`.
 
 ### The Sessions page
@@ -358,7 +358,7 @@ Source: `sessions.js:222-247,285-321,378-427,637,677-697,802-813,880-917,973-109
   was read. Sessions carry a derived turn key and cannot call keyed `/api` routes.
 
 Source: `features/sessions/.../http/SessionContinue.kt:1-40`, `docs/specs/v0.4.0.md` section 12 (Resolved, both Deviations 2026-10-13),
-`README.md` "Heads that see each other", `sessions.js:973-1058`.
+`docs/wiki/peers-and-harnesses.md` "Heads that see each other", `sessions.js:973-1058`.
 
 ## Teams
 
@@ -423,7 +423,7 @@ Source: `docs/specs/v0.4.0.md` section 14, `features/sessions/.../http/TeamStart
   Retention windows and "Delete now" are on Settings, Your data; deleting cannot be undone, so send the person there.
 
 Source: `usage.js:17-19,125,204,215-216,250-304,306-472`, `requests.js:125-137,736`, `kit.js:248-251,599`, `perf-heads.js:49-73,181`,
-`compare.js:12,123-126,346-377`, `README.md` "Plan usage in Claude Code", "Projects and Compare", "Content from your sessions, kept with
+`compare.js:12,123-126,346-377`, `docs/wiki/console-and-sessions.md` "Plan usage in Claude Code", "Projects and Compare", "Content from your sessions, kept with
 nothing turned on"; `docs/specs/v0.4.0.md` sections 9, 11, 14.
 
 ## The splice manager (you)
@@ -450,7 +450,7 @@ person reaches you from the composer at the bottom of every console page. Your r
 - `splice init` and every daemon start write or refresh your `CLAUDE.md`, `.claude/settings.json` and this skill from the release. A file the
   person edited is kept and stops taking updates, so an old copy of this skill can outlive an upgrade. If something here looks stale, say so.
 
-Source: `docs/specs/v0.4.0.md` section 15, `README.md` "The splice manager", `console/composer.js` (`drawCard` for the card's words),
+Source: `docs/specs/v0.4.0.md` section 15, `docs/wiki/console-and-sessions.md` "The splice manager", `console/composer.js` (`drawCard` for the card's words),
 `app/.../manager/ManagerHome.kt`, `features/sessions/.../manager/ManagerPointer.kt`, `ManagerReplies.kt`.
 
 ## Questions you will be asked
@@ -473,14 +473,14 @@ Source: `docs/specs/v0.4.0.md` section 15, `README.md` "The splice manager", `co
 
 | Doc | Claim | What the code shows |
 |---|---|---|
-| `README.md` "Sign in to a ChatGPT account" | No page shows an email address | A login is named by the chosen name, else the provider-proved email, else a plan word and number (`AccountNaming.kt:49-58`; `v0.4.0.md` Superseded 2026-10-15). Account ids are never shown |
+| `docs/wiki/providers-and-accounts.md` "Sign in to a ChatGPT account" | No page shows an email address | A login is named by the chosen name, else the provider-proved email, else a plan word and number (`AccountNaming.kt:49-58`; `v0.4.0.md` Superseded 2026-10-15). Account ids are never shown |
 | `docs/specs/web-console.md` 2.6, 4.5, 2.12 | A Claude head holds no pool; no manual switch or doctor route | Claude heads have pools of splice-owned folders (`ClaudeAccountFolders.kt`); `POST /api/auth/{head}/switch` (`accounts.js:1189`) and `/api/doctor` (`models.js:75`) exist |
 | `docs/specs/web-console.md` 2.11, 2.12 | A `dashboard` verb; "only sizes and token counts are recorded" | `splice console` replaced `dashboard`; bodies are recorded by default |
 | `docs/specs/v0.4.0.md` section 9 | Six pages in the top bar | Eight (Deviation 2026-10-13) |
 | `docs/specs/v0.4.0.md` section 11 | Lowest seven-day use; return to the primary after reset | Soonest reset; stays until a limit (Superseded 2026-10-03) |
 | `AGENTS.md` | Pinned model rides `ANTHROPIC_CUSTOM_MODEL_OPTION` | No such variable in the code; the launch sets `ANTHROPIC_MODEL` (`LaunchModelEnvironment.kt:16`) |
 | `ModelCatalog.kt` header | Picker uses wrapped discovery ids | Picker rows are the materialized roster, bare ids (`LaunchService.kt:1-12`) |
-| `README.md` "Heads that see each other" | A team is created with `PUT /api/teams` | That is the route; the person uses the Teams page's "New team" |
+| `docs/wiki/peers-and-harnesses.md` "Heads that see each other" | A team is created with `PUT /api/teams` | That is the route; the person uses the Teams page's "New team" |
 | `LogsCommand.kt` header | A missing log is empty output | Prints `[logs unavailable: ...]` |
 | `docs/specs/web-console.md` 4.14 | "one of the three hot knobs" | `Knob.kt:14-28` names dozens of LIVE knobs (skill-core counted 39; not recounted here) |
 

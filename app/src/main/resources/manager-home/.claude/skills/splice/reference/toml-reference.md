@@ -35,7 +35,7 @@ refuses the window) keeps the windows already in force and says why in the daemo
 Source: integrations/topology/src/main/kotlin/splice/topology/TopologyLoader.kt (lines 226-290);
 Topology.kt (withoutLiveKeys, lines 99-108); app/src/main/kotlin/splice/app/daemon/TopologyWindows.kt (header,
 lines 1-23); splice.example.toml (lines 3-7, 74-75).
-README "Long-session reliability" says every other key is read only at boot; the code also reads `mcp_share`,
+docs/wiki/architecture-and-troubleshooting.md "Long-session reliability" says every other key is read only at boot; the code also reads `mcp_share`,
 `update_channel`, `auto_update` and `[compaction]` live. web-console.md section 2.3 (line 96) names only a
 model's `context_window` as live. The example's lines 500-501 say a window edit reaches running sessions after
 `splice restart`, against its own lines 5-6. The list above is the code's.

@@ -18,7 +18,7 @@ head's command (for example `claudex` or `claude-grok`), and that session talks 
 Logins and API keys, the sessions on the machine, usage and cost, and a browser console all live in the
 same daemon.
 
-Source: README.md, "How it works" and "Backends and protocols".
+Source: docs/wiki/architecture-and-troubleshooting.md, "How it works" and "Backends and protocols".
 
 ## The mental model
 
@@ -60,7 +60,7 @@ core/src/main/kotlin/splice/core/config/Knob.kt (lines 347-351); docs/superpower
 
 Source: integrations/topology/src/main/kotlin/splice/topology/TopologyLoader.kt (lines 226-232) and
 TopologyStatePaths.kt (lines 22-43); core/src/main/kotlin/splice/core/config/StatePaths.kt (lines 45-75, 144-239);
-app/src/main/kotlin/splice/app/cli/ConfigPreflight.kt; README.md, "What splice keeps on your disk".
+app/src/main/kotlin/splice/app/cli/ConfigPreflight.kt; docs/wiki/disk-and-privacy.md, "What splice keeps on your disk".
 
 ## Where to read next
 
@@ -129,12 +129,12 @@ effort chips, Compact and Stop stay the person's. The grammar is in `reference/c
 
 1. Search these references for the word, with Claude Code's Grep tool over `.claude/skills/splice/`.
 2. Ask the verb: `splice <verb> --help` prints that verb's usage and runs nothing.
-3. If a splice source checkout exists on this machine, read its `README.md`,
+3. If a splice source checkout exists on this machine, read its `README.md`, `docs/wiki/`,
    `app/src/main/resources/splice.example.toml` and `docs/specs/`. The code wins over any doc.
 4. If none of that answers it, say "I don't know" and say what you checked. Never invent a flag, a
    field, a default or a command.
 
 Source: app/src/main/kotlin/splice/app/cli/CommandParser.kt (lines 64-70, 181-186) and Cli.kt (lines 13-18);
 app/src/main/kotlin/splice/app/cli/auth/KeyCommand.kt (lines 1-6, 121-127);
-app/src/main/resources/manager-home/.claude/settings.json; README.md, "What splice keeps on your disk".
+app/src/main/resources/manager-home/.claude/settings.json; docs/wiki/disk-and-privacy.md, "What splice keeps on your disk".
 Verified on a private instance, 2026-10-15, Claude Code 2.1.301; see manager-home/CLAUDE.md and .claude/settings.json.

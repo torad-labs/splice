@@ -31,8 +31,8 @@ describe("live-docs", () => {
     }
   });
 
-  test("the README's control plane section links the page", () => {
-    const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+  test("the console page's control plane section links the page", () => {
+    const readme = readFileSync(join(ROOT, "docs/wiki/console-and-sessions.md"), "utf8");
     expect(readme).toContain("docs/live-reply.md");
   });
 });

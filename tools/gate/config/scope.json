@@ -21,7 +21,7 @@
     { "glob": "gradle/libs.versions.toml", "accessor": "libs", "why": "is the version catalog, whose changed entries select the modules whose build scripts read them" }
   ],
   "docs": [
-    { "glob": "docs/**", "except": ["docs/PROVENANCE.md"], "why": "is prose no law reads" },
+    { "glob": "docs/**", "except": ["docs/PROVENANCE.md", "docs/wiki/disk-and-privacy.md"], "why": "is prose no law reads" },
     { "glob": ".dev/research/**", "why": "is research notes no law reads" }
   ],
   "laws": [
@@ -29,6 +29,7 @@
     { "glob": "CHANGELOG.md", "why": "a law reads the changelog" },
     { "glob": "THIRD_PARTY_NOTICES.md", "why": "a law reads the notices" },
     { "glob": "docs/PROVENANCE.md", "why": "a law reads provenance" },
+    { "glob": "docs/wiki/disk-and-privacy.md", "why": "a law reads the disk page" },
     { "glob": "app/**", "why": "the public-source law reads app" },
     { "glob": "core/**", "why": "the public-source law reads core" },
     { "glob": "features/**", "why": "the public-source law reads features" },

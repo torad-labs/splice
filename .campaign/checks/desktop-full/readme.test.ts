@@ -5,7 +5,8 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
-const README = readFileSync("README.md", "utf8");
+const README = readFileSync("docs/wiki/claude-desktop.md", "utf8");
+const DISK = readFileSync("docs/wiki/disk-and-privacy.md", "utf8");
 const CHANGELOG = readFileSync("CHANGELOG.md", "utf8");
 
 /** The text under `heading` up to the next heading of the same level, or "" when there is no such heading. */
@@ -21,7 +22,7 @@ function section(text: string, heading: string): string {
 
 /** README's table rows (lines starting with `|`) whose first cell names `needle`. */
 function fileRows(needle: string): string[] {
-  return README.split("\n").filter((l) => l.startsWith("|") && (l.split("|")[1] ?? "").includes(needle));
+  return DISK.split("\n").filter((l) => l.startsWith("|") && (l.split("|")[1] ?? "").includes(needle));
 }
 
 const DESKTOP = section(README, "## Claude Desktop on splice");

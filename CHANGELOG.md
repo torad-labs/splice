@@ -90,6 +90,10 @@
   `providers.html`, `compare.html` on `providers.html?open=compare`.
 
 ### Added
+- **The README is a short front door, and the documentation is a wiki.** Everything the README held now lives in
+  15 pages under `docs/wiki/`, starting at `docs/wiki/README.md`, with a guide for upgrading to 0.7.0
+  (`docs/wiki/upgrading-to-0.7.0.md`). The list of every file splice writes is `docs/wiki/disk-and-privacy.md`, and
+  the build check on that list reads it there.
 - **A session's reply can be followed while it is being written.** `GET /api/sessions/{id}/live` on the control
   plane streams a session's reply as splice writes it to Claude Code, on every head: each turn, its text and thinking
   as they come, each tool call as it starts, and how the turn ended. Joining in the middle of a reply shows all of it.
@@ -599,7 +603,7 @@
   and turn keys don't open it, `splice rotate-key` leaves it alone, and `splice desktop rotate-key` replaces it.
   A turn through the door is its head's row on `/api/perf/turns` with `door` set to `desktop`. Chat, Cowork and the
   terminal stay as they were: with Desktop on, a `claude` launched through splice and every other head still run on
-  their own providers. The README's [Claude Desktop's Code tab on splice](#claude-desktops-code-tab-on-splice)
+  their own providers. The wiki's [Claude Desktop](docs/wiki/claude-desktop.md#claude-desktop-on-splice) page
   section has the commands. The door was built against what the tab's own Claude Code (2.1.325) sends, read in a
   terminal; the Desktop app's own picker has not been checked against it.
 - **Server mode: a team's front door.** A `[server]` table (`listen`, `commands`, optional `tls_cert` and
@@ -618,8 +622,8 @@
 - **Server mode: the OpenAI route.** A served command whose provider speaks `openai-chat` also answers
   `POST /<command>/v1/chat/completions`, `GET /<command>/v1/models` and `GET /<command>/v1/models/<id>`, on the
   same keys and caps. An answer the upstream cuts short is an error the client sees, and the provider's own
-  cookies, request ids and rate-limit counts stay at the server. The README's
-  [Serve a team from one machine](#serve-a-team-from-one-machine) section covers all three.
+  cookies, request ids and rate-limit counts stay at the server. The wiki's
+  [Team server mode](docs/wiki/team-server-mode.md) page covers all three.
 - **A head keeps each change in its plan reading.** A head appends one line to `<head>-quota-history.jsonl` each
   time a login's plan reading moves, beside the file that holds the latest reading, so a stretch of work can be read
   against what it used of a plan. A reading that repeats the one before it writes nothing.
@@ -664,8 +668,8 @@
   Code (`forward_headers`, such as the ones `ANTHROPIC_CUSTOM_HEADERS` adds), on any head, and can add a
   `Via: 1.1 splice (splice/<version>)` line to every request (`send_version = true`), so a company gateway can see
   which splice a request came through and refuse an old one. Both are off by default. A login or connection header
-  can't be forwarded: naming one refuses boot. The README's
-  [Headers for a gateway](#headers-for-a-gateway-in-front-of-a-provider) section explains them with
+  can't be forwarded: naming one refuses boot. The wiki's
+  [Headers for a gateway](docs/wiki/configuration-reference.md#headers-for-a-gateway-in-front-of-a-provider) section explains them with
   `extra_headers`, which already set fixed headers.
 - **A held Claude login offers its reset and a fallback model on its card.** On Accounts, a Claude login at its
   limit says when a reset can be spent now ("A weekly reset is available"), and its Limit resets button opens the

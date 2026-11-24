@@ -24,7 +24,7 @@ every daemon start write them from the running release. A file absent on disk is
 the bytes splice last wrote is refreshed when the release's copy differs. A file the person edited is left as
 it is and stops taking updates. The SHA-256 of each written file is kept in `<state dir>/manager-home/written.json`.
 
-Source: docs/specs/v0.4.0.md section 15; README.md, "The splice manager"; CHANGELOG.md 0.4.0 "Added";
+Source: docs/specs/v0.4.0.md section 15; docs/wiki/console-and-sessions.md, "The splice manager"; CHANGELOG.md 0.4.0 "Added";
 app/src/main/kotlin/splice/app/manager/ManagerHome.kt (`ensure`, `place`: read on 2026-11-10, it matches the rules above).
 
 **What else is in the settings folder, one level up.** Every path here is outside your folder, so Claude Code
@@ -40,7 +40,7 @@ asks the person before any command or tool reaches it.
 | `../mcp-front.env` | where the MCP hub keeps its state and which control port it reports to | read with the person's yes at the prompt |
 | `../prompts/`, when present | prompt files a head's `system_prompt_file` can point at | read with the person's yes at the prompt |
 
-Source: README.md, "What splice keeps on your disk" tables; app/src/main/resources/splice.example.toml (line 522).
+Source: docs/wiki/disk-and-privacy.md, "What splice keeps on your disk" tables; app/src/main/resources/splice.example.toml (line 522).
 
 **The state dir** is `[daemon] state_dir` from splice.toml when set, else `SPLICE_STATE_DIR`, else
 `~/.splice/state`. An install older than 0.4.0 that kept `~/.claude-codex/state` keeps using it. The daemon log
@@ -54,7 +54,7 @@ carries the management key), `turn-auth-header`, `claude-logins/`, `claude-accou
 verbs; they read what they need and print no key.
 
 Source: core/src/main/kotlin/splice/core/config/StatePaths.kt (lines 45-75, 224-239);
-integrations/topology/src/main/kotlin/splice/topology/TopologyStatePaths.kt (lines 22-43); README.md, "What splice
+integrations/topology/src/main/kotlin/splice/topology/TopologyStatePaths.kt (lines 22-43); docs/wiki/disk-and-privacy.md, "What splice
 keeps on your disk".
 
 ## 2. The permission fence
@@ -185,7 +185,7 @@ Everything else in splice.toml is read only at boot, and `splice doctor` reports
 `splice restart`. A `context_window` edit the daemon could not apply, such as one a local runtime refuses, is
 named in the daemon log. Which knob is HOT is in `toml-reference.md`.
 
-Source: README.md, "Long-session reliability" and "Daily budgets"; app/src/main/resources/splice.example.toml
+Source: docs/wiki/architecture-and-troubleshooting.md, "Long-session reliability" and "Daily budgets"; app/src/main/resources/splice.example.toml
 (lines 3-7, 800-806); core/src/main/kotlin/splice/core/config/Knob.kt (lines 40-49); KeyCommand.kt (lines 1-6).
 
 ## 5. Restarting splice
@@ -243,7 +243,7 @@ The procedure:
 Source: features/lifecycle/src/main/kotlin/splice/lifecycle/restart/RestartTopology.kt (lines 35-50),
 RestartCommand.kt (lines 55-153), DaemonStop.kt (lines 56-64); features/lifecycle/.../upgrade/CompactionWait.kt
 (lines 59-74); features/turns/src/main/kotlin/splice/head/HeadServer.kt (lines 214-237), HeadDeps.kt (line 69);
-DaemonSpawn.kt (lines 46-51); README.md, "How it works", "Long-session reliability" and "Troubleshooting".
+DaemonSpawn.kt (lines 46-51); docs/wiki/architecture-and-troubleshooting.md, "How it works", "Long-session reliability" and "Troubleshooting".
 
 ## 6. Reading logs
 
@@ -269,7 +269,7 @@ DaemonSpawn.kt (lines 46-51); README.md, "How it works", "Long-session reliabili
 - What an error line means, and the retry layers behind it, are in `reliability-mcp-install.md`.
 
 Source: features/diagnostics LogsCommand.kt (lines 21-23, 58-61, 167-169); LogFileSource.kt (lines 44-54);
-README.md, "Troubleshooting".
+docs/wiki/architecture-and-troubleshooting.md, "Troubleshooting".
 
 ## 7. Asking the person
 

@@ -171,7 +171,7 @@ not sent there (unverified).
    declare the rows yourself.
 5. Claude Code sends tools on every turn, so a model that cannot call tools is no use as a head.
 
-Source: README.md, "Local models" (lines 718-720, "Claude Code needs tools on every turn");
+Source: docs/wiki/providers-and-accounts.md, "Local models" (lines 718-720, "Claude Code needs tools on every turn");
 integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughEventRouter.kt (lines 31-49);
 features/models/src/main/kotlin/splice/models/list/ModelsProbe.kt (lines 112-122).
 
@@ -227,7 +227,7 @@ Use it for a second account or key, another default model, or other knobs on the
    It is the person's to run.
 4. Verify with section 5.
 
-Source: app/src/main/resources/splice.example.toml (lines 491-501, 571-632); README.md, "A second head on the
+Source: app/src/main/resources/splice.example.toml (lines 491-501, 571-632); docs/wiki/providers-and-accounts.md, "A second head on the
 same provider"; features/configuration/src/main/kotlin/splice/configuration/add/AddArgs.kt (usage line).
 
 ### 6.2 An OpenAI-compatible vendor with an API key (move 1, maybe 3)

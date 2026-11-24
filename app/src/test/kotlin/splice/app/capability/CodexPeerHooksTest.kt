@@ -118,6 +118,34 @@ class CodexPeerHooksTest {
     }
 
     @Test
+    fun `legacy hooks with redirects, mid-command placeholders, and exit fallback migrate cleanly`(
+        @TempDir tmp: Path,
+    ) {
+        val file = Files.createDirectories(tmp.resolve(".codex")).resolve("hooks.json")
+        Files.writeString(file, LEGACY_REDIRECT_HOOKS_JSON)
+
+        val before = hooks.inspect(file)
+        assertEquals(CodexHooksState.NEEDS_MIGRATION, before.state)
+        assertEquals(3, before.issues.count { "legacy wrapper" in it }, before.issues.toString())
+
+        assertEquals(CodexHooksOutcome.Written(file, migrated = true), hooks.installOrMigrate(file))
+        assertEquals(CodexHooksState.CURRENT, hooks.inspect(file).state)
+
+        val events = Json.parseToJsonElement(Files.readString(file)).jsonObject["hooks"]!!.jsonObject
+        assertHook(events, "SessionStart", "splice peer codex attach --codex-home /h", 30)
+        assertHook(events, "UserPromptSubmit", "splice peer codex attach", 30)
+        assertHook(events, "SessionEnd", "splice peer codex detach", 3)
+
+        val broken = """splice peer codex attach "${'$'}id" --codex-home /h 1>"""
+        assertFalse(CodexHookCommands.isValidDirect(broken, "attach"))
+        assertFalse(CodexHookCommands.isValidDirect("splice peer codex attach 2>/dev/null", "attach"))
+        assertFalse(CodexHookCommands.isValidDirect("""splice peer codex attach "${'$'}id"""", "attach"))
+        assertEquals("splice peer codex attach --codex-home /h", CodexHookCommands.migrate(broken, "attach"))
+        val spacedRedirect = """splice peer codex attach --peer-name review 2> /tmp/err.log "${'$'}id""""
+        assertEquals("splice peer codex attach --peer-name review", CodexHookCommands.migrate(spacedRedirect, "attach"))
+    }
+
+    @Test
     fun `malformed hooks json is reported unreadable and never overwritten`(@TempDir tmp: Path) {
         val file = Files.createDirectories(tmp.resolve(".codex")).resolve("hooks.json")
         val broken = "{ not valid json"
@@ -312,6 +340,46 @@ private val LEGACY_QUOTED_WRAPPER_JSON = """
                 "command": "sh -c 'id=$(jq -r .session_id); /opt/jq-tools/splice peer codex attach --cwd \"/tmp/work folder\" --peer-name review \"${'$'}id\"'",
                 "timeout": 30,
                 "statusMessage": "Custom status"
+              }
+            ]
+          }
+        ]
+      }
+    }
+""".trimIndent()
+
+private val LEGACY_REDIRECT_HOOKS_JSON = """
+    {
+      "hooks": {
+        "SessionStart": [
+          {
+            "hooks": [
+              {
+                "type": "command",
+                "command": "sh -c 'id=$(jq -r \".session_id // empty\"); splice peer codex attach \"${'$'}id\" --codex-home /h 1>&2 || exit 1'",
+                "timeout": 30
+              }
+            ]
+          }
+        ],
+        "UserPromptSubmit": [
+          {
+            "hooks": [
+              {
+                "type": "command",
+                "command": "splice peer codex attach 2>/dev/null",
+                "timeout": 30
+              }
+            ]
+          }
+        ],
+        "SessionEnd": [
+          {
+            "hooks": [
+              {
+                "type": "command",
+                "command": "sh -c 'id=$(jq -r \".session_id // empty\"); splice peer codex detach \"${'$'}id\" 1>&2'",
+                "timeout": 3
               }
             ]
           }

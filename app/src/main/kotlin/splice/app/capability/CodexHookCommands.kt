@@ -5,7 +5,9 @@ package splice.app.capability
 
 /** Recognizes and migrates `splice peer codex attach|detach` hook commands without clobbering user customizations. */
 internal object CodexHookCommands {
-    private val shellVarToken = Regex("""^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?$""")
+    private val shellVarToken = Regex("""^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[^}]+\})$""")
+    private val redirectToken = Regex("""^(?:[0-9]*[<>].*|&>.*)$""")
+    private val bareRedirectToken = Regex("""^(?:[0-9]*(?:>>?|<<?|[<>]&)|&>>?)$""")
 
     fun isSpliceCommand(command: String): Boolean =
         "splice peer codex" in command || "peer codex attach" in command || "peer codex detach" in command
@@ -15,7 +17,9 @@ internal object CodexHookCommands {
         val trimmed = command.trim()
         if (trimmed.isEmpty() || hasShellSyntax(trimmed)) return false
         val tokens = scanTokens(trimmed)
-        return isSplicePeerCall(tokens) && tokens[VERB_INDEX].value == verb
+        return isSplicePeerCall(tokens) &&
+            tokens[VERB_INDEX].value == verb &&
+            tokens.none { it.isRedirect() || it.isLegacyArg() }
     }
 
     /** Preserves an existing valid direct command verbatim, or unwraps a legacy shell wrapper keeping binary & flags. */
@@ -30,21 +34,30 @@ internal object CodexHookCommands {
 
     private fun unwrapLegacy(trimmed: String, verb: String): String {
         val outer = scanTokens(trimmed)
-        val script = if (isShellWrapper(outer)) outer[SHELL_SCRIPT_INDEX].value else trimmed
+        val hasShellArgs = outer.size >= MIN_SHELL_WRAPPER_TOKENS && outer[1].value == "-c"
+        val script = if (hasShellArgs && outer[0].isShellBin()) outer[SHELL_SCRIPT_INDEX].value else trimmed
         val stmt = splitStatements(script).firstOrNull { isSplicePeerCall(scanTokens(it)) }
             ?: return "splice peer codex $verb"
-        val tokens = scanTokens(stmt).toMutableList()
-        while (tokens.size > MIN_PEER_TOKENS && isLegacyIdArg(tokens.last().value)) {
-            tokens.removeAt(tokens.lastIndex)
-        }
-        tokens[VERB_INDEX] = Token(verb, verb)
-        return tokens.joinToString(" ") { it.raw }
+        val cleaned = stripLegacyArgs(scanTokens(stmt)).toMutableList()
+        cleaned[VERB_INDEX] = Token(verb, verb)
+        return cleaned.joinToString(" ") { it.raw }
     }
 
-    private fun isShellWrapper(tokens: List<Token>): Boolean {
-        if (tokens.size < MIN_SHELL_WRAPPER_TOKENS || tokens[1].value != "-c") return false
-        val bin = tokens[0].value
-        return bin == "sh" || bin == "bash" || bin.endsWith("/sh") || bin.endsWith("/bash")
+    private fun stripLegacyArgs(tokens: List<Token>): List<Token> {
+        val kept = tokens.take(MIN_PEER_TOKENS).toMutableList()
+        var i = MIN_PEER_TOKENS
+        while (i < tokens.size) {
+            val token = tokens[i]
+            when {
+                token.isRedirect() -> i += if (token.isBareRedirect()) 2 else 1
+                token.isLegacyArg() -> i++
+                else -> {
+                    kept += token
+                    i++
+                }
+            }
+        }
+        return kept
     }
 
     private fun isSplicePeerCall(tokens: List<Token>): Boolean {
@@ -56,10 +69,7 @@ internal object CodexHookCommands {
             (verb == "attach" || verb == "detach")
     }
 
-    private fun isLegacyIdArg(value: String): Boolean =
-        shellVarToken.matches(value) || value.startsWith("$(") || value.startsWith("`")
-
-    /** Detects unquoted shell operators (`;`, `|`, `&`, newlines) or command substitution (`$(`, `` ` ``). */
+    /** Detects unquoted shell operators (`;`, `|`, `&`, `<`, `>`, newlines) or expansions (`$var`, `$(`, `` ` ``). */
     private fun hasShellSyntax(text: String): Boolean {
         var quote = SHELL_UNQUOTED
         var i = 0
@@ -81,12 +91,12 @@ internal object CodexHookCommands {
 
     private fun isShellOperatorAt(quote: Char, c: Char, next: Char?): Boolean = when {
         quote == '\'' -> false
-        c == '`' || (c == '$' && next == '(') -> true
-        quote == SHELL_UNQUOTED && c in STATEMENT_BREAKS -> true
+        c == '`' || (c == '$' && next != null && next in CODEX_DOLLAR_STARTS) -> true
+        quote == SHELL_UNQUOTED && c in CODEX_SHELL_OPERATORS -> true
         else -> false
     }
 
-    /** Splits a shell script on unquoted `;`, `|`, `&`, or newlines while keeping each statement's raw quotes intact. */
+    /** Splits a shell script on unquoted `;`, `|`, `&` (outside redirects), or newlines, keeping raw quotes intact. */
     private fun splitStatements(script: String): List<String> {
         val out = mutableListOf<String>()
         var quote = SHELL_UNQUOTED
@@ -101,7 +111,7 @@ internal object CodexHookCommands {
                     quote = toggled
                     i++
                 }
-                quote == SHELL_UNQUOTED && c in STATEMENT_BREAKS -> {
+                quote == SHELL_UNQUOTED && isStatementBreak(script, i) -> {
                     script.substring(start, i).trim().takeIf(String::isNotEmpty)?.let(out::add)
                     start = i + 1
                     i++
@@ -111,6 +121,12 @@ internal object CodexHookCommands {
         }
         script.substring(start).trim().takeIf(String::isNotEmpty)?.let(out::add)
         return out
+    }
+
+    private fun isStatementBreak(script: String, i: Int): Boolean = when (script[i]) {
+        ';', '|', '\n' -> true
+        '&' -> (script.getOrNull(i - 1) ?: SHELL_UNQUOTED) !in CODEX_REDIRECT_CHARS && script.getOrNull(i + 1) != '>'
+        else -> false
     }
 
     /** Quote-aware tokenizer returning both raw slice and unquoted value for each argv token. */
@@ -157,12 +173,23 @@ internal object CodexHookCommands {
         else -> null
     }
 
-    private data class Token(val raw: String, val value: String)
+    private data class Token(val raw: String, val value: String) {
+        fun isShellBin(): Boolean = value == "sh" || value == "bash" || value.endsWith("/sh") || value.endsWith("/bash")
+
+        fun isRedirect(): Boolean = !raw.startsWith("'") && !raw.startsWith("\"") && redirectToken.matches(raw)
+
+        fun isBareRedirect(): Boolean = !raw.startsWith("'") && !raw.startsWith("\"") && bareRedirectToken.matches(raw)
+
+        fun isLegacyArg(): Boolean = !raw.startsWith("'") &&
+            (shellVarToken.matches(value) || value.startsWith("$(") || value.startsWith("`"))
+    }
 }
 
 private const val SHELL_UNQUOTED: Char = '\u0000'
 private const val DOUBLE_QUOTE_ESCAPES: String = "\"\\\$`"
-private const val STATEMENT_BREAKS: String = ";|&\n"
+private const val CODEX_SHELL_OPERATORS: String = ";|&<>\n"
+private const val CODEX_REDIRECT_CHARS: String = "<>"
+private const val CODEX_DOLLAR_STARTS: String = "({_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 // why: `splice peer codex <verb>` has 4 tokens with the verb at index 3.
 private const val MIN_PEER_TOKENS: Int = 4

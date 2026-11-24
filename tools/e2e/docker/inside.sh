@@ -80,8 +80,8 @@ step "launch recipe: mockchat base URL + API_TIMEOUT_MS > 900s" launch_recipe mo
 
 # ── 7b. per-head model roster + window, packaging, the turn key (head_contract in lib.sh) ─────
 step "head contract + packaging: claudex (claude-codex--gpt-5-codex @272k, status line, /login)" head_contract claudex claude-codex--gpt-5-codex 272000 "gpt-5-codex:272000"
-step "head contract + packaging: mockchat (claude-mockchat--mock-chat @272k, status line, /login)" head_contract mockchat claude-mockchat--mock-chat 272000 "mock-chat:272000"
-step "head contract + packaging: mockchat2 (claude-mockchat2--mock-chat-2 @272k, status line, /login)" head_contract mockchat2 claude-mockchat2--mock-chat-2 272000 "mock-chat-2:272000"
+step "head contract + packaging: mockchat (claude-mockchat--mock-chat @128k, status line, /login)" head_contract mockchat claude-mockchat--mock-chat 128000 "mock-chat:128000"
+step "head contract + packaging: mockchat2 (claude-mockchat2--mock-chat-2 @64k, status line, /login)" head_contract mockchat2 claude-mockchat2--mock-chat-2 64000 "mock-chat-2:64000"
 
 # ── 7c. the daemon's status line on a SCALED row ─────────────────────────────────────────────
 # Claude Code fixes its context window per process (the pinned row's) and splice scales the counts

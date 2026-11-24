@@ -27,15 +27,22 @@ internal class TurnWiring(
 
     /** The Anthropic usage payload builder — shared by the stream emitter and the non-stream
      *  collector so both report tokens identically. */
-    fun usagePayloadBuilder(catalog: ModelCatalog, meta: TurnMeta, sessionWindow: Long? = null): UsagePayloadBuilder =
-        usagePayloadBuilderFor(catalog, meta.route.originalModel, sessionWindow)
+    fun usagePayloadBuilder(
+        catalog: ModelCatalog,
+        meta: TurnMeta,
+        sessionWindow: Long? = null,
+        requestWindow: Long? = null,
+    ): UsagePayloadBuilder =
+        usagePayloadBuilderFor(catalog, meta.route.originalModel, sessionWindow, requestWindow)
 
     /** The same builder for a response the proxy composes without a provider build (LocalResponses):
-     *  the row id is all it ever read of the meta. */
+     *  the row id is all it ever read of the meta. [requestWindow] is the window a gateway read off this
+     *  request itself (ClientWindowWitness.requested); it rides to the catalog beside [sessionWindow]. */
     fun usagePayloadBuilderFor(
         catalog: ModelCatalog,
         originalModel: String,
         sessionWindow: Long? = null,
+        requestWindow: Long? = null,
     ): UsagePayloadBuilder {
         return { usage ->
             // Claude Code reads every assistant message's usage as the context total, zeros included,
@@ -74,9 +81,9 @@ internal class TurnWiring(
             // one leaves a breadcrumb even though every displayed surface stays self-consistent. Non-launched
             // clients (the e2e probe, a bare curl) receive scaled counts against a window they never
             // declared — by design; the raw truth lives in splice's own accounting above.
-            val clientWindow = catalog.clientContextWindowFor(originalModel, sessionWindow)
-            val scale = catalog.usageScale(originalModel, sessionWindow)
-            if (scale != 1.0) sayScale(originalModel, scale, clientWindow, sessionWindow)
+            val clientWindow = catalog.clientContextWindowFor(originalModel, sessionWindow, requestWindow)
+            val scale = catalog.usageScale(originalModel, sessionWindow, requestWindow)
+            if (scale != 1.0) sayScale(originalModel, scale, clientWindow, sessionWindow, requestWindow)
             hud.buildUsagePayload(
                 TurnUsage(
                     scale(nonCachedInput, scale),
@@ -91,8 +98,18 @@ internal class TurnWiring(
     }
 
     /** The scale line, said the first time this factor and window are seen for the row. */
-    private fun sayScale(originalModel: String, scale: Double, clientWindow: Long, sessionWindow: Long?) {
-        val source = if (sessionWindow != null) "the session's own" else "the launch env"
+    private fun sayScale(
+        originalModel: String,
+        scale: Double,
+        clientWindow: Long,
+        sessionWindow: Long?,
+        requestWindow: Long? = null,
+    ) {
+        val source = when {
+            requestWindow != null -> "the door's reading of the request"
+            sessionWindow != null -> "the session's own"
+            else -> "the launch env"
+        }
         val line = "[usage] row '$originalModel' reports client-scaled tokens " +
             "(factor $scale, client window $clientWindow, $source)\n"
         if (saidScales.size >= MAX_SAID_SCALES) saidScales.clear()

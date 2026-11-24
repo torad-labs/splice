@@ -432,12 +432,13 @@ code from built-in and external modes runs in the daemon.
 
 A splice that also serves Claude Desktop states the windows Desktop gives its Code tab in splice.toml's
 `[desktop]`: `code_window` (200,000 shipped) and `code_window_1m` (1,000,000 shipped, never below `code_window`).
-Desktop sets those windows itself in its Code tab's Claude Code and honors there the `max_input_tokens` discovery
-advertises, which stays each provider's real ceiling; splice authors the counts a Code-tab turn reports, so the
-door scales them by the configured window over the model's own and compaction agrees with the terminal setup even
-where the two windows differ. A model is advertised with a 1M variant when its real window reaches
-`code_window_1m`. The daemon reads the table at start (a restart, and Desktop's next launch), and the same reading
-serves the team door's model list.
+Desktop sets those windows itself in its Code tab's Claude Code, which divides by them. Discovery's
+`max_input_tokens` stays each provider's real ceiling, never a configured window; Desktop reads that field, but
+where it uses the number is not established (docs/specs/desktop-full.md). splice authors the counts each Desktop
+request reports, so the door scales them by the configured window over the model's own and the Code tab compacts
+where the terminal setup does, even where the two windows differ. A model is advertised to Desktop with a 1M variant
+when its real window reaches `code_window_1m`. The daemon reads the table at start (a restart, and Desktop's next
+launch). The team door's model list is for terminal Claude Code, so it keeps Claude Code's own million as the bar.
 
 ## P3
 

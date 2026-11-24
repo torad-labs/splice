@@ -416,9 +416,10 @@ model list only at launch, so a sign-in or a head added while it is open shows a
 
 Desktop gives its Code tab's Claude Code its own context windows (200,000 tokens, and 1,000,000 for a model picked
 as its 1M variant), and its Claude Code compacts at a share of the one it holds. splice scales the counts each
-Desktop turn reports to that window, so a model compacts at its own real window whatever splice serves it at; the
-window a model advertises in the picker stays its provider's real ceiling, which Desktop honors as the model's
-limit. Where this install's Desktop is given other windows (a managed policy, a newer Desktop), state them in
+Desktop turn reports to that window, so a model compacts at its own real window whatever splice serves it at. The
+window a model advertises in the picker (`max_input_tokens`) stays its provider's real ceiling; Desktop reads it,
+but where Desktop uses that number is not known, and the Code tab's compaction follows the scaled counts, not it.
+Where this install's Desktop is given other windows (a managed policy, a newer Desktop), state them in
 splice.toml and splice scales to them instead, and a model is offered a 1M variant when its real window reaches
 `code_window_1m`:
 

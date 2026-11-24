@@ -16,7 +16,6 @@ import splice.app.desktop.catalog.DoorCatalog
 import splice.app.provider.ServedProvider
 import splice.core.client.SESSION_HEADER
 import splice.core.topology.Topology
-import splice.core.topology.desktop.DesktopConfig
 import splice.core.turn.TERMINAL_DOOR
 import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus
@@ -41,7 +40,7 @@ internal class TeamDoor : TeamGateway {
      *  a person's allowlist still name a head by its command or key, and now a provider by its key. */
     fun open(providers: DesktopProviders, topology: Topology) {
         val names = TeamNames(topology)
-        opened = Opened(providers, topology.providers.keys.associateWith(names::of), topology.desktop)
+        opened = Opened(providers, topology.providers.keys.associateWith(names::of))
     }
 
     override suspend fun routed(
@@ -73,7 +72,9 @@ internal class TeamDoor : TeamGateway {
     override suspend fun models(call: ApplicationCall, voice: RefusalVoice, serves: ProviderFilter) {
         val open = opened ?: return voice.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, STARTING)
         val lineup = open.providers.lineup().serving { open.allows(it, serves) }
-        JsonReply(HttpStatusCode.OK, DoorCatalog(lineup, open.desktop).discovery().toString()).send(call)
+        // A team's clients are Claude Code in a terminal, whose 1M variant holds Claude Code's own million; `[desktop]`
+        // states Claude Desktop's Code-tab windows and does not reach this list.
+        JsonReply(HttpStatusCode.OK, DoorCatalog(lineup).discovery().toString()).send(call)
     }
 
     /** [call]'s body as a JSON object, under the widest bound a served provider takes; null once [call] is answered. */
@@ -90,12 +91,7 @@ internal class TeamDoor : TeamGateway {
         return null
     }
 
-    private class Opened(
-        val providers: DesktopProviders,
-        private val names: Map<String, Set<String>>,
-        /** splice.toml's `[desktop]` windows, which the discovery rows are read against. */
-        val desktop: DesktopConfig,
-    ) {
+    private class Opened(val providers: DesktopProviders, private val names: Map<String, Set<String>>) {
         fun namesOf(provider: String): Set<String> = names[provider].orEmpty()
 
         fun allows(provider: ServedProvider, serves: ProviderFilter): Boolean =

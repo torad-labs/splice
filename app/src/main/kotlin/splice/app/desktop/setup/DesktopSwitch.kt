@@ -65,7 +65,7 @@ internal class DesktopSwitch(
         val tidied = settingsTidy.tidied()
         val replaced = app.putIn(door)
         records.update { it.copy(on = true, defaultModel = chosen, replaced = null) }
-        app.publish(door, DoorCatalog(lineup).inferenceModels(chosen))
+        app.publish(door, lineup, chosen)
         val said = "Claude Desktop is set up on splice: all of it (Chat, Cowork and the Code tab) runs on the door " +
             "at $door, with nothing to paste.$replaced $REOPEN$tidied"
         DesktopAct.Done(said, "$chosen ($why)")

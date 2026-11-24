@@ -24,8 +24,11 @@ counts to the 200,000 (or 1M) window Desktop gives its Code tab. That pair is sp
 (`code_window`, `code_window_1m`), for an install whose Desktop is given other windows: Desktop sets the windows its
 Code tab divides by itself, so the keys state what this install's Desktop sets and splice scales to them, and a model
 is advertised with a 1M variant (`supports_1m`, `supports1m`) when its provider's real window reaches `code_window_1m`.
-Discovery's `max_input_tokens` stays the provider's real ceiling, which Desktop reads beyond the Code tab; where a
-configured window differs from a model's own, scaling the reported counts carries it, never a larger advertisement.
+Discovery's `max_input_tokens` stays the provider's real ceiling, never a configured window. Desktop reads that field
+(see the bundle reading below), but where it uses the number, in the Code tab, Chat or Cowork, is not established; the
+Code tab's Claude Code divides by the window Desktop sets in its environment, not by it. splice scales the counts of
+every request carrying the app-mode header to the `[desktop]` window, and the Code tab's Claude Code is what compacts on
+them, so where a configured window differs from a model's own, the scaled counts carry it, never a larger advertisement.
 The daemon reads the table at start, so an edit takes a daemon restart and Desktop's next launch. `splice desktop` and `splice doctor` say the mode and
 whether Desktop was reopened since splice changed it, and `splice desktop` lists each backend-dependent feature per mode,
 working or why not (DesktopFeatures; what only the live test settles is "unknown"). `on` also lays

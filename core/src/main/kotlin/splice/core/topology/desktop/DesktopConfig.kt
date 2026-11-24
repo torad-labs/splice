@@ -72,14 +72,27 @@ private class DesktopTableCheck {
     fun see(kind: TomlKind, rest: List<String>, value: JsonElement, line: Int) {
         when (kind) {
             TomlKind.ARRAY_TABLE -> fault(rest, LIST_OF_TABLES, line)
-            TomlKind.TABLE -> if (rest.isEmpty()) tableLine = line else fault(rest, NOT_A_SETTING, line)
+            TomlKind.TABLE -> table(rest, line)
             TomlKind.KEY -> key(rest, value, line)
         }
     }
 
+    private fun table(rest: List<String>, line: Int) {
+        if (rest.isEmpty()) defined(line) else fault(rest, NOT_A_SETTING, line)
+    }
+
+    // TOML forbids defining a table twice, by a header or an inline table, and the split has already blanked this one
+    // out of the text the structural preflight reads, so the refusal the schema's tables get there is this reader's.
+    private fun defined(line: Int) {
+        if (tableLine != null) findings += TopologyFinding(DESKTOP_TABLE, TABLE_TWICE, line) else tableLine = line
+    }
+
     private fun key(rest: List<String>, value: JsonElement, line: Int) {
         when {
-            rest.isEmpty() && value is JsonObject -> value.forEach { (name, held) -> put(name, held, line) }
+            rest.isEmpty() && value is JsonObject -> {
+                defined(line)
+                value.forEach { (name, held) -> put(name, held, line) }
+            }
             rest.isEmpty() -> findings += TopologyFinding(DESKTOP_TABLE, NOT_A_TABLE, line)
             rest.size == 1 -> put(rest.single(), value, line)
             else -> fault(rest, NOT_A_SETTING, line)
@@ -87,18 +100,24 @@ private class DesktopTableCheck {
     }
 
     private fun put(name: String, value: JsonElement, line: Int) {
-        lines.putIfAbsent(name, line)
+        // A key written twice is TOML's to forbid; the preflight never sees this blanked table, so it is
+        // refused here and the first writing stands, the way the mods reader holds a repeated key.
+        if (name in keys) {
+            fault(listOf(name), ALREADY_DECLARED, line)
+            return
+        }
+        lines[name] = line
         keys[name] = value
     }
 
-    private fun fault(rest: List<String>, message: String, line: Int) {
+    private fun fault(rest: List<String>, message: String, line: Int?) {
         val path = (listOf(DESKTOP_TABLE) + rest).joinToString(".")
         findings += TopologyFinding(path, message, line)
     }
 
     fun read(): DesktopRead {
         keys.keys.filter { it !in WINDOW_KEYS }.forEach { name ->
-            findings += TopologyFinding("$DESKTOP_TABLE.$name", NOT_A_SETTING, lines[name] ?: tableLine)
+            fault(listOf(name), NOT_A_SETTING, lines[name] ?: tableLine)
         }
         val standard = window(CODE_WINDOW_KEY, CLIENT_TABLE_WINDOW)
         val million = window(CODE_WINDOW_1M_KEY, CLAUDE_CODE_ONE_MILLION)
@@ -120,10 +139,10 @@ private class DesktopTableCheck {
         val value = keys[name] ?: return shipped
         val number = (value as? JsonPrimitive)?.takeIf { !it.isString }?.longOrNull
         if (number == null) {
-            findings += TopologyFinding("$DESKTOP_TABLE.$name", WHOLE_NUMBER, lines[name])
+            fault(listOf(name), WHOLE_NUMBER, lines[name])
             return shipped
         }
-        if (number <= 0) findings += TopologyFinding("$DESKTOP_TABLE.$name", POSITIVE, lines[name])
+        if (number <= 0) fault(listOf(name), POSITIVE, lines[name])
         return number
     }
 }
@@ -139,6 +158,8 @@ private val WINDOW_KEYS = setOf(CODE_WINDOW_KEY, CODE_WINDOW_1M_KEY)
 
 private const val NOT_A_SETTING = "is not a splice.toml setting; remove the line"
 private const val NOT_A_TABLE = "is not a table; write it as a [desktop] table"
+private const val TABLE_TWICE = "[desktop] is already declared"
+private const val ALREADY_DECLARED = "already declared"
 private const val LIST_OF_TABLES = "is a list of tables; write it as one [desktop] table"
 private const val WHOLE_NUMBER = "must be a whole number of tokens"
 private const val POSITIVE = "must be positive"

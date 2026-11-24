@@ -61,6 +61,17 @@ class DesktopWindowConfigTest {
     }
 
     @Test
+    fun `a key written twice or a desktop table opened twice refuses boot, as TOML forbids both`() {
+        assertEquals(
+            listOf("desktop.code_window"),
+            refusedAt("[desktop]\ncode_window = 320000\ncode_window = 640000\n"),
+        )
+        val reopened = "[desktop]\ncode_window = 320000\n[daemon]\ncontrol_port = 3096\n" +
+            "[desktop]\ncode_window_1m = 640000\n"
+        assertEquals(listOf("desktop"), refusedAt(reopened))
+    }
+
+    @Test
     fun `every fault in the table is listed at once, an unknown key among them`() {
         val toml = "[desktop]\ncode_window = 0\ncode_window_1m = \"wide\"\nchat_window = 100000\n"
         assertEquals(

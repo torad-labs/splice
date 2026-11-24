@@ -326,6 +326,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     ),
     "app/src/main/kotlin/splice/app/head/SessionFallbackStore.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/mcp/AgyMcpConfigWriter.kt" to mapOf("writeAtomic0600(" to 2),
+    "app/src/main/kotlin/splice/app/mcp/AgyMcpManagedState.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/mcp/CodexMcpTomlWriter.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/mcp/NativeCodexMcpFiles.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/mcp/NativeCodexSocketProxy.kt" to mapOf("writeAtomic0600(" to 1),

@@ -22,6 +22,7 @@ import java.nio.file.Path
 import java.security.SecureRandom
 import java.time.Clock
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 /** One key as the server keeps and lists it: its [hash], never the key. Times are epoch milliseconds. */
 @Serializable
@@ -103,12 +104,13 @@ public class ServerKeys(
 
     /** When each key last admitted a request since this store was read, by prefix. */
     private val used = ConcurrentHashMap<String, Long>()
+    private val useVersion = AtomicLong(0L)
+
+    @Volatile
+    private var persistedUseVersion = 0L
 
     @Volatile
     private var useKeptAt = clock.millis()
-
-    @Volatile
-    private var useChanged = false
 
     /** Every key, oldest first, or only [person]'s: each with when it was last used, none with a secret. */
     public fun list(person: String? = null): List<ServerKey> = byHash.values
@@ -185,7 +187,7 @@ public class ServerKeys(
         key.refusalAt(now)?.let { return it }
         if (key.lastUsedAt == null && !used.containsKey(key.prefix)) supersedeElders(key)
         used[key.prefix] = now
-        useChanged = true
+        useVersion.incrementAndGet()
         return KeyVerdict.Admitted(key)
     }
 
@@ -209,27 +211,35 @@ public class ServerKeys(
 
     /** Whether [text] holds a key this server issued, live or not, anywhere in it. What a caller sends beside the key
      *  that admitted it is asked this before any of it leaves the machine: a person's key stays at the server. Each
-     *  run with a key's shape is looked up by its public prefix, so a secret of any admitted length is found, and
-     *  nothing is marked used. */
+     *  run with a key's shape is hashed and looked up, as [admit] does, so secrets of any admitted length match by
+     *  hash, benign text sharing only a public prefix is never flagged, and nothing is marked used. */
     internal fun heldIn(text: String): Boolean {
-        val shaped = ServerKeyFormat.prefixesIn(text).toSet()
-        return shaped.isNotEmpty() && byHash.values.any { it.prefix in shaped }
+        val snapshot = byHash
+        if (snapshot.isEmpty()) return false
+        return ServerKeyFormat.keysIn(text).any { mint.hash(it) in snapshot }
     }
 
     /** Writes when each key was last used, if any was used since the last write and that write is [olderThanMs] old.
      *  The listener asks after a turn; the daemon's stop asks with 0, so nothing is lost at a restart. */
     public suspend fun keepUse(olderThanMs: Long = USE_KEPT_EVERY_MS) {
-        if (!useChanged || clock.millis() - useKeptAt < olderThanMs) return
-        mutation.withLock { publish(byHash) }
+        if (useVersion.get() == persistedUseVersion || clock.millis() - useKeptAt < olderThanMs) return
+        mutation.withLock {
+            if (useVersion.get() == persistedUseVersion || clock.millis() - useKeptAt < olderThanMs) return@withLock
+            publish(byHash)
+        }
     }
 
-    /** [keys] become the keys the listener reads, once the file holds them: a write that fails changes nothing. */
+    /** [keys] become the keys the listener reads, once the file holds them: a write that fails changes nothing, and
+     *  publishing memory in the same non-suspending block keeps disk and memory aligned even on cancellation. */
     private suspend fun publish(keys: Map<String, ServerKey>) {
-        useChanged = false
+        val observedUse = useVersion.get()
         val kept = keys.mapValues { (_, key) -> withUse(key) }
-        withContext(io) { store.write(KeyFile(kept.values.sortedBy { it.createdAt })) }
-        byHash = kept
-        useKeptAt = clock.millis()
+        withContext(io) {
+            store.write(KeyFile(kept.values.sortedBy { it.createdAt }))
+            byHash = kept
+            persistedUseVersion = observedUse
+            useKeptAt = clock.millis()
+        }
     }
 
     private fun withUse(key: ServerKey): ServerKey = used[key.prefix]?.let { key.copy(lastUsedAt = it) } ?: key

@@ -7,9 +7,13 @@ package splice.server
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -21,6 +25,8 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.file.Path
+import java.security.MessageDigest
+import java.util.HexFormat
 import java.util.concurrent.CopyOnWriteArrayList
 
 internal class ServerMessagesHeadersTest {
@@ -120,6 +126,34 @@ internal class ServerMessagesHeadersTest {
         assertEquals(2, lines.size, "one line for each turn: $logged")
         assertTrue(lines.all { NOTE in it && USER !in it }, "the log names the header held back: $lines")
         assertFalse(logged.any { ola in it || ben in it }, "the log never repeats a key")
+    }
+
+    @Test
+    fun `benign text at a registered prefix rides while imported 64-char and mismatched-prefix keys stay here`() {
+        val mode = rig.open(state, listOf(StandInHead(head.address.port)))
+        val ola = rig.keyFor("ola@example.com")
+        val olaPrefix = ola.substringBeforeLast('_')
+        val key64 = "team_longer64_" + "b".repeat(64)
+        val mismatchedActual = "legacy_actual99_" + "c".repeat(48)
+        for ((prefix, secret) in listOf("team_longer64" to key64, "spk_stored01" to mismatchedActual)) {
+            val digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(secret.toByteArray()))
+            val body = buildJsonObject {
+                put("person", "ada@example.com")
+                put("prefix", prefix)
+                put("hash", digest)
+            }
+            assertInstanceOf(ServerAnswer.Done::class.java, runBlocking { mode.keyApi.importKey(body, "test") })
+        }
+        val benign = "${olaPrefix}_${"z".repeat(40)}"
+        assertEquals(200, turn(ola, stream = false, USER to benign, NOTE to "k=$key64;").statusCode())
+        val first = handedOn(from = 0, ola, key64, mismatchedActual)
+        assertEquals(benign, first[USER])
+        assertNull(first[NOTE])
+
+        assertEquals(200, turn(ola, stream = false, USER to "ref=$benign", NOTE to "t=$mismatchedActual").statusCode())
+        val second = handedOn(from = 1, ola, key64, mismatchedActual)
+        assertEquals("ref=$benign", second[USER])
+        assertNull(second[NOTE])
     }
 }
 

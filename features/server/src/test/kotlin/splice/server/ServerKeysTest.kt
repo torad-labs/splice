@@ -2,8 +2,13 @@
 // the way the CLI, the control plane and an admin's key all ask: through the one set of operations they share.
 package splice.server
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -14,14 +19,20 @@ import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.topology.ServerConfig
 import splice.core.util.LogSink
+import splice.server.keys.KeyImport
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.MessageDigest
+import java.util.HexFormat
+import kotlin.coroutines.CoroutineContext
 
 internal class ServerKeysTest {
     @TempDir lateinit var folder: Path
@@ -131,4 +142,67 @@ internal class ServerKeysTest {
         assertThrows(Exception::class.java) { server() }
         assertEquals("{ this is not the keys file", Files.readString(file))
     }
+
+    @Test
+    fun `heldIn verifies candidate runs by hash across lengths and ignores unregistered suffixes`() {
+        val keys = ServerKeys(folder.resolve("keys.json"), Dispatchers.IO)
+        val minted = runBlocking { keys.mint(KeyRequest("ada@team.example")) }
+        val mintedKey = minted.reveal()
+        val key64 = "team_longer64_" + "b".repeat(64)
+        val key32 = "spk_short032_" + "d".repeat(32)
+        val mismatchedActual = "legacy_actual99_" + "c".repeat(48)
+        runBlocking {
+            assertNotNull(keys.importKey(KeyImport("ada@team.example", "team_longer64", sha256(key64), null, null)))
+            assertNotNull(keys.importKey(KeyImport("ada@team.example", "spk_short032", sha256(key32), null, null)))
+            assertNotNull(
+                keys.importKey(KeyImport("bo@team.example", "spk_stored01", sha256(mismatchedActual), null, null)),
+            )
+        }
+        assertFalse(keys.heldIn("${minted.row.prefix}_${"z".repeat(40)}"))
+        assertFalse(keys.heldIn("ref=${minted.row.prefix}_${"0".repeat(32)}; ok"))
+        assertFalse(keys.heldIn("spk_stored01_${"c".repeat(48)}"))
+        assertTrue(keys.heldIn(mintedKey))
+        assertTrue(keys.heldIn("${mintedKey}extra"))
+        assertTrue(keys.heldIn("x-note=$key64; ok"))
+        assertTrue(keys.heldIn("spk_aaaaaaaa_${"x".repeat(37)}$key64"))
+        assertTrue(keys.heldIn("Bearer $key32"))
+        assertInstanceOf(KeyVerdict.Admitted::class.java, runBlocking { keys.admit(mismatchedActual) })
+        assertTrue(keys.heldIn("header=$mismatchedActual;"))
+        runBlocking { keys.revoke(minted.row.prefix) }
+        assertTrue(keys.heldIn(mintedKey))
+    }
+
+    @Test
+    fun `cancelling a mutation after disk replacement still updates memory and failed writes change nothing`() {
+        val file = folder.resolve("keys.json")
+        val directIo = object : CoroutineDispatcher() {
+            override fun dispatch(context: CoroutineContext, block: Runnable) = block.run()
+        }
+        val keys = ServerKeys(file, directIo)
+        val minted = runBlocking { keys.mint(KeyRequest("ada@team.example")) }
+        var dispatches = 0
+        val cancelOnResume = object : CoroutineDispatcher() {
+            override fun dispatch(context: CoroutineContext, block: Runnable) {
+                dispatches += 1
+                if (dispatches == 2) context[Job]?.cancel()
+                block.run()
+            }
+        }
+        assertThrows(CancellationException::class.java) {
+            runBlocking { withContext(cancelOnResume) { keys.revoke(minted.row.prefix) } }
+        }
+        assertTrue(dispatches >= 2, "cancellation must trigger on resume after disk write")
+        assertNotNull(ServerKeys(file, directIo).list().single().revokedAt)
+        assertNotNull(keys.list().single().revokedAt)
+        assertInstanceOf(KeyVerdict.Revoked::class.java, runBlocking { keys.admit(minted.reveal()) })
+
+        val snapshot = keys.list()
+        Files.delete(file)
+        Files.createDirectories(file.resolve("blocking-entry"))
+        assertThrows(IOException::class.java) { runBlocking { keys.mint(KeyRequest("bo@team.example")) } }
+        assertEquals(snapshot, keys.list())
+    }
+
+    private fun sha256(text: String): String =
+        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(text.toByteArray()))
 }

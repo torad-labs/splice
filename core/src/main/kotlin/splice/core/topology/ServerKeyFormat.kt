@@ -9,15 +9,20 @@ public const val SERVER_KEY_ID_LENGTH: Int = 8
 // external issuer verifies by the same rule that admitted its hash, whatever length it was minted at.
 internal const val SERVER_KEY_SECRET_MIN_LENGTH: Int = 32
 
+// why: 40 characters of 62 carry 238 bits, beyond guessing at any request rate, and above the 32 verification asks.
+public const val SERVER_KEY_MINTED_LENGTH: Int = 40
+
+// why: a mark is at most 24 characters ending with `_`, leaving at most 23 characters before that underscore.
+private const val MARK_BODY_MAX_LENGTH: Int = 23
+
 /** The public shape of a Splice key, including those minted with a previous server's mark. */
 public object ServerKeyFormat {
-    private const val MARK_PATTERN = "[A-Za-z][A-Za-z0-9_-]{0,22}_"
-    private const val PREFIX_PATTERN = "$MARK_PATTERN[a-z0-9]{$SERVER_KEY_ID_LENGTH}"
-    private const val SECRET_PATTERN = "_[A-Za-z0-9]{$SERVER_KEY_SECRET_MIN_LENGTH,}"
-    private val mark = Regex(MARK_PATTERN)
-    private val prefix = Regex(PREFIX_PATTERN)
-    private val key = Regex("$PREFIX_PATTERN$SECRET_PATTERN")
-    private val embedded = Regex("(?=($PREFIX_PATTERN)$SECRET_PATTERN)")
+    private val markPattern = "[A-Za-z][A-Za-z0-9_-]{0,${MARK_BODY_MAX_LENGTH - 1}}_"
+    private val prefixPattern = "$markPattern[a-z0-9]{$SERVER_KEY_ID_LENGTH}"
+    private val bodyPattern = "_[A-Za-z0-9]{$SERVER_KEY_SECRET_MIN_LENGTH,}"
+    private val mark = Regex(markPattern)
+    private val prefix = Regex(prefixPattern)
+    private val key = Regex("$prefixPattern$bodyPattern")
 
     public fun validMark(text: String): Boolean = mark.matches(text)
 
@@ -25,7 +30,74 @@ public object ServerKeyFormat {
 
     public fun validKey(text: String): Boolean = key.matches(text)
 
-    /** The prefix of every run of [text] with a key's shape. Overlapping matches keep a key detectable even when
-     *  preceded by token-shaped text, and the secret's length is not bounded, so a key is found by its prefix. */
-    public fun prefixesIn(text: String): Sequence<String> = embedded.findAll(text).map { it.groupValues[1] }
+    /** Candidate keys embedded in [text], in scan order. Scanning from each `_<id>_` anchor handles any admitted
+     *  secret length (32, 40, 64+) in linear time and still finds keys preceded by token-shaped text. */
+    public fun keysIn(text: String): Sequence<String> = sequence {
+        var cursor = 0
+        val minTail = SERVER_KEY_ID_LENGTH + 1 + SERVER_KEY_SECRET_MIN_LENGTH
+        while (cursor + minTail < text.length) {
+            val markEnd = text.indexOf('_', cursor)
+            cursor = if (markEnd < 0 || markEnd + minTail >= text.length) {
+                text.length
+            } else {
+                val tailEnd = validTailEnd(text, markEnd)
+                if (tailEnd >= 0) {
+                    yieldAll(candidatesAt(text, markEnd, markEnd + SERVER_KEY_ID_LENGTH + 2, tailEnd))
+                    tailEnd
+                } else {
+                    markEnd + 1
+                }
+            }
+        }
+    }
+
+    private fun validTailEnd(text: String, markEnd: Int): Int {
+        val sep = markEnd + SERVER_KEY_ID_LENGTH + 1
+        val tailStart = sep + 1
+        val tailEnd = if (text[sep] == '_' && isLowerAlnumRange(text, markEnd + 1, sep)) {
+            alnumRunEnd(text, tailStart)
+        } else {
+            -1
+        }
+        return if (tailEnd - tailStart >= SERVER_KEY_SECRET_MIN_LENGTH) tailEnd else -1
+    }
+
+    private fun candidatesAt(text: String, markEnd: Int, tailStart: Int, tailEnd: Int): List<String> {
+        val hasMintedPrefix = tailEnd - tailStart > SERVER_KEY_MINTED_LENGTH
+        val found = mutableListOf<String>()
+        for (start in markStartWindow(text, markEnd)) {
+            if (!isAsciiLetter(text[start])) continue
+            found += text.substring(start, tailEnd)
+            if (hasMintedPrefix) found += text.substring(start, tailStart + SERVER_KEY_MINTED_LENGTH)
+        }
+        return found
+    }
+
+    private fun markStartWindow(text: String, markEnd: Int): IntRange {
+        val floor = maxOf(0, markEnd - MARK_BODY_MAX_LENGTH)
+        var start = markEnd
+        while (start > floor && isMarkBody(text[start - 1])) start -= 1
+        return start until markEnd
+    }
+
+    private fun isLowerAlnumRange(text: String, from: Int, until: Int): Boolean {
+        for (i in from until until) {
+            if (!isLowerAlnum(text[i])) return false
+        }
+        return true
+    }
+
+    private fun alnumRunEnd(text: String, from: Int): Int {
+        var end = from
+        while (end < text.length && isAsciiAlnum(text[end])) end += 1
+        return end
+    }
+
+    private fun isAsciiLetter(ch: Char): Boolean = ch in 'A'..'Z' || ch in 'a'..'z'
+
+    private fun isLowerAlnum(ch: Char): Boolean = ch in 'a'..'z' || ch in '0'..'9'
+
+    private fun isAsciiAlnum(ch: Char): Boolean = isAsciiLetter(ch) || ch in '0'..'9'
+
+    private fun isMarkBody(ch: Char): Boolean = isAsciiAlnum(ch) || ch == '_' || ch == '-'
 }

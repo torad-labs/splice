@@ -11,10 +11,14 @@ internal class SkillRoots(private val cwd: Path, private val env: EnvReader) {
 
     fun pluginDir(): Path? = namedDir("CLAUDE_CODE_DESKTOP_SKILLS_PLUGIN_DIR")
 
-    /** Both a repository directory and a worktree gitfile end the walk, after that directory. */
-    fun workspace(): List<Path> = generateSequence(SkillPaths.real(cwd) ?: cwd.toAbsolutePath().normalize()) { dir ->
-        dir.parent.takeUnless { gitRoot(dir) }
-    }.toList()
+    /** A git root is part of the workspace; the user's home is handled by the user sources instead. */
+    fun workspace(): List<Path> {
+        val home = canonical(UserHome.dir(env))
+        return generateSequence(canonical(cwd)) { dir -> dir.parent.takeUnless { gitRoot(dir) } }
+            .takeWhile { it != home }.toList()
+    }
+
+    private fun canonical(path: Path): Path = SkillPaths.real(path) ?: path.toAbsolutePath().normalize()
 
     fun nativeUnder(dir: Path): Path = dir.resolve(AGENTS_DIR).resolve(LOCAL_SKILLS_DIR)
 

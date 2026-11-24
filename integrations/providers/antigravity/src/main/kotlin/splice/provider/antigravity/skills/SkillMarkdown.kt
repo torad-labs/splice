@@ -7,21 +7,23 @@ import java.nio.charset.CodingErrorAction
 import java.nio.file.Files
 import java.nio.file.Path
 
-internal data class SkillDocument(val frontmatter: List<String>, val body: String)
+internal data class SkillDocument(val frontmatter: List<String>, val body: String, val truncated: Boolean)
 
 internal class SkillMarkdown {
     fun read(file: Path): SkillDocument {
-        val text = try {
-            decodePrefix(Files.newInputStream(file).use { it.readNBytes(MAX_MARKDOWN_BYTES) })
+        val bytes = try {
+            Files.newInputStream(file).use { it.readNBytes(MAX_MARKDOWN_BYTES + 1) }
         } catch (_: IOException) {
-            ""
+            ByteArray(0)
         }
+        val text = decodePrefix(bytes).removePrefix("﻿")
+        val truncated = bytes.size > MAX_MARKDOWN_BYTES
         val head = text.lineSequence().take(MAX_FRONTMATTER_LINES).toList()
-        if (head.firstOrNull()?.trim() != FENCE) return SkillDocument(emptyList(), text)
+        if (head.firstOrNull()?.trim() != FENCE) return SkillDocument(emptyList(), text, truncated)
         val front = head.drop(1).takeWhile { it.trim() != FENCE }
         val fenceIndex = 1 + front.size
-        val body = if (fenceIndex < head.size) afterLine(text, fenceIndex) else ""
-        return SkillDocument(front, body)
+        if (fenceIndex == head.size) return SkillDocument(emptyList(), text, truncated)
+        return SkillDocument(front, afterLine(text, fenceIndex), truncated)
     }
 
     /** Preserve the body as written, including its line endings. */
@@ -31,8 +33,9 @@ internal class SkillMarkdown {
     /** Decode without replacing an incomplete UTF-8 sequence cut by the byte limit. */
     private fun decodePrefix(bytes: ByteArray): String {
         val decoder = Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPLACE)
-        val text = CharBuffer.allocate(bytes.size)
-        val status = decoder.decode(ByteBuffer.wrap(bytes), text, false)
+        val count = minOf(bytes.size, MAX_MARKDOWN_BYTES)
+        val text = CharBuffer.allocate(count)
+        val status = decoder.decode(ByteBuffer.wrap(bytes, 0, count), text, false)
         check(status.isUnderflow)
         return text.flip().toString()
     }
@@ -43,6 +46,6 @@ private const val FENCE = "---"
 // why: metadata belongs at the top; a missing closing fence must not turn a long body into metadata.
 private const val MAX_FRONTMATTER_LINES = 200
 
-// why: retain ordinary skill instructions while bounding the memory and I/O spent on each Markdown file.
-private const val MAX_MARKDOWN_BYTES = 64 * 1024
+// why: match Claude Code's plugin skill limit while bounding the memory and I/O spent on each file.
+private const val MAX_MARKDOWN_BYTES = 1024 * 1024
 private val LINE_END = Regex("\r\n|\r|\n")

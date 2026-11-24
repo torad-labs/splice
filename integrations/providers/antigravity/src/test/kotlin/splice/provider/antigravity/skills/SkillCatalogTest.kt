@@ -142,13 +142,48 @@ internal class SkillCatalogTest {
     fun `a body is truncated without breaking a UTF-8 character at the byte limit`() {
         val work = work()
         val front = "---\ndescription: Large document\n---\n"
-        val bytesBeforeCharacter = 64 * 1024 - 2
+        val bytesBeforeCharacter = 1024 * 1024 - 2
         val prefix = "a".repeat(bytesBeforeCharacter - front.length)
-        writeSkill(work.resolve(".agents/skills/large"), "$front$prefix🦉 not retained")
+        val file = writeSkill(work.resolve(".agents/skills/large"), "$front$prefix🦉 not retained").toRealPath()
+        val logs = mutableListOf<String>()
 
-        val item = catalog(work).load().commands.single()
+        val item = catalog(work, log = LogSink { logs += it }).load().commands.single()
+        val marker = "[truncated: SKILL.md exceeds 1 MiB; read the full file at $file]"
         assertEquals("Large document", item.description)
-        assertEquals(prefix, item.body)
+        assertEquals("$prefix\n\n$marker", item.body)
+        assertTrue(logs.single().contains("truncated skill document at 1 MiB"))
+    }
+
+    @Test
+    fun `a workspace without git stops before home and still uses user sources`() {
+        val home = home()
+        val project = Files.createDirectories(home.resolve("parent/work"))
+        val config = tmp.resolve("alternate-config")
+        writeSkill(project.resolve(".agents/skills/work"), "# Workspace\n")
+        writeSkill(home.resolve("parent/.claude/skills/parent"), "# Below home\n")
+        writeSkill(home.resolve(".claude/skills/home-claude"), "# Not the selected config\n")
+        writeSkill(home.resolve(".agents/skills/home-agent"), "# User agent\n")
+        writeSkill(config.resolve("skills/configured"), "# Selected config\n")
+        writeSkill(tmp.resolve(".claude/skills/outside-home"), "# Beyond home\n")
+        val env = mapOf("HOME" to home.toString(), "CLAUDE_CONFIG_DIR" to config.toString())
+
+        val catalog = ClaudeSkillCatalog(project, EnvReader(env::get), LogSink {})
+        val result = catalog.load()
+        assertEquals(listOf("work", "parent", "configured", "home-agent"), result.skillNames)
+        assertEquals(listOf(project.resolve(".agents/skills").toRealPath()), catalog.nativeRoots())
+    }
+
+    @Test
+    fun `a capped root yields at most one thousand commands and logs once across reloads`() {
+        val project = work()
+        val root = Files.createDirectories(project.resolve(".claude/commands"))
+        repeat(1_001) { index -> Files.writeString(root.resolve("command-$index.md"), "Command body\n") }
+        val logs = mutableListOf<String>()
+        val catalog = catalog(project, log = LogSink { logs += it })
+
+        assertEquals(1_000, catalog.load().commands.size)
+        assertEquals(1_000, catalog.load().commands.size)
+        assertTrue(logs.single().contains("capped at 1000 entries"))
     }
 
     private fun work(): Path {

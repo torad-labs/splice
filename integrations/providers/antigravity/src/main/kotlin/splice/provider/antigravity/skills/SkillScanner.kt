@@ -1,5 +1,6 @@
 package splice.provider.antigravity.skills
 
+import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import java.io.IOException
 import java.io.UncheckedIOException
@@ -9,7 +10,8 @@ import java.nio.file.Path
 internal data class SkillRoot(val path: Path, val disabled: Set<String> = emptySet())
 
 internal class SkillScanner(private val log: LogSink) {
-    private val frontmatter = SkillFrontmatter()
+    private val frontmatter = SkillFrontmatter(log)
+    private val reportedLargeRoots = mutableSetOf<Path>()
 
     fun skills(roots: List<SkillRoot>): Sequence<LocalSkillItem> =
         roots.asSequence()
@@ -37,7 +39,12 @@ internal class SkillScanner(private val log: LogSink) {
     }
 
     private fun children(dir: Path): List<Path> = try {
-        Files.list(dir).use { stream -> stream.limit(MAX_ENTRIES_PER_ROOT).toList() }.sorted()
+        val entries = Files.list(dir).use { stream -> stream.limit(MAX_ENTRIES_PER_ROOT.toLong() + 1).toList() }
+        if (entries.size > MAX_ENTRIES_PER_ROOT && reportedLargeRoots.add(dir)) {
+            val root = LogSafe.str(dir.toString())
+            log("[antigravity] skill discovery capped at $MAX_ENTRIES_PER_ROOT entries for $root\n")
+        }
+        entries.take(MAX_ENTRIES_PER_ROOT).sorted()
     } catch (_: IOException) {
         missingChildren(dir)
     } catch (_: UncheckedIOException) {
@@ -58,5 +65,5 @@ private const val SKILL_DOC = "SKILL.md"
 private const val COMMAND_EXT = ".md"
 
 // why: a crowded directory must not monopolize the Desktop initialization handshake.
-private const val MAX_ENTRIES_PER_ROOT = 1_000L
+private const val MAX_ENTRIES_PER_ROOT = 1_000
 private val NAME_PATTERN = Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")

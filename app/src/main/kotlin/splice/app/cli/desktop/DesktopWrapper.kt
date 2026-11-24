@@ -3,8 +3,8 @@
 // managed settings name one (`processWrapper`); splice's Desktop configuration already turns the wrapper on
 // (`claudeCodeProcessWrapperEnabled`, written by `splice desktop on`), but the managed file is the administrator's,
 // root-owned, and splice never writes it. `--print` (the default) shows that file as it should read, the current one
-// with `processWrapper` set to `<state dir>/desktop-launch`, and the command that puts it in place; `--check` says
-// whether it reads so now (exit 0), or what is missing (exit 1).
+// with `processWrapper` set to `<state dir>/desktop-launch`, and how to put it in place on this platform; `--check`
+// says whether it reads so now (exit 0), or what is missing (exit 1).
 package splice.app.cli.desktop
 
 import kotlinx.serialization.json.Json
@@ -15,22 +15,25 @@ import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
+import splice.core.util.SafeFailureText
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** The wrapper setting for the splice [env] names, said on [out]: Claude Code's managed settings file on [osName], or
- *  [managedFile] where one is given. */
+/** The wrapper setting for the splice [env] names, said on [out], with what goes wrong on [err]: Claude Code's managed
+ *  settings file on [osName], or [managedFile] where one is given. */
 internal class DesktopWrapper(
     private val env: EnvReader,
     private val out: TerminalOutput,
+    private val err: TerminalOutput,
     osName: String = System.getProperty(OS_NAME).orEmpty(),
     managedFile: Path? = null,
 ) {
+    private val windows = osName.lowercase().startsWith("windows")
     private val managed: Path = managedFile ?: Path.of(
         when {
             osName.lowercase().startsWith("mac") -> MAC_MANAGED
-            osName.lowercase().startsWith("windows") -> WINDOWS_MANAGED
+            windows -> WINDOWS_MANAGED
             else -> LINUX_MANAGED
         },
     )
@@ -38,22 +41,28 @@ internal class DesktopWrapper(
     private val launch: Path get() = DesktopPrograms(StatePaths(envReader = env).stateDir).launch
 
     fun run(args: List<String>): Int = when (args) {
-        emptyList<String>(), listOf(PRINT) -> print()
-        listOf(CHECK) -> check()
+        emptyList<String>(), listOf(WRAPPER_PRINT_FLAG) -> print()
+        listOf(WRAPPER_CHECK_FLAG) -> check()
         else -> {
-            out.line("usage: splice desktop wrapper [$PRINT | $CHECK]")
-            USAGE_EXIT
+            err.line("usage: splice desktop wrapper [$WRAPPER_PRINT_FLAG | $WRAPPER_CHECK_FLAG]")
+            LAUNCH_USAGE_EXIT
         }
     }
 
     private fun print(): Int {
-        val wanted = JsonObject(current().orEmpty() + (WRAPPER_KEY to JsonPrimitive(launch.toString())))
+        val wanted = JsonObject(current(warn = true).orEmpty() + (WRAPPER_KEY to JsonPrimitive(launch.toString())))
         out.line("$managed should read:")
         out.line(PRETTY.encodeToString(JsonObject.serializer(), wanted))
         out.line("")
-        out.line("It is root-owned and splice never writes it. To put it in place, save the text above as")
-        out.line("managed-settings.json and run:")
-        out.line("  sudo install -D -m 0644 managed-settings.json '$managed'")
+        out.line("It is the administrator's, and splice never writes it. To put it in place, save the text above as")
+        if (windows) {
+            out.line("managed-settings.json and, in a terminal run as administrator, run:")
+            out.line("  New-Item -ItemType Directory -Force '${managed.parent}'")
+            out.line("  Copy-Item managed-settings.json '$managed'")
+        } else {
+            out.line("managed-settings.json and run:")
+            out.line("  sudo mkdir -p '${managed.parent}' && sudo install -m 0644 managed-settings.json '$managed'")
+        }
         out.line("Then quit Claude Desktop entirely and reopen it.")
         out.line("`splice desktop wrapper --check` says whether it took.")
         if (!Files.isExecutable(launch)) out.line("$launch is not laid yet: run `splice desktop on` first.")
@@ -61,7 +70,7 @@ internal class DesktopWrapper(
     }
 
     private fun check(): Int {
-        val named = JsonScalars.str(current(), WRAPPER_KEY)
+        val named = JsonScalars.str(current(warn = false), WRAPPER_KEY)
         val problem = when {
             !Files.isExecutable(launch) -> "$launch is not laid: run `splice desktop on`"
             !Files.isRegularFile(managed) -> "$managed does not exist: `splice desktop wrapper` shows what it needs"
@@ -73,15 +82,20 @@ internal class DesktopWrapper(
         return if (problem == null) 0 else 1
     }
 
-    /** The managed settings as they are, or null where there are none or they are not a JSON object. */
-    private fun current(): JsonObject? {
+    /** The managed settings as they are, or null where there are none or they are not a JSON object; with [warn], a
+     *  file that is there but can't be read as one is said on [err], since its other keys are then left out. */
+    private fun current(warn: Boolean): JsonObject? {
         if (!Files.isRegularFile(managed)) return null
         val text = try {
             Files.readString(managed)
-        } catch (_: IOException) {
+        } catch (e: IOException) {
+            val why = SafeFailureText.render(e)
+            if (warn) err.line("splice: $managed can't be read ($why); its other keys are not shown")
             return null
         }
-        return JsonScalars.objectOrNull(Json, text)
+        val settings = JsonScalars.objectOrNull(Json, text)
+        if (settings == null && warn) err.line("splice: $managed is not a JSON object; its other keys are not shown")
+        return settings
     }
 }
 
@@ -92,8 +106,7 @@ private const val WINDOWS_MANAGED = "C:\\Program Files\\ClaudeCode\\managed-sett
 
 private val PRETTY = Json { prettyPrint = true }
 
+// The managed setting that names the wrapper, and this verb's two flags.
 private const val WRAPPER_KEY = "processWrapper"
-private const val PRINT = "--print"
-private const val CHECK = "--check"
-private const val OS_NAME = "os.name"
-private const val USAGE_EXIT = 2
+private const val WRAPPER_PRINT_FLAG = "--print"
+private const val WRAPPER_CHECK_FLAG = "--check"

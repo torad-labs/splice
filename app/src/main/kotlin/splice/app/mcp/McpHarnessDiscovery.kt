@@ -97,9 +97,9 @@ internal class McpHarnessDiscovery(
     private fun agyInstalled(): Boolean {
         val gemini = home.resolve(GEMINI_DIR)
         if (AGY_FOLDERS.any { Files.isDirectory(gemini.resolve(it)) }) return true
-        return env("PATH").orEmpty().split(File.pathSeparator).filter(String::isNotBlank).any { dir ->
-            PathProbe.spelled(dir)?.resolve(AGY_BINARY)?.let(Files::isExecutable) == true
-        }
+        val onPath = env("PATH").orEmpty().split(File.pathSeparator).filter(String::isNotBlank)
+            .mapNotNull { PathProbe.spelled(it)?.resolve(AGY_BINARY) }
+        return onPath.any { Files.isRegularFile(it) && Files.isExecutable(it) }
     }
 
     /** Discovers all user MCP servers from [sources] in priority order. */

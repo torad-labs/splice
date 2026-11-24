@@ -64,7 +64,7 @@ internal class DesktopCommand(
         args.firstOrNull() == "acp" -> DesktopAcpCommand(env, err).run(args.drop(1))
         args == listOf("credential") -> DesktopCredential(out, err).run(StatePaths(envReader = env).desktopKeyFile)
         args.firstOrNull() == "launch" -> DesktopLaunch(env, err).run(args.drop(1))
-        args.firstOrNull() == "wrapper" -> DesktopWrapper(env, out).run(args.drop(1))
+        args.firstOrNull() == "wrapper" -> DesktopWrapper(env, out, err).run(args.drop(1))
         args.firstOrNull() == "on" && "--yes" in args -> verbs.run(args - "--yes")
         args.firstOrNull() == "on" -> asked(args)
         else -> verbs.run(args)

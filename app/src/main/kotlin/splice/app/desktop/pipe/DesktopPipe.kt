@@ -38,7 +38,18 @@ internal class DesktopPipe(
             session.serve() ?: NOT_STARTED_EXIT
         } finally {
             reader.shutdownNow()
+            // A pipe left by a failure or a cancellation takes its program, and what that started, with it.
+            session.destroy()
+            unhook(stop)
+        }
+    }
+
+    /** Takes the shutdown hook [stop] back, unless the runtime is already shutting down and runs it. */
+    private fun unhook(stop: Thread) {
+        try {
             Runtime.getRuntime().removeShutdownHook(stop)
+        } catch (_: IllegalStateException) {
+            // The runtime is shutting down: the hook runs, and kills what is left.
         }
     }
 
@@ -79,4 +90,4 @@ internal sealed class Heard {
 private const val SWITCH_GRACE_MS = 10_000L
 
 /** A shell's exit for a command it could not run. */
-private const val NOT_STARTED_EXIT = 127
+internal const val NOT_STARTED_EXIT: Int = 127

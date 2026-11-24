@@ -57,15 +57,17 @@ class DesktopPipeTest(@param:TempDir private val tmp: Path) {
         graceMs = GRACE_MS,
     )
 
-    private fun line(model: String) = ClaudeLineReader().of(
-        listOf("sh", claude.toString(), "--input-format", "stream-json", "--model", model),
+    private fun line(model: String, vararg more: String) = ClaudeLineReader().of(
+        listOf("sh", claude.toString(), "--input-format", "stream-json", "--model", model) + more,
     )
 
     @Test
     fun `a switch to Antigravity and back changes the program under the session and keeps its id`() = runBlocking {
         val desktop = PipedOutputStream()
         val input = PipedInputStream(desktop, BUFFER)
-        val run = async(Dispatchers.IO) { pipe().run(line("claude-opus-5-5"), input) }
+        // A forked session: its id is the one Claude Code's record names, not the parent the line resumes.
+        val first = line("claude-opus-5-5", "--resume", "parent", "--fork-session")
+        val run = async(Dispatchers.IO) { pipe().run(first, input) }
         fun say(text: String) = desktop.write("$text\n".toByteArray()).also { desktop.flush() }
 
         say(INITIALIZE)
@@ -82,7 +84,7 @@ class DesktopPipeTest(@param:TempDir private val tmp: Path) {
         assertEquals(3, run.await(), "the pipe exits with the code of the program it runs last")
         val lines = Files.readAllLines(log)
         val expected = listOf(
-            "claude started --input-format stream-json --model claude-opus-5-5",
+            "claude started --input-format stream-json --model claude-opus-5-5 --resume parent --fork-session",
             "claude read $INITIALIZE",
             "claude ended",
             "acp started --stands-in-for=$claude --input-format stream-json --model claude-antigravity--neon " +
@@ -121,6 +123,37 @@ class DesktopPipeTest(@param:TempDir private val tmp: Path) {
         assertTrue(said.single().contains("could not be started"), said.toString())
     }
 
+    @Test
+    fun `a program that will not end for a switch is stopped, and what it started goes with it`() = runBlocking {
+        val child = tmp.resolve("child.pid")
+        // Ignores the end of its input and keeps a child of its own running, as Claude Code with an MCP server might.
+        val script = "sleep 600 & echo \$! > '$child'; trap '' TERM; while :; do sleep 1; done"
+        val legs = PipeLegs(emptyList(), LegEnvironment { _, _ -> }, sessions)
+        val leg = legs.start(ClaudeLineReader().of(listOf("sh", "-c", script)))
+        awaitFile(child)
+        val pid = Files.readString(child).trim().toLong()
+        leg.stop(STOP_GRACE_MS)
+        awaitGone(pid)
+    }
+
+    /** Waits, with a deadline, until [file] holds a line. */
+    private fun awaitFile(file: Path) = awaitTrue("$file to be written") {
+        Files.exists(file) && Files.readString(file).endsWith("\n")
+    }
+
+    /** Waits, with a deadline, until process [pid] has ended. */
+    private fun awaitGone(pid: Long) = awaitTrue("process $pid to end") {
+        ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false) == false
+    }
+
+    private fun awaitTrue(what: String, done: () -> Boolean) {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WAIT_MS)
+        while (!done()) {
+            check(System.nanoTime() < deadline) { "never saw $what" }
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(POLL_MS))
+        }
+    }
+
     /** Waits, with a deadline and never a sleep for a duration, until [text] is in the log [times] times. */
     private fun awaitLog(text: String, times: Int = 1) {
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WAIT_MS)
@@ -132,6 +165,8 @@ class DesktopPipeTest(@param:TempDir private val tmp: Path) {
         }
     }
 }
+
+private const val STOP_GRACE_MS = 300L
 
 private fun setModel(id: String, model: String) =
     """{"type":"control_request","request_id":"$id","request":{"subtype":"set_model","model":"$model"}}"""

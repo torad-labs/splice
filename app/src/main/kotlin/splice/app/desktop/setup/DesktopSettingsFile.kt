@@ -85,8 +85,9 @@ private val OTHERS_MODES: Set<PosixFilePermission> = PosixFilePermission.entries
 // The attribute view a filesystem with POSIX modes offers.
 private const val POSIX_VIEW = "posix"
 
-// The status file of this process, whose `Umask:` line holds the umask on Linux.
-private const val PROC_STATUS = "/proc/self/status"
+// The status file of this process on Linux: its `Umask:` line holds the umask, its `NoNewPrivs:` line the bit
+// `splice desktop launch` escapes (PrivilegeEscape).
+internal const val PROC_STATUS: String = "/proc/self/status"
 private const val UMASK_FIELD = "Umask:"
 
 // why: the kernel writes the umask in octal (`Umask:\t0002`), so it is read in base 8.

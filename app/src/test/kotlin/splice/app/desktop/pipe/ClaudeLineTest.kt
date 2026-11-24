@@ -45,6 +45,20 @@ class ClaudeLineTest {
     }
 
     @Test
+    fun `a switch drops what chose another session, so the next program takes up the one named`() {
+        val forked = reader.of(listOf(CLAUDE, "--resume", "parent", "--fork-session", "-c", "--model", "opus"))
+        assertEquals(listOf("--model", NEON, "--resume", "child"), forked.switchedTo(NEON, "child").args)
+    }
+
+    @Test
+    fun `a wrapper with flags of its own keeps them, and Claude Code's word ends the program's words`() {
+        val line = reader.of(listOf("/usr/bin/env", "-i", "FOO=1", CLAUDE, "--model", NEON))
+        assertEquals(listOf("/usr/bin/env", "-i", "FOO=1", CLAUDE), line.words)
+        assertEquals(listOf("--model", NEON), line.args)
+        assertTrue(line.antigravity)
+    }
+
+    @Test
     fun `only a set_model or initialize control request is the pipe's to read`() {
         val asks = DesktopAskReader()
         assertEquals(

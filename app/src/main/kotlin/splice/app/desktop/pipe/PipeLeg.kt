@@ -45,15 +45,20 @@ internal class PipeLeg(private val process: Process, private val sessions: Path)
         endInput()
         val finished = withTimeoutOrNull(graceMs) { ended() }
         if (finished != null) return finished
+        // What the program started (agy, its MCP servers) is taken before the program, which would leave it orphaned.
+        val started = process.toHandle().descendants().toList()
+        started.forEach(ProcessHandle::destroy)
         process.destroy()
         val stopped = withTimeoutOrNull(graceMs) { ended() }
         if (stopped != null) return stopped
+        started.forEach(ProcessHandle::destroyForcibly)
         process.destroyForcibly()
         return ended()
     }
 
     /** Kills the program, for a pipe that is itself being stopped. */
     fun destroy() {
+        if (!process.isAlive) return
         process.toHandle().descendants().forEach(ProcessHandle::destroy)
         process.destroy()
     }
@@ -72,11 +77,12 @@ internal class PipeLeg(private val process: Process, private val sessions: Path)
         } catch (_: IOException) {
             return null
         }
-        return JsonScalars.str(JsonScalars.objectOrNull(Json, text), SESSION_ID_KEY)?.takeIf(String::isNotBlank)
+        val record = JsonScalars.objectOrNull(Json, text)
+        return JsonScalars.str(record, CLAUDE_SESSION_ID_KEY)?.takeIf(String::isNotBlank)
     }
 }
 
 private const val LINE_END = "\n"
 
 /** The field of Claude Code's session record that names the session. */
-private const val SESSION_ID_KEY = "sessionId"
+private const val CLAUDE_SESSION_ID_KEY = "sessionId"

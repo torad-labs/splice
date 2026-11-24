@@ -69,7 +69,8 @@ internal class PipeSession(
     /** [now] ended and the program for [model] started on the same session, given the kept `initialize` and
      *  [setModel]; false when it could not be started. */
     private suspend fun switch(now: Running, model: String, setModel: String): Boolean {
-        val id = now.line.sessionId ?: now.leg.sessionId()
+        // The running program's record first: a forked or continued session has an id of its own, not the line's.
+        val id = now.leg.sessionId() ?: now.line.sessionId
         if (now.line.antigravity) now.leg.send(setModel)
         now.leg.stop(graceMs)
         if (id == null) err.line("splice desktop launch: the session's id is not known, so $model starts a new one")

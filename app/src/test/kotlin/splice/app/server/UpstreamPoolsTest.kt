@@ -140,7 +140,7 @@ class UpstreamPoolsTest {
         answers["http://10.0.0.22:8080/health"] = 200
         val pools = pools()
         pools.capEach(1)
-        val pool = checkNotNull(pools.of("box", box) { emptyMap() })
+        val pool = checkNotNull(pools.of("box", box, ready) { emptyMap() })
 
         val held = listOf(checkNotNull(pool.lease()), checkNotNull(pool.lease()))
         assertNull(pool.lease(), "a turn was placed past inflight_per_upstream on a pool no turn had reserved in")

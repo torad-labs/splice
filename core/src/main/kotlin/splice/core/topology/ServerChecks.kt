@@ -7,6 +7,8 @@
 package splice.core.topology
 
 import splice.core.listen.IpLiterals
+import splice.core.topology.availability.ServerAvailabilityChecks
+import splice.core.topology.identity.ServerIdentityChecks
 import splice.core.topology.metering.ServerMeteringChecks
 import splice.core.topology.routing.ServerRoutingChecks
 import splice.core.util.LoopbackOverride

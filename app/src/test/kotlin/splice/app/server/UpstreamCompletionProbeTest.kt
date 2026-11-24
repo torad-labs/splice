@@ -161,7 +161,8 @@ class UpstreamCompletionProbeTest {
         nextRound()
         assertTrue(pool.up)
         assertEquals(listOf(true, false), healthy(pool))
-        assertEquals(List(4) { "gpu-1" }, List(4) { pool.lease().name }, "every turn goes to the server that completed")
+        val landedOn = List(4) { pool.lease()?.name }
+        assertEquals(List(4) { "gpu-1" }, landedOn, "every turn goes to the server that completed")
         assertTrue(logged.any { "gpu-1 passed its health check; it takes turns\n" in it }, logged.toString())
     }
 
@@ -227,7 +228,7 @@ class UpstreamCompletionProbeTest {
         answers["gpu-2"] = Answer.Reply(500, "")
         nextRound()
         assertEquals(listOf(true, false), healthy(pool))
-        assertEquals("gpu-1", pool.lease().name)
+        assertEquals("gpu-1", pool.lease()?.name)
 
         answers["gpu-2"] = Answer.Reply(200, COMPLETED)
         nextRound()

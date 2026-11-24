@@ -64,7 +64,9 @@ internal class ServerListenerWiring(
         val tls = server.pem(configDir)?.let { PemTls(it).keyStore() }
         val cli = server.signin?.let { signin(it, signinSecret) }
         val browser = browserSignin(cli, reach.env)
-        return ServerListener(server, parts, tls, stores.admin, io, log, ListenerSignins(cli, browser, clock))
+        val identity = ListenerSignins(cli, browser, clock)
+        val requests = ServerRequests(server, parts, tls != null, stores.admin, io, log, identity)
+        return ServerListener(server, tls, parts.limits.load, requests, log)
     }
 
     private fun signin(policy: ServerSignin, secret: String?): SigninParts {

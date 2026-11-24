@@ -5,7 +5,12 @@
 // one source, tuning keys alone included: the table is the operator turning the signal on, and a signal that reads
 // nothing would refuse turns on silence or never refuse at all. Each is a boot finding beside every other, naming
 // its key and never a value an operator wrote.
-package splice.core.topology
+package splice.core.topology.availability
+
+import splice.core.topology.ServerConfig
+import splice.core.topology.ServerState
+import splice.core.topology.TopologyFinding
+import splice.core.topology.WebUrls
 
 internal class ServerAvailabilityChecks(private val server: ServerConfig) {
 

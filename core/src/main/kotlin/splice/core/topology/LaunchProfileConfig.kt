@@ -35,7 +35,7 @@ public data class LaunchProfileConfig(
     @SerialName("drop_hooks") val dropHooks: List<String> = emptyList(),
     /** The plugins the profile loads, by `name@marketplace` or by name; none when empty. */
     @SerialName("keep_plugins") val keepPlugins: List<String> = emptyList(),
-    /** The marked blocks taken out of CLAUDE.md, by marker. */
+    /** Comment, `# BEGIN`, or XML-style blocks taken out of CLAUDE.md, by single-line marker without `<` or `>`. */
     @SerialName("drop_blocks") val dropBlocks: List<String> = emptyList(),
     /** Skills, agents and commands whose names start with one of these are left out. */
     @SerialName("drop_names") val dropNames: List<String> = emptyList(),
@@ -116,7 +116,7 @@ internal class LaunchProfileChecks(
                 "the kept plugins' hooks) or \"$KEEP_HOOKS_NONE\"",
         ).takeUnless { profile.keepHooks in keepHooksWords }
 
-    /** A blank entry in any list, a marker that can't sit on one line of an HTML comment, a name prefix with a `/`. */
+    /** A blank list entry, a multiline or angle-bracketed block marker, or a name prefix with a `/`. */
     private fun entries(name: String, profile: LaunchProfileConfig): List<TopologyFinding> {
         val lists = mapOf(
             "drop_hooks" to profile.dropHooks,
@@ -126,7 +126,7 @@ internal class LaunchProfileChecks(
         )
         val blank = lists.filterValues { list -> list.any(String::isBlank) }.keys
             .map { TopologyFinding("launch.profiles.$name.$it", "has a blank entry; remove it") }
-        val marker = profile.dropBlocks.filter { it.contains('\n') || it.contains(COMMENT_END) }
+        val marker = profile.dropBlocks.filter { marker -> marker.any { it in "\n<>" } }
             .map { TopologyFinding("launch.profiles.$name.drop_blocks", MARKER_RULE) }.distinct()
         val prefix = profile.dropNames.filter { it.contains('/') }
             .map { TopologyFinding("launch.profiles.$name.drop_names", PREFIX_RULE) }.distinct()
@@ -150,11 +150,9 @@ private val profileName = Regex("[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
 private const val PROFILE_NAME_RULE =
     "must be a letter or digit, then up to 63 letters, digits, - or _, since it names a folder and a launch's --profile"
 
-private const val MARKER_RULE = "each marker must fit on one line and hold no -->"
+private const val MARKER_RULE = "each marker must fit on one line and hold no < or >"
 
 private const val PREFIX_RULE = "each prefix is the start of a name, so it holds no /"
-
-private const val COMMENT_END = "-->"
 
 private const val RELATIVE_RULE = "must be an absolute folder or start with ~/"
 

@@ -30,7 +30,7 @@ class LaunchProfilesConfigTest {
             keep_hooks = "all"
             drop_hooks = ["SessionStart", "notify.sh"]
             keep_plugins = ["code-review@official"]
-            drop_blocks = ["team-notes"]
+            drop_blocks = ["some-managed-instructions", "org:block", "my notes", "a_b.c"]
             drop_names = ["team-"]
         """.trimIndent()
         val ready = assertInstanceOf(ConfigRead.Ready::class.java, read(toml))
@@ -39,7 +39,7 @@ class LaunchProfilesConfigTest {
             keepHooks = KEEP_HOOKS_ALL,
             dropHooks = listOf("SessionStart", "notify.sh"),
             keepPlugins = listOf("code-review@official"),
-            dropBlocks = listOf("team-notes"),
+            dropBlocks = listOf("some-managed-instructions", "org:block", "my notes", "a_b.c"),
             dropNames = listOf("team-"),
         )
         assertEquals(mapOf("work" to expected), ready.topology.launch.profiles)
@@ -94,6 +94,14 @@ class LaunchProfilesConfigTest {
             "launch.profiles.work.keep_plugins",
         )
         assertEquals(expected, refusedAt(toml).distinct())
+    }
+
+    @Test
+    fun `angle brackets and newlines in a block marker refuse boot at drop_blocks`() {
+        for (marker in listOf("<tag", "tag>", "line\\nbreak")) {
+            val toml = "[launch.profiles.work]\ndrop_blocks = [\"$marker\"]\n"
+            assertEquals(listOf("launch.profiles.work.drop_blocks"), refusedAt(toml), marker)
+        }
     }
 
     @Test

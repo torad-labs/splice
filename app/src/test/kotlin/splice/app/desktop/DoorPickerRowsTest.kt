@@ -25,6 +25,7 @@ import splice.app.desktop.catalog.DoorCatalog
 import splice.app.desktop.catalog.DoorModel
 import splice.app.desktop.catalog.DoorModelWire
 import splice.app.desktop.catalog.ModelDiscovery
+import splice.app.desktop.catalog.ProviderCatalog
 import splice.app.desktop.catalog.PublishedCatalog
 import splice.app.desktop.catalog.SelectorAliases
 import splice.app.desktop.catalog.ServedModel
@@ -240,6 +241,30 @@ internal class DoorPickerRowsTest {
         assertEquals("600000", wide.getValue("max_input_tokens").jsonPrimitive.content)
         val settings = configured.inferenceModels(null).single().jsonObject
         assertEquals("true", settings.getValue("supports1m").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `Desktop does not advertise a 1M-only row below its configured big window`() {
+        val source = buildJsonObject {
+            put("supports_1m", true)
+            put("prefer_1m", true)
+        }
+        val fact = CatalogModel("work", "wide", "Wide", contextWindow = 1_000_000, source = source)
+        val lineup = lineupOf(provider("work", login = true) to listOf(model("work", "wide[1m]")))
+            .copy(catalog = ProviderCatalog(listOf(fact)))
+        val catalog = DoorCatalog(lineup, DesktopConfig(codeWindow1m = 1_500_000))
+        val discovery = catalog.discovery(surface = ModelDiscovery.DESKTOP)
+            .getValue("data").jsonArray.single().jsonObject
+        val settings = catalog.inferenceModels(null).single().jsonObject
+
+        assertEquals("false", discovery.getValue("supports_1m").jsonPrimitive.content)
+        assertTrue(discovery["prefer_1m"]?.jsonPrimitive?.content != "true")
+        assertNull(settings["supports1m"])
+        assertNull(settings["prefer1m"])
+        assertEquals("work--wide[1m]", catalog.picker().single().model)
+        val terminal = catalog.discovery().getValue("data").jsonArray.single().jsonObject
+        assertEquals("true", terminal.getValue("supports_1m").jsonPrimitive.content)
+        assertEquals("true", terminal.getValue("prefer_1m").jsonPrimitive.content)
     }
 
     @Test

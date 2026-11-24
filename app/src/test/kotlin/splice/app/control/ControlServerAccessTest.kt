@@ -40,6 +40,7 @@ private val SESSION_ROWS = setOf(
     "POST /statusline/{head}",
     "POST /hooks/resume/{head}",
     "POST /hooks/foreground/{head}",
+    "POST /hooks/speed/{head}",
 )
 
 /** The rows that answer with no key at all: the liveness probe, and the console's pages (back Oct 10, 2026), which

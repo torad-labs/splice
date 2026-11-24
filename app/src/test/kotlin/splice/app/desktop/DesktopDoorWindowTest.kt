@@ -107,7 +107,8 @@ class DesktopDoorWindowTest {
                     contentType(ContentType.Application.Json)
                     header("Authorization", "Bearer ${key.get()}")
                     header("x-splice-desktop", "app")
-                    header("anthropic-beta", "claude-code-20250219,context-1m-2025-08-07")
+                    header("anthropic-beta", "claude-code-20250219")
+                    header("anthropic-beta", "context-1m-2025-08-07")
                     setBody(codeTabAsk)
                 }
                 text = response.bodyAsText()

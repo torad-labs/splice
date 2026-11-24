@@ -135,7 +135,8 @@ internal class DesktopDoor(
         val request = read(call, caller, lineup) ?: return
         val model = JsonScalars.str(request, REQUEST_MODEL).orEmpty()
         val headers = call.request.headers
-        val window = windows.of(headers[APP_MODE_HEADER], headers[ANTHROPIC_BETA_HEADER], model)
+        val beta = headers.getAll(ANTHROPIC_BETA_HEADER).orEmpty().joinToString(",")
+        val window = windows.of(headers[APP_MODE_HEADER], beta, model)
         val ask = DoorAsk(request, model, headers[SESSION_HEADER], window)
         caller.asked(ask)
         val route = routing.of(lineup, ask, caller.default(lineup), caller.runsNamedModels)

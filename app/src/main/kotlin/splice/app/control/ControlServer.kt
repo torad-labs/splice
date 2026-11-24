@@ -226,10 +226,18 @@ internal class ControlServer(
         ControlMount(launch::register),
     ) + standalone.rows +
         listOf(ControlMount(desktop::register), ControlMount(retirement::register), ControlMount(console::register)) +
-        listOfNotNull(peers?.let { ControlMount(it::register) }, mcp) + standalone.last
+        listOfNotNull(peers?.let { ControlMount(it::register) }, mcp)
     private val resources: List<BoundResource> = listOfNotNull(mcp, sessionWake)
 
-    private val engineShell = ControlEngine(listen, guard, readings, mounts, runtime.callDispatcher)
+    internal val engineShell = ControlEngine(
+        listen,
+        guard,
+        readings,
+        mounts,
+        standalone.last,
+        runtime.callDispatcher,
+        prepare = usage::prepare,
+    )
 
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null

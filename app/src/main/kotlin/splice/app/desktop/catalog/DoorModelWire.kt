@@ -12,10 +12,16 @@ import splice.client.models.AnthropicTiers
 
 /** One model-list format for every door path, carrying the provider's published properties. */
 internal class DoorModelWire(private val tiers: AnthropicTiers, private val newest: Map<String, String>) {
-    fun discovered(model: ServedModel, id: String): JsonObject = buildJsonObject {
-        model.fact.source.orEmpty().forEach { (key, value) -> put(key, value) }
+    fun discovered(
+        model: ServedModel,
+        id: String,
+        surface: ModelDiscovery = ModelDiscovery.GATEWAY,
+    ): JsonObject = buildJsonObject {
+        model.fact.source.orEmpty().forEach { (key, value) ->
+            if (surface != ModelDiscovery.DESKTOP || key != "prefer_1m") put(key, value)
+        }
         identity(this, model, id)
-        windows(this, model)
+        windows(this, model, surface)
         reasoning(this, model)
     }
 
@@ -34,11 +40,19 @@ internal class DoorModelWire(private val tiers: AnthropicTiers, private val newe
      *  `[desktop]` big window (ServedModel.millionWindow), and its provider's real ceiling, never spelled past
      *  it — where the configured Code-tab window differs from the model's own, scaling the counts a turn
      *  reports carries the difference, not this number. */
-    private fun windows(into: JsonObjectBuilder, model: ServedModel) {
-        if (model.supports1m || model.fact.source?.containsKey("supports_1m") != true) {
-            into.put("supports_1m", model.supports1m)
+    private fun windows(into: JsonObjectBuilder, model: ServedModel, surface: ModelDiscovery) {
+        when (surface) {
+            ModelDiscovery.DESKTOP -> {
+                into.put("supports_1m", model.supports1m)
+                if (model.prefer1m) into.put("prefer_1m", true)
+            }
+            ModelDiscovery.GATEWAY -> {
+                if (model.terminalSupports1m || model.fact.source?.containsKey("supports_1m") != true) {
+                    into.put("supports_1m", model.terminalSupports1m)
+                }
+                if (model.hintedOnly) into.put("prefer_1m", true)
+            }
         }
-        if (model.prefer1m) into.put("prefer_1m", true)
         if (model.fact.contextWindow > 0) into.put(INPUT_TOKENS, model.fact.contextWindow)
     }
 

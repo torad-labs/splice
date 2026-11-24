@@ -174,7 +174,8 @@ internal class ServerListener(
     private val heads = HeadCommandRoute(parts, routing, log)
     private val profile = ProfileRoute(server, parts.heads, io, addresses, secure = tls != null)
     private val telemetry = server.telemetry?.let { TelemetryRelay(it, voice, log) }
-    private val mods = ModRoute(optional.mods, server.teams, parts.people, adminAccess, voice, io)
+    private val mods =
+        ModRoute(optional.mods, server.teams, parts.people, adminAccess, voice, io, ServerCredentials(parts.keys))
 
     /** The path the telemetry relay answers under (F8). */
     private val otlpRoute = listOf(SERVER_ROOT, OTLP_ROUTE)

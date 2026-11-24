@@ -1,6 +1,7 @@
 package splice.app.modes
 
 import com.sun.net.httpserver.HttpServer
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Assertions.assertArrayEquals
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
+import splice.app.Daemon
 import splice.app.DaemonProcess
 import splice.app.cli.CONFIG_REFUSED_EXIT
 import splice.app.cli.ConfigPreflight
@@ -21,14 +23,18 @@ import splice.core.server.ModCaller
 import splice.core.server.ModRequest
 import splice.core.server.ModResponse
 import splice.core.terminal.TerminalOutput
+import splice.core.testing.TestPorts
 import splice.core.util.EnvReader
 import splice.core.util.TopologyRefusal
+import splice.daemonclient.DaemonProbe
 import splice.harness.agent.AgentSession
 import splice.lifecycle.restart.RestartChecks
 import splice.lifecycle.restart.RestartCommand
 import splice.modes.api.Mode
 import splice.modes.api.ModeAnswer
 import splice.modes.api.ModeCall
+import splice.modes.api.ModeResponse
+import splice.modes.api.ModeRoute
 import java.io.ByteArrayOutputStream
 import java.net.InetSocketAddress
 import java.net.URI
@@ -140,6 +146,45 @@ class ExternalModesTest {
         val said = lines.joinToString("\n")
         assertTrue("mods.jar[1].path" in said, said)
         assertTrue("nothing was stopped" in said, said)
+    }
+
+    @Test
+    fun `restart and check-config refuse a pinned mod that claims a control route`(@TempDir root: Path) = runTest {
+        val fixture = ModFixture(root)
+        val port = TestPorts.reserve()
+        val daemonConfig = "control_port = $port"
+        fixture.config("", daemonConfig)
+        val start = DaemonProcess().prepare(fixture.env)
+        val daemon = Daemon(start.loaded.topology, start.statePaths, log = {})
+        daemon.start()
+        try {
+            val original = requireNotNull(DaemonProbe.healthView(port))
+            val claims = "GET /api/modes\nGET /api/mcp\nPOST /hooks/speed/claude"
+            val bytes = modJar(extras = mapOf("pinned-claim.txt" to claims.toByteArray()))
+            fixture.store("demo.jar", bytes)
+            fixture.config(modRow("Demo", "path", "demo.jar", pin(bytes)), daemonConfig)
+
+            val lines = mutableListOf<String>()
+            val output = TerminalOutput { lines += it }
+            val checks = RestartChecks(ModeBoot().beside(fixture.env))
+            val command = RestartCommand(output, output, fixture.env, RunningJar { null }, checks = checks)
+            assertFalse(command.restart())
+            val said = lines.joinToString("\n")
+            assertTrue("nothing was stopped" in said, said)
+
+            val (code, preflight) = fixture.preflight()
+            assertEquals(CONFIG_REFUSED_EXIT, code, preflight)
+            claims.lineSequence().forEach { claim ->
+                assertTrue("$claim is splice's own" in said, said)
+                assertTrue("$claim is splice's own" in preflight, preflight)
+            }
+            val stillServing = requireNotNull(DaemonProbe.healthView(port))
+            assertEquals(true, stillServing.ok)
+            assertEquals(ProcessHandle.current().pid(), original.process.pid)
+            assertEquals(original.process, stillServing.process)
+        } finally {
+            daemon.stop()
+        }
     }
 
     @Test
@@ -405,6 +450,14 @@ private fun JarOutputStream.put(name: String, bytes: ByteArray) {
 }
 
 class PinnedDemoMode : Mode {
+    override val routes: List<ModeRoute>
+        get() = javaClass.getResourceAsStream("/pinned-claim.txt")?.bufferedReader()?.use { claims ->
+            claims.readLines().map { claim ->
+                val (method, path) = claim.split(' ', limit = 2)
+                ModeRoute(method, path) { ModeResponse(200, JsonPrimitive("demo")) }
+            }
+        }.orEmpty()
+
     override fun answer(call: ModeCall): ModeAnswer =
         ModeAnswer.Text((call.input["value"] as? JsonPrimitive)?.content.orEmpty())
 

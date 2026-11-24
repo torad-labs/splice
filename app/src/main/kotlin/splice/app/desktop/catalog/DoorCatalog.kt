@@ -43,11 +43,13 @@ internal data class ServedModel(
     /** The selector Desktop receives for this model. */
     val desktopId: String get() = claude ?: provider.catalog.names.nameOf(fact.id)
 
-    /** Whether it has a 1M variant: a row of it carries the `[1m]` hint, or its provider serves the big window. */
-    val supports1m: Boolean get() = rows.any(::millionRow) || fact.contextWindow >= millionWindow
+    /** Desktop offers the big window only when the provider's ceiling can fill it. */
+    val supports1m: Boolean get() = fact.contextWindow >= millionWindow
+    val prefer1m: Boolean get() = supports1m && hintedOnly
 
-    /** Whether the 1M variant is its only one: every row of it carries the hint. */
-    val prefer1m: Boolean get() = rows.all(::millionRow)
+    /** Terminal discovery still recognizes the provider's explicit picker variants. */
+    val terminalSupports1m: Boolean get() = supports1m || rows.any(::millionRow)
+    val hintedOnly: Boolean get() = rows.all(::millionRow)
 
     private fun millionRow(row: DoorModel): Boolean = row.upstream.endsWith(ONE_MILLION, ignoreCase = true)
 }
@@ -104,7 +106,7 @@ internal class DoorCatalog(
         surface: ModelDiscovery = ModelDiscovery.GATEWAY,
     ): JsonObject = buildJsonObject {
         val rows = ordered(first, if (surface == ModelDiscovery.DESKTOP) desktop else door)
-        put("data", JsonArray(rows.map { wire.discovered(it, surface.id(it)) }))
+        put("data", JsonArray(rows.map { wire.discovered(it, surface.id(it), surface) }))
         put("has_more", false)
         put("first_id", rows.firstOrNull()?.let(surface::id))
         put("last_id", rows.lastOrNull()?.let(surface::id))

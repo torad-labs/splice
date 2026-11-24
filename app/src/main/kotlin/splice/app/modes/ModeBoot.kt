@@ -3,6 +3,7 @@
 // same jar the same way. What the catalog finds wrong is a boot finding beside splice.toml's own.
 package splice.app.modes
 
+import splice.app.control.engine.ControlRouteClaims
 import splice.core.mode.FoundModes
 import splice.core.topology.TopologyFinding
 import splice.core.util.EnvReader
@@ -22,12 +23,13 @@ internal class ModeBoot(private val loader: ClassLoader = ClassLoader.getSystemC
     fun beside(env: EnvReader): BootSettings {
         val paths = TopologyStatePaths(env)
         return BootSettings(RetiredSettings(env)) { mods, configDir, topology ->
+            val statePaths = paths.of(topology)
             external = if (mods.dir != null || mods.jars.isNotEmpty()) {
-                ExternalModes(loader, builtIn, mods, configDir, paths.of(topology).stateDir).read()
+                ExternalModes(loader, builtIn, mods, configDir, statePaths.stateDir).read()
             } else {
                 null
             }
-            found()
+            found(ControlRouteClaims(env).of(catalog, statePaths))
         }
     }
 
@@ -42,11 +44,11 @@ internal class ModeBoot(private val loader: ClassLoader = ClassLoader.getSystemC
 
     /** The names of the modes found, every one the index lists (a broken one too, so a table naming it is not also
      *  told it names no mode), and each catalog finding, named by its mode. */
-    private fun found(): FoundModes {
+    private fun found(claims: List<TopologyFinding>): FoundModes {
         val findings = builtIn.findings.map { said ->
             val mode = said.substringBefore(':').removePrefix("mode ").trim()
             TopologyFinding("mode $mode", said.substringAfter(':').trim(), origin = TopologyFinding.Origin.Mode(mode))
         }
-        return FoundModes(catalog.listed.toSet(), findings + external?.findings.orEmpty())
+        return FoundModes(catalog.listed.toSet(), findings + external?.findings.orEmpty() + claims)
     }
 }

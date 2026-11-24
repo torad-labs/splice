@@ -139,6 +139,30 @@ internal class ServerModRouteTest {
     }
 
     @Test
+    fun `credentials in allowed headers and decoded query parameters stay at the server`() {
+        serve()
+        val key = rig.keyFor("ada@team.example")
+        val other = rig.keyFor("ops@team.example")
+        val encoded = "%${other.first().code.toString(16)}${other.drop(1)}"
+        val cookie = "sfa.123.session.${"a".repeat(43)}"
+        val query = "$encoded=hidden&tide=high&other=$encoded&repeated=clean&repeated=$encoded"
+        val response = send(
+            "GET",
+            "/server/mod/harbor/tide?$query",
+            mapOf(
+                "Authorization" to "Bearer $key",
+                "Accept" to "text/plain; proof=$cookie",
+                "User-Agent" to "test $key",
+            ),
+        )
+
+        assertEquals(200, response.statusCode(), response.body())
+        val request = handed.single()
+        assertTrue(request.headers.isEmpty())
+        assertEquals(mapOf("tide" to "high"), request.query)
+    }
+
+    @Test
     fun `an admins-only mode answers an admin's key and refuses a member's in the listener's voice`() {
         serve(rig.config.copy(admins = listOf("ops@team.example")))
         val member = send("GET", "/server/mod/vault/tide", mapOf("x-api-key" to rig.keyFor("ada@team.example")))

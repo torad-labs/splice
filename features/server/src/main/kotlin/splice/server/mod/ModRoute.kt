@@ -21,6 +21,7 @@ import splice.core.server.ServerModRoutes
 import splice.core.server.modHeaders
 import splice.core.topology.ServerTeams
 import splice.core.wire.HttpStatus
+import splice.server.ServerCredentials
 import splice.server.ServerPeople
 import splice.server.caller.AdminAccess
 import splice.share.CappedBodies
@@ -35,6 +36,7 @@ internal class ModRoute(
     private val adminAccess: AdminAccess,
     private val voice: RefusalVoice,
     private val io: CoroutineDispatcher,
+    private val credentials: ServerCredentials,
 ) {
     private val bodies = CappedBodies(voice)
 
@@ -73,11 +75,19 @@ internal class ModRoute(
             method = call.request.httpMethod.value,
             path = path,
             caller = ModCaller(person, people.team(person, teams), adminAccess.allows(call, person)),
-            headers = modHeaders.mapNotNull { header -> call.request.headers[header]?.let { header to it } }.toMap(),
-            query = call.request.queryParameters.entries().associate { (key, values) -> key to values.first() },
+            headers = modHeaders.mapNotNull { name ->
+                uncredentialed(call.request.headers.getAll(name))?.let { name to it }
+            }.toMap(),
+            query = call.request.queryParameters.entries().mapNotNull { (name, values) ->
+                if (credentials.inText(name)) null else uncredentialed(values)?.let { name to it }
+            }.toMap(),
             body = body,
         )
     }
+
+    /** Keep the first value only when none of this field's values holds a credential. */
+    private fun uncredentialed(values: List<String>?): String? =
+        values?.takeUnless { it.any(credentials::inText) }?.firstOrNull()
 
     private suspend fun respond(call: ApplicationCall, response: ModResponse) {
         val type = typeOf(response.contentType)

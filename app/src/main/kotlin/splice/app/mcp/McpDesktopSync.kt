@@ -26,7 +26,12 @@ internal class McpDesktopSync(
     /** Every gateway profile given Splice's MCP servers. */
     fun sync(): List<McpDesktopProfile> {
         val sync = DesktopProfileSync(env, osName, home, mcp = SpliceDesktopMcp(env, home, paths))
-        return profiles().map { profile ->
+        val found = try {
+            profiles()
+        } catch (failure: IOException) {
+            return listOf(McpDesktopProfile(configBase(), changed = false, failed = failure::class.simpleName))
+        }
+        return found.map { profile ->
             try {
                 McpDesktopProfile(profile, sync.syncConfigInto(profile))
             } catch (failure: IOException) {

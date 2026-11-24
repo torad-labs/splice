@@ -1,7 +1,8 @@
 // NEW: desktop-3p-parity (Nov 23, 2026). MCP's streamable HTTP transport, as the stdio MCP bridge speaks it: each
 // message posted, its answer read as the JSON it is or as the stream of events it comes in; the session and protocol
 // version the server gives at `initialize` carried on every later request; the server's own stream opened once there
-// is a session; the session ended when the client goes. Splice's own `/mcp/<name>` speaks this transport.
+// is a session; the session ended when the client goes. Splice's own `/mcp/<name>` speaks this transport. A request
+// the server takes without a reply to it is said to be unanswered, so the client is never left waiting on it.
 package splice.app.mcp.stdio
 
 import kotlinx.coroutines.CoroutineDispatcher
@@ -24,6 +25,7 @@ internal class McpStreamableHttp(
     private val replies = McpStdioReplies()
     private val session = McpStdioSession()
     private val listening = AtomicBoolean(false)
+    private val closed = AtomicBoolean(false)
 
     @Volatile
     private var stream: InputStream? = null
@@ -36,20 +38,26 @@ internal class McpStreamableHttp(
         return withContext(io) { answer(message, response, out) }
     }
 
-    /** Opens the server's own stream once, when it has given a session; a server that keeps none answers otherwise. */
+    /** Opens the server's own stream once, when it has given a session; a server that keeps none answers otherwise.
+     *  A stream that opens after the bridge closed is closed at once, and the stream is closed however this ends. */
     override suspend fun listen(out: TerminalOutput) {
-        if (session.id == null || !listening.compareAndSet(false, true)) return
+        if (session.id == null || closed.get()) return
+        if (!listening.compareAndSet(false, true)) return
         val response = client.sendAsync(requests.stream(session), STREAMED).await()
         val body = response.body()
-        if (requests.ok(response) && requests.streams(response)) {
+        try {
             stream = body
-            withContext(io) { body.use { replies.events(it.bufferedReader(), out, keep = false) } }
-        } else {
+            val open = requests.ok(response) && requests.streams(response)
+            if (open && !closed.get()) {
+                withContext(io) { replies.events(body.bufferedReader(), out, keep = false) }
+            }
+        } finally {
             body.close()
         }
     }
 
     override suspend fun close() {
+        closed.set(true)
         stream?.close()
         if (session.id == null) return
         client.sendAsync(requests.end(session), HttpResponse.BodyHandlers.discarding()).await()
@@ -64,11 +72,18 @@ internal class McpStreamableHttp(
                     replies.whole(body.readAllBytes().toString(Charsets.UTF_8), out)
                 }
                 agreed(message, answered)
-                McpStdioSent.Delivered
+                if (replied(message, answered)) McpStdioSent.Delivered else McpStdioSent.Unanswered
             } else {
                 McpStdioSent.Refused(response.statusCode())
             }
         }
+
+    /** Whether [answered] holds the reply [message] needs: one with its id when it is a request, nothing otherwise. */
+    private fun replied(message: JsonObject, answered: List<JsonObject>): Boolean {
+        val id = message[STDIO_ID]
+        val request = id != null && STDIO_METHOD in message
+        return !request || answered.any { it[STDIO_ID] == id }
+    }
 
     /** The protocol version the server agreed, kept from its answer to [message] when that was `initialize`. */
     private fun agreed(message: JsonObject, answered: List<JsonObject>) {

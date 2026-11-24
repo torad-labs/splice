@@ -64,6 +64,7 @@ class McpDesktopSyncTest {
             assertEquals(bridge, command(servers, "remote"))
             assertEquals(bridge, command(servers, "hosted"))
             assertEquals("uvx", command(servers, "scoped"))
+            assertFalse("socket" in servers, "a server the bridge can't reach is not bridged")
             assertFalse("TEST-MCP-BEARER" in text || "example.invalid" in text || "REMOTE_TOKEN" in text)
         }
         assertTrue(Files.isExecutable(state.resolve("desktop-mcp")))
@@ -101,6 +102,9 @@ class McpDesktopSyncTest {
         val scoped = targets.resolve("scoped") as McpStdioResolution.Missing
         assertTrue("Claude Desktop starts it itself" in scoped.why, scoped.why)
         assertTrue(targets.resolve("nope") is McpStdioResolution.Missing)
+        val injected = targets.resolve("injected") as McpStdioResolution.Missing
+        assertTrue("line break" in injected.why, injected.why)
+        assertFalse("SECRET-VALUE" in injected.why, "a refusal never says a header's value")
     }
 
     @Test
@@ -137,7 +141,10 @@ class McpDesktopSyncTest {
                 "scoped": {"command": "uvx", "args": ["scoped-mcp", "$project"]},
                 "remote": {"type": "http", "url": "https://example.invalid/mcp",
                            "headers": {"Authorization": "Bearer ${'$'}{REMOTE_TOKEN}"}},
-                "legacy": {"type": "sse", "url": "https://example.invalid/sse"}
+                "legacy": {"type": "sse", "url": "https://example.invalid/sse"},
+                "socket": {"type": "ws", "url": "ws://example.invalid/socket"},
+                "injected": {"type": "http", "url": "https://example.invalid/mcp",
+                             "headers": {"Authorization": "Bearer SECRET-VALUE\r\nX-Evil: 1"}}
               }
             }
             """.trimIndent(),

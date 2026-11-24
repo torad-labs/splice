@@ -106,7 +106,8 @@ class DesktopProfileSyncTest {
         assertEquals("bin", Files.readSymbolicLink(copied.resolve("server/current")).toString())
         assertFalse(Files.exists(copied.resolve("escape.link")), "an absolute link out of the extension is dropped")
         assertFalse(Files.exists(copied.resolve("climb.link")), "a relative link that climbs out is dropped")
-        assertFalse(Files.exists(targetAppData.resolve("Claude Extensions/.ext.desktop.commander.splice-copy")))
+        val left = Files.list(targetAppData.resolve("Claude Extensions")).use { it.toList() }
+        assertFalse(left.any { it.fileName.toString().startsWith(".") }, "no staging folder is left behind")
         assertEquals(
             """{"name":"keep-3p"}""",
             Files.readString(targetAppData.resolve("Claude Extensions/already.installed/manifest.json")),

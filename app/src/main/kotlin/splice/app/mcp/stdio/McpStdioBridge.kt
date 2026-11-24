@@ -8,28 +8,21 @@ package splice.app.mcp.stdio
 
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonObject
 import splice.core.terminal.TerminalOutput
 import splice.core.util.JsonScalars
-import splice.core.util.JsonWire
 import splice.core.util.SafeFailureText
 import java.io.BufferedReader
 import java.io.IOException
 import java.io.OutputStream
-import java.util.concurrent.ConcurrentLinkedQueue
 
 internal class McpStdioBridge(
     /** The server's name, as the client's errors and the bridge's own lines on stderr name it. */
@@ -38,6 +31,8 @@ internal class McpStdioBridge(
     private val io: CoroutineDispatcher,
     private val err: TerminalOutput,
 ) {
+    private val replies = McpStdioReplies()
+
     /** Bridges [input] to the server and the server to [output] until [input] ends; false when the server could not
      *  be reached at all, which a client sees as a server that failed to start. */
     suspend fun run(input: BufferedReader, output: OutputStream): Boolean = coroutineScope {
@@ -49,27 +44,41 @@ internal class McpStdioBridge(
                 output.flush()
             }
         }
-        val listening = Listening(this)
-        val refused = try {
-            transport.open(out)
-        } catch (failure: IOException) {
-            "it could not be reached (${SafeFailureText.render(failure)})"
+        val listening = McpStdioListening(this)
+        try {
+            val refused = opened(out)
+            refused?.let { err.line("splice mcp stdio: the MCP server '$name' did not open: $it") }
+            if (refused == null) {
+                listen(listening, out)
+                read(input, out, listening)
+            }
+            refused == null
+        } finally {
+            // However the bridge ends, cancelled included, the session is ended and every stream stopped.
+            withContext(NonCancellable) {
+                reached("end its session") { transport.close() }
+                listening.stop()
+                lines.close()
+                writer.join()
+            }
         }
-        refused?.let { err.line("splice mcp stdio: the MCP server '$name' did not open: $it") }
-        val opened = refused == null
-        if (opened) {
-            listen(listening, out)
-            read(input, out, listening)
-        }
-        reached("end its session") { transport.close() }
-        listening.stop()
-        lines.close()
-        writer.join()
-        opened
+    }
+
+    /** Why the server did not open, in words safe to print, or null when it did. */
+    private suspend fun opened(out: TerminalOutput): String? = try {
+        transport.open(out)
+    } catch (failure: IOException) {
+        "it could not be reached (${SafeFailureText.render(failure)})"
+    } catch (failure: IllegalArgumentException) {
+        "a request to it could not be made (${SafeFailureText.render(failure)})"
     }
 
     /** Every line of [input] handed on, until it ends; requests launched side by side, the rest in order. */
-    private suspend fun read(input: BufferedReader, out: TerminalOutput, listening: Listening) = supervisorScope {
+    private suspend fun read(
+        input: BufferedReader,
+        out: TerminalOutput,
+        listening: McpStdioListening,
+    ) = supervisorScope {
         var line = withContext(io) { input.readLine() }
         while (line != null) {
             if (line.isNotBlank()) handle(line, out, this, listening)
@@ -77,10 +86,10 @@ internal class McpStdioBridge(
         }
     }
 
-    private suspend fun handle(line: String, out: TerminalOutput, scope: CoroutineScope, listening: Listening) {
+    private suspend fun handle(line: String, out: TerminalOutput, scope: CoroutineScope, listening: McpStdioListening) {
         val message = JsonScalars.objectOrNull(Json, line)
         if (message == null) {
-            out.line(failure(JsonNull, STDIO_PARSE_ERROR, "the line is not a JSON-RPC message"))
+            out.line(replies.error(JsonNull, STDIO_PARSE_ERROR, "the line is not a JSON-RPC message"))
             return
         }
         val method = JsonScalars.str(message, STDIO_METHOD)
@@ -95,7 +104,7 @@ internal class McpStdioBridge(
     }
 
     /** What the server sends on its own, heard under [listening] so the bridge can stop hearing it when it ends. */
-    private fun listen(listening: Listening, out: TerminalOutput) {
+    private fun listen(listening: McpStdioListening, out: TerminalOutput) {
         listening.start { reached("keep its stream open") { transport.listen(out) } }
     }
 
@@ -106,47 +115,30 @@ internal class McpStdioBridge(
             when (val sent = transport.send(message, out)) {
                 McpStdioSent.Delivered -> null
                 is McpStdioSent.Refused -> "the MCP server '$name' answered HTTP ${sent.status}"
+                McpStdioSent.Unanswered -> "the MCP server '$name' took the request without answering it"
             }
         } catch (failure: IOException) {
             "Splice could not reach the MCP server '$name' (${SafeFailureText.render(failure)})"
+        } catch (failure: IllegalArgumentException) {
+            "Splice could not make the request to '$name' (${SafeFailureText.render(failure)})"
         }
         if (why == null) return
         err.line("splice mcp stdio: $why")
-        request?.let { out.line(failure(it, STDIO_SERVER_ERROR, why)) }
+        request?.let { out.line(replies.error(it, STDIO_SERVER_ERROR, why)) }
     }
 
     /** [step] run, a failure to reach the server said on stderr; whether it went through. */
-    private inline fun reached(what: String, step: () -> Unit): Boolean = try {
-        step()
-        true
-    } catch (failure: IOException) {
-        err.line("splice mcp stdio: could not $what for '$name' (${SafeFailureText.render(failure)})")
-        false
-    }
-
-    private fun failure(id: JsonElement, code: Int, text: String): String = JsonWire.string(
-        buildJsonObject {
-            put("jsonrpc", "2.0")
-            put(STDIO_ID, id)
-            putJsonObject("error") {
-                put("code", code)
-                put("message", text)
-            }
-        },
-    )
-}
-
-/** What the bridge hears from the server on its own, launched in the bridge's [scope] so reading stdin never waits
- *  on it, and stopped when stdin ends. */
-private class Listening(private val scope: CoroutineScope) {
-    private val jobs = ConcurrentLinkedQueue<Job>()
-
-    inline fun start(crossinline step: suspend () -> Unit) {
-        jobs += scope.launch { step() }
-    }
-
-    suspend fun stop() {
-        jobs.forEach { it.cancelAndJoin() }
+    private inline fun reached(what: String, step: () -> Unit): Boolean {
+        val failure = try {
+            step()
+            null
+        } catch (failed: IOException) {
+            failed
+        } catch (failed: IllegalArgumentException) {
+            failed
+        }
+        failure?.let { err.line("splice mcp stdio: could not $what for '$name' (${SafeFailureText.render(it)})") }
+        return failure == null
     }
 }
 

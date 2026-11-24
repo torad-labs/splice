@@ -42,7 +42,7 @@ internal class McpStdioTargets(
         } else {
             val plan = sharing.planner(sharing.endpointPrefix()).plan(inputs, McpHarness.CLAUDE.wire)
             val entry = plan.rewritten[name] as? JsonObject
-            target(entry) ?: McpStdioResolution.Missing(
+            target(name, entry) ?: McpStdioResolution.Missing(
                 "'$name' is not reached at a URL (${plan.passthrough[name] ?: "a stdio server"}); " +
                     "Claude Desktop starts it itself",
             )
@@ -51,14 +51,23 @@ internal class McpStdioTargets(
         McpStdioResolution.Missing("Splice's MCP servers could not be read (${SafeFailureText.render(failure)})")
     }
 
-    /** [entry]'s address, when it is a web one. */
-    private fun target(entry: JsonObject?): McpStdioResolution.Found? {
+    /** [entry]'s address, when it is a web one; refused, without saying any header's value, when one of its headers
+     *  could not be sent (a name that is no HTTP token, or a value holding a line break or a control character). */
+    private fun target(name: String, entry: JsonObject?): McpStdioResolution? {
         val uri = JsonScalars.str(entry, "url")?.let(::expanded)?.let(::web) ?: return null
         val headers = (entry?.get("headers") as? JsonObject).orEmpty().mapNotNull { (key, value) ->
             JsonScalars.str(value)?.let { key to expanded(it) }
         }.toMap()
-        return McpStdioResolution.Found(McpStdioTarget(uri, headers, JsonScalars.str(entry, "type") == "sse"))
+        val sendable = headers.all { (key, value) -> HEADER_NAME.matches(key) && value.none(::unsendable) }
+        return if (sendable) {
+            McpStdioResolution.Found(McpStdioTarget(uri, headers, JsonScalars.str(entry, "type") == "sse"))
+        } else {
+            McpStdioResolution.Missing("a header '$name' is given holds a line break or is no HTTP header name")
+        }
     }
+
+    /** Whether [char] can't go in a header value: a control character other than tab. */
+    private fun unsendable(char: Char): Boolean = char != '\t' && (char < ' ' || char == '\u007f')
 
     /** [url] as an http or https address with a host, or null. */
     private fun web(url: String): URI? = try {
@@ -75,6 +84,9 @@ internal class McpStdioTargets(
 
 private val WEB_SCHEMES = setOf("http", "https")
 private val VARIABLE = Regex("""\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?}""")
+
+// An HTTP header name: one RFC 9110 token.
+private val HEADER_NAME = Regex("[!#$%&'*+.^_`|~0-9A-Za-z-]+")
 
 // The regex group holding a variable's `:-default`, empty when there is none.
 private const val DEFAULT_GROUP = 2

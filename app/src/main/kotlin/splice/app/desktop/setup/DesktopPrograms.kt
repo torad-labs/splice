@@ -64,7 +64,8 @@ internal class DesktopPrograms(private val stateDir: Path) {
             "# which reads the MCP access key from splice's state folder.\n" +
             "SPLICE_STATE_DIR=$state exec ${spliceWords()} mcp stdio \"\$@\"\n"
         val held = if (Files.isRegularFile(mcp, LinkOption.NOFOLLOW_LINKS)) Files.readString(mcp) else null
-        if (held != text || !Files.isExecutable(mcp)) SecureFile.writeAtomic(mcp, text, OWNER_ONLY_EXECUTABLE)
+        val mode = if (held == null) null else Files.getPosixFilePermissions(mcp, LinkOption.NOFOLLOW_LINKS)
+        if (held != text || mode != OWNER_ONLY_EXECUTABLE) SecureFile.writeAtomic(mcp, text, OWNER_ONLY_EXECUTABLE)
         return mcp
     }
 

@@ -19,6 +19,9 @@ internal sealed class McpStdioSent {
 
     /** The server answered with HTTP [status], which is not a reply. */
     data class Refused(val status: Int) : McpStdioSent()
+
+    /** The server took a request and answered with no reply to it: an empty or non-JSON body. */
+    data object Unanswered : McpStdioSent()
 }
 
 /** One server the bridge speaks to. Every member may throw IOException when the server can't be reached. */

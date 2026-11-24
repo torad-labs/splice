@@ -1,6 +1,7 @@
 // NEW: desktop-3p-parity (Nov 23, 2026). A Server-Sent Events stream read one event at a time, for the stdio MCP
-// bridge (`splice mcp stdio`): the `event:` name and its `data:` lines joined, complete at the blank line that ends
-// it. Comments and other fields are skipped, and an event with no data is no event.
+// bridge (`splice mcp stdio`): the `event:` name (`message` when it is absent or empty) and its `data:` lines joined,
+// complete only at the blank line that ends it. Comments and other fields are skipped, an event with no data is no
+// event, and one the stream cut off before its blank line is not dispatched.
 package splice.app.mcp.stdio
 
 import java.io.BufferedReader
@@ -10,12 +11,12 @@ internal data class McpSseEvent(val name: String, val data: String)
 
 /** [reader] read as SSE. */
 internal class McpSseEvents(private val reader: BufferedReader) {
-    /** The next event, or null when the stream ended first. */
+    /** The next complete event, or null when the stream ended first. */
     fun next(): McpSseEvent? {
         val pending = Pending()
         var line = reader.readLine()
         while (line != null && !pending.take(line)) line = reader.readLine()
-        return pending.event()
+        return if (line == null) null else pending.event()
     }
 
     /** The event being read: what its lines said so far. */
@@ -31,7 +32,7 @@ internal class McpSseEvents(private val reader: BufferedReader) {
             when {
                 line.isEmpty() -> if (!hasData) name = STDIO_SSE_DEFAULT_EVENT
                 line.startsWith(':') -> Unit
-                field == "event" -> name = value
+                field == "event" -> name = value.ifEmpty { STDIO_SSE_DEFAULT_EVENT }
                 field == "data" -> {
                     if (hasData) data.append('\n')
                     data.append(value)

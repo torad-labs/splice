@@ -61,10 +61,11 @@ internal class DesktopExtensionsSync(private val files: DesktopLibraryFiles, pri
         }
         val targetExtDir = targetAppData.resolve(SYNC_EXTENSIONS_DIR)
         val eligible = srcExts.orEmpty().filterKeys { extId ->
-            Files.isDirectory(targetExtDir.resolve(extId), LinkOption.NOFOLLOW_LINKS)
+            val installed = targetExtDir.resolve(extId).normalize()
+            installed.parent == targetExtDir.normalize() && Files.isDirectory(installed, LinkOption.NOFOLLOW_LINKS)
         }
         val dstFile = targetAppData.resolve(SYNC_EXTENSIONS_REGISTRY)
-        val current = files.read(dstFile) ?: JsonObject(emptyMap())
+        val current = files.updatable(dstFile)
         val mergedExts = JsonMapMerger.mergeMissing(current, JsonObject(eligible), SYNC_EXTENSIONS_KEY) ?: return false
         Files.createDirectories(targetAppData)
         files.write(dstFile, JsonObject(current + (SYNC_EXTENSIONS_KEY to mergedExts)))

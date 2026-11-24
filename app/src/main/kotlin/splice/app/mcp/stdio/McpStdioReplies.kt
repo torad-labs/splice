@@ -8,6 +8,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import splice.core.terminal.TerminalOutput
 import splice.core.util.JsonWire
 import java.io.BufferedReader
@@ -38,6 +41,18 @@ internal class McpStdioReplies {
         }
         return messages
     }
+
+    /** A JSON-RPC error answering [id] with [code] and [text], as one line. */
+    fun error(id: JsonElement, code: Int, text: String): String = JsonWire.string(
+        buildJsonObject {
+            put("jsonrpc", "2.0")
+            put(STDIO_ID, id)
+            putJsonObject("error") {
+                put("code", code)
+                put("message", text)
+            }
+        },
+    )
 
     private fun parsed(text: String): JsonElement? = try {
         Json.parseToJsonElement(text)

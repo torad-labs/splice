@@ -20,6 +20,8 @@ import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.topology.TopologyStatePaths
+import java.net.URI
+import java.net.URISyntaxException
 import java.nio.file.Path
 
 /** What Desktop should have: the [stdio] servers it starts itself, each as Desktop's `mcpServers` spells one, and the
@@ -55,12 +57,21 @@ internal class SpliceDesktopMcp(
         val bridged = mutableListOf<String>()
         plan.rewritten.forEach { (name, entry) ->
             val server = entry as? JsonObject
+            val url = JsonScalars.str(server, MCP_URL)
             when {
-                !JsonScalars.str(server, MCP_URL).isNullOrBlank() -> bridged += name
-                else -> started(server)?.let { stdio[name] = it }
+                url.isNullOrBlank() -> started(server)?.let { stdio[name] = it }
+                // Only what the bridge can reach: an http or https address with a host, as McpStdioTargets takes it.
+                web(url) -> bridged += name
             }
         }
         return DesktopMcpWanted(JsonObject(stdio), bridged, DesktopPrograms(paths.stateDir))
+    }
+
+    /** Whether [url] is an http or https address with a host. */
+    private fun web(url: String): Boolean = try {
+        URI(url).let { it.scheme?.lowercase() in BRIDGED_SCHEMES && !it.host.isNullOrBlank() }
+    } catch (_: URISyntaxException) {
+        false
     }
 
     /** [server] as Desktop's `LocalMcpServerManager` starts one: its command, arguments, environment and folder; null
@@ -75,6 +86,9 @@ internal class SpliceDesktopMcp(
         }
     }
 }
+
+// The schemes the stdio bridge speaks.
+private val BRIDGED_SCHEMES = setOf("http", "https")
 
 // The hub's address does not matter to this plan, only which servers it hosts.
 private const val PLANNED_PREFIX = "http://127.0.0.1/mcp/"

@@ -54,7 +54,7 @@ internal class DesktopProfileSync(
             null
         }
         val wanted = mcp.wanted()
-        val current = files.read(target) ?: JsonObject(emptyMap())
+        val current = files.updatable(target)
         val bridge = wanted.program?.mcp?.toString()
         val merged = mergeConfig(current, upstreamDesktop, wanted, bridge)
         // Laid at every sync that bridges anything, so the bridge follows an upgrade of splice even when no entry

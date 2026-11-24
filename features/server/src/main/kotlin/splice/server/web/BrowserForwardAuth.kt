@@ -40,7 +40,7 @@ internal class BrowserForwardAuth(
     private val callback = "$origin/$SERVER_ROOT/$FORWARD_AUTH_SEGMENT/$CALLBACK"
 
     fun asks(path: List<String>): Boolean =
-        path == forwardAuthPath + LOGIN || path == forwardAuthPath + CALLBACK
+        path == forwardAuthPath + LOGIN_SEGMENT || path == forwardAuthPath + CALLBACK
 
     fun session(call: ApplicationCall): ServerKey? = cookies.reference(call)?.let(keys::browserSession)
 
@@ -50,7 +50,7 @@ internal class BrowserForwardAuth(
         when {
             call.request.httpMethod != HttpMethod.Get ->
                 voice.refuse(call, HttpStatus.NOT_FOUND, "no such path on this server")
-            path.last() == LOGIN -> begin(call)
+            path.last() == LOGIN_SEGMENT -> begin(call)
             else -> complete(call)
         }
     }
@@ -112,5 +112,5 @@ internal class BrowserForwardAuth(
     }
 }
 
-private const val LOGIN = "login"
+private const val LOGIN_SEGMENT = "login"
 private const val CALLBACK = "callback"

@@ -1,4 +1,4 @@
-package splice.server
+package splice.server.keys
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -7,6 +7,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.core.topology.PersonEmails
 import splice.core.topology.ServerKeyFormat
+import splice.server.ServerKey
 import java.time.Instant
 import java.time.format.DateTimeParseException
 

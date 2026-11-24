@@ -167,6 +167,8 @@ private const val DEFAULT_SIGNIN_KEY_DAYS = 30
 // all signing in at nine, and holds a script trying codes to a trickle.
 private const val DEFAULT_SIGNIN_RATE_PER_MINUTE = 20
 
+// why: an hour keeps a dashboard tab working through a working session, and an offboarded person's browser is out
+// within the hour even if nobody revokes its session.
 private const val DEFAULT_BROWSER_SESSION_SECONDS = 3_600
 
 /** The listener's TLS material: the certificate chain and the private key, each a PEM file. */

@@ -16,6 +16,7 @@ import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.server.audit.CONTROL_ACTOR
 import splice.server.audit.ServerAudit
+import splice.server.keys.KeyImportReader
 import java.time.Duration
 import java.time.Instant
 

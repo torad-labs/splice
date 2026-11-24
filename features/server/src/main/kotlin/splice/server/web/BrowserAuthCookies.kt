@@ -20,7 +20,7 @@ internal data class BrowserFlow(val state: String, val verifier: String, val non
 /** Separate HMAC purposes make a flow cookie and a session cookie non-interchangeable. */
 internal class BrowserAuthCookies(private val clock: Clock, random: SecureRandom = SecureRandom()) {
     private val encoder = Base64.getUrlEncoder().withoutPadding()
-    private val signingKey = SecretKeySpec(ByteArray(RANDOM_BYTES).also(random::nextBytes), HMAC)
+    private val signingKey = SecretKeySpec(ByteArray(COOKIE_SECRET_BYTES).also(random::nextBytes), HMAC)
     private val randomness = random
 
     fun flow(returnTo: String): BrowserFlow = BrowserFlow(secret(), secret(), secret(), returnTo)
@@ -57,7 +57,7 @@ internal class BrowserAuthCookies(private val clock: Clock, random: SecureRandom
 
     fun reference(call: ApplicationCall): String? = verified(call, SESSION_COOKIE)
 
-    private fun secret(): String = encoder.encodeToString(ByteArray(RANDOM_BYTES).also(randomness::nextBytes))
+    private fun secret(): String = encoder.encodeToString(ByteArray(COOKIE_SECRET_BYTES).also(randomness::nextBytes))
 
     private fun sign(name: String, payload: String, seconds: Int): String {
         val signed = "${clock.instant().epochSecond + seconds}.$payload"
@@ -97,7 +97,14 @@ internal object BrowserCookieWire {
 
 private const val COOKIE_MARK = "sfa."
 private const val HMAC = "HmacSHA256"
-private const val RANDOM_BYTES = 32
+
+// why: 32 bytes (256 bits) matches HMAC-SHA256's output, the most strength its signing key can carry, and makes
+// each state, nonce and PKCE verifier unguessable at any request rate.
+private const val COOKIE_SECRET_BYTES = 32
+
+// why: five minutes covers a person typing a password and a second factor at the provider, and a stolen flow cookie
+// is worthless soon after.
 private const val FLOW_SECONDS = 300
+
 private const val FLOW_COOKIE = "__Host-splice-forward-flow"
 private const val SESSION_COOKIE = "__Host-splice-forward"

@@ -1,13 +1,14 @@
 package splice.server.signin
 
 import splice.core.util.LoopbackOverride
+import splice.core.wire.NETWORK_PORT_MAX
 import java.net.URI
 import java.net.URISyntaxException
 
 internal object SigninRedirects {
     fun laptop(text: String): Boolean {
         val uri = parse(text) ?: return false
-        val loopback = uri.scheme == "http" && LoopbackOverride.isLoopback(text) && uri.port in 1..MAX_PORT
+        val loopback = uri.scheme == "http" && LoopbackOverride.isLoopback(text) && uri.port in 1..NETWORK_PORT_MAX
         return loopback && uri.rawPath == "/callback" && uri.rawQuery == null
     }
 
@@ -34,5 +35,6 @@ internal object SigninRedirects {
     }
 }
 
+// why: a dashboard path rides in the provider's redirect and in a signed cookie; 1 KiB holds any real deep link and
+// keeps both well under the 4 KiB a browser keeps for one cookie.
 private const val RETURN_PATH_LIMIT = 1_024
-private const val MAX_PORT = 65_535

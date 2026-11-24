@@ -15,6 +15,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import splice.core.topology.DEFAULT_SERVER_KEY_PREFIX
 import splice.core.topology.ServerKeyFormat
+import splice.server.keys.KeyImport
+import splice.server.keys.KeyMint
 import splice.share.StateFile
 import java.nio.file.Path
 import java.security.SecureRandom
@@ -45,6 +47,11 @@ public data class ServerKey(
         expiresAt != null && nowMs >= expiresAt -> KeyVerdict.Expired(this)
         else -> null
     }
+
+    /** A browser session that expired without being revoked at [nowMs]: it opens nothing, and nothing need remember
+     *  it. A revoked one is kept, so its revocation is never forgotten. */
+    internal fun lapsedSession(nowMs: Long): Boolean =
+        source == BROWSER_SOURCE && revokedAt == null && refusalAt(nowMs) != null
 }
 
 @Serializable
@@ -116,10 +123,14 @@ public class ServerKeys(
             .mapTo(sortedSetOf()) { it.person }
     }
 
+    /** Mints a key for [request]. Browser sessions that have expired unrevoked are dropped as it does: each sign-in
+     *  adds one, and an expired one opens nothing, so the file and the admin list stay one row per live session. A
+     *  revoked row and every other source's row are kept, so no revocation is ever forgotten. */
     public suspend fun mint(request: KeyRequest): MintedKey = mutation.withLock {
-        val prefix = mint.prefix(byHash.values.mapTo(HashSet()) { it.prefix })
-        val key = mint.key(prefix)
         val now = clock.millis()
+        val kept = byHash.filterValues { !it.lapsedSession(now) }
+        val prefix = mint.prefix(kept.values.mapTo(HashSet()) { it.prefix })
+        val key = mint.key(prefix)
         val row = ServerKey(
             prefix = prefix,
             hash = mint.hash(key),
@@ -130,7 +141,7 @@ public class ServerKeys(
             createdAt = now,
             expiresAt = request.lifetimeMs?.let { now + it },
         )
-        publish(byHash + (row.hash to row))
+        publish(kept + (row.hash to row))
         MintedKey(key, row)
     }
 
@@ -198,8 +209,12 @@ public class ServerKeys(
 
     /** Whether [text] holds a key this server issued, live or not, anywhere in it. What a caller sends beside the key
      *  that admitted it is asked this before any of it leaves the machine: a person's key stays at the server. Each
-     *  run with a key's shape is hashed and looked up, as [admit] does, and nothing is marked used. */
-    internal fun heldIn(text: String): Boolean = ServerKeyFormat.keysIn(text).any { mint.hash(it) in byHash }
+     *  run with a key's shape is looked up by its public prefix, so a secret of any admitted length is found, and
+     *  nothing is marked used. */
+    internal fun heldIn(text: String): Boolean {
+        val shaped = ServerKeyFormat.prefixesIn(text).toSet()
+        return shaped.isNotEmpty() && byHash.values.any { it.prefix in shaped }
+    }
 
     /** Writes when each key was last used, if any was used since the last write and that write is [olderThanMs] old.
      *  The listener asks after a turn; the daemon's stop asks with 0, so nothing is lost at a restart. */

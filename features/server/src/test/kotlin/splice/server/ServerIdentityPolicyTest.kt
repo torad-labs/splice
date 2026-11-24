@@ -1,6 +1,7 @@
 package splice.server
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -91,6 +92,45 @@ internal class ServerIdentityPolicyTest {
         assertEquals(409, send(importPath, admin, method = "POST", body = row).statusCode())
         assertEquals(401, send("/", key).statusCode())
     }
+
+    @Test
+    fun `an imported key with a secret of 32 or more characters opens the server, and a shorter one is no key`() {
+        val config = rig.config.copy(admins = listOf(ADMIN))
+        rig.open(state, emptyList(), config)
+        val admin = rig.keyFor(ADMIN)
+        for ((prefix, length) in listOf("spk_short032" to 32, "spk_longer64" to 64)) {
+            val key = prefix + "_" + "b".repeat(length)
+            val row = """{"person":"ada@team.example","prefix":"$prefix","hash":"${sha256(key)}"}"""
+            assertEquals(201, send("/server/api/keys/import", admin, method = "POST", body = row).statusCode())
+            assertEquals(200, send("/", key).statusCode(), "an imported $length-character secret did not verify")
+        }
+        assertEquals(401, send("/", "spk_short032_" + "b".repeat(31)).statusCode())
+    }
+
+    @Test
+    fun `an expired browser session leaves the key list at the next sign-in, and a revoked one stays`() {
+        openBrowser()
+        val admin = rig.keyFor(ADMIN)
+        fun browserRows(): List<Pair<String, Boolean>> =
+            Json.parseToJsonElement(send("/server/api/keys?person=ada@team.example", admin).body()).jsonObject
+                .getValue("keys").jsonArray.map { it.jsonObject }
+                .filter { it.getValue("source").jsonPrimitive.content == "browser" }
+                .map { it.getValue("prefix").jsonPrimitive.content to (it.getValue("revoked_at") !is JsonNull) }
+        session()
+        val revoked = browserRows().single().first
+        assertEquals(200, send("/server/api/keys/$revoked", admin, method = "DELETE").statusCode())
+        session()
+        val lapsed = browserRows().single { !it.second }.first
+        clock.pass(61)
+        session()
+        val rows = browserRows()
+        assertEquals(2, rows.size, "expired sessions pile up in the key list: $rows")
+        assertTrue(rows.none { it.first == lapsed }, "the expired session is still listed")
+        assertTrue(rows.contains(revoked to true), "the revoked session was forgotten")
+    }
+
+    private fun sha256(text: String): String =
+        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(text.toByteArray()))
 
     @Test
     fun `browser sign-in checks hosted domain and verified email before issuing a revocable dashboard cookie`() {

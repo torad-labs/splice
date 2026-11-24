@@ -55,7 +55,9 @@ the laptop's client can do:
    Those plans' terms are for one person. `check-config` refuses such a command in `[server] commands`, naming the
    reason. API-key and self-hosted providers are served. Whether to ever offer an opt-in is the founder's call and is
    not built.
-4. **Keys are `spk_<8 lowercase alphanumerics>_<32+ alphanumerics>`.** The first two parts are the visible prefix
+4. **Keys are `<key_prefix><8 lowercase alphanumerics>_<32+ alphanumerics>`**, with `key_prefix` `spk_` unless
+   `[server] key_prefix` sets another. The server mints 40-character secrets and admits any of 32 or more, so an
+   imported key verifies by the same rule its import was checked by. The first two parts are the visible prefix
    that names the key everywhere; only a hash of the whole key is stored. No file in the server's home, its log
    included, ever holds a key or its secret.
 5. **A person is a lowercased email.** Teams come from the email's domain (`[server.teams] by_domain`) unless the
@@ -345,6 +347,9 @@ auth cookie to the protected application. Header keys still work, but browser mo
 legacy key cookie with a signed, expiring, dashboard-only session cookie.
 
 Revoke a browser session from the existing key list (source `browser`) or revoke all keys for the person.
+A browser session that expires unrevoked is dropped from the key list the next time the server mints a key (each
+browser sign-in mints one), so the list holds one row per live session. A revoked session stays listed, so it can
+never be imported or signed back to life.
 Keep the identity provider's account policy current so a revoked person cannot sign in again. Restarting
 the server also invalidates browser cookies; their signing key is held only in memory.
 

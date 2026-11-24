@@ -1,6 +1,7 @@
 package splice.core.topology
 
 import splice.core.listen.IpLiterals
+import splice.core.wire.NETWORK_PORT_MAX
 import java.net.URI
 import java.net.URISyntaxException
 
@@ -61,12 +62,14 @@ internal class ServerIdentityChecks(private val server: ServerConfig) {
         }
         val https = uri.scheme == "https" && uri.host != null && uri.userInfo == null
         val originOnly = uri.rawPath in setOf("", "/") && uri.rawQuery == null && uri.rawFragment == null
-        val validPort = uri.port == -1 || uri.port in 1..MAX_PORT
+        val validPort = uri.port == -1 || uri.port in 1..NETWORK_PORT_MAX
         return https && originOnly && validPort
     }
 }
 
 private const val DOMAIN_LABEL = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
 private const val FORWARD_AUTH = "server.forward_auth"
+
+// why: a day is the longest a browser session may outlive an offboarding nobody performed by hand; a longer session
+// belongs to a key, which an operator lists and revokes.
 private const val MAX_SESSION_SECONDS = 86_400
-private const val MAX_PORT = 65_535

@@ -18,6 +18,7 @@ import splice.core.util.EnvReader
 import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.core.util.WallClock
+import splice.provider.antigravity.hooks.AcpSessionHooks
 import splice.provider.antigravity.skills.ClaudeSkillCatalog
 import java.io.IOException
 import java.io.InputStream
@@ -41,13 +42,17 @@ public class DesktopAcp(
 ) {
     /** Runs the session, Desktop's lines read from [input] and the session's written to [output], until Desktop
      *  closes [input] or switches to a non-Antigravity model; the exit code. */
-    public suspend fun run(input: InputStream, output: OutputStream): Int = coroutineScope {
+    public suspend fun run(
+        input: InputStream,
+        output: OutputStream,
+        hooks: AcpSessionHooks = AcpSessionHooks(),
+    ): Int = coroutineScope {
         val lines = Channel<String>(Channel.UNLIMITED)
         val reader = startInputReader(input, lines)
         val claude = ClaudeArgsReader().of(args)
         val started = AgyLaunch(agy, cwd, io).start(claude, this)
         try {
-            serve(claude, started, lines, output, this)
+            serve(ServeTarget(claude, started, hooks), lines, output, this)
         } finally {
             reader.shutdownNow()
             started.close(log)
@@ -78,13 +83,16 @@ public class DesktopAcp(
         return pool
     }
 
+    private data class ServeTarget(val claude: ClaudeArgs, val started: StartedAgy, val hooks: AcpSessionHooks)
+
     private suspend fun serve(
-        claude: ClaudeArgs,
-        started: StartedAgy,
+        target: ServeTarget,
         lines: ReceiveChannel<String>,
         output: OutputStream,
         scope: CoroutineScope,
     ) {
+        val claude = target.claude
+        val started = target.started
         val (hello, helloFailure) = started.connection?.let { AgyOpener(it, cwd.toString()).sayHello() }
             ?: (null to started.reason)
         val out = synchronizedOut(output)
@@ -94,11 +102,11 @@ public class DesktopAcp(
             override fun connected(serverName: String) = mcpState.markConnected(serverName)
         }
         McpBridge(out, connected).use { bridge ->
-            val target = CoordinatorEnv(claude, STRICT_MCP_CONFIG in args, cwd, env, log)
+            val envTarget = CoordinatorEnv(claude, STRICT_MCP_CONFIG in args, cwd, env, log)
             val chan = CoordinatorIo(started, hello, helloFailure, lines, deferredLines, scope)
-            val coordinator = AgyMcpCoordinator(target, chan, mcpState, bridge)
+            val coordinator = AgyMcpCoordinator(envTarget, chan, mcpState, bridge)
             val factory = PartsFactory { id -> parts(id, claude, claude.model.orEmpty(), out) }
-            val session = DesktopSession(claude, factory, coordinator, mcpState, bridge, clock)
+            val session = DesktopSession(claude, factory, coordinator, mcpState, bridge, clock, target.hooks)
             try {
                 loop(session, lines, deferredLines, started)
             } finally {

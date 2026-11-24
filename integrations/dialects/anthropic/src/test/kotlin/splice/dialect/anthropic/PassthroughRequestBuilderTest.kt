@@ -126,6 +126,45 @@ class PassthroughRequestBuilderTest {
         assertEquals(listOf("text", "tool_reference"), inner)
     }
 
+    @Test
+    fun `old empty tool failures can be replayed during a turn or compaction`() {
+        val body = """{"model":"m","messages":[
+            {"role":"user","content":"run the tools"},
+            {"role":"assistant","content":[
+                {"type":"tool_use","id":"t1","name":"run","input":{}},
+                {"type":"tool_use","id":"t2","name":"run","input":{}},
+                {"type":"tool_use","id":"t3","name":"run","input":{}},
+                {"type":"tool_use","id":"t4","name":"run","input":{}},
+                {"type":"tool_use","id":"t5","name":"run","input":{}},
+                {"type":"tool_use","id":"t6","name":"run","input":{}},
+                {"type":"tool_use","id":"t7","name":"run","input":{}}
+            ]},
+            {"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"t1","is_error":true,"content":""},
+                {"type":"tool_result","tool_use_id":"t2","is_error":true,"content":[]},
+                {"type":"tool_result","tool_use_id":"t3","is_error":true},
+                {"type":"tool_result","tool_use_id":"t4","is_error":true,"content":[{"type":"text","text":"   "}]},
+                {"type":"tool_result","tool_use_id":"t5","is_error":true,"content":"specific failure"},
+                {"type":"tool_result","tool_use_id":"t6","is_error":false,"content":""},
+                {"type":"tool_result","tool_use_id":"t7","is_error":true,
+                    "content":[{"type":"text","text":"structured failure"}]}
+            ]},
+            {"role":"assistant","content":"Noted"},
+            {"role":"user","content":"continue"}
+        ]}"""
+        for (compact in listOf(false, true)) {
+            val results = build(body, NEUTRAL, compact).blocks(2)
+            val content = results.map { it.getValue("content") }
+            assertEquals((1..7).map { "t$it" }, results.map { it.getValue("tool_use_id").jsonPrimitive.content })
+            val errors = results.map { it.getValue("is_error").jsonPrimitive.content.toBooleanStrict() }
+            assertEquals(listOf(true, true, true, true, true, false, true), errors)
+            val repaired = List(4) { "Tool failed with no output." }
+            assertEquals(repaired + listOf("specific failure", ""), content.take(6).map { it.jsonPrimitive.content })
+            val structured = content.last().jsonArray.single().jsonObject
+            assertEquals("structured failure", structured.getValue("text").jsonPrimitive.content)
+        }
+    }
+
     // --- thinking -> adaptive + output_config effort ladder --------------------------------------
 
     private fun thinkingReq(budget: String?): JsonObject {

@@ -12,13 +12,19 @@ import kotlinx.serialization.json.put
 import java.time.Clock
 import java.time.Duration
 
-/** One provider paid by the hour, over a report's window: the [hours] the host was up in it, and what they cost. */
-internal data class FixedCost(val provider: String, val hours: Double, val costUsd: Double) {
-    /** As a report carries it: `{"provider", "hours", "cost_usd"}`. */
+/** One provider or external meter paid by the hour, over a report's window. */
+internal data class FixedCost(
+    val provider: String,
+    val hours: Double,
+    val costUsd: Double,
+    val external: Boolean = false,
+) {
+    /** As a report carries it, with a source marker only on external meters. */
     fun json(): JsonObject = buildJsonObject {
         put("provider", provider)
         put("hours", hours)
         put("cost_usd", costUsd)
+        if (external) put("source", "external")
     }
 }
 

@@ -231,7 +231,9 @@ class HeadServerPreflightTest {
     }
 
     @Test
-    fun `measured ordinary and compact turns use distinct refusal thresholds`(@TempDir root: Path) = runTest {
+    fun `a configured target triggers compaction but cannot refuse it without a backend ceiling`(
+        @TempDir root: Path,
+    ) = runTest {
         val upstream = MockChatGptUpstream()
         val client = HttpClient(CIO) {
             engine { requestTimeout = 0 }
@@ -259,14 +261,13 @@ class HeadServerPreflightTest {
             awaitRows(stats, 3)
             measured(stats, upstream, seed, tokens = 273_000)
             val compactHistory = previous + """{"role":"user","content":"summary"},"""
-            val tooLargeCompact = compact(client, server.port, compactHistory, "continue")
-            assertEquals(400, tooLargeCompact.status.value, "measured compact input alone exceeds W")
-            val compactRefusal = tooLargeCompact.bodyAsText()
-            assertTooLong(compactRefusal, "This conversation is too long for claudex to summarize.", "272,000")
-            assertEquals(2, upstream.upstreamBodies.size, "only measured refusals avoid the backend")
+            val aboveTarget = compact(client, server.port, compactHistory, "continue")
+            assertEquals(200, aboveTarget.status.value, "only the provider knows whether this compact fits")
+            assertTrue("event: message_stop" in aboveTarget.bodyAsText())
+            assertEquals(3, upstream.upstreamBodies.size, "only the ordinary turn is refused locally")
             val recorded = recorded(root)
             assertTrue("compaction-preflight-compactable" in recorded, recorded)
-            assertTrue("compaction-preflight-compact-overflow" in recorded, recorded)
+            assertTrue("compaction-preflight-compact-overflow" !in recorded, recorded)
             assertTrue("compaction-preflight-first-exchange" !in recorded, recorded)
         } finally {
             server.stop()

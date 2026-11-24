@@ -37,9 +37,11 @@ internal const val CONSOLE_NO_BROWSER = "--no-browser"
 private const val MINT_MS = 10_000
 
 internal class ConsoleCommand(
-    private val browser: BrowserOpener = SystemBrowserOpener(TerminalOutput { println(it) }),
+    browser: BrowserOpener? = null,
     private val out: TerminalOutput = TerminalOutput { println(it) },
+    browserOut: TerminalOutput = out,
 ) {
+    private val browser: BrowserOpener = browser ?: SystemBrowserOpener(browserOut)
     private val json = Json { ignoreUnknownKeys = true }
 
     /** What a code may be made of before it goes into the page: URL-safe characters only, so no answer, whoever sent

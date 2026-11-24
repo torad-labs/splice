@@ -9,7 +9,7 @@ import splice.diagnostics.doctor.ToolLevel
 import splice.diagnostics.doctor.ToolReading
 
 internal class CapabilityTools(private val facts: Capabilities) {
-    fun readings(): List<ToolReading> = listOfNotNull(desktop(), wrapper(), agy(), shim(), codex(), hub())
+    fun readings(): List<ToolReading> = listOfNotNull(desktop(), wrapper(), agy(), shim(), codex(), codexHooks(), hub())
 
     /** Claude Desktop, said when splice has it on, or its Claude (Splice) app launcher is installed, or when it is
      *  installed at all. `claude-splice` runs Claude Code in a terminal, not Desktop, so it is no use of Desktop. */
@@ -100,6 +100,35 @@ internal class CapabilityTools(private val facts: Capabilities) {
         )
     }
 
+    private fun codexHooks(): ToolReading? {
+        if (facts.harness.codex == null) return null
+        val reading = facts.harness.codexHooks ?: return null
+        return when (reading.state) {
+            CodexHooksState.CURRENT -> ToolReading(
+                CODEX_HOOKS_ROW,
+                ToolLevel.OK,
+                "${reading.file} runs splice peer codex attach/detach directly",
+            )
+            CodexHooksState.MISSING -> ToolReading(
+                CODEX_HOOKS_ROW,
+                ToolLevel.INFO,
+                "${reading.file} has no splice peer codex hooks yet",
+                SETUP_UPDATE,
+            )
+            CodexHooksState.NEEDS_MIGRATION -> ToolReading(
+                CODEX_HOOKS_ROW,
+                ToolLevel.WARN,
+                "${reading.file} needs migration (${reading.issues.joinToString("; ")})",
+                SETUP_UPDATE,
+            )
+            CodexHooksState.UNREADABLE -> ToolReading(
+                CODEX_HOOKS_ROW,
+                ToolLevel.WARN,
+                "${reading.file} could not be parsed; check it by hand",
+            )
+        }
+    }
+
     /** systemd, said where the MCP hub is on: its front and holder run under `systemd --user`. */
     private fun hub(): ToolReading? {
         if (!facts.hub.on) return null
@@ -121,6 +150,7 @@ private const val WRAPPER_ROW = "processWrapper"
 private const val AGY_ROW = "agy"
 private const val SHIM_ROW = "antigravity shim"
 private const val CODEX_ROW = "codex"
+private const val CODEX_HOOKS_ROW = "codex peer hooks"
 private const val SYSTEMD_ROW = "systemd"
 
 internal const val SETUP_UPDATE = "splice setup --update"

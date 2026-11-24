@@ -314,6 +314,8 @@ public class Daemon(
             overrides = DesktopPolicyOverrides(statePaths.desktopPolicyOverridesFile),
             log = log,
         ),
+        turnKey = TurnKey(mgmtKey),
+        sessionSpeeds = controlPlane.providerAssembly.sessionSpeeds,
     )
 
     /** desktop-antigravity: Antigravity, a provider only Claude Desktop runs, once agy says what it offers; never asked

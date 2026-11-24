@@ -36,7 +36,7 @@ public class CodexSpeed(
      *  own turn. */
     public fun applied(turn: BuiltTurn, sessionId: String?, agentId: String?): BuiltTurn {
         val model = turn.meta.route.upstreamModel
-        if (agentId == null) speeds.ran(sessionId, model)
+        if (agentId == null) speeds.ran(sessionId, model, provider = head.takeIf(String::isNotBlank))
         val tier = catalog?.tierFor(head, model, speeds.speedOf(sessionId))
         val body = if (tier == null) {
             JsonObject(turn.requestBody - SERVICE_TIER)

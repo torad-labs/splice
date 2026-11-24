@@ -16,7 +16,10 @@ import splice.server.budget.BudgetGate
 import splice.server.budget.ServerSpend
 import splice.server.export.ExportClock
 import splice.server.export.UsageExport
+import splice.server.ledger.COST_METER_FILE
+import splice.server.ledger.ExternalCostMeters
 import splice.server.ledger.LedgerParts
+import splice.server.ledger.MeterIntervals
 import splice.server.ledger.RowWatch
 import splice.server.ledger.TurnLedger
 import splice.server.ledger.UsageApi
@@ -59,8 +62,10 @@ public class ServerBookkeeping internal constructor(
     private val budgetBook = BudgetBook(folder.resolve(SERVER_BUDGETS_FILE), run.io)
     private val budgets = BudgetGate(budgetBook, spend, people, server.teams, server.budgets)
 
+    private val costMeters = ExternalCostMeters(server.costMeters, MeterIntervals(folder.resolve(COST_METER_FILE)), run)
+
     /** The ledger's rows and reports, as the CLI, the control plane and an admin's key ask them. */
-    public val usageApi: UsageApi = UsageApi(ledger, people, server, run.clock, upstreams)
+    public val usageApi: UsageApi = UsageApi(ledger, people, server, run.clock, upstreams, costMeters)
 
     /** Each person's and team's budgets, as the CLI and the control plane set and list them. */
     public val budgetApi: BudgetApi = BudgetApi(budgetBook, budgets, run.log, audit)
@@ -81,13 +86,15 @@ public class ServerBookkeeping internal constructor(
         return ServerBooks(opened, budgets, tokens)
     }
 
-    /** Starts the export on its own schedule, with the bucket's key read from [env] at each one. */
-    internal fun exporting(env: EnvReader) {
+    /** Starts usage export and external cost sampling once the listener has opened. */
+    internal fun start(env: EnvReader, configDir: Path) {
         usageExport.open(env)
+        costMeters.open(configDir)
     }
 
-    /** Waits a moment for the rows still being written, then stops the export. */
+    /** Stops sampling and waits for any turn rows still being written, then stops the export. */
     internal suspend fun close() {
+        costMeters.close()
         turns?.close()
         turns = null
         usageExport.close()

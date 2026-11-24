@@ -34,14 +34,19 @@ private const val CAPACITY = 2048
 // why: the keys of each session's entry in the saved file.
 private const val SAVED_SPEED = "speed"
 private const val SAVED_MODEL = "model"
+private const val SAVED_PROVIDER = "provider"
 
-/** Session id -> its speed and its last turn's model. Bounded, least-recently-touched evicted first. */
+/** Session id -> its speed, last turn's model, and last routed provider. Bounded, LRU evicted first. */
 public class SessionSpeeds(
     /** Where the settings survive a daemon restart; null keeps them in memory only. */
     private val store: Path? = null,
     private val log: LogSink = LogSink {},
 ) {
-    private data class Entry(val speed: Speed = Speed.STANDARD, val model: String? = null)
+    private data class Entry(
+        val speed: Speed = Speed.STANDARD,
+        val model: String? = null,
+        val provider: String? = null,
+    )
 
     private val lock = Any()
     private val ioLock = Any()
@@ -67,16 +72,20 @@ public class SessionSpeeds(
     public fun lastModel(sessionId: String?): String? =
         sessionId?.takeIf(String::isNotBlank)?.let { synchronized(lock) { sessions[it] }?.model }
 
-    /** [sessionId]'s turn runs on [model]. */
-    public fun ran(sessionId: String?, model: String) {
+    /** The provider key [sessionId]'s latest Door turn routed to, or null when unrecorded. */
+    public fun lastProvider(sessionId: String?): String? =
+        sessionId?.takeIf(String::isNotBlank)?.let { synchronized(lock) { sessions[it] }?.provider }
+
+    /** [sessionId]'s turn runs on [model] (and optionally Door-routed [provider]). */
+    public fun ran(sessionId: String?, model: String, provider: String? = null) {
         val id = sessionId?.takeIf(String::isNotBlank) ?: return
-        if (model.isNotBlank()) update(id, model = model)
+        if (model.isNotBlank()) update(id, model = model, provider = provider?.takeIf(String::isNotBlank))
     }
 
-    private fun update(sessionId: String, speed: Speed? = null, model: String? = null) {
+    private fun update(sessionId: String, speed: Speed? = null, model: String? = null, provider: String? = null) {
         val changed = synchronized(lock) {
             val before = sessions[sessionId] ?: Entry()
-            val after = Entry(speed ?: before.speed, model ?: before.model)
+            val after = Entry(speed ?: before.speed, model ?: before.model, provider ?: before.provider)
             sessions[sessionId] = after
             after != before
         }
@@ -91,7 +100,11 @@ public class SessionSpeeds(
                 entries.forEach { (id, value) ->
                     (value as? JsonObject)?.let { o ->
                         val speed = SpeedWords.named(JsonScalars.str(o, SAVED_SPEED)) ?: Speed.STANDARD
-                        sessions[id] = Entry(speed, JsonScalars.str(o, SAVED_MODEL))
+                        sessions[id] = Entry(
+                            speed,
+                            JsonScalars.str(o, SAVED_MODEL),
+                            JsonScalars.str(o, SAVED_PROVIDER),
+                        )
                     }
                 }
             }
@@ -114,6 +127,7 @@ public class SessionSpeeds(
                     putJsonObject(id) {
                         put(SAVED_SPEED, entry.speed.word)
                         entry.model?.let { put(SAVED_MODEL, it) }
+                        entry.provider?.let { put(SAVED_PROVIDER, it) }
                     }
                 }
             },

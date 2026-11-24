@@ -10,6 +10,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.client.ForegroundToolActivity
+import splice.core.client.ForegroundToolCall
+import splice.core.client.ForegroundToolPhase
 import splice.core.util.JsonScalars
 import java.util.UUID
 
@@ -28,6 +31,8 @@ internal class AgyTurn(
     mcpLookup: McpToolLookup = object : McpToolLookup {
         override fun claudeName(rawName: String): String? = null
     },
+    private val foreground: ForegroundToolActivity? = null,
+    private val foregroundOwner: String = "",
 ) {
     private val cards = ToolCards(mcpLookup)
     private val taskFrames = TaskFrames(frames.sessionId)
@@ -125,6 +130,7 @@ internal class AgyTurn(
         val card = cards.of(call)
         tools[id] = card
         draw.toolUse(id, card)
+        foreground?.record(ForegroundToolCall(frames.sessionId, id, ForegroundToolPhase.START, foregroundOwner))
         card.subagent?.let { sub ->
             openSubagents[id] = sub
             out(taskFrames.started(id, sub))
@@ -133,6 +139,7 @@ internal class AgyTurn(
     }
 
     private fun emitResult(id: String, text: String, failed: Boolean) {
+        foreground?.record(ForegroundToolCall(frames.sessionId, id, ForegroundToolPhase.END, foregroundOwner))
         finish(if (draw.callsTools) TOOL_USE_BLOCK else null)
         val body = if (failed && text.isBlank()) FAILED_TOOL_RESULT else text
         val content = buildJsonArray {

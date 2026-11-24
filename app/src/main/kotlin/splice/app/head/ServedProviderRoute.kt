@@ -25,6 +25,10 @@ internal class ServedProviderRoute(
 ) : ServedProvider {
     override val catalog: ModelCatalog get() = ctx.catalog
 
+    override val booksKey: String get() = ctx.key
+
+    override val authKind: String? get() = ctx.providerCfg.auth.kind
+
     override val tiers: Map<String, String> get() = ctx.providerCfg.tierModels
 
     override val pinnedModel: String?

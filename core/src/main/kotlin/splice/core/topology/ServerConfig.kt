@@ -60,6 +60,10 @@ public data class ServerConfig(
     /** `[server.backup]` (F14): durable state snapshots (`keys.json`, `people.json`, `budgets.json`, `ledger.jsonl`,
      *  `audit.jsonl`) written on a schedule and restored fail-closed on a fresh disk. */
     val backup: ServerBackup = ServerBackup(),
+    /** Literal prefix of every series on the server Prometheus scrape, including any separator. */
+    @SerialName("metrics_prefix") val metricsPrefix: String = DEFAULT_SERVER_METRICS_PREFIX,
+    /** External hourly meters by stable name. An empty table starts no probes. */
+    @SerialName("cost_meters") val costMeters: Map<String, ServerCostMeter> = emptyMap(),
 ) {
     /** Whether the file carries a `[server]` table at all, whatever it holds. */
     val declared: Boolean get() = this != ServerConfig()
@@ -141,10 +145,35 @@ public data class ServerForwardAuth(val allow: List<String> = emptyList()) {
 /** `[server.telemetry]` (F8): [forwardTo] is the operator's OTLP/HTTP collector, as in "http://otel.lan:4318", which
  *  each signal is posted under (`/v1/logs`, `/v1/metrics`, `/v1/traces`) with the person who sent it on every resource. */
 @Serializable
-public data class ServerTelemetry(@SerialName("forward_to") val forwardTo: String = "") {
+public data class ServerTelemetry(
+    @SerialName("forward_to") val forwardTo: String = "",
+    @SerialName("identity_attributes") val identityAttributes: OtlpIdentityAttributes = OtlpIdentityAttributes(),
+) {
     /** [forwardTo] as the base each signal's path is put after, with no trailing slash. */
     public val collector: String get() = forwardTo.trim().trimEnd('/')
 }
+
+/** Trusted resource key names for the authenticated person's identity and team in relayed OTLP. */
+@Serializable
+public data class OtlpIdentityAttributes(
+    val person: String = "splice.person",
+    val email: String = "user.email",
+    val team: String = "splice.team",
+)
+
+/** The literal every server Prometheus series starts with when `[server] metrics_prefix` is absent. */
+public const val DEFAULT_SERVER_METRICS_PREFIX: String = "splice_server_"
+
+/** `[server.cost_meters.<name>]`: one opt-in hourly meter. Exactly one source, [file], [url] or [argv], must be set.
+ *  [hourlyUsd] reads as TOML dollars, so `hourly_usd = 3` is as good as `3.0`. */
+@Serializable
+public data class ServerCostMeter(
+    @Serializable(with = TomlDollars::class) @SerialName("hourly_usd") val hourlyUsd: Double? = null,
+    @SerialName("poll_seconds") val pollSeconds: Int = 60,
+    val file: String? = null,
+    val url: String? = null,
+    val argv: List<String>? = null,
+)
 
 /** `[server.signin]` (F2): the OpenID Connect provider a team member signs in with, the client this server is
  *  registered there as, the email domains it admits, how long a key minted by a sign-in lives, and how many sign-ins

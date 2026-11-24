@@ -7,21 +7,29 @@ package splice.app.desktop.lane
 import splice.app.desktop.DoorCaller
 import splice.app.desktop.catalog.DesktopLineup
 import splice.app.desktop.catalog.DesktopProviders
+import splice.client.desktop.DoorHooks
 import splice.client.desktop.DoorPickerRow
 import splice.client.login.DoorLogin
+import splice.client.resume.AuthHeaderFile
+import splice.client.resume.ResumeHookTarget
 import splice.core.config.FileHeldKey
 import splice.core.config.StatePaths
+import splice.core.config.TurnKey
 import splice.core.config.UserHome
+import splice.core.mcp.McpUserRegistry
 import splice.core.topology.Topology
 import splice.core.util.LogSink
 import splice.launch.recipe.ClaudeDoor
 import splice.launch.recipe.DoorLaunchSpec
 import splice.launch.recipe.GatewayAt
+import splice.launch.recipe.ProfileLaunch
+import splice.upstream.codemode.ProcessDispatchers
 
 internal class TerminalDoor(
     private val topology: Topology,
     statePaths: StatePaths,
     private val log: LogSink,
+    private val turnKey: TurnKey? = null,
 ) : ClaudeDoor {
     private val key = FileHeldKey(
         file = statePaths.terminalKeyFile,
@@ -33,15 +41,31 @@ internal class TerminalDoor(
     private val records = ClaudeLaneRecords(statePaths.claudeLaneFile, log)
     private val claudeHead = TopologyClaudeHead(topology)
     private val login = DoorLogin(UserHome.claudeDir(), statePaths.doorLoginDir)
+    private val profiles = TerminalProfiles(
+        topology.launch.profiles,
+        UserHome.dir(),
+        statePaths.launchProfilesDir,
+        McpUserRegistry(statePaths),
+        ProcessDispatchers().io(),
+    )
+    private val doorHooks = DoorHooks(statePaths.doorLoginDir, log)
 
     /** `claude`'s launch once [open] has run; null before. */
     @Volatile
     private var launched: ClaudeDoorLaunch? = null
 
     /** The lane on [providers] at [door], and its caller. */
-    fun open(providers: DesktopProviders, door: String): Pair<ClaudeLane, DoorCaller> {
+    fun open(
+        providers: DesktopProviders,
+        door: String,
+        hookTarget: ResumeHookTarget? = null,
+        controlPort: Int? = null,
+    ): Pair<ClaudeLane, DoorCaller> {
+        val target = hookTarget ?: controlPort?.let { port ->
+            turnKey?.let { ResumeHookTarget(port, AuthHeaderFile(it::headerFile)) }
+        }
         val lane = ClaudeLane(records, key, providers, door, claudeHead, ClaudeLogin(login, log))
-        launched = ClaudeDoorLaunch(lane, login, log)
+        launched = ClaudeDoorLaunch(lane, login, log, doorHooks, target)
         return lane to TerminalCaller(lane)
     }
 
@@ -50,6 +74,10 @@ internal class TerminalDoor(
 
     /** Side-by-side launch (`splice launch claude` / `claude-splice`); always on the door once [open] has run. */
     override suspend fun launchSideBySide(): DoorLaunchSpec? = launched?.launchSideBySide()
+
+    /** `splice launch claude --profile <name>`: [side], the side-by-side launch as the route extended it, over the
+     *  profile's folder, rebuilt first. */
+    override suspend fun launchProfile(name: String, side: DoorLaunchSpec): ProfileLaunch = profiles.launch(name, side)
 
     /** A launch of `[door.commands.<name>]` on the door; null for a name splice.toml gives no door command, and before
      *  [open]. */

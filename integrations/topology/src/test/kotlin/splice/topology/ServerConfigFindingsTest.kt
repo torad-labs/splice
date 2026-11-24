@@ -236,6 +236,94 @@ class ServerConfigFindingsTest {
     }
 
     @Test
+    fun `external metering and telemetry settings decode without running their sources`() {
+        val lines = """
+            metrics_prefix = "team_"
+            [server.telemetry]
+            forward_to = "https://collector.example"
+            [server.telemetry.identity_attributes]
+            person = "team.actor"
+            [server.cost_meters.gpu]
+            hourly_usd = 4.5
+            file = "not-yet-present"
+            [server.cost_meters.worker]
+            hourly_usd = 1.0
+            argv = ["/not-yet-installed/probe"]
+        """.trimIndent()
+        val read = ConfigFindings.read(server(lines) + head(), directory, configDir = directory)
+        val config = assertInstanceOf(ConfigRead.Ready::class.java, read, read.toString()).topology.server
+        assertEquals("team_", config.metricsPrefix)
+        assertEquals("team.actor", config.telemetry?.identityAttributes?.person)
+        assertEquals("user.email", config.telemetry?.identityAttributes?.email)
+        assertEquals(4.5, config.costMeters.getValue("gpu").hourlyUsd)
+        assertEquals(listOf("/not-yet-installed/probe"), config.costMeters.getValue("worker").argv)
+    }
+
+    @Test
+    fun `metering findings name invalid prefix, identity, rates, cadence and signal sources`() {
+        val lines = """
+            metrics_prefix = "1 invalid"
+            [server.telemetry]
+            forward_to = "https://collector.example"
+            [server.telemetry.identity_attributes]
+            person = "user.email"
+            [server.cost_meters.gpu]
+            hourly_usd = -1.0
+            poll_seconds = 0
+            [server.cost_meters.disk]
+            hourly_usd = 0.5
+            url = "file:///tmp/state"
+            [server.cost_meters.worker]
+            hourly_usd = 0.5
+            argv = ["probe"]
+        """.trimIndent()
+        assertEquals(
+            setOf(
+                "server.metrics_prefix",
+                "server.telemetry.identity_attributes",
+                "server.cost_meters.gpu",
+                "server.cost_meters.gpu.hourly_usd",
+                "server.cost_meters.gpu.poll_seconds",
+                "server.cost_meters.disk.url",
+                "server.cost_meters.worker.argv",
+            ),
+            refused(server(lines) + head()).map { it.path }.toSet(),
+        )
+    }
+
+    @Test
+    fun `a whole-number meter rate boots as dollars, as a provider's does`() {
+        val lines = """
+            [server.cost_meters.gpu]
+            hourly_usd = 3
+            file = "not-yet-present"
+        """.trimIndent()
+        val read = ConfigFindings.read(server(lines) + head(), directory, configDir = directory)
+        val config = assertInstanceOf(ConfigRead.Ready::class.java, read, read.toString()).topology.server
+        assertEquals(3.0, config.costMeters.getValue("gpu").hourlyUsd)
+    }
+
+    @Test
+    fun `a metrics prefix may not start with the double underscore Prometheus reserves`() {
+        assertEquals(
+            listOf("server.metrics_prefix"),
+            refused(server("metrics_prefix = \"__team_\"") + head()).map { it.path },
+        )
+    }
+
+    @Test
+    fun `a cost meter may not take a provider's key, which the report's hourly rows are keyed by`() {
+        val lines = """
+            [server.cost_meters.box]
+            hourly_usd = 1.0
+            file = "not-yet-present"
+        """.trimIndent()
+        val findings = refused(server(lines) + head())
+        assertEquals(listOf("server.cost_meters.box"), findings.map { it.path })
+        assertTrue(findings.single().message.contains("provider"), findings.single().message)
+    }
+
+    @Test
     fun `a sign-in table boots with its issuer, client, domains and key days, and a loopback issuer may be http`() {
         val lines = """
             [server.signin]

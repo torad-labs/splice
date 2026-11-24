@@ -146,13 +146,14 @@ public sealed class Command {
         val label: String? = null,
         val discard: Boolean = false,
         val keyStdin: Boolean = false,
+        val noBrowser: Boolean = false,
     ) : Command() {
         override suspend fun run(): Int {
             val server = ServerLogin()
             val named = head != null && server.names(head)
             return when {
                 keyStdin && !named -> refusal("--key-stdin keeps a key a server issued; name the server it is for")
-                !named -> outcomeExitCode(LoginCommand().login(head, label, discard))
+                !named -> outcomeExitCode(LoginCommand().login(head, label, discard, openBrowser = !noBrowser))
                 label != null -> refusal("--label names another login of a head; a server signs in one person")
                 keyStdin -> server.keep(head, readlnOrNull().orEmpty())
                 else -> server.login(head)

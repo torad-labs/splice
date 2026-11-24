@@ -7,6 +7,7 @@
 package splice.core.topology
 
 import splice.core.listen.IpLiterals
+import splice.core.topology.metering.ServerMeteringChecks
 import splice.core.util.LoopbackOverride
 import splice.core.wire.HttpStatus
 import java.net.URI
@@ -23,7 +24,7 @@ internal class ServerChecks(
 
     fun findings(): List<TopologyFinding> = if (server.declared) {
         listen() + exclusive() + commands() + tls() + people() + limits() + client() + signin() + telemetry() +
-            ServerLedgerChecks(server).findings()
+            ServerLedgerChecks(server).findings() + ServerMeteringChecks(topology).findings()
     } else {
         emptyList()
     }

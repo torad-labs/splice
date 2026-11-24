@@ -21,6 +21,7 @@ import splice.client.login.HookScriptFiles.shellSingleQuote
 import splice.client.login.LoginInterception
 import splice.client.resume.DaemonHook
 import splice.client.resume.ResumeHook
+import splice.core.client.DOOR_HOOK_KEY
 import splice.core.util.JsonWire
 import java.nio.file.Path
 
@@ -58,8 +59,10 @@ internal object SpeedHook : DaemonHook {
         appendLine("  -H 'Content-Type: application/json' --data-binary @- \\")
         appendLine("  \"http://127.0.0.1:$controlPort/hooks/speed/$headKey\" 2>/dev/null)\"")
         appendLine("if [ -n \"${d}out\" ]; then printf '%s' \"${d}out\"; exit 0; fi")
-        // The daemon did not answer: an exact command is still stopped, anything else goes on.
-        appendLine("re='\"prompt\": ?\"(/|$SPEED_SENTINEL )(fast|ultrafast)( [A-Za-z]*)?\"'")
+        // The daemon did not answer: on a dedicated ChatGPT head stop both /fast and /ultrafast, while on the
+        // multi-provider door fail open for /fast so Claude Code's native /fast is never blocked when offline.
+        val offlineCommands = if (headKey == DOOR_HOOK_KEY) "ultrafast" else "(fast|ultrafast)"
+        appendLine("re='\"prompt\": ?\"(/|$SPEED_SENTINEL )$offlineCommands( [A-Za-z]*)?\"'")
         appendLine("if [[ ${d}input =~ ${d}re ]]; then printf '%s' ${shellSingleQuote(unreachable)}; fi")
         appendLine("exit 0")
     }

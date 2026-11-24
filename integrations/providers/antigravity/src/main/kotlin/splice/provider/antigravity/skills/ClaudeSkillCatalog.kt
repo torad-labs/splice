@@ -4,9 +4,10 @@ import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import java.nio.file.Path
 
-/** The real [file] and [folder] (null for a command), and the declared discovery [root], before following links.
- *  Keeping them separate lets the local menu honor aliases without granting them access to the startup index. */
-internal data class SkillPlace(val file: Path, val folder: Path?, val root: Path)
+/** The real [file] and [folder] (null for a command), the declared discovery [root], and the path agy's skill index
+ *  names it by ([SkillRoot.indexPath]; null when the index may not name it, and for every command). Keeping them
+ *  separate lets the local menu honor every alias while the index names only what its folder's owner may send. */
+internal data class SkillPlace(val file: Path, val folder: Path?, val root: Path, val indexPath: Path?)
 
 /** Who may start a skill, from its frontmatter as Claude Code reads it: the person, by typing it (`user-invocable`,
  *  default true), and the model, by choosing it (`disable-model-invocation`, default false). */
@@ -48,7 +49,7 @@ internal class ClaudeSkillCatalog(cwd: Path, env: EnvReader, log: LogSink) {
     fun load(): LocalSkillCatalog {
         val workspace = roots.workspace()
         val config = roots.config()
-        val skills = roots.skillDirs(workspace, config).map { SkillRoot(it) }
+        val skills = roots.skillDirs(workspace, config)
         val plugin = roots.pluginDir()?.let { SkillRoot(it.resolve(LOCAL_SKILLS_DIR), manifest.disabledIn(it)) }
         val commands = scanner.commands(roots.commandDirs(workspace, config))
         val all = winners(scanner.skills(skills + listOfNotNull(plugin)) + commands)

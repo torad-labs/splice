@@ -231,7 +231,11 @@ or writing `~/.gemini`.
   body. In the body, `$ARGUMENTS` is replaced by the arguments; if the body has no `$ARGUMENTS` and there are
   arguments, they are added after it as `ARGUMENTS: …`. In a message made of blocks, only that text block changes and
   images stay where they were. Desktop's replay and the transcript keep what was typed. agy's own commands go through
-  as typed, as do all commands until agy announces its native roster (which may be empty). `/login` and
+  as typed, as do all commands until agy announces its native roster (which may be empty) or answers the session's
+  first prompt. agy announces one after `session/new`; whether it does after `session/resume` or `session/load` is
+  not known (the installed agy's readable files, its changelog included, don't say). agy writes a prompt's updates before its reply, so a roster not
+  heard by that reply is taken as none, and a resumed session without one expands local skills from its second
+  message on. A roster heard later still takes its names for agy. `/login` and
   `/splice:login` are never expanded, even when a local command has that name: as text alone
   they open Splice Console's Accounts page and never reach agy, and in a message with an image they go to agy as
   typed.
@@ -250,8 +254,16 @@ or writing `~/.gemini`.
     the one the session already has;
   - skills only, and only those the model may choose (not `disable-model-invocation: true`; a `user-invocable:
     false` skill is included);
-  - only skills whose real directory and file stay inside their declared skill root; links outside that root can
-    still appear in local autocomplete, but are not sent in the startup index;
+  - trust follows who wrote the folder, not where a link lands (`SkillRoot.indexPath`). A skill in one of the
+    person's own folders (`<config>/skills`, `~/.agents/skills`, the Desktop plugin's `skills`) is listed whatever its
+    entry or the folder itself links to, because a link there is how toolkits, stow and dotfile managers install
+    skills. It is listed by the path where the person put it (`~/.claude/skills/<name>/SKILL.md`), never by the
+    link's target, so the target's location never goes upstream and agy's read follows the link to what is installed
+    now, as Claude Code's would. A skill in a project's `.claude/skills` is listed only when its real folder and real
+    `SKILL.md` lie inside the project (the repository root that ends the walk, or outside a repository the folder
+    holding that `.claude`), and by its real path, so a link the project wrote can point neither the index nor a
+    later read the model starts at a file outside the project. A skill left out this way still appears in local
+    autocomplete, where only the person can start it;
   - leaving out every skill agy serves itself: one found in an `.agents/skills` folder of the
     session's walk (even when its entry or its `SKILL.md` links elsewhere), one whose real folder is that of such a
     skill (a `.claude/skills` alias that links into `.agents/skills`), and one sharing such a skill's name;

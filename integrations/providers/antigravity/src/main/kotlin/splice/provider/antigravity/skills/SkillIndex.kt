@@ -2,8 +2,10 @@
 // `_meta.antigravity.systemPrompt.append`: the name, a one-line description and the SKILL.md path of each local skill
 // agy does not discover by itself, so agy reads a skill when a task calls for it and loads nothing otherwise. Skills
 // agy serves are left out: one found in an `.agents/skills` folder of the workspace walk (even when its entry links
-// elsewhere), one that is an alias of such a skill's folder, and one sharing such a skill's name. The index never
-// carries Desktop's system prompt.
+// elsewhere), one that is an alias of such a skill's folder, and one sharing such a skill's name. A skill in the
+// person's own folders is listed whatever it links to, by the path where they put it; one in a project's folder only
+// when it really lies inside the project, by its real path (`SkillRoot.indexPath`). The index never carries Desktop's
+// system prompt.
 package splice.provider.antigravity.skills
 
 import java.nio.file.Path
@@ -12,17 +14,17 @@ import java.nio.file.Path
 internal class SkillIndex {
     /** [catalog]'s skills the model may choose and agy does not serve itself, as an index; null when none qualify. A
      *  `disable-model-invocation: true` skill stays out (only the person may start it), while a `user-invocable:
-     *  false` one stays in. agy serves a skill found in one of its [nativeRoots], one whose real folder is that of one
-     *  of its [native] skills (an alias that links there), and one with the name of one of them. */
+     *  false` one stays in, and so does one only when its folder lets the index name it ([SkillPlace.indexPath]).
+     *  agy serves a skill found in one of its [nativeRoots], one whose real folder is that of one of its [native]
+     *  skills (an alias that links there), and one with the name of one of them. */
     fun of(catalog: LocalSkillCatalog, nativeRoots: List<Path>, native: List<LocalSkillItem> = emptyList()): String? {
-        val skills = catalog.commands.filter { skill ->
-            skill.use.byModel && containedSkill(skill) && !agyServes(skill, nativeRoots, native)
-        }
+        val skills = catalog.commands.filter { skill -> skill.use.byModel && !agyServes(skill, nativeRoots, native) }
+            .mapNotNull { skill -> skill.place.indexPath?.let { skill to it } }
         if (skills.isEmpty()) return null
         val lines = mutableListOf(INDEX_HEADER)
         var chars = INDEX_HEADER.length
-        for (skill in skills) {
-            val entry = line(skill)
+        for ((skill, path) in skills) {
+            val entry = line(skill, path)
             if (lines.size > MAX_INDEXED || chars + entry.length + 1 > MAX_INDEX_CHARS) break
             lines += entry
             chars += entry.length + 1
@@ -37,15 +39,12 @@ internal class SkillIndex {
     private fun agyServes(skill: LocalSkillItem, nativeRoots: List<Path>, native: List<LocalSkillItem>): Boolean =
         skill.root in nativeRoots || native.any { it.folder == skill.folder || it.name == skill.name }
 
-    private fun containedSkill(skill: LocalSkillItem): Boolean =
-        skill.folder?.startsWith(skill.root) == true && skill.file.startsWith(skill.root)
-
-    private fun line(skill: LocalSkillItem): String {
+    private fun line(skill: LocalSkillItem, path: Path): String {
         val summary = skill.description.replace(WHITESPACE, " ").trim()
         val cut = MAX_SUMMARY - ELLIPSIS.length
         val short = if (summary.length <= MAX_SUMMARY) summary else summary.take(cut) + ELLIPSIS
         val about = if (short.isEmpty()) "" else ": $short"
-        return "- ${skill.name}$about (${skill.file})"
+        return "- ${skill.name}$about ($path)"
     }
 }
 

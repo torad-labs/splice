@@ -24,9 +24,17 @@ internal class SkillRoots(private val cwd: Path, private val env: EnvReader) {
 
     fun nativeUnder(dir: Path): Path = dir.resolve(AGENTS_DIR).resolve(LOCAL_SKILLS_DIR)
 
-    fun skillDirs(workspace: List<Path>, config: Path): List<Path> =
-        workspace.flatMap { dir -> listOf(claudeUnder(dir).resolve(LOCAL_SKILLS_DIR), nativeUnder(dir)) } +
-            listOf(config.resolve(LOCAL_SKILLS_DIR), nativeUnder(home()))
+    /** The skill folders, nearest first: each [workspace] folder's, which belong to the project (the repository root
+     *  that ends the walk, or outside a repository the folder holding them), then the person's own under [config]
+     *  and home. */
+    fun skillDirs(workspace: List<Path>, config: Path): List<SkillRoot> {
+        val repository = workspace.lastOrNull()?.takeIf(::gitRoot)
+        val project = workspace.flatMap { dir ->
+            listOf(claudeUnder(dir).resolve(LOCAL_SKILLS_DIR), nativeUnder(dir))
+                .map { SkillRoot(it, project = repository ?: dir) }
+        }
+        return project + listOf(config.resolve(LOCAL_SKILLS_DIR), nativeUnder(home())).map { SkillRoot(it) }
+    }
 
     fun commandDirs(workspace: List<Path>, config: Path): List<Path> =
         workspace.map { claudeUnder(it).resolve(LOCAL_COMMANDS_DIR) } + listOf(config.resolve(LOCAL_COMMANDS_DIR))

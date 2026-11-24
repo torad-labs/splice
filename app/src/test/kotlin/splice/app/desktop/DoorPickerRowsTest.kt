@@ -148,6 +148,53 @@ internal class DoorPickerRowsTest {
     }
 
     @Test
+    fun `model_slots serve every bare Claude tier id as the provider's own model, held or by default`() {
+        val slots = mapOf("opus" to "m-big", "sonnet" to "m-mid", "haiku" to "m-small")
+        val lineup = lineupOf(
+            mapping("realinfer", slots) to listOf(model("realinfer", "m-big"), model("realinfer", "m-mid")),
+        )
+        val asked = mapOf("claude-opus-5-5" to "m-big", "claude-sonnet-5-5" to "m-mid", "claude-haiku-4-5" to "m-small")
+        // Held: the session named the provider's selector first.
+        val held = DoorRouting()
+        assertEquals("realinfer", held.of(lineup, ask("realinfer--m-big"), null, named = true)?.provider?.key)
+        for ((claude, upstream) in asked) {
+            val routed = held.of(lineup, ask(claude), null, named = true)
+            assertEquals("realinfer" to upstream, routed?.let { it.provider.key to it.upstream }, claude)
+        }
+        // First turn, no provider held: the caller's default selector's provider maps the tier.
+        for ((claude, upstream) in asked) {
+            val routed = DoorRouting().of(lineup, ask(claude), "realinfer--m-mid", named = true)
+            assertEquals("realinfer" to upstream, routed?.let { it.provider.key to it.upstream }, claude)
+        }
+    }
+
+    @Test
+    fun `a bare Claude id whose tier the provider does not map is still refused, held or by default`() {
+        val lineup = lineupOf(
+            mapping("realinfer", mapOf("haiku" to "m-small")) to listOf(model("realinfer", "m-big")),
+        )
+        val routing = DoorRouting()
+        assertEquals("realinfer", routing.of(lineup, ask("realinfer--m-big"), null, named = true)?.provider?.key)
+        assertNull(routing.of(lineup, ask("claude-opus-5-5"), null, named = true))
+        assertNull(DoorRouting().of(lineup, ask("claude-sonnet-5-5"), "realinfer--m-big", named = true))
+        // The small tier still runs the model the provider names for it.
+        assertEquals("m-small", routing.of(lineup, ask("claude-haiku-4-5"), null, named = true)?.upstream)
+    }
+
+    @Test
+    fun `a provider that serves the exact Claude model wins over another's opus slot`() {
+        val opus = ModelEntry("claude-opus-5-5", "Opus 5.5", contextWindow = 200_000)
+        val lineup = lineupOf(
+            mapping("realinfer", mapOf("opus" to "m-big")) to listOf(model("realinfer", "m-big")),
+            provider("claude", rows = listOf(opus)) to listOf(model("claude", "claude-opus-5-5")),
+        )
+        val routing = DoorRouting()
+        assertEquals("realinfer", routing.of(lineup, ask("realinfer--m-big"), null, named = true)?.provider?.key)
+        val routed = routing.of(lineup, ask("claude-opus-5-5"), null, named = true)
+        assertEquals("claude" to "claude-opus-5-5", routed?.let { it.provider.key to it.upstream })
+    }
+
+    @Test
     fun `a model the picker spells with the 1M hint runs when a turn names it without the hint`() {
         // Claude Code sends `muse--muse-spark-1.3` for the row it lists as `muse--muse-spark-1.3[1m]`.
         val lineup = lineupOf(
@@ -341,6 +388,10 @@ internal class DoorPickerRowsTest {
         vocabulary,
     )
 
+    /** A provider whose `model_slots` maps [tiers], listing the default row. */
+    private fun mapping(key: String, tiers: Map<String, String>): ServedProvider =
+        FakeProvider(key, (provider(key) as FakeProvider).catalog, usesLogin = false, tiers = tiers)
+
     private fun model(provider: String, id: String, discovered: Boolean = false): DoorModel =
         DoorModel("$provider--$id", id, provider, id, discovered = discovered)
 }
@@ -351,9 +402,9 @@ private class FakeProvider(
     override val catalog: ModelCatalog,
     override val usesLogin: Boolean,
     override val effortVocabulary: ChatEffortVocabularyConfig? = null,
+    override val tiers: Map<String, String> = emptyMap(),
 ) :
     ServedProvider {
-    override val tiers: Map<String, String> = emptyMap()
     override val pinnedModel: String = "m"
     override val dialect: String? = null
     override val usage: HeadUsageSource = HeadUsageSource { UsageView(0, 0, null) }

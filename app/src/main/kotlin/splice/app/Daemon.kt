@@ -196,7 +196,7 @@ public class Daemon(
     ).also {
         // `[server.probe]`: how every pool's servers are checked, set before any head (and so any pool) is built.
         // Assigned rather than passed: every constructor between here and the pools is at its width ceiling.
-        it.providerAssembly.upstreamPools.probe = topology.server.probe
+        it.providerAssembly.upstreamPools.configure(topology.server.probe, topologyDir)
     }
 
     // The collaborators the file-level/same-file helpers became (Kotlin style law, 2026-08-15;

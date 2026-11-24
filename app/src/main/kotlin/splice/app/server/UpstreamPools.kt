@@ -26,7 +26,7 @@ import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.codemode.ProcessTicker
 import splice.upstream.readiness.ReadinessReading
 import splice.upstream.transport.LocalHttp
-import java.time.Duration
+import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 
 /** The headers a request the daemon itself makes of a provider's server carries (a health check, an OpenAI-style
@@ -37,13 +37,9 @@ internal fun interface ServerHeaders {
     fun now(): Map<String, String>
 }
 
-/** How a check reaches a server: the JDK client in production (JdkHealthHttp), a scripted one in a test. [timeout]
- *  bounds how long the server may take to answer; null keeps the bound a health check always had. */
+/** Binds the current request headers to a reusable probe client. */
 internal fun interface HealthHttp {
-    fun with(headers: Map<String, String>, timeout: Duration?): LocalHttp
-
-    /** A client whose requests keep the bound a health check always had. */
-    fun with(headers: Map<String, String>): LocalHttp = with(headers, null)
+    fun with(headers: Map<String, String>): LocalHttp
 }
 
 internal class UpstreamPools(
@@ -62,10 +58,13 @@ internal class UpstreamPools(
     private val order = ConcurrentHashMap<String, Int>()
     private val carried = ConcurrentHashMap<String, ServerHeaders>()
 
-    /** `[server.probe]` as booted, which every pool made from then is checked by. The daemon sets it before it builds
-     *  any head; unset, a pool is checked as server mode always checked one, `/health` with each server up at start. */
     @Volatile
-    var probe: ServerProbe = ServerProbe()
+    private var checks = PoolCheck.Plan(http, log)
+
+    /** Set before any pool is made. Without this, a pool checks `/health` and starts each server up. */
+    fun configure(probe: ServerProbe, configDir: Path?) {
+        checks = PoolCheck.Plan(http, log, probe, configDir)
+    }
 
     /** Each server of every pool made from now takes at most [most] turns at once, server mode's
      *  `inflight_per_upstream` (#791). The daemon says it as it wires server mode, before any head, and so before any
@@ -83,8 +82,15 @@ internal class UpstreamPools(
         if (provider.upstreams.isEmpty()) return null
         return pools.computeIfAbsent(key) {
             order[key] = order.size
-            val check = PoolCheck.Plan(probe).of(provider.healthSeconds, headers, ready)
-            UpstreamPool(key, provider.upstreams, log, cap = each, startHealthy = check.startHealthy).also { pool ->
+            val check = checks.of(key, provider, headers, ready)
+            UpstreamPool(
+                key,
+                provider.upstreams,
+                log,
+                cap = each,
+                startHealthy = check.startHealthy,
+                allowUnhealthyFallback = check is PoolCheck.Health,
+            ).also { pool ->
                 pool.upstreams.forEach { watch(Watched(pool, check), it, waitFirst = false) }
             }
         }
@@ -122,7 +128,7 @@ internal class UpstreamPools(
 
     /** One check of [upstream]. A check that could not be made is read as one that failed. */
     private suspend fun ask(watched: Watched, upstream: UpstreamConfig) {
-        val reading = Cancellables.runCatchingCancellable { watched.check.ask(http, upstream) }.fold(
+        val reading = Cancellables.runCatchingCancellable { watched.check.ask(upstream) }.fold(
             onSuccess = { it },
             onFailure = { ReadinessReading(false, "the check failed: ${SafeFailureText.render(it)}") },
         )

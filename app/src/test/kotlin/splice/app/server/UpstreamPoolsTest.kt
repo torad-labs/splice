@@ -64,7 +64,7 @@ class UpstreamPoolsTest {
             waited += everyMs
             nextCheck.receive()
         },
-        http = { headers, _ ->
+        http = { headers ->
             carried += headers
             { _, url, _ ->
                 asked += url

@@ -6,14 +6,21 @@
 // a server takes no turn until its first completion comes back.
 package splice.app.server
 
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.withTimeoutOrNull
 import splice.app.probe.MS_PER_SECOND
+import splice.app.provider.local.JdkHealthHttp
+import splice.app.provider.tls.ProviderTrust
 import splice.core.auth.AuthProvider
 import splice.core.auth.CredentialKey
+import splice.core.topology.ProviderConfig
 import splice.core.topology.ServerProbe
 import splice.core.topology.UpstreamConfig
+import splice.core.util.LogSink
 import splice.upstream.readiness.ReadinessProbe
 import splice.upstream.readiness.ReadinessReading
 import splice.upstream.transport.UpstreamHeaders
+import java.nio.file.Path
 import java.time.Duration
 
 /** What a pooled server is asked by a completion probe, as the head's arm knows it: its dialect's question
@@ -43,15 +50,18 @@ internal sealed class PoolCheck {
     /** Whether a server takes turns before its first check comes back. */
     abstract val startHealthy: Boolean
 
-    /** Asks [upstream] over [http] once. The request itself blocks, as a health check's always did. */
-    abstract suspend fun ask(http: HealthHttp, upstream: UpstreamConfig): ReadinessReading
+    /** Asks [upstream] once. */
+    abstract suspend fun ask(upstream: UpstreamConfig): ReadinessReading
 
-    /** `kind = "health"`: `GET /health` beside the server's API root with the headers a turn carries, up on any 2xx.
-     *  A server starts up, and the body is never read. */
-    class Health(override val everyMs: Long, private val headers: ServerHeaders) : PoolCheck() {
+    /** `kind = "health"`: `GET /health` beside the server's API root with the headers a turn carries, up on any 2xx. */
+    class Health(
+        override val everyMs: Long,
+        private val headers: ServerHeaders,
+        private val http: HealthHttp,
+    ) : PoolCheck() {
         override val startHealthy: Boolean = true
 
-        override suspend fun ask(http: HealthHttp, upstream: UpstreamConfig): ReadinessReading {
+        override suspend fun ask(upstream: UpstreamConfig): ReadinessReading {
             val reply = http.with(headers.now())("GET", upstream.healthUrl, null)
                 ?: return ReadinessReading(false, "no answer")
             return ReadinessReading(reply.status in OK_FROM until OK_BELOW, "HTTP ${reply.status}")
@@ -66,27 +76,39 @@ internal sealed class PoolCheck {
         private val timeout: Duration,
         override val everyMs: Long,
         override val startHealthy: Boolean,
+        private val http: HealthHttp,
     ) : PoolCheck() {
-        override suspend fun ask(http: HealthHttp, upstream: UpstreamConfig): ReadinessReading {
+        override suspend fun ask(upstream: UpstreamConfig): ReadinessReading {
             val request = ready.readiness.request(upstream.base, model)
-            val reply = http.with(ready.headers(), timeout)("POST", request.url, request.body)
-                ?: return ReadinessReading(false, "no answer within ${timeout.seconds} s")
+            val client = http.with(ready.headers())
+            // Java 21's request timeout ends at the headers. Interrupting send cancels the exchange while its body
+            // handler is still reading, so even an unfinished response cannot keep this member advertised as ready.
+            val reply = withTimeoutOrNull(timeout.toMillis()) {
+                runInterruptible { client("POST", request.url, request.body) }
+            } ?: return ReadinessReading(false, "no answer within ${timeout.seconds} s")
             return ready.readiness.read(reply.status, reply.body)
         }
     }
 
-    /** How `[server.probe]`, as booted, has a pool's servers asked: `/health` every [healthSeconds] (the provider's
-     *  `health_seconds`) with [headers], or the completion [ready] asks, every `every_seconds`. */
-    class Plan(private val probe: ServerProbe) {
-        fun of(healthSeconds: Int, headers: ServerHeaders, ready: PoolReadiness): PoolCheck {
-            if (probe.kind != COMPLETION_KIND) return Health(healthSeconds * MS_PER_SECOND, headers)
+    /** The configured check policy and the directory provider-relative files resolve against. */
+    class Plan(
+        private val healthHttp: HealthHttp,
+        private val log: LogSink,
+        private val probe: ServerProbe = ServerProbe(),
+        private val configDir: Path? = null,
+    ) {
+        fun of(key: String, provider: ProviderConfig, headers: ServerHeaders, ready: PoolReadiness): PoolCheck {
+            if (probe.kind != COMPLETION_KIND) {
+                return Health(provider.healthSeconds * MS_PER_SECOND, headers, healthHttp)
+            }
+            val timeout = Duration.ofSeconds(probe.timeoutSeconds.toLong())
             return Completion(
                 ready,
                 checkNotNull(probe.model) { "a completion probe names its model (boot refuses one that does not)" },
-                Duration.ofSeconds(probe.timeoutSeconds.toLong()),
+                timeout,
                 probe.everySeconds * MS_PER_SECOND,
-                // at_start holds each server out until its first completion comes back.
                 startHealthy = !probe.atStart,
+                http = JdkHealthHttp(ProviderTrust(log).manager(key, provider.caFile, configDir), timeout),
             )
         }
     }

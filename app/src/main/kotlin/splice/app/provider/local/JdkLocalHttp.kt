@@ -15,6 +15,8 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
+import javax.net.ssl.SSLContext
+import javax.net.ssl.X509TrustManager
 
 private const val CONNECT_TIMEOUT_S = 2L
 private const val PROBE_TIMEOUT_S = 5L
@@ -84,15 +86,17 @@ internal class JdkLocalHttp(
 
 internal class LocalHttpBodyTooLarge : IOException("HTTP body is too large")
 
-/** Server mode's health checks (F4) over the JDK client: one client for every check of every pool, because a JDK
- *  client holds a selector thread of its own, made at the first check. A server still connecting after the probes'
- *  two seconds is read as down. A completion readiness probe names its own deadline; a health check keeps the one its
- *  URL gives. */
-internal class JdkHealthHttp : HealthHttp {
+/** Legacy health checks share a default-trust client. Completion checks share a separate client per pool with its
+ *  provider's trust and request timeout. A client and its selector thread are created on first use. */
+internal class JdkHealthHttp(
+    trust: X509TrustManager? = null,
+    private val timeout: Duration? = null,
+) : HealthHttp {
     private val client by lazy {
-        HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_S)).build()
+        val builder = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_S))
+        if (trust != null) builder.sslContext(SSLContext.getInstance("TLS").apply { init(null, arrayOf(trust), null) })
+        builder.build()
     }
 
-    override fun with(headers: Map<String, String>, timeout: Duration?): LocalHttp =
-        JdkLocalHttp(headers, client, timeout)
+    override fun with(headers: Map<String, String>): LocalHttp = JdkLocalHttp(headers, client, timeout)
 }

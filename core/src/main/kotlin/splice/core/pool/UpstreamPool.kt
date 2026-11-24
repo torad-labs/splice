@@ -15,9 +15,8 @@
 //     never add up past the cap; the turn's first lease takes the place, and its end gives back one never taken;
 //   - a health check that fails takes a server out, and so does a connection it refuses, at once and before the next
 //     check; only a health check that passes brings it back;
-//   - with none healthy and no cap a lease is still given, on the least busy of them all: whoever sends a turn anyway
-//     then hears the server's own answer. Under a cap none is given on a server that is down. The server listener
-//     asks [UpstreamPool.up] first and refuses the turn itself.
+//   - only a legacy health-checked pool without a cap still gives a lease when none is healthy, so whoever sends a
+//     turn anyway hears the server's own answer. Completion-checked pools never give a lease on a down server.
 //
 // A server starts healthy, so a daemon that just booted serves before its first check lands; the first check and the
 // first refused connection correct that within moments. Where a completion probe holds each server out until one passes
@@ -63,6 +62,8 @@ public class UpstreamPool(
     /** Whether a server takes turns before its first check answers: true, as server mode always did, unless a
      *  completion probe holds each one out until it passes. */
     startHealthy: Boolean = true,
+    /** Whether an uncapped pool may still try down servers when none is up, for legacy health checks only. */
+    private val allowUnhealthyFallback: Boolean = startHealthy,
 ) {
     private val members = upstreams.map { UpstreamMember(it, startHealthy) }
     private val homes = SessionHomes()
@@ -104,9 +105,9 @@ public class UpstreamPool(
     }
 
     /** A place on the server a turn goes to now: the one that served [session]'s last turn while it is healthy, else
-     *  [preferred] while a server of that name is healthy, else the healthy one with the least in flight; with no cap
-     *  and none healthy, the least busy of them all. Under a cap a server that is full is passed over: a session whose
-     *  home is full goes to the least busy healthy server with room and keeps its home, since its prompt is cached
+     *  [preferred] while a server of that name is healthy, else the healthy one with the least in flight. Only legacy
+     *  health checks allow an uncapped pool with no healthy server to try a down one. Under a cap a session whose home
+     *  is full goes to the least busy healthy server with room and keeps its home, since its prompt is cached
      *  there. A [turn] server mode reserved a place for takes it here; any other lease takes a place only where one is
      *  left beside the reserved ones. Under a cap no lease is ever given on a server that is full or down: with no place
      *  left, null, and the turn is sent nowhere ([full] says why to its person while one is up). A healthy server
@@ -134,12 +135,12 @@ public class UpstreamPool(
         else -> open.firstOrNull { it.config.name == preferred } ?: open.minBy { it.inflight }
     }
 
-    /** The servers a lease may take: the healthy ones, or with no cap and none healthy all of them (whoever sends a
-     *  turn anyway hears the server's own answer). Under a cap only healthy ones under it, and only for a lease holding
-     *  a reserved place or while a place is left beside the reserved ones: null when that leaves none, so no lease is
-     *  given past the cap or on a server that is down. */
+    /** Healthy servers with room, or all servers if the uncapped legacy fallback applies; null if no lease is possible. */
     private fun open(healthy: List<UpstreamMember>, reserved: Boolean): List<UpstreamMember>? {
-        if (each <= 0) return healthy.ifEmpty { members }
+        if (each <= 0) {
+            val available = if (healthy.isEmpty() && allowUnhealthyFallback) members else healthy
+            return available.takeIf { it.isNotEmpty() }
+        }
         val roomy = healthy.filter { it.inflight < each }
         val spare = reserved || room(healthy) > reservations.size
         return roomy.takeIf { spare && it.isNotEmpty() }

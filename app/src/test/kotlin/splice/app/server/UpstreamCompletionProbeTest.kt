@@ -6,6 +6,8 @@ package splice.app.server
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import com.sun.net.httpserver.HttpsConfigurator
+import com.sun.net.httpserver.HttpsServer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,8 +22,10 @@ import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.app.provider.local.JdkHealthHttp
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
@@ -35,12 +39,17 @@ import splice.core.topology.UpstreamConfig
 import splice.dialect.chat.ChatReadinessProbe
 import splice.upstream.Ticker
 import java.net.InetSocketAddress
+import java.nio.file.Files
+import java.nio.file.Path
+import java.security.KeyStore
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.KeyManagerFactory
+import javax.net.ssl.SSLContext
 
 class UpstreamCompletionProbeTest {
     /** One request a pool's server got: which server, its method and path, the headers it carried, and its body. */
@@ -51,6 +60,8 @@ class UpstreamCompletionProbeTest {
         data class Reply(val status: Int, val body: String) : Answer()
 
         data object Held : Answer()
+
+        data object StalledBody : Answer()
     }
 
     private val asked = CopyOnWriteArrayList<Asked>()
@@ -78,7 +89,15 @@ class UpstreamCompletionProbeTest {
         val headers = exchange.requestHeaders.entries.associate { (key, values) -> key.lowercase() to values.first() }
         asked += Asked(name, "${exchange.requestMethod} ${exchange.requestURI.path}", headers, body)
         if (answers[name] == Answer.Held) held.await(HELD_LIMIT_S, TimeUnit.SECONDS)
-        val now = answers[name] as? Answer.Reply ?: return
+        val now = answers[name]
+        if (now == Answer.StalledBody) {
+            exchange.sendResponseHeaders(200, COMPLETED.toByteArray().size.toLong())
+            exchange.responseBody.write('{'.code)
+            exchange.responseBody.flush()
+            held.await(HELD_LIMIT_S, TimeUnit.SECONDS)
+            return
+        }
+        if (now !is Answer.Reply) return
         val bytes = now.body.toByteArray()
         exchange.sendResponseHeaders(now.status, if (bytes.isEmpty()) -1 else bytes.size.toLong())
         exchange.responseBody.write(bytes)
@@ -113,7 +132,7 @@ class UpstreamCompletionProbeTest {
 
     /** The box's pool with [probe] as `[server.probe]`, over the real JDK client, with the clock the test's. Its first
      *  probes are under way when it returns. */
-    private fun pool(probe: ServerProbe): UpstreamPool {
+    private fun pool(probe: ServerProbe, provider: ProviderConfig = box, configDir: Path? = null): UpstreamPool {
         val pools = UpstreamPools(
             scope = scope,
             log = { logged += it },
@@ -125,20 +144,22 @@ class UpstreamCompletionProbeTest {
                 next.await()
                 true
             },
-        ).also { it.probe = probe }
-        val ready = PoolReadiness(ChatReadinessProbe("max_tokens"), login, box.staticHeaders)
-        return checkNotNull(pools.of("box", box, ready) { box.staticHeaders })
+        ).also { it.configure(probe, configDir) }
+        val ready = PoolReadiness(ChatReadinessProbe("max_tokens"), login, provider.staticHeaders)
+        return checkNotNull(pools.of("box", provider, ready) { provider.staticHeaders })
     }
 
     /** Waits until every server's probe of this round has been read. */
-    private fun landed() = runBlocking { withTimeout(ROUND_LIMIT_MS) { repeat(servers.size) { probed.receive() } } }
+    private fun landed(limitMs: Long = ROUND_LIMIT_MS) = runBlocking {
+        withTimeout(limitMs) { repeat(servers.size) { probed.receive() } }
+    }
 
     /** Runs every server's next probe, one interval on, and waits until each has been read. */
-    private fun nextRound() {
+    private fun nextRound(limitMs: Long = ROUND_LIMIT_MS) {
         val open = round
         round = CompletableDeferred()
         open.complete(Unit)
-        landed()
+        landed(limitMs)
     }
 
     private fun healthy(pool: UpstreamPool): List<Boolean> = pool.readings().map { it.healthy }
@@ -152,6 +173,7 @@ class UpstreamCompletionProbeTest {
         answers["gpu-2"] = Answer.Held
         val pool = pool(completion())
         assertFalse(pool.up, "no server has completed a probe yet, so the pool takes no turn")
+        assertNull(pool.lease(), "a turn without the listener precheck must also be held out")
         assertEquals(listOf(false, false), healthy(pool))
 
         answers["gpu-1"] = Answer.Reply(200, COMPLETED)
@@ -218,6 +240,55 @@ class UpstreamCompletionProbeTest {
     }
 
     @Test
+    fun `a stalled completion body takes a previously ready server out and does not stop its next probe`() {
+        answers["gpu-1"] = Answer.Reply(200, COMPLETED)
+        answers["gpu-2"] = Answer.Reply(200, COMPLETED)
+        val pool = pool(completion(timeoutSeconds = 1))
+        landed()
+        assertEquals(listOf(true, true), healthy(pool))
+
+        answers["gpu-2"] = Answer.StalledBody
+        nextRound(limitMs = 5_000)
+        assertEquals(listOf(true, false), healthy(pool))
+        assertTrue(logged.any { "gpu-2 failed its health check (no answer within 1 s)" in it }, logged.toString())
+
+        answers["gpu-2"] = Answer.Reply(200, COMPLETED)
+        nextRound()
+        assertEquals(listOf(true, true), healthy(pool))
+    }
+
+    @Test
+    fun `a completion probe trusts its provider's CA without changing legacy health trust`(@TempDir dir: Path) {
+        answers["gpu-1"] = Answer.Reply(200, COMPLETED)
+        val tls = ProbeTls(dir)
+        val secure = HttpsServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
+            httpsConfigurator = HttpsConfigurator(tls.context)
+            executor = threads
+            createContext("/") { exchange -> exchange.use { answer("gpu-1", it) } }
+            start()
+        }
+        try {
+            val provider = box.copy(
+                caFile = tls.caFile.fileName.toString(),
+                upstreams = box.upstreams.map { it.copy(url = "https://127.0.0.1:${secure.address.port}/v1") },
+            )
+            val untrusted = pool(completion(), provider.copy(caFile = null))
+            landed()
+            assertEquals(listOf(false, false), healthy(untrusted), "the CA is not in the default roots")
+
+            val trusted = pool(completion(), provider, dir)
+            landed()
+            assertEquals(listOf(true, true), healthy(trusted), logged.toString())
+
+            val legacy = pool(ServerProbe(), provider, dir)
+            landed()
+            assertEquals(listOf(false, false), healthy(legacy), "legacy health still uses its original trust")
+        } finally {
+            secure.stop(0)
+        }
+    }
+
+    @Test
     fun `a server that stops completing leaves at the next probe, and comes back at the probe after it completes`() {
         answers["gpu-1"] = Answer.Reply(200, COMPLETED)
         answers["gpu-2"] = Answer.Reply(200, REASONED_AWAY)
@@ -242,6 +313,7 @@ class UpstreamCompletionProbeTest {
         answers["gpu-2"] = Answer.Held
         val pool = pool(completion().copy(atStart = false))
         assertEquals(listOf(true, true), healthy(pool), "up before the first probe comes back")
+        checkNotNull(pool.lease()).release()
 
         answers["gpu-1"] = Answer.Reply(200, COMPLETED)
         answers["gpu-2"] = Answer.Reply(503, "")
@@ -249,6 +321,10 @@ class UpstreamCompletionProbeTest {
         landed()
         nextRound()
         assertEquals(listOf(true, false), healthy(pool))
+        answers["gpu-1"] = Answer.Reply(503, "")
+        nextRound()
+        assertFalse(pool.up)
+        assertNull(pool.lease(), "at_start does not let a server take turns after failed completion probes")
     }
 
     @Test
@@ -265,9 +341,83 @@ class UpstreamCompletionProbeTest {
         assertEquals(listOf(true, false), healthy(pool))
         assertEquals(setOf("GET /health"), asked.map { it.call }.toSet(), "only /health is ever asked")
         assertEquals(setOf("blue"), asked.map { it.headers["x-box-team"] }.toSet())
+        answers["gpu-1"] = Answer.Reply(503, "")
+        nextRound()
+        assertFalse(pool.up)
+        // An uncapped legacy pool still sends the turn for the server's own answer.
+        checkNotNull(pool.lease()).release()
     }
 }
 
+/** An ephemeral private CA and an IP-matching loopback certificate issued by it. */
+private class ProbeTls(dir: Path) {
+    val caFile: Path = dir.resolve("ca.pem")
+    val context: SSLContext
+
+    init {
+        val root = dir.resolve("root.p12")
+        val leaf = dir.resolve("leaf.p12")
+        val csr = dir.resolve("leaf.csr")
+        val cert = dir.resolve("leaf.pem")
+        keytool(
+            root,
+            "-genkeypair",
+            "-alias",
+            "root",
+            "-keyalg",
+            "EC",
+            "-dname",
+            "CN=Probe Test CA",
+            "-validity",
+            "2",
+            "-ext",
+            "bc=ca:true",
+        )
+        keytool(root, "-exportcert", "-alias", "root", "-rfc", "-file", caFile.toString())
+        keytool(leaf, "-genkeypair", "-alias", "leaf", "-keyalg", "EC", "-dname", "CN=127.0.0.1")
+        keytool(leaf, "-certreq", "-alias", "leaf", "-file", csr.toString())
+        keytool(
+            root,
+            "-gencert",
+            "-alias",
+            "root",
+            "-infile",
+            csr.toString(),
+            "-outfile",
+            cert.toString(),
+            "-rfc",
+            "-validity",
+            "2",
+            "-ext",
+            "san=ip:127.0.0.1",
+        )
+        keytool(leaf, "-importcert", "-noprompt", "-alias", "root", "-file", caFile.toString())
+        keytool(leaf, "-importcert", "-noprompt", "-alias", "leaf", "-file", cert.toString())
+        val password = LOOPBACK_STORE_PASS.toCharArray()
+        val keys = KeyStore.getInstance("PKCS12").apply { Files.newInputStream(leaf).use { load(it, password) } }
+        val managers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
+            .apply { init(keys, password) }.keyManagers
+        context = SSLContext.getInstance("TLS").apply { init(managers, null, null) }
+    }
+
+    private fun keytool(store: Path, vararg args: String) {
+        val tool = Path.of(System.getProperty("java.home"), "bin", "keytool").toString()
+        val process = ProcessBuilder(
+            tool,
+            *args,
+            "-keystore",
+            store.toString(),
+            "-storetype",
+            "PKCS12",
+            "-storepass",
+            LOOPBACK_STORE_PASS,
+        ).redirectErrorStream(true).start()
+        val output = process.inputStream.use { it.readAllBytes().decodeToString() }
+        check(process.waitFor() == 0) { "keytool failed: $output" }
+    }
+}
+
+private const val LOOPBACK_STORE_PASS = "loopback-probe-test"
 private const val MODEL = "team-model"
 
 // A completion's envelope, as an OpenAI-compatible server answers one token.

@@ -331,6 +331,19 @@ internal class DesktopAcpTest {
         seen.forEach { assertFalse("superseded" in it.toString()) }
     }
 
+    @Test
+    fun `session record never recreates its file after remove closes it`() {
+        val config = tmp.resolve("closed-record")
+        val facts = SessionFacts(ProcessHandle.current().pid(), "s-close", tmp.toString(), "2.1.328", "sdk-cli", null)
+        val record = ClaudeSessionRecord(config, facts, WallClock { CLOCK }, LogSink {})
+        record.write(busy = false)
+        assertTrue(Files.isRegularFile(record.file))
+        record.remove()
+        assertFalse(Files.exists(record.file))
+        record.write(busy = true)
+        assertFalse(Files.exists(record.file), "write after remove must not recreate the session record")
+    }
+
     /** Desktop's session on the agent [script], driven by [drive]; every line Desktop received, in order. */
     private fun rig(
         script: String,

@@ -16,7 +16,7 @@ import java.nio.file.Path
 private const val PEER_JOURNAL_ROTATE_BYTES = 50L * 1024 * 1024
 
 private const val PEER_JOURNAL_LIVE_FILE = "journal.jsonl"
-private const val PEER_JOURNAL_ROLLED_FILE = "journal.1.jsonl"
+internal const val PEER_JOURNAL_ROLLED_FILE = "journal.1.jsonl"
 
 /**
  * One peer's journal, in [dir] (`<state dir>/peers/<name>`). The writes are internal to the package: the helper's

@@ -1126,6 +1126,10 @@ discovery_prefix = "claude--"
 #   SPLICE_PEER_KEY_FILE    the peer key file `splice peer send|inbox|status` presents, in place of
 #                           <settings dir>/peers/<--as>/peer.key; a path, never the key itself, so the
 #                           key stays out of argv and the environment's own dumps
+#   SPLICE_PEER_NAME        the peer name `splice peer send|inbox|status` defaults to when `--as` and
+#                           SPLICE_PEER_KEY_FILE are unset; exported by `splice desktop acp` and `splice peer attach --env`
+#   SPLICE_PEER_HARNESS_PROGRAMS  comma-separated extra harness executable names recognized as peer owners
+#                           by `splice peer register` and `splice peer attach` alongside `claude`, `codex` and `agy`
 #   CODEX_THREAD_ID / CODEX_SESSION_ID  optional. Codex does not set either in a hook's environment (codex-cli 0.159):
 #                           the hook's stdin is one JSON object, and `splice peer codex attach|detach` reads its
 #                           session_id as the thread and its cwd, when present, as the working directory. An

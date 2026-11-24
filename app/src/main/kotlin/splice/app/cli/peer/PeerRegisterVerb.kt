@@ -3,6 +3,7 @@
 package splice.app.cli.peer
 
 import splice.core.terminal.TerminalOutput
+import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 
 /** `splice peer register`, which presents the management key. Null on a bad argv, for the usage line. */
@@ -10,11 +11,12 @@ internal class PeerRegisterVerb(
     private val call: PeerCall,
     private val out: TerminalOutput,
     private val err: TerminalOutput,
+    private val env: EnvReader = EnvReader(System::getenv),
 ) {
     fun run(args: List<String>): Int? {
         val parsed = PeerArgsParser(setOf("--cwd", "--send-to", "--owner"), emptySet()).parse(args)
         val name = parsed?.words?.singleOrNull() ?: return null
-        val body = PeerRegistrationBody.build(name, parsed.values) ?: return notRunning(parsed.values["--owner"])
+        val body = PeerRegistrationBody.build(name, parsed.values, env) ?: return notRunning(parsed.values["--owner"])
         return call.managementKey()?.let { registered(call.call("POST", "/api/peers", it, body)) } ?: PeerExit.REFUSED
     }
 

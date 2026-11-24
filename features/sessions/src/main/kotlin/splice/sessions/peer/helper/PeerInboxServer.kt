@@ -19,6 +19,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import splice.core.util.Cancellables
 import splice.sessions.note.PEER_MAX_LINE_BYTES
+import splice.sessions.note.PeerAuthLine
 import splice.sessions.note.PeerTargets
 import splice.sessions.note.PeerWire
 import splice.sessions.peer.InboundFrame
@@ -153,12 +154,14 @@ public class PeerInboxServer(
     }
 
     private fun authOf(line: String): ConnectionAuth {
-        val claimed = PeerWire.authToken(line)
-        val auth = when {
-            claimed == null -> ConnectionAuth.NONE
-            MessageDigest.isEqual(claimed.toByteArray(Charsets.UTF_8), token.toByteArray(Charsets.UTF_8)) ->
-                ConnectionAuth.TOKEN
-            else -> ConnectionAuth.BAD
+        val auth = when (val parsed = PeerWire.authLine(line)) {
+            PeerAuthLine.Absent -> ConnectionAuth.NONE
+            PeerAuthLine.Malformed -> ConnectionAuth.BAD
+            is PeerAuthLine.Token -> {
+                val expected = token.toByteArray(Charsets.UTF_8)
+                val given = parsed.token.toByteArray(Charsets.UTF_8)
+                if (MessageDigest.isEqual(given, expected)) ConnectionAuth.TOKEN else ConnectionAuth.BAD
+            }
         }
         log.count("auth: ${auth.name.lowercase()}")
         return auth

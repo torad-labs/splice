@@ -26,6 +26,7 @@ internal class AgyLaunch(
     private val command: List<String>,
     private val cwd: Path,
     private val io: CoroutineDispatcher,
+    private val extraEnv: Map<String, String> = emptyMap(),
 ) {
     /** agy started for [claude] in [scope]. */
     fun start(claude: ClaudeArgs, scope: CoroutineScope): StartedAgy {
@@ -35,7 +36,7 @@ internal class AgyLaunch(
         if (scratch.path == null) return StartedAgy(null, null, scratch.reason)
         return try {
             StartedAgy(
-                AcpConnection(command + flags, cwd, scratch.path.resolve("agy.err").toFile(), scope, io),
+                AcpConnection(command + flags, cwd, scratch.path.resolve("agy.err").toFile(), scope, io, extraEnv),
                 scratch,
                 "",
             )

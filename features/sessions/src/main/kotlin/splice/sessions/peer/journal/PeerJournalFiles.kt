@@ -18,7 +18,15 @@ internal class PeerJournalFiles(private val dir: Path) {
      *  close. */
     fun prepare() {
         val parent = dir.parent
-        if (parent != null) rejectSymlinkDir(parent, "a peer's state folder parent")
+        if (parent != null) {
+            rejectSymlinkDir(parent, "a peer's state folder parent")
+            if (parent.fileName?.toString() == "peers") {
+                val parentOpen = SecureFile.ownerOnlyDirectory(parent)
+                if (parentOpen != null) {
+                    throw IOException("a peer's state folder parent is not owner-only: $parentOpen")
+                }
+            }
+        }
         rejectSymlinkDir(dir, "a peer's state folder")
         val open = SecureFile.ownerOnlyDirectory(dir)
         if (open != null) throw IOException("a peer's state folder is not owner-only: $open")
@@ -36,7 +44,9 @@ internal class PeerJournalFiles(private val dir: Path) {
         prepare()
         rejectSymlinkFile(live)
         rejectSymlinkFile(rolled)
+        if (Files.exists(live, LinkOption.NOFOLLOW_LINKS)) enforce0600(live)
         Files.move(live, rolled, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+        enforce0600(rolled)
         fresh(live)
     }
 
@@ -48,21 +58,32 @@ internal class PeerJournalFiles(private val dir: Path) {
     }
 
     private fun fresh(file: Path) {
+        val lockFile = file.resolveSibling("${file.fileName}.lock")
+        val rolledFile = dir.resolve(PEER_JOURNAL_ROLLED_FILE)
         rejectSymlinkFile(file)
-        rejectSymlinkFile(file.resolveSibling("${file.fileName}.lock"))
+        rejectSymlinkFile(lockFile)
+        rejectSymlinkFile(rolledFile)
+        if (Files.exists(lockFile, LinkOption.NOFOLLOW_LINKS)) enforce0600(lockFile)
+        if (Files.exists(rolledFile, LinkOption.NOFOLLOW_LINKS)) enforce0600(rolledFile)
         if (Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
-            if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
-                throw IOException("a peer's journal path is not a regular file: $file")
-            }
+            enforce0600(file)
             return
         }
         try {
             SecureFile.createNew0600(file, ByteArray(0))
         } catch (_: FileAlreadyExistsException) {
-            if (Files.isSymbolicLink(file) || !Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
-                throw IOException("a peer's journal path is not a regular file: $file")
-            }
+            rejectSymlinkFile(file)
+            enforce0600(file)
         }
+    }
+
+    private fun enforce0600(path: Path) {
+        if (Files.isSymbolicLink(path) || !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
+            throw IOException("a peer's journal path is not a regular file: $path")
+        }
+        if (SecureFile.CREATE_0600 == null) return
+        val refusal = SecureFile.set0600(path)
+        if (refusal != null) throw IOException("a peer's journal file could not be tightened to 0600: $refusal")
     }
 
     private fun rejectSymlinkDir(path: Path, label: String) {

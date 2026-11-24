@@ -4,6 +4,8 @@
 // 3. Repeated/concurrent closeRecord calls emit SESSION_END at most once.
 package splice.provider.antigravity
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.runBlocking
@@ -24,6 +26,8 @@ import splice.provider.antigravity.peer.DesktopPeerMessage
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 internal class DesktopSessionLifecycleTest {
@@ -82,6 +86,54 @@ internal class DesktopSessionLifecycleTest {
         assertFalse(Files.exists(recordPath()), "session record must be removed before teardown finishes")
         assertEquals(1, inbox.closedCount.get(), "peer inbox must be closed exactly once")
     }
+
+    @Test
+    fun `shutdown hook during Opening blocks until record removal, inbox close, and SESSION_END finish`() =
+        runBlocking {
+            val phases = Collections.synchronizedList(mutableListOf<ForegroundToolPhase>())
+            val inbox = FakePeerInbox()
+            val insideOpened = CountDownLatch(1)
+            val allowOpenedReturn = CountDownLatch(1)
+            val hookEntered = CountDownLatch(1)
+            val hookReturned = CountDownLatch(1)
+            val hooks = AcpSessionHooks(
+                foreground = ForegroundToolActivity { call ->
+                    phases += call.phase
+                    if (call.phase == ForegroundToolPhase.SESSION_START) {
+                        insideOpened.countDown()
+                        assertTrue(allowOpenedReturn.await(5, TimeUnit.SECONDS))
+                    }
+                },
+            )
+            val session = buildSession(PartsFactory { id -> buildParts(id, inbox) }, hooks)
+            val openJob = async(Dispatchers.IO) { session.ensureOpen(emptyList()) }
+            assertTrue(insideOpened.await(5, TimeUnit.SECONDS), "open must enter hooks.opened")
+            assertTrue(Files.exists(recordPath()), "record exists while Opening")
+
+            val hookJob = async(Dispatchers.IO) {
+                hookEntered.countDown()
+                session.closeRecord()
+                hookReturned.countDown()
+            }
+            assertTrue(hookEntered.await(5, TimeUnit.SECONDS))
+            assertFalse(
+                hookReturned.await(150, TimeUnit.MILLISECONDS),
+                "shutdown hook must wait while Opening is still in progress",
+            )
+
+            allowOpenedReturn.countDown()
+            assertTrue(hookReturned.await(5, TimeUnit.SECONDS), "shutdown hook must return once teardown settles")
+            assertEquals(
+                listOf(ForegroundToolPhase.SESSION_START, ForegroundToolPhase.SESSION_END),
+                phases,
+                "SESSION_END must already be emitted when the shutdown hook returns",
+            )
+            assertFalse(Files.exists(recordPath()), "session record must already be removed before hook returns")
+            assertEquals(1, inbox.closedCount.get(), "peer inbox must already be closed before hook returns")
+
+            openJob.await()
+            hookJob.await()
+        }
 
     @Test
     fun `repeated closeRecord calls after open emit SESSION_END exactly once`() = runBlocking {

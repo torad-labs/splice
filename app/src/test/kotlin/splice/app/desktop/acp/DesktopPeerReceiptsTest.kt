@@ -31,7 +31,9 @@ import splice.sessions.peer.store.PeerRegistration
 import splice.sessions.peer.store.PeerRequest
 import splice.sessions.peer.store.PeerStore
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 
 class DesktopPeerReceiptsTest {
     @TempDir
@@ -174,6 +176,47 @@ class DesktopPeerReceiptsTest {
         rootSink.record(receipt("m-sym-root"))
         assertFalse(Files.exists(outsidePeers.resolve("agy-sym-root")))
     }
+
+    @Test
+    fun `tightens pre-existing 0644 journal, rolled journal, lock file to 0600 and peers dirs to 0700`() = runBlocking {
+        val stateDir = Files.createDirectories(tmp.resolve("state-perms"))
+        val settingsDir = Files.createDirectories(tmp.resolve("settings-perms"))
+        val sessionsDir = Files.createDirectories(tmp.resolve("sessions-perms"))
+        val pid = ProcessHandle.current().pid()
+        val self = checkNotNull(PeerOwnerProcesses().capture(pid))
+        val peerName = "agy-perms"
+        registerOwned(settingsDir, peerName, self)
+
+        val peersRoot = Files.createDirectories(stateDir.resolve("peers"))
+        val peerDir = Files.createDirectories(PeerStateFiles(stateDir, peerName).dir)
+        val live = peerDir.resolve("journal.jsonl")
+        val rolled = peerDir.resolve("journal.1.jsonl")
+        val lock = peerDir.resolve("journal.jsonl.lock")
+        Files.writeString(live, "")
+        Files.writeString(rolled, "")
+        Files.writeString(lock, "")
+        Files.setPosixFilePermissions(peersRoot, PosixFilePermissions.fromString("rwxr-xr-x"))
+        Files.setPosixFilePermissions(peerDir, PosixFilePermissions.fromString("rwxr-xr-x"))
+        val openFile = PosixFilePermissions.fromString("rw-r--r--")
+        Files.setPosixFilePermissions(live, openFile)
+        Files.setPosixFilePermissions(rolled, openFile)
+        Files.setPosixFilePermissions(lock, openFile)
+
+        val sink = receiptSink(DesktopPeerReceiptStore(stateDir, settingsDir, peerName), sessionsDir, pid)
+        sink.record(receipt("m-perms"))
+
+        assertEquals("rwx------", modeOf(peersRoot))
+        assertEquals("rwx------", modeOf(peerDir))
+        assertEquals("rw-------", modeOf(live))
+        assertEquals("rw-------", modeOf(rolled))
+        assertEquals("rw-------", modeOf(lock))
+        val journal = PeerJournal(peerDir, LogSink {}, WallClock { 1_000L })
+        val recorded = journal.read(0L, 10, setOf("receipt")).items.mapNotNull { JsonScalars.str(it, "origMsgId") }
+        assertEquals(listOf("m-perms"), recorded)
+    }
+
+    private fun modeOf(path: Path): String =
+        PosixFilePermissions.toString(Files.getPosixFilePermissions(path, LinkOption.NOFOLLOW_LINKS))
 
     private suspend fun registerOwned(settingsDir: Path, peerName: String, owner: NativeProcess) {
         val reg = PeerStore(settingsDir).register(

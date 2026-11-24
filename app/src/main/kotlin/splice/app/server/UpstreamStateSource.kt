@@ -3,6 +3,7 @@ package splice.app.server
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withTimeoutOrNull
 import splice.app.provider.local.JdkLocalHttp
+import splice.app.provider.local.LocalHttpBodyTooLarge
 import splice.core.process.ProcessTree
 import splice.core.topology.ServerState
 import splice.core.util.MonoClock
@@ -12,6 +13,7 @@ import java.io.InputStream
 import java.net.HttpURLConnection.HTTP_MULT_CHOICE
 import java.net.HttpURLConnection.HTTP_OK
 import java.net.http.HttpClient
+import java.net.http.HttpTimeoutException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
@@ -33,6 +35,8 @@ internal class UpstreamStateSource(private val config: ServerState, private val 
 
     fun diagnosis(failure: Throwable): String = when {
         failure is StateReadFailure -> failure.reason
+        failure is LocalHttpBodyTooLarge -> OVERSIZED_STATE_OUTPUT
+        failure is HttpTimeoutException -> HTTP_STATE_TIMEOUT
         config.file != null -> "could not read state file"
         config.url != null -> "state HTTP request failed"
         else -> "could not run state command or read its output"
@@ -49,8 +53,8 @@ internal class UpstreamStateSource(private val config: ServerState, private val 
 
     private suspend fun url(url: String): String {
         val response = withTimeoutOrNull(TimeUnit.SECONDS.toMillis(STATE_TIMEOUT_S)) {
-            runInterruptible { JdkLocalHttp(client = http.value)("GET", url, null) }
-        } ?: throw StateReadFailure("state HTTP request failed or timed out")
+            runInterruptible { JdkLocalHttp(client = http.value).getBounded(url, MAX_STATE_BYTES) }
+        } ?: throw StateReadFailure(HTTP_STATE_TIMEOUT)
         if (response.status !in HTTP_OK until HTTP_MULT_CHOICE) {
             throw StateReadFailure("state URL returned HTTP ${response.status}")
         }
@@ -87,13 +91,13 @@ internal class UpstreamStateSource(private val config: ServerState, private val 
     // Read only buffered bytes: waiting for EOF could hang on a descriptor inherited by a child.
     private fun drain(stdout: InputStream, bytes: ByteArrayOutputStream) {
         val available = stdout.available()
-        if (available > MAX_STATE_BYTES - bytes.size()) throw StateReadFailure("state output is too large")
+        if (available > MAX_STATE_BYTES - bytes.size()) throw StateReadFailure(OVERSIZED_STATE_OUTPUT)
         if (available > 0) bytes.write(stdout.readNBytes(available))
     }
 
     private fun text(path: Path): String = Files.newInputStream(path).use {
         val bytes = it.readNBytes(MAX_STATE_BYTES + 1)
-        if (bytes.size > MAX_STATE_BYTES) throw StateReadFailure("state output is too large")
+        if (bytes.size > MAX_STATE_BYTES) throw StateReadFailure(OVERSIZED_STATE_OUTPUT)
         bytes.decodeToString(throwOnInvalidSequence = true)
     }
 }
@@ -106,5 +110,8 @@ private const val STATE_TIMEOUT_S = 5L
 // why: drain stdout during the timed wait to let a child write more than the pipe can hold.
 private const val STDOUT_DRAIN_MS = 25L
 
-// why: bound file and command input while leaving room for an operator's JSON message.
+// why: bound every state source while leaving room for an operator's JSON message.
 private const val MAX_STATE_BYTES = 16_384
+
+private const val OVERSIZED_STATE_OUTPUT = "state output is too large"
+private const val HTTP_STATE_TIMEOUT = "state HTTP request timed out"

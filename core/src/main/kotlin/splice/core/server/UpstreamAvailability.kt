@@ -37,7 +37,7 @@ public object UpstreamSignalParser {
     private val rfc3339 = Regex("""\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})""")
 
     public fun parse(output: String): UpstreamSignal? {
-        val text = output.trim()
+        val text = output.removePrefix("\uFEFF").trim()
         return if (text.startsWith("{")) json(text) else plain(text)
     }
 
@@ -49,7 +49,8 @@ public object UpstreamSignalParser {
     private fun json(text: String): UpstreamSignal? = try {
         (Json.parseToJsonElement(text) as? JsonObject)?.let { fields ->
             val until = string(fields, "until")?.let { requireNotNull(instant(it)) }
-            state(string(fields, "state"), until)?.let { UpstreamSignal(it, string(fields, "message")) }
+            val message = string(fields, "message")?.takeUnless(String::isBlank)
+            state(string(fields, "state"), until)?.let { UpstreamSignal(it, message) }
         }
     } catch (_: IllegalArgumentException) {
         null

@@ -36,6 +36,32 @@ class UpstreamAvailabilityTest {
     }
 
     @Test
+    fun `a leading UTF-8 BOM is ignored for both plain text and JSON`() {
+        val bom = 0xFEFF.toChar().toString()
+        assertEquals(UpstreamSignal(UpstreamState.Starting), UpstreamSignalParser.parse(bom + "starting\n"))
+        assertEquals(
+            UpstreamSignal(UpstreamState.Off(now), "Maintenance."),
+            UpstreamSignalParser.parse(
+                bom + """{"state":"off","until":"2026-11-24T17:00:00Z","message":"Maintenance."}""",
+            ),
+        )
+    }
+
+    @Test
+    fun `a blank JSON message leaves the configured refusal intact`() {
+        val policy = UpstreamStatePolicy(ServerState(messageStarting = "Booting.", messageOff = "Paused."))
+        val cases = mapOf(
+            """{"state":"starting","message":" \t "}""" to "Booting.",
+            """{"state":"off","message":""}""" to "Paused.",
+        )
+        for ((output, message) in cases) {
+            val signal = checkNotNull(UpstreamSignalParser.parse(output))
+            assertNull(signal.message)
+            assertEquals(message, policy.refusal(signal, now)?.message)
+        }
+    }
+
+    @Test
     fun `unknown states and malformed timestamps are not new readings`() {
         val invalid = listOf(
             "", "up until tomorrow", "off until tomorrow", "off until 2026-11-24T17:00Z",

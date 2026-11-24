@@ -18,6 +18,7 @@ import java.nio.file.Path
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import java.util.concurrent.CountDownLatch
 class UpstreamStateSourceTest {
     @TempDir
     private lateinit var dir: Path
@@ -60,6 +61,31 @@ class UpstreamStateSourceTest {
                 sample(ServerState(url = "$url/error")),
             )
         } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `an oversized URL signal is rejected without waiting for the body to end`() = runBlocking {
+        val finishBody = CountDownLatch(1)
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/state") { call ->
+            call.use {
+                call.sendResponseHeaders(200, 0)
+                call.responseBody.write(ByteArray(32_768) { 'x'.code.toByte() })
+                call.responseBody.flush()
+                finishBody.await()
+            }
+        }
+        server.start()
+        try {
+            val url = "http://127.0.0.1:${server.address.port}/state"
+            assertEquals(
+                UpstreamStateReading(lastError = "state output is too large", lastChecked = now),
+                sample(ServerState(url = url)),
+            )
+        } finally {
+            finishBody.countDown()
             server.stop(0)
         }
     }

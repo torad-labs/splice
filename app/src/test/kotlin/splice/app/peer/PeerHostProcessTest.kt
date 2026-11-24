@@ -24,6 +24,7 @@ import splice.sessions.peer.store.PeerRequest
 import splice.sessions.peer.store.PeerStore
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardWatchEventKinds
 import java.util.concurrent.TimeUnit
 
 private const val WAIT_MS = 20_000L
@@ -36,7 +37,7 @@ private class HostFixture(dir: Path) : AutoCloseable {
     val settings: Path = dir.resolve("settings")
     val state: Path = dir.resolve("state")
     val registry: Path = Files.createDirectories(dir.resolve("registry"))
-    val runtime: Path = dir.resolve("runtime")
+    private val runtime: Path = dir.resolve("runtime")
     private val output = dir.resolve("host.out")
     private val store = PeerStore(settings)
     private val helpers = HelperFiles()
@@ -66,8 +67,19 @@ private class HostFixture(dir: Path) : AutoCloseable {
     /** [name]'s helper.json once the process it names runs. */
     fun running(name: String): HelperFile {
         val files = PeerStateFiles(state, name)
-        until("$name never started") { helpers.read(files)?.let(helpers::alive) == true }
-        return checkNotNull(helpers.read(files))
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WAIT_MS)
+        return files.dir.fileSystem.newWatchService().use { watch ->
+            files.dir.register(watch, StandardWatchEventKinds.ENTRY_CREATE)
+            var record = helpers.read(files)?.takeIf(helpers::alive)
+            while (record == null) {
+                val event = watch.poll(deadline - System.nanoTime(), TimeUnit.NANOSECONDS)
+                    ?: error("$name never started: ${report()}\n${helperLog(files)}")
+                event.pollEvents()
+                event.reset()
+                record = helpers.read(files)?.takeIf(helpers::alive)
+            }
+            record
+        }
     }
 
     fun gone(name: String) = !Files.exists(PeerStateFiles(state, name).helperJson)
@@ -83,6 +95,9 @@ private class HostFixture(dir: Path) : AutoCloseable {
     }
 
     fun report(): String = if (Files.exists(output)) Files.readString(output) else "the host wrote no output"
+
+    private fun helperLog(files: PeerStateFiles): String =
+        if (Files.exists(files.helperLog)) Files.readString(files.helperLog) else "the peer wrote no helper log"
 
     override fun close() {
         host?.destroyForcibly()

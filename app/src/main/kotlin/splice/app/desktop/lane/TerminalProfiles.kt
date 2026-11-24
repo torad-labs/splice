@@ -26,19 +26,23 @@ internal class TerminalProfiles(
     private val registry: McpUserRegistry,
     /** Where a rebuild's file work runs, off the request's own thread. */
     private val io: CoroutineDispatcher,
+    /** Every head's Claude folder, never where the person's `.claude.json` is read from. */
+    private val headDirs: List<Path> = emptyList(),
 ) {
     /** One lock per folder, by where it really is: two launches that rebuild one folder, of one profile or of two whose
      *  dirs reach it through a link, run one after the other, its ownership check and mark included. */
     private val rebuilding = ConcurrentHashMap<Path, Mutex>()
 
-    /** [side], the door's side-by-side launch, moved into profile [name]'s folder once it is rebuilt. */
-    suspend fun launch(name: String, side: DoorLaunchSpec): ProfileLaunch {
+    /** [side], the door's side-by-side launch, moved into profile [name]'s folder once it is rebuilt, its
+     *  `.claude.json` seeded from the one in [inheritedConfigDir] (the launching shell's CLAUDE_CONFIG_DIR, null while
+     *  it held none) when that is a Claude folder of the person's own. */
+    suspend fun launch(name: String, side: DoorLaunchSpec, inheritedConfigDir: String? = null): ProfileLaunch {
         val profile = profiles[name] ?: return ProfileLaunch.Refused(unknown(name))
         val owned = side.env.keys + side.unset
-        val build = withContext(io) { LaunchProfileBuild(home, root, registry.entries()) }
+        val build = withContext(io) { LaunchProfileBuild(home, root, registry.entries(), headDirs) }
         val folder = withContext(io) { build.folderOf(name, profile) }
         val built = rebuilding.computeIfAbsent(folder) { Mutex() }.withLock {
-            withContext(io) { build.build(name, profile, owned) }
+            withContext(io) { build.build(name, profile, owned, inheritedConfigDir) }
         }
         return when (built) {
             is ProfileBuilt.Refused -> ProfileLaunch.Refused("splice: ${built.reason}")

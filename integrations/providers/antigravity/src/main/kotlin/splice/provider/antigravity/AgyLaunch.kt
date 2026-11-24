@@ -29,18 +29,20 @@ internal class AgyLaunch(
     private val extraEnv: Map<String, String> = emptyMap(),
 ) {
     /** agy started for [claude] in [scope]. */
-    fun start(claude: ClaudeArgs, scope: CoroutineScope): StartedAgy {
+    fun start(claude: ClaudeArgs, scope: CoroutineScope, forwardOptions: Boolean = true): StartedAgy {
         val flags = claude.addDirs.flatMap { listOf("--add-dir", it) } +
             listOfNotNull(SKIP_PERMISSIONS.takeIf { claude.permissionMode == BYPASS_MODE })
+        val argv = if (forwardOptions) command + flags else command
         val scratch = AgyFolders().make()
         if (scratch.path == null) return StartedAgy(null, null, scratch.reason)
         return try {
             StartedAgy(
-                AcpConnection(command + flags, cwd, scratch.path.resolve("agy.err").toFile(), scope, io, extraEnv),
+                AcpConnection(argv, cwd, scratch.path.resolve("agy.err").toFile(), scope, io, extraEnv),
                 scratch,
                 "",
             )
         } catch (notStarted: IOException) {
+            if (!forwardOptions) return StartedAgy(null, scratch, "the configured ACP harness could not be started")
             val why = SafeFailureText.render(notStarted)
             StartedAgy(null, scratch, "agy could not be started ($why); install it from Google and sign in with `agy`")
         }

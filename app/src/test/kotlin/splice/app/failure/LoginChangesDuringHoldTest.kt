@@ -68,11 +68,11 @@ internal class LoginChangesDuringHoldTest : HoldRouteFixtures() {
             // Both refused, and the turn went back to wait on the one whose reset comes first.
             val asked = provider.requests.size
             head.askAgain("second")
-            runClock(500.milliseconds, atMost = 30.minutes) { stream.finished }
+            runClock(1.minutes, atMost = 30.minutes, pacing = false) { stream.finished }
 
             assertFalse(stream.finished, "still waiting half an hour on: ${stream.soFar().describe()}")
             assertEquals(asked, provider.requests.size, "neither login could take it, so neither was asked")
-            runClock(1.minutes, atMost = 3.hours) { stream.finished }
+            runClock(1.minutes, atMost = 3.hours, pacing = false) { stream.finished }
             assertEquals("after the reset", stream.finish().text, stream.finish().describe())
         }
     }

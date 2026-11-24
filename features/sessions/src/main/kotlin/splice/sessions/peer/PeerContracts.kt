@@ -12,19 +12,28 @@ public enum class DeliveryStatus(public val wire: String) {
     DELIVERED("delivered"),
     REFUSED("refused"),
     DROPPED("dropped"),
+    UNCONFIRMED("unconfirmed"),
 }
 
-/** Who a frame Splice writes is from: the peer's helper socket and its registered name. Built only from PeerStore. */
-public data class PeerSender(val socket: String, val name: String) {
+/** Who a frame Splice writes is from: the peer's helper socket and its registered name. Built only from PeerStore.
+ *  [socket] is the frame's `from`, where receipts go; [replySocket] is the envelope's `from`, the one address a model
+ *  reads and replies to. They differ only for a Claude Code peer, whose receipts go to its return helper and whose
+ *  replies go to its session's own inbox. */
+public data class PeerSender(val socket: String, val name: String, val replySocket: String = socket) {
     public val address: String get() = "uds:$socket"
+    public val replyAddress: String get() = "uds:$replySocket"
 }
 
 public sealed class InboundFrame {
+    /** [claimedAddress] is where a receipt goes: the frame's `from`, or else the envelope's. [replyAddress] is where a
+     *  reply goes: the envelope's `from`, or else the frame's. */
     public data class Message(
         val msgId: String?,
         val claimedAddress: String?,
         val claimedName: String?,
         val text: String,
+        val sessionId: String? = null,
+        val replyAddress: String? = claimedAddress,
     ) : InboundFrame()
 
     public data class Receipt(
@@ -35,8 +44,17 @@ public sealed class InboundFrame {
     ) : InboundFrame()
 }
 
+public enum class PeerSubmission(public val wire: String) {
+    ACCEPTED("accepted"),
+    QUEUED("queued"),
+    DELIVERED("delivered"),
+}
+
 public sealed class SendOutcome {
-    public data class Submitted(val msgId: String) : SendOutcome()
+    public data class Submitted(
+        val msgId: String,
+        val submission: PeerSubmission = PeerSubmission.ACCEPTED,
+    ) : SendOutcome()
 
     public data class Refused(val httpStatus: Int, val reason: String) : SendOutcome()
 

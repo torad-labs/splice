@@ -755,10 +755,14 @@ internal abstract class HoldRouteFixtures : HoldReplyFixtures() {
 
     /** Moves the virtual clock to the next time something waits for, at most [step] at a time, once the head has
      *  settled after the last move, until [done] or [atMost]. A send a wake starts reaches the provider at the time
-     *  it was due, not a step later: the clock does not move again until each wait the move woke has answered. */
+     *  it was due, not a step later: the clock does not move again until each wait the move woke has answered.
+     *  With [pacing] false the clock does not stop at a keepalive pinger's ticks, which come every two seconds whatever
+     *  the turn waits for: a test about a turn that waits minutes steps by its waits, not by 4 000 pings, each of which
+     *  costs the real time a settle takes. */
     protected suspend fun ScriptedHeads.runClock(
         step: Duration,
         atMost: Duration,
+        pacing: Boolean = true,
         afterStep: suspend () -> Unit = {},
         done: () -> Boolean,
     ) =
@@ -766,7 +770,7 @@ internal abstract class HoldRouteFixtures : HoldReplyFixtures() {
             while (!done() && time.passed() < atMost) {
                 settle()
                 val now = time.passed()
-                val next = minOf(time.nextDue() ?: (now + step), now + step, atMost)
+                val next = minOf(time.nextDue(pacing) ?: (now + step), now + step, atMost)
                 val seen = answers()
                 val woken = time.advanceCountingWoken((next - now).coerceAtLeast(Duration.ZERO))
                 if (woken > 0) {

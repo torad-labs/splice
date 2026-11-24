@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.topology.ConfigFindings
+import splice.topology.ConfigRead
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -330,5 +332,94 @@ class ConfigFixSessionTest : ConfigFixRig() {
         val slots = text.lines().count { it.trim().startsWith("slot = ") }
         assertEquals(2, slots, "the head keeps its rows and slots: $text")
         readsClean(file, root)
+    }
+
+    /** Two heads on one provider that say different windows: neither value can move without changing how the other
+     *  head is served. */
+    private fun disagreeing(root: Path): Path {
+        val file = served(root, "", "context_window = 800\n")
+        Files.writeString(
+            file,
+            Files.readString(file) + "\n[heads.two]\nprovider = \"demo\"\nport = 3102\n" +
+                "discovery_prefix = \"claude-demo--\"\npinned_model = \"m\"\ncontext_window = 600\n",
+        )
+        return file
+    }
+
+    /** The window each head is served, by head key. */
+    private fun windows(file: Path, root: Path): Map<String, Long?> {
+        val ready = ConfigFindings.read(Files.readString(file), root) as ConfigRead.Ready
+        val demo = ready.topology.providers.getValue("demo")
+        return ready.topology.heads.mapValues { (_, head) -> head.servedOn(demo).contextWindow }
+    }
+
+    @Test
+    fun `heads on one provider that say different windows are a warning with no move, and each is served its own`(
+        @TempDir root: Path,
+    ) {
+        val file = disagreeing(root)
+
+        val read = ConfigFindings.read(Files.readString(file), root) as ConfigRead.Ready
+        val held = read.warnings.filter { it.path.endsWith(".context_window") }
+
+        assertEquals(setOf("heads.one.context_window", "heads.two.context_window"), held.map { it.path }.toSet())
+        assertTrue(held.all { it.move == null }, "no move is offered: $held")
+        assertTrue(held.all { "say different values" in it.message }, "each says why: $held")
+        assertEquals(mapOf("one" to 800L, "two" to 600L), windows(file, root))
+    }
+
+    @Test
+    fun `a fix session over disagreeing heads writes nothing for them unless the person chooses to`(
+        @TempDir root: Path,
+    ) {
+        val file = disagreeing(root)
+        val before = Files.readString(file)
+        val said = mutableListOf<String>()
+
+        val fixed = session(file, root, ArrayDeque(listOf("m", "", "s", "m", "", "s")), said, advisory = true).run()
+
+        assertFalse(fixed, "$said")
+        assertEquals(before, Files.readString(file), "no answer on offer was given: nothing is written")
+        assertFalse(said.any { it.contains("[m]") && it.contains("move") }, "no move is offered: $said")
+        assertFalse(Files.exists(root.resolve("backup.toml")), "nothing changed, so nothing was backed up")
+        assertEquals(mapOf("one" to 800L, "two" to 600L), windows(file, root))
+    }
+
+    @Test
+    fun `an answer not on offer is told the keys and the warning is not shown again`(@TempDir root: Path) {
+        val file = disagreeing(root)
+        val said = mutableListOf<String>()
+
+        session(file, root, ArrayDeque(listOf("m", "", "s", "q")), said, advisory = true).run()
+
+        assertEquals(1, said.count { it.contains("Fixing: heads.one.context_window") }, "$said")
+        val hints = said.filter { it.contains("not on offer here; the keys are [d] [v] [e] [s] [q]") }
+        assertEquals(2, hints.size, "m and a bare Enter are each answered with the keys: $said")
+    }
+
+    @Test
+    fun `end of input over a warning with no move quits and writes nothing`(@TempDir root: Path) {
+        val file = disagreeing(root)
+        val before = Files.readString(file)
+
+        val fixed = session(file, root, ArrayDeque(listOf("m")), mutableListOf(), advisory = true).run()
+
+        assertFalse(fixed)
+        assertEquals(before, Files.readString(file))
+    }
+
+    @Test
+    fun `removing one disagreeing head's window is a choice, and it leaves the other head's as it was`(
+        @TempDir root: Path,
+    ) {
+        val file = disagreeing(root)
+        val said = mutableListOf<String>()
+
+        session(file, root, ArrayDeque(listOf("s", "d")), said, advisory = true).run()
+
+        val text = Files.readString(file)
+        assertFalse(text.contains("context_window = 600"), text)
+        assertTrue(text.contains("context_window = 800"), text)
+        assertEquals(1, windows(file, root).values.count { it == 800L }, "head one is still served its own")
     }
 }

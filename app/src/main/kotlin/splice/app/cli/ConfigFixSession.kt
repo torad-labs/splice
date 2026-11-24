@@ -97,7 +97,8 @@ internal class ConfigFixSession(
         return true
     }
 
-    /** null = the person quit; true = a file changed; false = nothing changed (the same finding is offered again). A
+    /** null = the person quit; true = a file changed; false = nothing changed (the same finding is offered again, as
+     *  after an editor that could not start; a key not on offer never gets here, [chosen] asks again). A
      *  variable set in the environment this session runs in can be unset only by the shell profile or service that
      *  sets it, so the session names it and where it was read, and moves on to the next finding. */
     private fun fix(finding: TopologyFinding): Boolean? = when (val origin = finding.origin) {
@@ -122,7 +123,7 @@ internal class ConfigFixSession(
         output.line("  [c] clear the saved setting from ${origin.file}")
         output.line("  [s] skip this one for now")
         output.line("  [q] quit; $leaving")
-        return when (prompter.ask("> ")?.trim()?.lowercase()) {
+        return when (chosen(listOf("c", "s", "q"))) {
             "c" -> {
                 val saved = origin.file
                 if (savedBackedUp.add(saved)) output.line("backed up ${saved.fileName} to ${backup(saved)}")
@@ -131,9 +132,20 @@ internal class ConfigFixSession(
                 true
             }
             "s" -> skip(finding)
-            "q", null -> null
-            else -> false
+            else -> null
         }
+    }
+
+    /** The key the person answered among [keys], asked again with the keys on offer when the answer, a bare Enter
+     *  included, is not one of them, so the warning is not shown a second time as if it were new. Null when input has
+     *  ended: that quits, as `q` does. */
+    private fun chosen(keys: List<String>): String? {
+        var answer = prompter.ask("> ")?.trim()?.lowercase()
+        while (answer != null && answer !in keys) {
+            output.line("  not on offer here; the keys are " + keys.joinToString(" ") { "[$it]" })
+            answer = prompter.ask("> ")?.trim()?.lowercase()
+        }
+        return answer
     }
 
     private fun fixInFile(finding: TopologyFinding): Boolean? {
@@ -141,21 +153,15 @@ internal class ConfigFixSession(
         val editable = line?.takeIf { assignmentAt(it) != null }
         val offers = FixOffers(finding, editable != null) { move -> MoveFix(check, checked).candidate(move, line) }
         showMenu(line, offers)
-        return when (val answer = prompter.ask("> ")?.trim()?.lowercase()) {
+        return when (chosen(offers.letters.toList() + listOf("e", "s", "q"))) {
             "e" -> edit(line)
             "s" -> skip(finding)
             "q", null -> null
-            else -> changed(answer, offers, line)
+            // m, d or v, which [chosen] found on offer; d and v are offered only on a line the session can change.
+            "m" -> moveValue(requireNotNull(offers.move), requireNotNull(offers.moved))
+            "d" -> removeLine(requireNotNull(line))
+            else -> setValue(requireNotNull(line))
         }
-    }
-
-    /** A change to the file the person chose from [offers], or false when the answer is not one that is on offer. */
-    private fun changed(answer: String, offers: FixOffers, line: Int?): Boolean = when {
-        answer !in offers.letters -> false
-        answer == "m" -> moveValue(requireNotNull(offers.move), requireNotNull(offers.moved))
-        line == null -> false
-        answer == "d" -> removeLine(line)
-        else -> setValue(line)
     }
 
     private fun skip(finding: TopologyFinding): Boolean {

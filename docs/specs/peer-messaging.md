@@ -17,6 +17,59 @@ facts for 2.1.299 to 2.1.304 come from a probe, Oct 19, under tools/probes/claud
 5. A user who never registers a peer gets no listener, no socket, no process, no file and no registry
    entry. The `/api/peers` routes answer as usual, and with no peers they return an empty list.
 
+## Harness peers
+
+Shipped launch defaults are Claude Code → `native-cc-socks`, Codex →
+`codex-app-server`, and Antigravity → `acp`. Splice's Claude launcher registers the
+exec PID (the managed Desktop wrapper uses its Claude child’s PID); the Codex
+SessionStart hook attaches the live thread; the Desktop ACP
+translator owns its inbox. The shipped harness IDs cannot be redeclared.
+
+A local ACP harness can set the optional `[harnesses.<id>.peer]` table. Set
+`auto_subscribe = true` to subscribe on `splice desktop acp --harness <id>`.
+Registration is bound to the PID, kernel process start and PID domain, and
+released by owner retirement when the process exits. The ACP inbox is additionally
+bound to the actual Desktop session ID. Catalog listing alone does not create an identity.
+
+- `acp` uses the translator inbox and reports delivery only after ACP prompt admission.
+- `native-cc-socks` receives on the owning process's published socket. A Splice CLI
+  or MCP send from it carries two addresses. The frame's `from` is a journal-backed
+  return socket, so returned receipts are visible in peer status. The envelope's
+  `from`, the only address the recipient's model reads, is the session's own socket,
+  so a reply reaches the sending conversation. The return socket is not listed as
+  another session. Socket submission is `accepted`, not delivery.
+- `codex-app-server` queues through the existing Codex peer journal. A started
+  thread turn produces `delivered`, a refusal is unavailable, and a lost turn
+  reply is `unconfirmed`: the turn may already have started and is not retried.
+- `command` runs `deliver_cmd` as an absolute executable and argv, without a shell or
+  inherited environment. It reads one framed message from stdin. Exit zero after
+  accepting input acknowledges delivery.
+- `webhook` POSTs JSON `{msgId, content}` to `webhook_url`. This harness transport
+  allows HTTP only on `127.0.0.1`, `[::1]` or `localhost`, with no userinfo,
+  proxies or redirects. The URL is checked at boot and at delivery. HTTP 202
+  acknowledges a queue; another 2xx acknowledges delivery.
+
+The command and webhook have a bounded handoff. A missing, busy or timed-out
+receiver is `unavailable` with a reason, not delivered. All protocols carry
+`<cross-session-message>` peer data with defused nested tags, never human authority.
+
+The built-in `splice-peers` server provides `list_peers`, `send_peer_message` and
+`peer_status`. A stdio session resolves its live ancestor-owned registration and
+uses that peer's key from its 0600 file; discovery works before the launch hook
+has attached, but tool calls need the peer. Codex receives the stdio entry through
+MCP harness sync. For another launcher the entry is the command
+`splice peer mcp`. A holder attestation is about an MCP holder, not the client
+harness, so it does not grant authority. Neither tool arguments nor an MCP
+session header identify a sender. Scope, rate, process pins and send IDs all use
+the same admission as the CLI. The key goes only in the loopback Authorization
+header, not in arguments, environment, output or tool results.
+
+The control routes `GET /api/peer/list`, `POST /api/peer/send` and
+`GET /api/peer/status/{msgId}` alias the existing plural routes below. List uses
+the management key. Send and status require the acting peer's own key. The CLI
+takes `--json` on all three verbs; `status` reports the latest receipt for a
+message, not the current workload of its target.
+
 ## Facts this rests on
 
 These were read on Oct 19. They are not guesses.
@@ -74,8 +127,8 @@ Here is what Splice does guarantee:
   frame with no auth line is accepted, as Claude Code itself accepts one on Linux, and is journaled with
   `"auth":"none"`.
 - **Every inbound sender is labeled by how it was checked.** The journal marks it `registered` when its
-  `from` address names a live registry record, or `unregistered` when it does not. Neither label proves who
-  wrote the bytes, and the docs say so.
+  reply address (1.3) names a live registry record, or `unregistered` when it does not. Neither label proves
+  who wrote the bytes, and the docs say so.
 
 ## 1. Wire contract (package A implements, everyone reads)
 
@@ -100,6 +153,10 @@ output is shut down and the connection closed.
 - **`from` and `from-name`.** For a peer send, `from` is `uds:` plus the sending peer's helper socket, and
   `from-name` is the peer's registered name. Both come from `PeerStore` and the running helper, never from
   the HTTP body. A console note keeps today's shape: no `from`, and `from-name="the splice console"`.
+- **Receipts and replies.** Claude Code sends receipts to the frame's `from`, and its model replies to the
+  envelope's `from` (Facts). For every peer the two are the same socket, except a Claude Code peer: its
+  frame's `from` is its return helper, whose journal `peer status` reads, and its envelope's `from` is its
+  session's own `messagingSocketPath`, the inbox its conversation reads.
 - **Defusing.** Every `<` that begins `<cross-session-message` or `</cross-session-message` in the text,
   case-insensitive and with optional whitespace after `<` and `/`, becomes `<\`. That generalizes today's
   closing-tag rule to the opening tag too, so a text can neither close its envelope nor fake a second one.
@@ -122,8 +179,8 @@ output is shut down and the connection closed.
 
 The frame may also carry `"status_detail":"<at most 200 chars>"`. Claude Code writes `"drop_reason"` on a
 `dropped` receipt, and Splice reads either field as the detail. The status is one of `held`, `denied`,
-`expired`, `delivered`, `refused` or `dropped`. Splice sends `delivered`, `refused`, `denied` and `dropped`
-(see 4.3), and records whichever of the six it receives. From a Claude Code recipient, no receipt is
+`expired`, `delivered`, `refused`, `dropped` or Splice's `unconfirmed` for a lost Codex reply.
+Splice records whichever of these it receives. From a Claude Code recipient, no receipt is
 the normal case: it sends one only for `held`, `expired` or `dropped`. A peer send therefore reads as
 `submitted, no problem reported` until one of those arrives, and never claims `delivered` on its own.
 
@@ -141,12 +198,22 @@ the normal case: it sends one only for `held`, `expired` or `dropped`. A peer se
   one. If it always does, a follow-up can make the token required.
 - **`type:"user"` frames.** The text is the envelope body if the content matches
   `^<cross-session-message\b([^>]*)>\n([\s\S]*)\n</cross-session-message>$`, and otherwise the whole
-  content. The claimed address is the frame's `from`, or else the envelope's `from` attribute. The claimed
-  name is the envelope's `from-name`.
-- **The sender as journaled.** The claimed address is looked up among the live registry records by
+  content. The claimed address is the frame's `from`, or else the envelope's `from` attribute; receipts go
+  there. The reply address is the envelope's `from`, or else the frame's; a helper that shows the message to
+  a model (Codex, the ACP translator) puts this one in the envelope it builds. The claimed name is the
+  envelope's `from-name`.
+- **The sender as journaled.** The reply address is looked up among the live registry records by
   `messagingSocketPath`, with procStart checked as `SessionRegistry` already does. On a hit, the sender is
   recorded as `{name: record.name, sessionId, address, check:"registered"}`. On a miss, it is
-  `{name: claimedName, address, check:"unregistered"}`. The claimed name is always kept as `claimedName`.
+  `{name: claimedName, address, check:"unregistered"}`. `address` is the claimed address either way, and the
+  claimed name is always kept as `claimedName`. The check rests on the reply address because that is where an
+  answer goes: `registered` says that answering reaches the session it names. A Claude Code peer's frame
+  `from` is its unlisted return helper, so checking it would mark every genuine send `unregistered`. Both
+  addresses are the sender's claim, so this is no easier to meet than when the two were one socket: a frame
+  still looks registered only by naming a live session's socket, and a frame that names another session's
+  socket sends the answers to that session, not to its writer. A frame that names a live session only as its
+  receipt address is `unregistered`, so no frame carries a session's name while its answers go elsewhere. A
+  receipt is checked on its own `from`.
 - **`type:"control"` frames with `action:"peer_message_status"`.** These are journaled as receipts for this
   peer's earlier sends.
 - **Every other line** is ignored and counted.
@@ -263,11 +330,14 @@ There is one JSON object per line, appended and flushed with `force(true)` befor
 {"v":1,"seq":19,"at":…,"kind":"webhook","ref":17,"outcome":"pushed|failed","httpStatus":204,"attempts":1,"detail":null}
 ```
 
+- **`replyTo`.** A message's `from` carries `replyTo` only when the envelope named another address than the
+  frame (1.3), as a Claude Code peer's sends do. Receipts go to `address`; a reply goes to `replyTo` when it
+  is there.
 - **Rotation.** At 50 MiB, `journal.jsonl` is renamed to `journal.1.jsonl`, replacing any older one, and a
   new file starts with the next seq.
 - **Readers** see both files, and the order is by `seq`.
 - **The outbox** keeps one record per send, with no text, only its size:
-  `{"v":1,"at":…,"id":"<msg_id>","to":{"name","sessionId","address"},"bytes":…,"outcome":"submitted|refused|failed","detail":…}`.
+  `{"v":1,"at":…,"id":"<msg_id>","to":{"name","sessionId","address"},"bytes":…,"outcome":"submitted|queued|delivered|refused|failed","detail":…}`.
 
 ## 3. Control plane (D implements; B and C supply the parts)
 
@@ -320,7 +390,7 @@ suspend fun peerGuarded(call: ApplicationCall, block: suspend (PeerPrincipal) ->
 
 | Method and path | Body or query | Success | Errors |
 |---|---|---|---|
-| POST /api/peers/self/send | `{"to":"<name, session id, or a session-id prefix of 8+ chars>","text":"…"}` | 202 `{"msgId","to":{"name","sessionId"}}` | 400 bad body or empty text; 403 target outside `sendTo`; 404 no such target; 409 ambiguous target, not running, no socket, shared socket, or target is self; 413 text over 32,768 bytes; 422 version or protocol refused; 429 over rate, with `Retry-After`; 502 socket failed; 503 this peer's helper is not running |
+| POST /api/peers/self/send | `{"to":"<name, session id, or a session-id prefix of 8+ chars>","text":"…"}` | 202 with `status: accepted|queued`, or 200 with `status: delivered` for a confirmed local handoff; includes `msgId` and `to` | 400 bad body or empty text; 403 target outside `sendTo`; 404 no such target; 409 ambiguous target, not running, no socket, shared socket, or target is self; 413 text over 32,768 bytes; 422 version or protocol refused; 429 over rate, with `Retry-After`; 502 socket failed; 503 this peer's helper is not running |
 | GET /api/peers/self/inbox | `?after=<seq>&limit=<1..200, default 50>&kinds=message,receipt,webhook` | 200 `{"items":[<journal records>],"next":<seq>,"unread":<n>}` | 400 |
 | POST /api/peers/self/inbox/ack | `{"through":<seq>}` | 200 `{"read":<seq>}` | 400 |
 | GET /api/peers/self/sent/{msgId} | none | 200 `{"msgId","to","at","outcome","receipt":{"status","detail","at"}\|null}` | 404 |
@@ -427,7 +497,7 @@ C's `InboxHandler`. Connections are handled on a bounded pool of 4. A connection
   more than 300 s from its own clock. The optional bearer exists so a grokbot-style receiver, which checks
   only a bearer, works unchanged.
 - **The body:**
-  `{"v":1,"peer":"gary","seq":17,"id":"<msg_id>","at":<ms>,"from":{"name","sessionId","address","claimedName","check"},"auth":"token"|"none","text":"…"}`.
+  `{"v":1,"peer":"gary","seq":17,"id":"<msg_id>","at":<ms>,"from":{"name","sessionId","address","claimedName","check","replyTo"?},"auth":"token"|"none","text":"…"}`.
   The test push sends the same shape with `"test":true`, a seq of 0, the id `"webhook-test"`, the text
   `"splice webhook test"`, a `from` naming the peer itself with `check:"unregistered"`, and no `auth`.
   `auth` is the journal's own (1.3 and 2.3): `token` when the sender presented the socket's `peerToken`, `none`
@@ -493,11 +563,16 @@ Exit codes 0, 1 and 2 keep their meaning across the CLI (`Cli.kt:17`, `:29`, `:7
 public enum class DeliveryStatus(public val wire: String) { HELD("held"), DENIED("denied"), EXPIRED("expired"),
     DELIVERED("delivered"), REFUSED("refused"), DROPPED("dropped") }
 
-/** Who a frame Splice writes is from: the peer's helper socket and its registered name. Built only from PeerStore. */
-public data class PeerSender(val socket: String, val name: String) { public val address: String get() = "uds:$socket" }
+/** Who a frame Splice writes is from: the peer's helper socket and its registered name. Built only from PeerStore.
+ *  socket is the frame's `from` (receipts); replySocket is the envelope's `from` (replies). */
+public data class PeerSender(val socket: String, val name: String, val replySocket: String = socket) {
+    public val address: String get() = "uds:$socket"
+    public val replyAddress: String get() = "uds:$replySocket"
+}
 
 public sealed class InboundFrame {
-    public data class Message(val msgId: String?, val claimedAddress: String?, val claimedName: String?, val text: String) : InboundFrame()
+    public data class Message(val msgId: String?, val claimedAddress: String?, val claimedName: String?, val text: String,
+        val sessionId: String? = null, val replyAddress: String? = claimedAddress) : InboundFrame()
     public data class Receipt(val origMsgId: String?, val status: DeliveryStatus, val detail: String?, val claimedAddress: String?) : InboundFrame()
 }
 

@@ -131,7 +131,7 @@ internal class PeerCall(
         if (reply.status in ControlPlaneClient.OK_RANGE) return PeerAnswer.Ok(body ?: JsonObject(emptyMap()))
         val reason = JsonScalars.str(body, "error") ?: "the daemon answered ${reply.status}"
         fail("$reason (${reply.status})")
-        return PeerAnswer.Exit(PeerExit.refused(reply.status))
+        return PeerAnswer.Exit(PeerExit.refused(reply.status), body)
     }
 
     private fun url(path: String): String = "http://127.0.0.1:${AdminSupport.controlPort(env)}$path"

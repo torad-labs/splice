@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.pool.UpstreamPool
 import splice.core.topology.ServerConfig
+import splice.core.topology.ServerForwardAuth
 import splice.core.topology.ServerLimits
 import splice.core.topology.UpstreamConfig
 import splice.core.util.LogSink
@@ -193,6 +194,24 @@ internal class ServerLoadTest {
     }
 
     @Test
+    fun `turns admitted before any leased never add up past inflight_per_upstream, a lease already taken counted`() {
+        serve(rig.config.copy(limits = ServerLimits(inflightPerUpstream = 1)))
+        // A turn of this machine's own holds gpu-1, so one place is left, on gpu-2.
+        val own = pool.lease()
+        val inFlight = turnHeld(rig.keyFor("ada@team.example"))
+        awaitHeld(turns = 1)
+
+        // Ada's turn has not leased its place on gpu-2 (its head holds it first), and the place is hers all the same.
+        val refused = turn(rig.keyFor("bo@team.example"))
+        assertEquals(429, refused.statusCode(), "a second turn was admitted onto the one place left: ${refused.body()}")
+        assertTrue("inflight_per_upstream = 1" in error(refused).second, refused.body())
+
+        release.countDown()
+        assertEquals(200, inFlight.get(10, TimeUnit.SECONDS).statusCode())
+        own.release()
+    }
+
+    @Test
     fun `a per-upstream cap too large to multiply by the healthy servers in an Int still admits a turn`() {
         serve(rig.config.copy(limits = ServerLimits(inflightPerUpstream = Int.MAX_VALUE)))
         val served = turn(rig.keyFor("ada@team.example"))
@@ -265,8 +284,10 @@ internal class ServerLoadTest {
 
     @Test
     fun `while it drains every keyed request is a 503 with Retry-After, whatever its route`() {
-        serve(rig.config.copy(drainSeconds = 20))
+        val dashboards = ServerForwardAuth(allow = listOf("ada@team.example"))
+        serve(rig.config.copy(drainSeconds = 20, forwardAuth = dashboards))
         val ada = rig.keyFor("ada@team.example")
+        assertEquals(200, ask(ada, "/server/forward-auth").statusCode(), "forward_auth does not admit Ada")
         val inFlight = turnHeld(ada)
         awaitHeld(turns = 1)
 
@@ -277,6 +298,7 @@ internal class ServerLoadTest {
             "a models list" to ask(ada, "/claude-team/v1/models"),
             "a turn on the team's door" to ask(ada, "/door/v1/messages", TURN),
             "the server's profile" to ask(ada, "/server/profile"),
+            "a dashboard's forward_auth" to ask(ada, "/server/forward-auth"),
         )
         for ((what, refused) in asked) {
             assertEquals(503, refused.statusCode(), "$what: ${refused.body()}")

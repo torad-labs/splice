@@ -14,16 +14,17 @@ import java.net.URI
 
 /** The way of one request for [path], which follows a server's API root, to the provider of [head], whose one
  *  server's API root is [base] when it has no pool in [upstreams]. In a pool it goes first to the server named
- *  [preferred], while that one is healthy. */
+ *  [preferred], while that one is healthy, and a completion admitted as [turn] takes the place reserved for it. */
 internal class ProviderWay(
     private val head: SharedHead,
     private val path: String,
     private val base: String,
     private val upstreams: UpstreamApi,
     preferred: String?,
+    turn: String? = null,
 ) : OutwardWay {
     private val pool = upstreams.pool(head.key)
-    private val walk = pool?.let { PoolWalk(it, preferred) }
+    private val walk = pool?.let { PoolWalk(it, preferred, turn = turn) }
 
     // How the client hears a provider named that is one server.
     private val alone = "the model server behind ${head.command}"

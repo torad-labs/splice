@@ -188,9 +188,10 @@ internal class HeadAnswers(
     /** [answered]'s stream, event by event, flushed each time: an event (or the head's keepalive ping) reaches the
      *  other machine the moment its blank line is read (QuietWire). A client that went away fails the write, and
      *  closing the body then hangs up on the one that answered, which sees its own client leave. With an edit the
-     *  events go through it, and a stream that ended whole is given the edit's ending. A stream that broke off ends
-     *  the relay there, after the relay's error event. One silent for [ClientWait.idleMs] after its first word is hung
-     *  up on, and ends with the relay's error event ([idled]). */
+     *  events go through it, and a stream that ended whole is given the edit's ending. A stream that broke off, or
+     *  whose body ended in the middle of an event ([ended]), ends the relay there, after the relay's error event. One
+     *  silent for [ClientWait.idleMs] after its first word is hung up on, and ends with the relay's error event
+     *  ([idled]). */
     private suspend fun pump(call: ApplicationCall, answered: Sent.Answered, wire: QuietWire, wait: ClientWait) {
         val edited = wait.edit?.let { EditedWire(wire, it) }
         answered.response.body().use { body ->
@@ -205,7 +206,7 @@ internal class HeadAnswers(
                             wire.error(said(HttpStatus.BAD_GATEWAY, answered.cut))
                             return@coroutineScope
                         }
-                        if (piece == null) return@coroutineScope edited?.end() ?: wire.end()
+                        if (piece == null) return@coroutineScope ended(answered, wire, edited)
                         idle.heard(piece)
                         if (edited == null) wire.write(piece, piece.size) else edited.write(piece, piece.size)
                     }
@@ -227,6 +228,15 @@ internal class HeadAnswers(
         log("[${speaker.tag}] $why\n")
         AnsweredStatus.late(call, HttpStatus.GATEWAY_TIMEOUT)
         wire.error(said(HttpStatus.GATEWAY_TIMEOUT, why))
+    }
+
+    /** [answered]'s stream reached the end of its body. One that ended in the middle of a line was cut short, however
+     *  cleanly its connection closed, and its client hears that as the relay's error event, never half an event. */
+    private suspend fun ended(answered: Sent.Answered, wire: QuietWire, edited: EditedWire?) {
+        val whole = edited?.end() ?: wire.end()
+        if (whole) return
+        log("[${speaker.tag}] ${answered.cut}: its stream ended in the middle of an event\n")
+        wire.error(said(HttpStatus.BAD_GATEWAY, answered.cut))
     }
 
     /** [answered]'s answer broke off before its end, with [failure], which is said in the log. */

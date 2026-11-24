@@ -53,8 +53,35 @@ class WatchdogStreamDeadlineTest {
             fired as WatchdogFired.Idle
             assertTrue(fired.sawClientFrame, "the deadline is a mid-output one")
             assertEquals(300L, fired.limitMs, "the verdict names the deadline that fired")
+            assertTrue(fired.deadline, "the verdict says the operator's deadline ended the round")
             assertNull(dog.held, "a round past the deadline is not held")
 
+            poller.cancel()
+            slot.release()
+        }
+    }
+
+    @Test
+    fun `bytes that carry no progress, such as keepalives, never renew the deadline`() {
+        runBlocking {
+            val slot = InflightGate({ 0 }).admittedSlot()
+            val dog = TurnWatchdog(budget(deadlineMs = 300))
+            val target = launch { delay(10.seconds) }
+            // The upstream's keepalives touch the round's connection every 50 ms; the model itself says nothing.
+            val keepalives = launch {
+                while (true) {
+                    slot.touch()
+                    delay(KEEPALIVE_MS)
+                }
+            }
+            val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { true }, openConnection())
+
+            val ended = withTimeoutOrNull(5.seconds) { target.join() }
+
+            assertNotNull(ended, "keepalives held a silent model past the operator's deadline")
+            assertTrue((dog.fired as? WatchdogFired.Idle)?.deadline == true, "the deadline ended it: ${dog.fired}")
+
+            keepalives.cancel()
             poller.cancel()
             slot.release()
         }
@@ -82,3 +109,6 @@ class WatchdogStreamDeadlineTest {
 
 /** Long enough for several polls of a 300ms tier to have landed, and far below any budget here. */
 private const val DEADLINE_POLL_MS = 10L
+
+/** How often the stand-in upstream's keepalives touch the round's connection: far inside the 300ms deadline. */
+private const val KEEPALIVE_MS = 50L

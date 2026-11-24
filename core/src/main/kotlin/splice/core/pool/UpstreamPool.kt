@@ -7,9 +7,12 @@
 //   - a Claude Code session's turn goes back to the server that served its last one while that one is healthy (F11),
 //     however busy, since its prompt is cached there; a session whose server went down moves once, and its new
 //     server is its home from then, the old one back or not;
-//   - with server mode's `inflight_per_upstream` (#791, [UpstreamPool.holdAtMost]), a server that holds that many
-//     takes no more while another healthy one has room: a session's server or a person's preferred one that is full
-//     gives the turn to the least busy with room, and a full session's server stays its home for the next turn;
+//   - with server mode's `inflight_per_upstream` (#791), a server that holds that many takes no more while another
+//     healthy one has room: a session's server that is full gives the turn to the least busy healthy one with room,
+//     and stays the session's home for its next turn, and a person's preferred one that is full gives a new session's
+//     turn to the least busy with room. Server mode reserves a place for each turn it admits ([UpstreamPool.reserve]),
+//     counted against the servers' room together with every lease, so the turns it admitted before any of them leased
+//     never add up past the cap; the turn's first lease takes the place, and its end gives back one never taken;
 //   - a health check that fails takes a server out, and so does a connection it refuses, at once and before the next
 //     check; only a health check that passes brings it back;
 //   - with none healthy a lease is still given, on the least busy of them all: whoever sends a turn anyway then hears
@@ -53,6 +56,9 @@ public class UpstreamPool(
     // The most turns each server takes at once (server mode's `inflight_per_upstream`); 0 takes any number.
     private var each = 0
 
+    // The turns server mode admitted that have not leased yet, by the id it named each by: each holds a place.
+    private val reservations = HashSet<String>()
+
     /** The servers as the file lists them: their names, and where each is asked for its health. */
     public val upstreams: List<UpstreamConfig> = upstreams.toList()
 
@@ -64,34 +70,68 @@ public class UpstreamPool(
     @Synchronized
     public fun readings(): List<UpstreamReading> = members.map { it.reading(provider) }
 
-    /** Each server takes at most [most] turns at once from now, as server mode's `inflight_per_upstream` says (#791);
-     *  0 lets each take any number. Server mode tells a pool before each turn it admits on it, so no turn it admitted
-     *  is placed on a full server while another has room. */
+    /** A place for the turn server mode names [turn], with each server taking at most [most] turns at once from now
+     *  (`inflight_per_upstream`, #791): true when the healthy servers' room, less the places already reserved, has one
+     *  left, which is then this turn's until its first lease ([lease]) or [unreserve]. False refuses the turn. With
+     *  none healthy the turn is not the cap's to refuse: server mode's own 503 naming the upstreams says so. */
     @Synchronized
-    public fun holdAtMost(most: Int) {
+    public fun reserve(turn: String, most: Int): Boolean {
         each = most
+        val healthy = members.filter { it.healthy }
+        if (healthy.isNotEmpty() && room(healthy) <= reservations.size) return false
+        reservations += turn
+        return true
+    }
+
+    /** The turn named [turn] ended: a place it reserved and never leased is free again. */
+    @Synchronized
+    public fun unreserve(turn: String) {
+        reservations -= turn
     }
 
     /** A place on the server a turn goes to now: the one that served [session]'s last turn while it is healthy, else
      *  [preferred] while a server of that name is healthy, else the healthy one with the least in flight; with none
-     *  healthy, the least busy of them all. A server that holds [holdAtMost]'s number is passed over while another
-     *  healthy one has room. A healthy server chosen for a [session] with no healthy home is where its next turn goes;
-     *  one whose home is only full keeps it, since its prompt is cached there. The turn counts as in flight there until
-     *  the lease is released. */
+     *  healthy, the least busy of them all. Under a cap ([reserve]) a server that is full is passed over: a session
+     *  whose home is full goes to the least busy healthy server with room and keeps its home, since its prompt is
+     *  cached there. A [turn] server mode reserved a place for takes it here; any other lease takes a place only where
+     *  one is left beside the reserved ones. A healthy server chosen for a [session] with no healthy home is where its
+     *  next turn goes. The turn counts as in flight there until the lease is released. */
     @Synchronized
-    public fun lease(preferred: String? = null, session: String? = null): UpstreamLease {
+    public fun lease(preferred: String? = null, session: String? = null, turn: String? = null): UpstreamLease {
+        val reserved = turn != null && reservations.remove(turn)
         val healthy = members.filter { it.healthy }
-        // With every healthy server full the turn goes where it would have: server mode refuses such a turn itself.
-        val roomy = healthy.filter { each <= 0 || it.inflight < each }.ifEmpty { healthy }
-        val home = session?.let(homes::of)
-        val chosen = roomy.firstOrNull { it.config.name == home }
-            ?: roomy.firstOrNull { it.config.name == preferred }
-            ?: roomy.ifEmpty { members }.minBy { it.inflight }
-        val moves = chosen.healthy && healthy.none { it.config.name == home }
+        val home = homes.of(session)?.let { name -> healthy.firstOrNull { it.config.name == name } }
+        val chosen = choose(roomy(healthy, reserved), home, preferred)
+        // A session with no healthy home makes its home where its turn went; one whose home is only full keeps it.
+        val moves = home == null && chosen.healthy
         if (session != null && moves) homes.served(session, chosen.config.name)
         chosen.inflight++
         return UpstreamLease(this, chosen)
     }
+
+    /** The server of [roomy] a turn goes to: its session's healthy [home] while that one has room, the least busy when
+     *  it is full, and for a turn with no home [preferred] while that one has room, else the least busy; with none
+     *  healthy, the least busy of them all. */
+    private fun choose(roomy: List<UpstreamMember>, home: UpstreamMember?, preferred: String?): UpstreamMember = when {
+        home != null && home in roomy -> home
+        home != null -> roomy.minBy { it.inflight }
+        else -> roomy.firstOrNull { it.config.name == preferred } ?: roomy.ifEmpty { members }.minBy { it.inflight }
+    }
+
+    /** The healthy servers a lease may take under the cap: those under it, for a turn holding a reserved place or
+     *  while a place is left beside the reserved ones. With none, every healthy one: server mode refuses its own turns
+     *  before this, and a turn of this machine's own is not its to refuse. */
+    private fun roomy(healthy: List<UpstreamMember>, reserved: Boolean): List<UpstreamMember> {
+        if (each <= 0) return healthy
+        val open = healthy.filter { it.inflight < each }
+        val spare = reserved || room(healthy) > reservations.size
+        return open.takeIf { spare && it.isNotEmpty() } ?: healthy
+    }
+
+    /** How many more turns [healthy] take under the cap, in Long: a cap near Int.MAX_VALUE times the servers would
+     *  wrap negative in Int and leave no room at all. */
+    private fun room(healthy: List<UpstreamMember>): Long =
+        healthy.sumOf { (each - it.inflight).coerceAtLeast(0).toLong() }
 
     /** What a health check of the server [name] found; [said] is how it answered, for the log. */
     @Synchronized

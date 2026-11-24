@@ -7,6 +7,7 @@ import splice.core.topology.ServerConfig
 import splice.server.ServerKeys
 import splice.server.ServerPeople
 import splice.server.caller.ClientAddresses
+import splice.server.load.DrainGate
 import splice.share.RefusalVoice
 
 internal class ServerPublicRoutes(
@@ -16,8 +17,10 @@ internal class ServerPublicRoutes(
     addresses: ClientAddresses,
     secure: Boolean,
     voice: RefusalVoice,
+    /** How a request whose key forward_auth admitted is answered while the server drains (#791). */
+    drain: DrainGate,
 ) {
-    private val forwardAuth = ForwardAuthRoute(server, keys, people, voice)
+    private val forwardAuth = ForwardAuthRoute(server, keys, people, voice, drain)
     private val installRoute = ClientInstallRoute(server, addresses, secure, voice)
 
     suspend fun answered(call: ApplicationCall, path: List<String>): Boolean = when {

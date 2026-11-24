@@ -48,7 +48,13 @@ internal class ServerStreamIdleTest {
     @Volatile
     private var opening = START + DELTA
 
-    /** A head that starts its answer with [opening], falls silent until the test lets it go on, and then ends it. */
+    /** What the head writes once the test lets it go on, before it closes its connection: the message's end, unless a
+     *  test says less. */
+    @Volatile
+    private var closing = STOP
+
+    /** A head that starts its answer with [opening], falls silent until the test lets it go on, and then ends it with
+     *  [closing]. */
     private val head = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
         executor = workers
         createContext("/v1/messages") { exchange ->
@@ -60,7 +66,7 @@ internal class ServerStreamIdleTest {
             body.flush()
             check(goOn.tryAcquire(HEARD_WITHIN_MS, TimeUnit.MILLISECONDS)) { "the test never let the head go on" }
             exchange.use {
-                body.write(STOP.toByteArray())
+                body.write(closing.toByteArray())
                 body.flush()
             }
         }
@@ -162,6 +168,42 @@ internal class ServerStreamIdleTest {
         val answer = http.send(request.build(), HttpResponse.BodyHandlers.ofString())
         assertEquals(200, answer.statusCode(), answer.body())
         assertEquals(listOf(30_000L), door.said.map { it.streamIdleMs }, "the door's turn was not given the deadline")
+    }
+
+    @Test
+    fun `a head whose connection closes in the middle of an event ends its client's stream with an error event`() {
+        // The head writes a whole word and half of the next event, then closes its connection as if it had ended.
+        opening = START + DELTA + DELTA.take(DELTA.length / 2)
+        closing = ""
+        val heard = hearing(send(serve(streamIdleSeconds = 0)), workers)
+        assertEquals(START, heard.block("the message's start"))
+        assertEquals(DELTA, heard.block("the answer's first word"))
+        goOn.release()
+
+        // A connection that closed is no proof its stream ended whole: the half event is never passed on as if it had.
+        val event = heard.block("the error that ends the cut stream").orEmpty().lines()
+        assertEquals("event: error", event.first(), "the cut stream did not end with an error event: $event")
+        val message = Json.parseToJsonElement(event[1].removePrefix("data: ")).jsonObject.getValue("error").jsonObject
+            .getValue("message").jsonPrimitive.content
+        assertTrue("broke off its answer" in message, message)
+        assertNull(heard.block("the end of the stream"), "the error does not end the stream")
+    }
+
+    @Test
+    fun `a turn on the team's door its head says the deadline ended is a 504 in the ledger`() {
+        door.board = rig.board
+        door.timesOut = true
+        val key = serve(streamIdleSeconds = 30)
+        val request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:${rig.port}/door/v1/messages"))
+            .header("Content-Type", "application/json")
+            .header("x-api-key", key)
+            .POST(HttpRequest.BodyPublishers.ofString(STREAMED))
+        assertEquals(200, http.send(request.build(), HttpResponse.BodyHandlers.ofString()).statusCode())
+
+        awaitRow()
+        val row = rows().single()
+        assertEquals("504", row.getValue("status").jsonPrimitive.content, row.toString())
+        assertEquals("upstream_error", row.getValue("outcome").jsonPrimitive.content, row.toString())
     }
 
     /** Waits for the one turn's row, which the ledger writes a moment after the turn ends. */

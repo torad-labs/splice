@@ -93,7 +93,7 @@ internal class TurnAdmission(
     private suspend fun capped(turn: LedgerTurn): LimitVerdict {
         val person = turn.key.person
         overTokens(person)?.let { return it }
-        val shared = parts.limits.load.begin(turn.command.key)
+        val shared = parts.limits.load.begin(turn.command.key, turn.id)
         if (shared !is LimitVerdict.Admitted) return shared
         return when (val own = parts.limits.begin(person)) {
             is LimitVerdict.Admitted -> LimitVerdict.Admitted(own.slot.joined(shared.slot))

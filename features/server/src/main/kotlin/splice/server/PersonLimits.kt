@@ -14,22 +14,20 @@ import java.time.Clock
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** One place an admitted turn holds while it is in flight: among its person's turns, or the server's (ServerLoad).
- *  Giving it back is what lets the next turn have it. */
-internal fun interface HeldPlace {
-    fun giveBack()
-}
-
-/** One admitted turn's places in flight, every one given back once however often [release] is called. */
-internal class TurnSlot(private val places: List<HeldPlace>) {
+/** One admitted turn's places in flight, among its [person]'s turns and the whole [server]'s (ServerLoad), every one
+ *  given back once however often [release] is called. */
+internal class TurnSlot(private val person: PersonUse? = null, private val server: ServerLoad.Place? = null) {
     private val released = AtomicBoolean()
 
     fun release() {
-        if (released.compareAndSet(false, true)) places.forEach(HeldPlace::giveBack)
+        if (released.compareAndSet(false, true)) {
+            person?.ended()
+            server?.giveBack()
+        }
     }
 
     /** One slot holding this one's places and [other]'s, given back together. Neither is released apart from it. */
-    fun joined(other: TurnSlot): TurnSlot = TurnSlot(places + other.places)
+    fun joined(other: TurnSlot): TurnSlot = TurnSlot(person ?: other.person, server ?: other.server)
 }
 
 /** What asking to start a turn came to. */
@@ -68,7 +66,7 @@ internal class PersonUse {
         }
         inflight++
         starts.add(now)
-        return LimitVerdict.Admitted(TurnSlot(listOf(HeldPlace(::ended))))
+        return LimitVerdict.Admitted(TurnSlot(person = this))
     }
 
     @Synchronized

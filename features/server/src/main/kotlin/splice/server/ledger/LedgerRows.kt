@@ -54,7 +54,8 @@ internal class LedgerRows(private val parts: LedgerParts) {
 
     /** How [turn] ended: splice's own failure above all, then a client that left, a gateway timeout, its head's word,
      *  the dialect's reading, or its status. A timeout outranks the head's word: the relay that ended a silent stream
-     *  hung up on the head, which then reads its own client as gone. */
+     *  hung up on the head, which then reads its own client as gone; and a turn on the team's door, which no relay
+     *  times, is one its head says the server's deadline ended. */
     private fun ending(turn: LedgerTurn, end: LedgerEnd): RowEnd {
         val served = end.served
         val chat = turn.chat
@@ -62,7 +63,7 @@ internal class LedgerRows(private val parts: LedgerParts) {
         return when {
             turn.failedOwn -> RowOutcome.own
             turn.gone -> RowOutcome.gone
-            end.status == HttpStatus.GATEWAY_TIMEOUT -> RowOutcome.timedOut
+            end.status == HttpStatus.GATEWAY_TIMEOUT || served?.pace?.timedOut == true -> RowOutcome.timedOut
             served != null -> RowOutcome.ofHead(served.outcome, end.status)
             reading != null -> RowOutcome.ofChat(reading, chat.stream != null, end.status)
             else -> RowOutcome.ofStatus(end.status)

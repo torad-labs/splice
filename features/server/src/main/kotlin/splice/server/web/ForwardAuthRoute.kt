@@ -2,7 +2,8 @@
 // endpoint for internal team dashboards (Grafana, Prometheus, etc.) on the same server keys & allowlist. Accepts a
 // person's Splice key as `x-api-key`, `Authorization: Bearer`, or `Cookie: splice_forward_auth=<key>`, and returns
 // 200 with identity headers (`X-Splice-Person`, `X-Splice-Team`, `X-Splice-Admin`, `X-Auth-Request-Email`) for admins
-// and emails/domains matched by `[server.forward_auth] allow`.
+// and emails/domains matched by `[server.forward_auth] allow`. While the server drains at stop, an admitted key is a 503
+// with `Retry-After`, as every keyed request is then (DrainGate).
 package splice.server.web
 
 import io.ktor.http.HttpHeaders
@@ -20,6 +21,7 @@ import splice.server.SERVER_ROOT
 import splice.server.ServerKey
 import splice.server.ServerKeys
 import splice.server.ServerPeople
+import splice.server.load.DrainGate
 import splice.share.RefusalVoice
 
 internal class ForwardAuthRoute(
@@ -27,6 +29,7 @@ internal class ForwardAuthRoute(
     private val keys: ServerKeys,
     private val people: ServerPeople,
     private val voice: RefusalVoice,
+    private val drain: DrainGate,
 ) {
     private val route = listOf(SERVER_ROOT, FORWARD_AUTH_SEGMENT)
 
@@ -52,6 +55,8 @@ internal class ForwardAuthRoute(
         policy: splice.core.topology.ServerForwardAuth,
         key: ServerKey,
     ) {
+        // A key admitted while the server drains is answered as every keyed request then is (#791).
+        if (drain.refused(call, voice)) return
         val admin = server.admin(key.person)
         if (!policy.admits(key.person, admin)) {
             voice.refuse(call, HttpStatus.FORBIDDEN, "${key.person} is not allowed to open dashboards here")

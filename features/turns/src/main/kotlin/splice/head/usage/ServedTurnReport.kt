@@ -34,7 +34,7 @@ internal class ServedTurnReport(private val served: ServedTurns, private val pri
             outcome = outcome,
             tokens = tokens.takeIf { billed },
             costUsd = price.usd(model, row),
-            pace = TurnPace(ttftMs = firstWord, stallMs = stall(row)),
+            pace = TurnPace(ttftMs = firstWord, stallMs = stall(row), timedOut = way.timedOut),
             speed = way.speed,
         )
         served.ended(id, turn)
@@ -54,5 +54,10 @@ internal class ServedTurnReport(private val served: ServedTurns, private val pri
     }
 }
 
-/** Where a turn went beyond its row: the pool's server that took it, and how fast that server worked. */
-internal data class ServedWay(val upstream: String? = null, val speed: TurnSpeed? = null)
+/** Where a turn went beyond its row: the pool's server that took it, how fast that server worked, and whether the
+ *  server's deadline on its silence ended it (#791). */
+internal data class ServedWay(
+    val upstream: String? = null,
+    val speed: TurnSpeed? = null,
+    val timedOut: Boolean = false,
+)

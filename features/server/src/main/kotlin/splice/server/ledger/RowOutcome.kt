@@ -37,8 +37,8 @@ internal object RowOutcome {
     /** A request splice itself failed (a ledger it cannot write, a head of its own not running), as a 500. */
     val own: RowEnd = RowEnd(Outcome.SPLICE_ERROR, HttpStatus.INTERNAL_SERVER_ERROR)
 
-    /** A request answered as a gateway timeout: a stream the relay ended for falling silent past
-     *  `stream_idle_seconds` (#791), whatever its head said of the hang-up that ended it there. */
+    /** A request answered as a gateway timeout: a stream ended for falling silent past `stream_idle_seconds` (#791), by
+     *  the relay whatever its head said of the hang-up, or on the team's door by its head's own watchdog. */
     val timedOut: RowEnd = RowEnd(Outcome.UPSTREAM_ERROR, HttpStatus.GATEWAY_TIMEOUT)
 
     private val success = HttpStatus.OK..HttpStatus.MAX_SUCCESS

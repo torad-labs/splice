@@ -140,7 +140,7 @@ internal class OpenAiRoute(
         val ask = OutwardAsk(chat.body, headers, chat.stream, whole, every, streamIdleMs)
         val path = api.path + bound.query(paths.query(call))
         val preferred = parts.people.of(asked.key.person).preferred
-        val way = ProviderWay(asked.head, path, asked.server.base, parts.upstreams, preferred)
+        val way = ProviderWay(asked.head, path, asked.server.base, parts.upstreams, preferred, turn?.id)
         turn?.chat = chat
         turn?.way = way
         try {

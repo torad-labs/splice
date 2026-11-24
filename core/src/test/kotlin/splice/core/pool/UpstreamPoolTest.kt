@@ -132,27 +132,50 @@ class UpstreamPoolTest {
     }
 
     @Test
-    fun `under a per-server cap a full preferred server gives its person's turn to one with room`() {
+    fun `under a per-server cap a full preferred server gives a new session's turn to the least busy with room`() {
         val pool = pool("a", "b", "c")
-        pool.holdAtMost(1)
-        assertEquals("b", pool.lease("b").name)
-        assertEquals("a", pool.lease("b").name, "b holds its one turn, so the least busy with room takes it")
-        assertEquals("c", pool.lease("b").name)
+        listOf("t1", "t2", "t3").forEach { assertTrue(pool.reserve(it, 1)) }
+        assertEquals("b", pool.lease("b", turn = "t1").name)
+        assertEquals("a", pool.lease("b", turn = "t2").name, "b is full: the least busy with room")
+        assertEquals("c", pool.lease("b", turn = "t3").name)
         assertEquals(mapOf("a" to 1, "b" to 1, "c" to 1), inflight(pool), "no server went past its cap")
-        // With every server full the turn goes where it would have; server mode refuses such a turn before this.
-        assertEquals("b", pool.lease("b").name)
     }
 
     @Test
-    fun `under a per-server cap a session whose server is full is served elsewhere and keeps its home`() {
+    fun `a session whose server is full goes to the least busy healthy server with room and keeps its home`() {
+        val pool = pool("a", "b", "c")
+        assertTrue(pool.reserve("first", 2))
+        val home = pool.lease(session = "s", turn = "first")
+        assertEquals("a", home.name)
+        pool.lease("a")
+        pool.lease("b")
+        // a, the session's home, is full at 2; b, which its person prefers, holds 1; c holds none.
+        assertEquals(mapOf("a" to 2, "b" to 1, "c" to 0), inflight(pool))
+        assertTrue(pool.reserve("second", 2))
+        assertEquals("c", pool.lease("b", session = "s", turn = "second").name, "the least busy with room, not b")
+        home.release()
+        assertTrue(pool.reserve("third", 2))
+        assertEquals("a", pool.lease(session = "s", turn = "third").name, "its prompt is cached on a, which has room")
+    }
+
+    @Test
+    fun `turns admitted before any of them leased never add up past the cap, a lease already taken included`() {
         val pool = pool("a", "b")
-        pool.holdAtMost(1)
-        val first = pool.lease(session = "s")
-        assertEquals("a", first.name)
-        assertEquals("b", pool.lease(session = "s").name, "a holds the session's first turn, so b takes the next")
-        assertEquals(mapOf("a" to 1, "b" to 1), inflight(pool))
-        first.release()
-        assertEquals("a", pool.lease(session = "s").name, "the session's prompt is cached on a, which has room again")
+        // A turn of this machine's own holds a; one place is left, on b.
+        pool.lease()
+        assertTrue(pool.reserve("first", 1), "b has a place")
+        assertFalse(pool.reserve("second", 1), "the one place left is the first turn's, though it has not leased")
+        assertEquals("b", pool.lease(turn = "first").name)
+        assertEquals(mapOf("a" to 1, "b" to 1), inflight(pool), "no server went past its cap")
+    }
+
+    @Test
+    fun `a place reserved and never leased is free again once its turn ends`() {
+        val pool = pool("a")
+        assertTrue(pool.reserve("refused-at-its-head", 1))
+        assertFalse(pool.reserve("next", 1))
+        pool.unreserve("refused-at-its-head")
+        assertTrue(pool.reserve("next", 1), "the turn that never leased still held its place")
     }
 
     @Test

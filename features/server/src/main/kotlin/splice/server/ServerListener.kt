@@ -65,7 +65,6 @@
 package splice.server
 
 import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
@@ -91,6 +90,7 @@ import splice.http.listen.HttpListenerThreads
 import splice.server.caller.ClientAddresses
 import splice.server.caller.KeyAdmission
 import splice.server.ledger.ROUTE_MESSAGES
+import splice.server.load.DrainGate
 import splice.server.signin.SigninParts
 import splice.server.signin.SigninRoute
 import splice.server.telemetry.OTLP_ROUTE
@@ -124,7 +124,9 @@ internal class ServerListener(
     private val admin = ServerAdmin(server, KeyApi(parts.keys, log, reads.audit), reads, voice)
     private val addresses = ClientAddresses(server.trustedProxies)
     private val signins = SigninRoute(signin, KeyApi(parts.keys, log, reads.audit), addresses, voice, log)
-    private val publicRoutes = ServerPublicRoutes(server, parts.keys, parts.people, addresses, tls != null, voice)
+    private val drain = DrainGate(parts.limits.load)
+    private val publicRoutes =
+        ServerPublicRoutes(server, parts.keys, parts.people, addresses, tls != null, voice, drain)
     private val keyAdmission = KeyAdmission(parts.keys, addresses, log)
     private val watched = WatchedRelay()
     private val paths = RequestPaths()
@@ -199,20 +201,11 @@ internal class ServerListener(
         val voiced = if (path != null && openAi.asks(call, path)) openAi.voice else voice
         val key = keyAdmission.admitted(call, voiced) ?: return
         when {
-            drained(call, voiced) -> Unit
+            drain.refused(call, voiced) -> Unit
             path == null -> noSuchPath(call)
             else -> routed(call, key, path)
         }
         parts.keys.keepUse()
-    }
-
-    /** Whether the server drains at stop, which answers every keyed request alike (#791): a 503 with `Retry-After` in
-     *  its client's shape, whatever its route, so a client or load balancer reads one answer for all of them. */
-    private suspend fun drained(call: ApplicationCall, voiced: RefusalVoice): Boolean {
-        val refused = parts.limits.load.drainRefusal() ?: return false
-        call.response.headers.append(HttpHeaders.RetryAfter, refused.retryAfterSeconds.toString())
-        voiced.refuse(call, refused.status, refused.why)
-        return true
     }
 
     /** Routes that handle their own auth or need none: health, sign-in, forward_auth, and install script. */

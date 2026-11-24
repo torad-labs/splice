@@ -95,8 +95,9 @@ export CODEX_OAUTH_TOKEN_URL="$CODEX_REFRESH"
 unset MOCK_CHAT_API_KEY
 
 seed_topology() {
-  # Both RealInfer heads already use the SAME standing prompt. Moving it to their provider must
-  # not introduce a prompt to a sibling which did not ask for it (the fix session refuses that move).
+  # Both RealInfer heads already say the SAME window, tiers, standing prompt and maxInflight. Moving
+  # one to their provider must not hand a sibling a value it did not ask for (the fix session refuses
+  # that move), so a team that shares them across its heads is the case the migration moves.
   cat > "$TOPOLOGY" <<EOF
 [daemon]
 control_port = $CONTROL_PORT
@@ -189,8 +190,11 @@ port = 3105
 discovery_prefix = "claude-realinfer--"
 pinned_model = "mock-chat-2"
 context_window = $WINDOW
+model_slots = { opus = "mock-chat", sonnet = "mock-chat-2-big", haiku = "mock-chat-2" }
 system_prompt = "$PROMPT"
 system_prompt_mode = "append"
+[heads.claude-realinfer-fast.overrides]
+maxInflight = "3"
 [heads.claude-realinfer-fast.claude]
 command = "claude-realinfer-fast"
 EOF

@@ -74,6 +74,7 @@ public object FakeMcpServer {
     public fun main(args: Array<String>) {
         check(args.isEmpty()) { "FakeMcpServer takes no arguments" }
         if (System.getenv("FAKE2") != null) {
+            FakeMcpTermReceipts.hold()
             val received = AtomicBoolean()
             sun.misc.Signal.handle(sun.misc.Signal("TERM")) {
                 if (received.compareAndSet(false, true)) FakeMcpTermReceipts.record()

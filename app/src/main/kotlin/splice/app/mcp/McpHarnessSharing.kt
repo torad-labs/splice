@@ -35,11 +35,15 @@ internal class McpHarnessSharing(
     fun inputs(home: Path): List<McpServerInput> =
         McpGlobalRead(home, log, TempleMcpEntry(home, env, paths), McpUserRegistry(paths)).inputs()
 
-    fun endpointPrefix(): String {
-        val useFront = seams.frontLive.live(paths.stateDir, MCP_HUB_FRONT_PORT)
-        val port = if (useFront) MCP_HUB_FRONT_PORT else seams.controlPortOverride ?: AdminSupport.controlPort(env)
-        return "http://127.0.0.1:$port/mcp/"
+    fun endpointPrefix(): String = if (seams.frontLive.live(paths.stateDir, MCP_HUB_FRONT_PORT)) {
+        "http://127.0.0.1:$MCP_HUB_FRONT_PORT/mcp/"
+    } else {
+        controlPrefix()
     }
+
+    /** The daemon's own MCP address on its control port, where it answers the servers it holds itself (its mcp
+     *  modes), as a launch is given them: the hub's front serves only the servers it starts. */
+    fun controlPrefix(): String = "http://127.0.0.1:${seams.controlPortOverride ?: AdminSupport.controlPort(env)}/mcp/"
 
     fun planner(endpointPrefix: String): McpSharing {
         val daemon = readDaemonConfig()

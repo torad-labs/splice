@@ -1,5 +1,6 @@
 // NEW: a mode as `GET /api/modes` and `PUT /api/modes/<name>` answer it (modes/README.md): what its folder says, and
-// whether it is on, for every head and per head, with where that value came from.
+// whether it is on, for every head and per head, with where that value came from. An mcp mode says whether its server
+// name is taken by one of the person's own MCP servers, which keeps it: the mode is then not served or listed.
 package splice.app.modes
 
 import kotlinx.serialization.json.JsonArray
@@ -12,6 +13,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.modes.api.FoundMode
 import splice.modes.api.ModeHookWorker
+import splice.modes.api.ModeKind
 import splice.modes.api.ModeState
 
 internal class ModeRows(private val modes: DaemonModes) {
@@ -26,6 +28,7 @@ internal class ModeRows(private val modes: DaemonModes) {
         put("summary", manifest.summary)
         put("kind", manifest.kind.wire)
         put("server", manifest.server)
+        if (manifest.kind == ModeKind.MCP) put("server_taken", modes.taken(mode))
         put("prompt", mode.prompt != null)
         put("tools", tools(mode))
         put("resources", resources(mode))

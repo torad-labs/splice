@@ -351,6 +351,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // Which program each Desktop session runs on, in the desktop-harnesses.json disk page row.
     "app/src/main/kotlin/splice/app/desktop/harness/DesktopHarnessFile.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/desktop/setup/DesktopPrograms.kt" to mapOf("writeAtomic(" to 3),
+    // The names of the mcp modes the daemon gives Claude Desktop, in the desktop-own-mcp.json disk page row.
+    "app/src/main/kotlin/splice/app/desktop/setup/DesktopOwnMcp.kt" to mapOf("writeAtomic0600(" to 1),
     // An extension or skill copied whole into Desktop's gateway profile: staged beside it, then moved into place.
     "app/src/main/kotlin/splice/app/desktop/setup/DesktopTreeCopy.kt" to
         mapOf("Files.copy(" to 1, "Files.createSymbolicLink(" to 1, "Files.move(" to 1),

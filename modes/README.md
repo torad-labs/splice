@@ -105,6 +105,23 @@ and a client that draws MCP Apps can show its pages.
   `--strict-mcp-config` asked for its own servers alone, so it is handed no mode's server, on the door or a head.
   A session already running when the mode is turned on does not see it until its next launch; turned off, the server
   stops answering at once.
+- **Claude Desktop.** Desktop's own sessions run no head either, so a mode on for every head, with an empty
+  `[heads] only` and no `"desktop"` on `[callers] off`, is one of the MCP servers splice writes into the
+  `claude_desktop_config.json` of each Desktop on the gateway: an entry naming splice's stdio bridge
+  (`<state>/desktop-mcp`) and the server, with no address, header or key. The bridge reaches the daemon's own
+  `/mcp/<server>` with the MCP access key it reads from splice's state folder when Desktop starts it. The daemon
+  brings that file up to date at its start, when the catalog changes, at `splice desktop on`, and when
+  `PUT /api/modes/<name>` switches an mcp mode, and records which modes it gave Desktop in
+  `<state>/desktop-own-mcp.json`, so `splice mcp sync` and the bridge list and reach the same ones. Desktop reads the
+  file when it starts: quit the whole app and reopen it to see a mode turned on or off. Turned off, the server stops
+  answering at once, and a Desktop still holding the entry is told it is gone.
+- **A name the person already uses.** A server of the person's own with a mode's server name keeps the name
+  everywhere, wherever splice reads it: imported into splice, in `~/.claude.json`, the Temple's, in the usual
+  Desktop's `claude_desktop_config.json` (whose servers splice copies into a gateway profile), or in a gateway
+  profile's own file, where every entry but splice's bridge entry is theirs. The daemon's `/mcp/<server>` answers
+  theirs (or nothing, where splice does not host it), and no launch and no Desktop configuration lists the mode.
+  `GET /api/modes` says `"server_taken": true` on the mode's row and `splice status` adds `not served: your MCP
+  server '<server>' has the name`. Rename theirs to have the mode.
 - **What the client is told.** Each tool under its own name (the client shows `mcp__<server>__<tool>`), with its
   description, schema and `_meta` as the folder writes them. `prompt.md` is the server's `instructions`.
 - **Pages.** A tool whose `tools/<tool>.meta.json` says `{ "ui": { "resourceUri": "ui://<server>/<page>" } }` names
@@ -112,9 +129,15 @@ and a client that draws MCP Apps can show its pages.
   `resource(uri)` gives for an entry with no file. A client that does not draw MCP Apps shows the tool's answer as
   any tool's result, so the answer has to stand without the page.
 - **The session.** A call's `ModeSession.id` is the client's MCP session id, not the id `/api/sessions` gives the
-  session, and its folder, model and caller are not known: the MCP transport does not carry them. Its `head` is the
-  head its launch named (empty for `claude` on the door), and its `caller` reads `head` for every call: the wrapped
-  `claude` on the Claude head is a door caller whose entry names a head, so the entry cannot tell the two apart.
+  session, and its folder and model are not known: the MCP transport does not carry them. Its `head` is the head the
+  request names in `X-Splice-Head` (empty for `claude` on the door and for Claude Desktop), and its `caller` the one it
+  names in `X-Splice-Caller`, which every entry splice gives for a mode carries: `door` for `claude`, on the door or
+  wrapped on the Claude head (whose entry also names that head, so the two are told apart), `head` for a head's own
+  command, `desktop` for Claude Desktop. A named caller is held to `[callers] off`, which chooses where the mode is
+  offered, not who may call it. A request that names none (a host reading a page with the management key, an
+  operator's tool) is answered while the mode is on, and its `caller` is null: who it is is not known. The client
+  writes the header itself, and any holder of the MCP access key can name any caller, so the name says who claims to
+  be calling and grants nothing: a mode must not decide anything that matters on it.
 
 ## Hooks
 
@@ -164,8 +187,10 @@ worker = { kind = "http", url = "http://127.0.0.1:9100/hook", auth_env = "HOOK_K
   writes it, its input as a JSON object, the session, and the mode's store. It answers `ModeAnswer.Text` or
   `ModeAnswer.Error`, which the model reads as an error result. A handler that throws is answered for it.
 - The session is `ModeSession(id, folder, head, model, caller)`: the id `/api/sessions` gives it, its folder when
-  known, its head, its model, and its caller (`door`, `head` or `desktop`; an mcp mode's call does not know its caller,
-  see "An mcp mode").
+  known, its head, its model, and its caller (`door`, `head` or `desktop`). `caller` is null when it is not known: an
+  mcp mode's call whose request names no caller (a host reading a page, an operator's tool; see "An mcp mode"). It
+  is nullable since 0.7.0: a mode jar built against an older `:modes-api`, where it was never null, fails on such a
+  call where it uses `caller` as if it were set.
 - `ModeStore` keeps text per session for the mode, under splice's state folder, and survives a restart.
 - `resource(uri)` gives the content of a resource the manifest declares with no `file`; only an mcp mode is asked.
 - `routes` lists the management routes the mode answers (`ModeRoute`: method, path, and a handler from a

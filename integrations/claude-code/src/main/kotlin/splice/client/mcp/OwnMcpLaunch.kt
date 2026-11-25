@@ -22,7 +22,8 @@ public fun interface OwnMcpServers {
 
 /** The file of the daemon's own servers for one launch, and the launch's arguments with it among them. Each entry is
  *  the HTTP entry a hosted server gets ([McpEndpoint.entry]), so it carries the MCP-scoped bearer and goes in an
- *  owner-only file in [dir], splice's state folder, never in argv. */
+ *  owner-only file in [dir], splice's state folder, never in argv; it also names the launch's caller, which the mode is
+ *  told. */
 public class OwnMcpLaunch(
     private val servers: OwnMcpServers,
     private val sharing: McpSharing,
@@ -53,7 +54,7 @@ public class OwnMcpLaunch(
             val body = buildJsonObject {
                 putJsonObject(
                     Keys.MCP_SERVERS,
-                ) { names.forEach { put(it, sharing.endpoint.entry(it, head.ifBlank { null })) } }
+                ) { names.forEach { put(it, sharing.endpoint.entry(it, head.ifBlank { null }, caller = caller)) } }
             }
             SecureFile.writeAtomic0600(file, body.toString())
             file

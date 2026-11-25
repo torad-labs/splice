@@ -29,7 +29,7 @@ import splice.sessions.peer.store.PeerStore
 /** A stdio session picks its peer from kernel ancestry, never from tool arguments or an inherited key. */
 internal class PeerMcpStdio(private val env: EnvReader) {
     private val processes = PeerOwnerProcesses()
-    private val protocol = InProcessMcpHost { _, _ -> UnboundPeerTools }
+    private val protocol = InProcessMcpHost { _, _, _ -> UnboundPeerTools }
     private val endpoint = "http://127.0.0.1:${AdminSupport.controlPort(env)}$PEER_MCP_ENDPOINT"
     private val settings = KeyStorePath.defaultPath(env).toAbsolutePath().parent
     private var binding: OwnedPeer? = null
@@ -45,7 +45,7 @@ internal class PeerMcpStdio(private val env: EnvReader) {
     suspend fun answer(line: String): String? {
         val request = JsonScalars.objectOrNull(Json, line)
         if (JsonScalars.str(request, "method") != "tools/call") {
-            return protocol.post(PEER_MCP_SERVER, null, line, null)?.body
+            return protocol.post(PEER_MCP_SERVER, null, line, null, null)?.body
         }
         return forward(line, request?.get("id"))
     }

@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.client.mcp.DirectoryProbe
 import splice.client.mcp.McpSharing
+import splice.control.mcp.McpEntryNames
 import splice.control.mcp.McpHost
 import splice.control.mcp.McpReply
 import splice.core.util.LogSink
@@ -89,10 +90,10 @@ class InProcessMcpServedTest {
         McpSharing(true, emptySet(), "http://127.0.0.1:1/mcp/", { "k" }, DirectoryProbe { false }),
         { JsonObject(emptyMap()) },
         log = LogSink { },
-    ).also { it.inProcess = InProcessMcp { name, head -> harbor.takeIf { name == "harbor" && head == "acme" } } }
+    ).also { it.inProcess = InProcessMcp { name, head, _ -> harbor.takeIf { name == "harbor" && head == "acme" } } }
 
     private fun ask(body: String, session: String? = null, name: String = "harbor", head: String? = "acme"): McpReply =
-        runBlocking { host.post(name, session, body, head = head) }
+        runBlocking { host.post(name, session, body, entry = McpEntryNames(head = head)) }
 
     private fun result(reply: McpReply): JsonObject {
         assertEquals(200, reply.status, reply.body)

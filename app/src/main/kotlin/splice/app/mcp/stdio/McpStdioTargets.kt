@@ -2,10 +2,13 @@
 // speaks to, read when it starts from the same servers and the same plan every other harness is given: Splice's own
 // `/mcp/<name>` with the MCP access key for a server Splice hosts, or the URL and headers the person gave a server of
 // theirs. Desktop's configuration names only the server, so no address, key or header is ever written there, and a
-// change to the server reaches Desktop at its next start.
+// change to the server reaches Desktop at its next start. A server the daemon answers itself (an mcp mode it gives
+// Desktop, DesktopOwnMcp) is reached at the daemon's own `/mcp/<name>`, with the MCP access key and Desktop as the
+// caller; a server of the person's by the same name is theirs, and is reached as it always was.
 package splice.app.mcp.stdio
 
 import kotlinx.serialization.json.JsonObject
+import splice.app.desktop.setup.DesktopOwnMcp
 import splice.app.mcp.McpHarnessSharing
 import splice.app.mcp.McpHarnessSyncSeams
 import splice.core.config.StatePaths
@@ -14,6 +17,7 @@ import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.modes.api.ModeCaller
 import java.io.IOException
 import java.net.URI
 import java.net.URISyntaxException
@@ -38,7 +42,7 @@ internal class McpStdioTargets(
         val sharing = McpHarnessSharing(paths, env, log, seams)
         val inputs = sharing.inputs(home)
         if (inputs.none { it.name == name }) {
-            McpStdioResolution.Missing("no MCP server named '$name' is active in Splice")
+            own(name, sharing) ?: McpStdioResolution.Missing("no MCP server named '$name' is active in Splice")
         } else {
             val plan = sharing.planner(sharing.endpointPrefix()).plan(inputs, McpHarness.CLAUDE.wire)
             val entry = plan.rewritten[name] as? JsonObject
@@ -49,6 +53,15 @@ internal class McpStdioTargets(
         }
     } catch (failure: IOException) {
         McpStdioResolution.Missing("Splice's MCP servers could not be read (${SafeFailureText.render(failure)})")
+    }
+
+    /** The server [name] the daemon answers itself for Claude Desktop (a mode the daemon recorded for it,
+     *  DesktopOwnMcp), at the daemon's control port with the MCP access key as it stands now and Desktop named as the
+     *  caller, as a launch's entry names its own; null when the daemon recorded no such server. */
+    private fun own(name: String, sharing: McpHarnessSharing): McpStdioResolution? {
+        if (name !in DesktopOwnMcp(paths.stateDir).recorded()) return null
+        val endpoint = sharing.planner(sharing.controlPrefix()).endpoint
+        return target(name, endpoint.entry(name, null, caller = ModeCaller.DESKTOP.wire))
     }
 
     /** [entry]'s address, when it is a web one; refused, without saying any header's value, when one of its headers

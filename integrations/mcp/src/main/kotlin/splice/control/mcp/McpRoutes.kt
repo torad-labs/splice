@@ -16,6 +16,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.selects.onTimeout
 import kotlinx.coroutines.selects.select
+import splice.client.mcp.MCP_CALLER_HEADER
 import splice.client.mcp.MCP_HEAD_HEADER
 import splice.http.SseChannelResponse
 import splice.http.SseWrite
@@ -30,7 +31,8 @@ public class McpRoutes(private val host: McpHost) {
         val name = call.parameters["name"].orEmpty()
         val headers = call.request.headers
         val body = call.receiveText()
-        val reply = host.post(name, headers[SESSION_HEADER], body, headers[PROTOCOL_HEADER], headers[MCP_HEAD_HEADER])
+        val entry = McpEntryNames(headers[MCP_HEAD_HEADER], headers[MCP_CALLER_HEADER])
+        val reply = host.post(name, headers[SESSION_HEADER], body, headers[PROTOCOL_HEADER], entry)
         reply.sessionId?.let { call.response.header(SESSION_HEADER, it) }
         val answer = reply.body
         if (answer == null) {
@@ -44,7 +46,7 @@ public class McpRoutes(private val host: McpHost) {
         val name = call.parameters["name"].orEmpty()
         val sessionId = call.request.headers[SESSION_HEADER]
         // a server the daemon answers itself sends nothing between requests: MCP's answer for no stream is 405
-        if (host.answeredHere(name, call.request.headers[MCP_HEAD_HEADER])) {
+        if (answeredHere(call, name)) {
             call.respond(HttpStatusCode.MethodNotAllowed)
             return
         }
@@ -81,7 +83,7 @@ public class McpRoutes(private val host: McpHost) {
         val name = call.parameters["name"].orEmpty()
         val sessionId = call.request.headers[SESSION_HEADER]
         // nothing is kept for a client of a server the daemon answers itself, so there is nothing to end
-        if (host.answeredHere(name, call.request.headers[MCP_HEAD_HEADER])) {
+        if (answeredHere(call, name)) {
             call.respond(HttpStatusCode.OK)
             return
         }
@@ -92,6 +94,10 @@ public class McpRoutes(private val host: McpHost) {
         val ended = host.endSession(name, sessionId)
         call.respond(if (ended) HttpStatusCode.OK else HttpStatusCode.NotFound)
     }
+
+    /** Whether [name] is a server the daemon answers itself for this client, by the head and caller its entry names. */
+    private fun answeredHere(call: ApplicationCall, name: String): Boolean =
+        host.answeredHere(name, call.request.headers[MCP_HEAD_HEADER], call.request.headers[MCP_CALLER_HEADER])
 
     /** Notifications as SSE `message` events; a comment ping keeps the connection honest while idle. */
     // select's onTimeout is the ping; kotlinx.coroutines still marks it experimental.

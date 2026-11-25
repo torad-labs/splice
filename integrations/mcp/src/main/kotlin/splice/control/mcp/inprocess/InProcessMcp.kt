@@ -30,8 +30,9 @@ public interface InProcessMcpServer {
 }
 
 /** The servers this daemon answers itself. [server] is the one called [name] for a client on [head] (the head its
- *  launch entry names, null for a client that named none), or null when there is none for that client: the name is
- *  then a hosted server's, or nobody's, and the host answers as it always has. */
+ *  launch entry names, null for a client that named none) that says it is [caller] (`door`, `head` or `desktop`, null
+ *  when its entry says nothing), or null when there is none for that client: the name is then a hosted server's, or
+ *  nobody's, and the host answers as it always has. */
 public fun interface InProcessMcp {
-    public fun server(name: String, head: String?): InProcessMcpServer?
+    public fun server(name: String, head: String?, caller: String?): InProcessMcpServer?
 }

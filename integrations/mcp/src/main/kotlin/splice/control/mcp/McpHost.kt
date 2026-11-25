@@ -34,6 +34,10 @@ internal const val RPC_SERVER_ERROR = -32000
 /** What the transport writes back: status, an optional session header, and a JSON body (or none for 202). */
 public data class McpReply(val status: Int, val body: String?, val sessionId: String? = null)
 
+/** What a client's entry names about the client: the [head] it is on and who it is ([caller], a mode's word for its
+ *  caller), each null where the entry says nothing. Only a server the daemon answers itself is told the caller. */
+public data class McpEntryNames(val head: String? = null, val caller: String? = null)
+
 /** Reads the operator's global `mcpServers` object as it is on disk NOW; a seam for tests and for
  *  keeping ~/.claude.json parsing where it already lives (the app wires a tolerant read). */
 public fun interface GlobalMcpServers {
@@ -105,19 +109,22 @@ public class McpHost(
     }
 
     /** One client POST. [sessionId] is the `Mcp-Session-Id` header, absent on `initialize`;
-     *  [protocolVersion] is the `MCP-Protocol-Version` header a client sends after initialize. */
+     *  [protocolVersion] is the `MCP-Protocol-Version` header a client sends after initialize; [entry] is what the
+     *  client's entry names about it. */
     public suspend fun post(
         name: String,
         sessionId: String?,
         body: String,
         protocolVersion: String? = null,
-        head: String? = null,
-    ): McpReply =
-        own()?.post(name, sessionId, body, head) ?: posts.post(name, sessionId, body, protocolVersion, head)
+        entry: McpEntryNames = McpEntryNames(),
+    ): McpReply = own()?.post(name, sessionId, body, entry.head, entry.caller)
+        ?: posts.post(name, sessionId, body, protocolVersion, entry.head)
 
-    /** Whether [name] is a server the daemon answers itself for a client on [head]: one with no notification stream
-     *  to open and no session to end, since each of its answers is whole in the reply to its request. */
-    public fun answeredHere(name: String, head: String?): Boolean = own()?.answers(name, head) == true
+    /** Whether [name] is a server the daemon answers itself for a client on [head] that names itself [caller]: one with
+     *  no notification stream to open and no session to end, since each of its answers is whole in the reply to its
+     *  request. */
+    public fun answeredHere(name: String, head: String?, caller: String? = null): Boolean =
+        own()?.answers(name, head, caller) == true
 
     /** The protocol side of [inProcess] as it stands now: it keeps nothing between requests. */
     private fun own(): InProcessMcpHost? = inProcess?.let { InProcessMcpHost(it) }

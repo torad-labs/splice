@@ -129,12 +129,14 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # # provider's health_seconds; "completion" asks the model to really complete, and needs model. With a
 # # completion probe, at_start true (the default) holds a member out until its first probe passes; false serves it
 # # at once until a probe fails.
+# # single_url names openai-chat providers on one base_url to probe too: each takes no turn until its probe passes.
 # [server.probe]
 # kind = "completion"
 # model = "team-model"
 # timeout_seconds = 30
 # every_seconds = 60
 # at_start = true
+# single_url = ["solo"]
 
 # ── server mode: the minimum client and path aliases (docs/specs/server-mode.md, F9 and #791) ──
 # Under a [server] table (README, "Server mode"), a team's own launcher can report its version, and a client fixed on

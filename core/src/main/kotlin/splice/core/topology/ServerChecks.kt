@@ -26,7 +26,7 @@ internal class ServerChecks(
     fun findings(): List<TopologyFinding> = if (server.declared) {
         listen() + exclusive() + commands() + tls() + people() + limits() + client() + signin() + telemetry() +
             ServerRoutingChecks(topology).findings() + ServerIdentityChecks(server).findings() +
-            ServerLedgerChecks(server).findings() + ServerAvailabilityChecks(server).findings() +
+            ServerLedgerChecks(server).findings() + ServerAvailabilityChecks(topology).findings() +
             ServerMeteringChecks(topology).findings()
     } else {
         emptyList()

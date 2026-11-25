@@ -150,6 +150,11 @@ public class UpstreamApi(
     /** Each provider paid for by the hour, with what it costs an hour in USD. */
     internal fun hourly(): Map<String, Double> = upstreams.hourly()
 
+    /** How long a turn [noneUp] refused waits before it is worth sending again: the seconds until the provider's
+     *  servers are next checked, sent as the refusal's `Retry-After` (#791); null while it has a server up or is one
+     *  server with no pool. */
+    internal fun recheck(head: String): Long? = upstreams.of(head)?.takeUnless { it.up }?.recheckSeconds
+
     /** Why a turn for the head [head] cannot be served now, or null while its provider has a server up or is one
      *  server: the sentence names the provider and each of its upstreams, which the person passes on to the
      *  operator. */

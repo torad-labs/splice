@@ -304,6 +304,7 @@ server.probe.at_start
 server.probe.every_seconds	
 server.probe.kind	
 server.probe.model	
+server.probe.single_url	
 server.probe.timeout_seconds	
 server.reference	
 server.reference.cached_usd_per_mtok	

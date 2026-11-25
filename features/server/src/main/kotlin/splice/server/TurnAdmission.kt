@@ -119,7 +119,9 @@ internal class TurnAdmission(
     private suspend fun refusal(turn: LedgerTurn): Refusal? =
         parts.books.turns.unwritable(turn)?.let { Refusal(HttpStatus.INTERNAL_SERVER_ERROR, it) }
             ?: parts.upstreams.externalRefusal()?.let(::external)
-            ?: parts.upstreams.noneUp(turn.command.key)?.let { Refusal(HttpStatus.SERVICE_UNAVAILABLE, it) }
+            ?: parts.upstreams.noneUp(turn.command.key)?.let { why ->
+                Refusal(HttpStatus.SERVICE_UNAVAILABLE, why, parts.upstreams.recheck(turn.command.key))
+            }
             ?: spent(turn.key.person)?.let { Refusal(HttpStatus.BAD_REQUEST, it) }
 
     private fun external(refusal: UpstreamRefusal): Refusal =

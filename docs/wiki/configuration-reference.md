@@ -1,3 +1,4 @@
+| `[server.probe]` | `single_url` | list of provider keys / empty | `openai-chat` providers on one `base_url` to probe as a pool of one server; a turn waits for its probe to pass. |
 [README](../../README.md) · [Wiki Home](README.md)
 
 # Configuration Reference
@@ -401,6 +402,7 @@ The daemon reads this table at startup. Restart it and reopen Desktop after chan
 | `[server.probe]` | `kind`, `model` | string / `health`; string / unset | `health` checks `/health`; `completion` requires a model ID. |
 | `[server.probe]` | `timeout_seconds`, `every_seconds` | integers / 30, 60 | Completion probe timeout and polling interval, respectively. |
 | `[server.probe]` | `at_start` | bool / true | With a completion probe, hold each pool member out until it first passes. |
+| `[server.probe]` | `single_url` | list of provider keys / empty | `openai-chat` providers on one `base_url` to probe like a pool member; each takes no turn until its probe passes. |
 | `[server.reference]` | `input_usd_per_mtok`, `cached_usd_per_mtok`, `output_usd_per_mtok` | numbers / unset each | Reference price per million tokens, for comparison in reports. |
 | `[server.teams]` | `by_domain` | map of strings / empty | Quoted email domain to team assignment, used if no explicit team. |
 | `[server.budgets]` | `person_daily_usd` | number / unset | Default daily USD budget per person, unless individually set. |

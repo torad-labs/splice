@@ -47,7 +47,7 @@ internal class ModeLines(private val client: HttpClient = HttpClient.newHttpClie
         return parsed(reply.body())?.map(::line) ?: unreadable("the daemon's /api/modes answered something else")
     }
 
-    /** `  mode  <name>  <on heads>  <kind>  <tools>[  not for <callers>]`. */
+    /** `  mode  <name>  <on heads>  <kind>  <tools>[  not for <callers>][  not served: your MCP server ...]`. */
     private fun line(mode: JsonObject): String {
         val heads = (mode["heads"] as? JsonObject).orEmpty()
             .filter { (_, state) -> ((state as? JsonObject)?.get("on") as? JsonPrimitive)?.booleanOrNull == true }.keys
@@ -57,7 +57,11 @@ internal class ModeLines(private val client: HttpClient = HttpClient.newHttpClie
         val callers = list(mode["callers_off"]).mapNotNull(JsonScalars::str)
         val notFor = if (callers.isEmpty()) "" else "  not for ${callers.joinToString(", ")}"
         val name = JsonScalars.str(mode, "name").orEmpty()
-        return "  mode  $name  $on  ${JsonScalars.str(mode, "kind").orEmpty()}  $tools$notFor"
+        // a mode whose server name is one of the person's own MCP servers yields it, and is said to here
+        val taken = (mode["server_taken"] as? JsonPrimitive)?.booleanOrNull == true
+        val server = JsonScalars.str(mode, "server").orEmpty()
+        val yours = if (taken) "  not served: your MCP server '$server' has the name" else ""
+        return "  mode  $name  $on  ${JsonScalars.str(mode, "kind").orEmpty()}  $tools$notFor$yours"
     }
 
     private fun list(value: JsonElement?): List<JsonElement> = (value as? JsonArray).orEmpty()

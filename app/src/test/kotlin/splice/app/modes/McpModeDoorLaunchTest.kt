@@ -4,6 +4,7 @@
 // launch every seat and most sessions get, never had the mode's tools. The file is one word in front of the person's
 // words, which keep the meaning they had, and a relaunch carries none of its own: the launch it makes names it again
 // while the mode is on.
+// A host that reads a page with the management key alone, naming no caller, is answered by the mode at its address.
 package splice.app.modes
 
 import com.sun.net.httpserver.HttpServer
@@ -17,11 +18,13 @@ import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.Daemon
@@ -98,6 +101,20 @@ class McpModeDoorLaunchTest {
          *  wrapped `claude` launches on the door once more. */
         suspend fun relaunch(argv: List<String>): List<String> =
             launch(LaunchRecipeArgs.callerArgs(argv.drop(1), state, wrapped = true))
+
+        /** The result of [body] posted to the visual mode's address with the management key alone, naming no caller
+         *  and no session, as the Eli app reads a page (splice-mcp-apps.ts). */
+        suspend fun bare(body: String): JsonObject {
+            val response = client.post("http://127.0.0.1:$controlPort/mcp/visual") {
+                header("Authorization", "Bearer $mgmt")
+                header("Accept", "application/json, text/event-stream")
+                header("Content-Type", "application/json")
+                setBody(body)
+            }
+            val text = response.bodyAsText()
+            assertEquals(200, response.status.value, text)
+            return json.parseToJsonElement(text).jsonObject.getValue("result").jsonObject
+        }
     }
 
     @Test
@@ -210,6 +227,25 @@ class McpModeDoorLaunchTest {
             assertEquals(listOf("visual"), ownServers(again))
             assertEquals(words, personsWords(again), "the person's files keep their flag: $again")
             assertEquals(1, again.count { it.startsWith("--mcp-config=") }, "splice's once: $again")
+        }
+    }
+
+    @Test
+    fun `a bare bearer lists an on mode's tools and reads its page at its address, as a host reading a view does`(
+        @TempDir tmp: Path,
+    ) {
+        daemon(tmp, "[modes.visual]\non = true") {
+            val listed = bare("""{"jsonrpc":"2.0","id":1,"method":"tools/list"}""").getValue("tools").jsonArray
+            assertEquals(
+                listOf("read_me", "show_widget", "html_render"),
+                listed.map { it.jsonObject.getValue("name").jsonPrimitive.content },
+            )
+            val read = bare(
+                """{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"ui://visual/reply.html"}}""",
+            )
+            val page = read.getValue("contents").jsonArray.single().jsonObject
+            assertEquals("text/html;profile=mcp-app", page.getValue("mimeType").jsonPrimitive.content)
+            assertTrue(page.getValue("text").jsonPrimitive.content.contains("<"), "the page's html")
         }
     }
 

@@ -38,8 +38,8 @@ internal class PeerMcpTools(
             ).send(call)
             return
         }
-        val host = InProcessMcpHost { name, _ -> Tools(principal).takeIf { name == PEER_MCP_SERVER } }
-        val reply = checkNotNull(host.post(PEER_MCP_SERVER, null, call.receiveText(), null))
+        val host = InProcessMcpHost { name, _, _ -> Tools(principal).takeIf { name == PEER_MCP_SERVER } }
+        val reply = checkNotNull(host.post(PEER_MCP_SERVER, null, call.receiveText(), null, null))
         call.respondText(reply.body.orEmpty(), ContentType.Application.Json, HttpStatusCode.fromValue(reply.status))
     }
 

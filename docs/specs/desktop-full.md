@@ -48,6 +48,19 @@ mode on the generated configuration and refused none of its keys, and the same r
 one in `main.log` (`Failed to parse managed config "<key>"`), so its silence is acceptance. Not driven further than
 launch: a turn, the picker and Cowork under this configuration wait for the sandbox of outcome 8.
 
+MCP modes (Nov 25, 2026): Desktop's own sessions are given the server of each mcp mode (modes/README.md) that is on
+for every head, has no `[heads] only` and does not name `"desktop"` on `[callers] off`. It is one more stdio-bridge
+entry in the gateway profile's `claude_desktop_config.json` (DesktopMcpSource, DesktopOwnMcp), the same transport as
+the hosted servers Desktop already reaches there, so nothing goes into managed policy or `managedMcpServers` and what
+Desktop may do is unchanged. The bridge reaches the daemon's own `/mcp/<server>` on the control port with the MCP
+access key it reads from the state folder at each start, and names `desktop` as the caller, which the mode is told;
+tools, `_meta` (`ui.resourceUri`, `ui.visibility`) and `ui://` resources pass through unchanged. The daemon writes the
+entry at start, catalog change, `on` and each `PUT /api/modes/<name>` of an mcp mode, and records the names it gave
+in `<state>/desktop-own-mcp.json` so commands that sync Desktop without the daemon keep them. A server of the person's
+with a mode's name keeps the name there and at the daemon's address, and the mode's row says so (`server_taken`). Desktop reads the file at launch, so a switch shows at its next start; turned off,
+the server stops answering at once. Not yet read in the real app: which of Chat, Cowork and the Code tab list these
+servers and draw their pages waits for the sandbox of outcome 8.
+
 ## Who it is for and why
 
 Someone who uses Claude Desktop (Chat, Cowork and the Code tab) and runs splice. Asked for on Nov 18, 2026: Desktop

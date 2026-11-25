@@ -76,7 +76,15 @@ internal class DesktopProfileSync(
         return base.resolve(DEFAULT_CLAUDE_DIR)
     }
 
-    internal fun sourceConfigPath(): Path = sourceAppDataPath().resolve(DESKTOP_CONFIG_FILE)
+    internal fun sourceConfigPath(): Path = configIn(sourceAppDataPath())
+
+    /** [appData]'s `claude_desktop_config.json`. */
+    internal fun configIn(appData: Path): Path = appData.resolve(DESKTOP_CONFIG_FILE)
+
+    /** The `mcpServers` of [appData]'s configuration; none when it holds none. Throws IOException when it can't be
+     *  read. */
+    internal fun serversIn(appData: Path): JsonObject =
+        files.read(configIn(appData))?.get(KEY_MCP_SERVERS) as? JsonObject ?: JsonObject(emptyMap())
 
     /** [current] with [wanted]'s servers (bridged ones through [bridge], when there is one) and [upstreamDesktop]'s
      *  servers, preferences and settings it lacks. */

@@ -24,7 +24,10 @@ import splice.app.daemon.LaunchTopology
 import splice.app.daemon.TopologyWindows
 import splice.app.desktop.DaemonDesktop
 import splice.app.desktop.setup.DesktopAppLibrary
+import splice.app.desktop.setup.DesktopOwnMcp
 import splice.app.desktop.setup.DesktopPolicyOverrides
+import splice.app.desktop.setup.DesktopProfileSync
+import splice.app.desktop.setup.SpliceDesktopMcp
 import splice.app.head.HEAD_STOP_BUDGET_MS
 import splice.app.head.HeadAgentTools
 import splice.app.head.HeadBoot
@@ -46,8 +49,10 @@ import splice.app.head.books.BooksKeys
 import splice.app.modes.DaemonModes
 import splice.app.modes.ModeBoot
 import splice.app.modes.ModeHooks
+import splice.app.modes.ModeMcp
 import splice.app.modes.ModeServerRoutes
 import splice.app.modes.ModeTools
+import splice.app.modes.PersonMcpNames
 import splice.app.probe.LocalWindowRefresh
 import splice.app.provider.AntigravityJoin
 import splice.app.server.DaemonServer
@@ -62,6 +67,7 @@ import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.config.TurnKey
+import splice.core.config.UserHome
 import splice.core.retired.RetiredHeads
 import splice.core.topology.HeadModel
 import splice.core.topology.ProviderConfig
@@ -113,8 +119,11 @@ public class Daemon(
     internal var modeBoot: ModeBoot? = null
         set(boot) {
             field = boot
+            // the person's own MCP servers, from the same home Desktop's sync and the launches read, whatever the state
+            // folder is
+            val theirs = PersonMcpNames(UserHome.dir(statePaths.envReader), statePaths)
             controlPlane.modes = boot?.let {
-                DaemonModes(it.catalog, topology.modes, topology.heads.keys.toList(), statePaths.stateDir)
+                DaemonModes(it.catalog, topology.modes, topology.heads.keys.toList(), statePaths.stateDir, theirs)
             }
         }
 
@@ -317,6 +326,15 @@ public class Daemon(
         log,
         DesktopAppLibrary(
             DesktopAppConfig(statePaths.envReader),
+            // Desktop's MCP servers include the mcp modes this daemon gives it, read from its modes at each sync.
+            profileSync = DesktopProfileSync(
+                statePaths.envReader,
+                mcp = SpliceDesktopMcp(
+                    statePaths.envReader,
+                    pathsAt = statePaths,
+                    own = DesktopOwnMcp(statePaths.stateDir, ModeMcp { modes }),
+                ),
+            ),
             overrides = DesktopPolicyOverrides(statePaths.desktopPolicyOverridesFile),
             log = log,
         ),

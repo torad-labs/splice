@@ -5,7 +5,8 @@
 // client's timers and wall header from the heads' walls, the windows from the door's, NO_PROXY with the door's host),
 // and says every value that is no secret again in the overlay's `env`, which a person's settings files cannot outrank.
 // modes-mcp (Nov 25, 2026): the servers the daemon answers itself are no head's, so they are named here as on a head's
-// launch: before, only a head's launch named them, and `claude` on the door never had an mcp mode's tools.
+// launch: before, only a head's launch named them, and `claude` on the door never had an mcp mode's tools. Their file
+// goes in front of the person's words as one word (OwnMcpLaunch), so each of those keeps the meaning it had.
 package splice.launch.recipe
 
 import splice.client.ClaudeArgv
@@ -55,8 +56,10 @@ internal class DoorRecipe(
             add((chosen as? ClaudeToRun.Wrapped)?.path ?: claudeBinary)
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             addAll(LaunchMarker.settingsArgs(merged.overlay))
-            // the door runs no head here, so a mode's every-head value decides, and its server is asked for with none
-            addAll(ownMcp()?.added(merged.args, "", OWN_MCP_CALLER_DOOR) ?: merged.args)
+            // the file of the daemon's own servers goes with splice's words, in front of the person's; the door runs no
+            // head here, so a mode's every-head value decides, and its server is asked for with none
+            addAll(ownMcp()?.added(emptyList(), "", OWN_MCP_CALLER_DOOR, merged.args).orEmpty())
+            addAll(merged.args)
         }
         val config = wrap.ownHome().configRootUnsets(caller.inheritedConfigDir, headDirs)
         val headers = ambient.customHeaders(door.wallMs, emptyList(), merged.headers)

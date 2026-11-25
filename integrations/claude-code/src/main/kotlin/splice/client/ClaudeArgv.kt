@@ -23,11 +23,11 @@
 package splice.client
 
 public object ClaudeArgv {
-    /** The options among [args], a person's arguments to Claude Code, read as the client reads them: each flag with the
-     *  values it takes, and where the options end, at the `--` that is no option's value (`--system-prompt --` takes
-     *  it), or after the last word. A word that cannot be placed is passed over alone. */
+    /** The options among [args], a person's arguments to Claude Code, read as the client reads them: each flag, past
+     *  the values it takes, up to the `--` that is no option's value (`--system-prompt --` takes it). A word that
+     *  cannot be placed is passed over alone. */
     public fun options(args: List<String>): ClaudeOptions {
-        val each = mutableListOf<ClaudeOption>()
+        val names = mutableListOf<String>()
         var at = 0
         while (at < args.size && args[at] != END_OF_OPTIONS) {
             val word = args[at]
@@ -36,10 +36,10 @@ public object ClaudeArgv {
                 word.startsWith(LONG) -> longWords(args, at, emptySet())?.next ?: (at + 1)
                 else -> shortWords(args, at, emptySet())?.next ?: (at + 1)
             }
-            if (isFlag(word)) each += ClaudeOption(word, at, next)
+            if (isFlag(word)) names += word.substringBefore('=')
             at = next
         }
-        return ClaudeOptions(each, at)
+        return ClaudeOptions(names)
     }
 
     /** [argv] with every prompt's text, and every word it cannot place, replaced by its length. The
@@ -174,18 +174,10 @@ public object ClaudeArgv {
     private fun bare(args: List<String>, index: Int): Boolean = args.getOrNull(index)?.let { !isFlag(it) } ?: false
 }
 
-/** One option among a launch's words: its [flag] as written (`--name`, `--name=value`, or a cluster of short flags) at
- *  index [at], and [next], the index past the values it takes. */
-public data class ClaudeOption(val flag: String, val at: Int, val next: Int) {
-    /** The option's name: its flag before an inline `=value`. */
-    val name: String get() = flag.substringBefore('=')
-}
-
-/** The options of a launch's words in order ([ClaudeArgv.options]), and [end], the index of the `--` after which every
- *  word is the prompt's, or the number of words when there is none. */
-public data class ClaudeOptions(val each: List<ClaudeOption>, val end: Int) {
+/** The options of a launch's words by name, in order ([ClaudeArgv.options]): each flag before an inline `=value`. */
+public data class ClaudeOptions(val names: List<String>) {
     /** Whether an option named [name] is among them. */
-    public fun has(name: String): Boolean = each.any { it.name == name }
+    public fun has(name: String): Boolean = name in names
 
     /** Whether they name the model the session starts on: `--model X` or `--model=X` as an option, which outranks
      *  ANTHROPIC_MODEL (#791). A `--model` that is another option's value (`--system-prompt --model`) or follows `--`

@@ -37,10 +37,10 @@ class OwnMcpLaunchTest {
     )
 
     @Test
-    fun `a launch with no MCP file of its own gets the flag and the daemon's file`() {
-        val args = launch().added(listOf("--effort", "high"), "acme", "door")
+    fun `a launch with no MCP file of its own gets the daemon's file as one word`() {
+        val args = launch().added(listOf("--effort", "high"), "acme", "door", emptyList())
         val file = dir.resolve("own-mcp-acme-door.json")
-        assertEquals(listOf("--effort", "high", "--mcp-config", file.toString()), args)
+        assertEquals(listOf("--effort", "high", "--mcp-config=$file"), args)
         assertEquals(
             """{"mcpServers":{"harbor":{"type":"http","url":"http://127.0.0.1:3096/mcp/harbor",""" +
                 """"headers":{"Authorization":"Bearer k-mcp","X-Splice-Head":"acme"}}}}""",
@@ -50,15 +50,16 @@ class OwnMcpLaunchTest {
     }
 
     @Test
-    fun `a launch that already carries a file gets the daemon's under a flag of its own, after the launch's`() {
+    fun `a launch that already carries a file gets the daemon's in a word of its own, after the launch's`() {
         val args = launch().added(
             listOf("--mcp-config", "/s/hub-41.json", "--plugin-dir-no-mcp", "/p/one"),
             "acme",
             "head",
+            emptyList(),
         )
         val file = dir.resolve("own-mcp-acme-head.json")
         assertEquals(
-            listOf("--mcp-config", "/s/hub-41.json", "--plugin-dir-no-mcp", "/p/one", "--mcp-config", file.toString()),
+            listOf("--mcp-config", "/s/hub-41.json", "--plugin-dir-no-mcp", "/p/one", "--mcp-config=$file"),
             args,
         )
         assertEquals(
@@ -70,30 +71,24 @@ class OwnMcpLaunchTest {
     @Test
     fun `claude on the door and the Claude head's wrapped launch each get a file of their own`() {
         val everywhere = OwnMcpLaunch({ _, _ -> listOf("harbor") }, sharing, dir, LogSink { })
-        val door = everywhere.added(emptyList(), "", "door")
-        val wrapped = everywhere.added(emptyList(), "claude", "door")
+        val door = everywhere.added(emptyList(), "", "door", emptyList())
+        val wrapped = everywhere.added(emptyList(), "claude", "door", emptyList())
         val headOf = { args: List<String> ->
-            val servers = Json.parseToJsonElement(Files.readString(Path.of(args[1]))).jsonObject
+            val file = Path.of(args.single().substringAfter('='))
+            val servers = Json.parseToJsonElement(Files.readString(file)).jsonObject
                 .getValue("mcpServers").jsonObject
             servers.getValue("harbor").jsonObject.getValue("headers").jsonObject["X-Splice-Head"]?.toString()
         }
-        assertEquals(listOf(dir.resolve("own-mcp-door.json").toString()), door.drop(1))
-        assertEquals(listOf(dir.resolve("own-mcp-claude-door.json").toString()), wrapped.drop(1))
+        assertEquals(listOf("--mcp-config=${dir.resolve("own-mcp-door.json")}"), door)
+        assertEquals(listOf("--mcp-config=${dir.resolve("own-mcp-claude-door.json")}"), wrapped)
         assertEquals(null, headOf(door), "the door's names no head, after the head's was written")
         assertEquals("\"claude\"", headOf(wrapped))
     }
 
     @Test
-    fun `the daemon's file goes before a -- among the launch's words, which are the prompt's after it`() {
-        val args = launch().added(listOf("-n", "probe", "--", "--draw", "a chart"), "acme", "door")
-        val file = dir.resolve("own-mcp-acme-door.json").toString()
-        assertEquals(listOf("-n", "probe", "--mcp-config", file, "--", "--draw", "a chart"), args)
-    }
-
-    @Test
     fun `a launch the daemon answers no server for is left as it was, and no file is written`() {
         val args = listOf("--mcp-config", "/s/hub-41.json")
-        assertEquals(args, launch().added(args, "globex", "door"))
+        assertEquals(args, launch().added(args, "globex", "door", emptyList()))
         assertFalse(Files.list(dir).use { it.findAny().isPresent })
     }
 }

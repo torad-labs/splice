@@ -94,10 +94,11 @@ class McpKeyHoldersTest {
     fun `claude on the door holds the replaced key in the file of splice's own servers, when it started first`() {
         Files.createDirectories(state)
         val own = OwnMcpLaunch({ _, _ -> listOf("visual") }, sharing, state, LogSink {})
-        val launched = own.added(emptyList(), "", "door")
+        val launched = own.added(emptyList(), "", "door", emptyList())
         val before = Instant.now().minusSeconds(HOUR)
         rotate()
-        assertEquals(launched, own.added(emptyList(), "", "door"), "the next door launch rewrote the one file")
+        val next = own.added(emptyList(), "", "door", emptyList())
+        assertEquals(launched, next, "the next door launch rewrote the one file")
         val after = Instant.now().plusSeconds(1)
 
         assertEquals(true, holders.replaced(before, launched, home))

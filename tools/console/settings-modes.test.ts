@@ -79,6 +79,27 @@ test("the part counts the modes that are on, and its glass names each mode, what
   }
 }, 30_000);
 
+test("a mode on for Claude Desktop alone counts as on, and its glass says so beside commands that are off", async () => {
+  modes = [...fresh(), {
+    name: "canvas", summary: "Draws a made-up canvas.", kind: "mcp", server: "canvas", prompt: false, server_taken: false,
+    tools: [{ name: "draw", offered_as: "mcp__canvas__draw", description: "Draw." }], resources: [], callers_off: [], on_for: ["desktop"],
+    on: { value: false, from: "manifest" }, heads: { acme: { on: false, from: "manifest" }, beta: { on: false, from: "manifest" } },
+    callers: { door: { on: false, from: "manifest" }, head: { on: false, from: "manifest" }, desktop: { on: true, from: "manifest" } },
+  }];
+  const page = await at();
+  try {
+    const part = page.locator('[data-part="modes"]');
+    await expect(part).toContainText("2");
+    await expect(part).toContainText("of 3 on");
+    await part.click();
+    const g = glass(page);
+    await expect(g).toContainText("MCP server · On for Claude Desktop's own sessions");
+    await expect(row(page, "canvas", "acme").getByRole("radio", { name: "Off" })).toHaveAttribute("aria-checked", "true");
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
 test("On for one command saves at once and says Applied; back to the mode's own value clears the command's entry", async () => {
   const page = await at();
   try {

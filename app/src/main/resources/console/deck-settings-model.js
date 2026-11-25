@@ -102,6 +102,9 @@ window.SETTINGS_LIVE = (() => {
     S.modes = S.modes.map(x => (x.name === name ? res.body : x));
     return { state: 'applied' };
   };
+  /** The callers a mode is on for while it is off for every command, as its manifest's on_for leaves it when splice.toml
+   *  says nothing (GET /api/modes' callers; none from a splice that does not say) */
+  S.modeOnlyFor = m => (m.on && m.on.value ? [] : Object.entries(m.callers || {}).filter(([, st]) => st && st.on).map(([c]) => c));
   /** MCP servers shared (one instance for all sessions) or one per session: [daemon] mcp_share, mcp_hosting cleared when on */
   S.setShare = async on => {
     const t = structuredClone(S.topology || {}); t.daemon = { ...(t.daemon || {}), mcp_share: on }; if (on) delete t.daemon.mcp_hosting;

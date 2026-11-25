@@ -39,19 +39,22 @@ internal class DaemonModes(
 
     fun mode(name: String): FoundMode? = catalog.mode(name)
 
-    fun state(mode: FoundMode, head: String): ModeState = ModeRule.forHead(mode.manifest, settings[mode.name], head)
+    /** The mode's value for a session of [head] whose requests come from [caller] (ModeRule.forHead). */
+    fun state(mode: FoundMode, head: String, caller: ModeCaller? = null): ModeState =
+        ModeRule.forHead(mode.manifest, settings[mode.name], head, caller)
 
-    fun everyHead(mode: FoundMode): ModeState = ModeRule.everyHead(mode.manifest, settings[mode.name])
+    /** The mode's every-head value for [caller] (ModeRule.everyHead). */
+    fun everyHead(mode: FoundMode, caller: ModeCaller? = null): ModeState =
+        ModeRule.everyHead(mode.manifest, settings[mode.name], caller)
 
     /** The door modes on for a session of [head] whose requests come from [caller], in name order. */
     fun offered(head: String, caller: ModeCaller): List<FoundMode> = catalog.modes.filter { mode ->
-        mode.manifest.kind == ModeKind.DOOR && ModeRule.offeredTo(mode.manifest, caller) &&
-            state(mode, head).on
+        mode.manifest.kind == ModeKind.DOOR && state(mode, head, caller).on
     }
 
     /** Every mode on for a session of [head] whose requests come from [caller], door or mcp: what may hook it. */
     fun hooksOn(head: String, caller: ModeCaller): List<FoundMode> = catalog.modes.filter { mode ->
-        ModeRule.offeredTo(mode.manifest, caller) && state(mode, head).on && mode.hooks.isNotEmpty()
+        state(mode, head, caller).on && mode.hooks.isNotEmpty()
     }
 
     /** Whether [mode] is an mcp mode whose server name the person's own MCP server has, which keeps it. */

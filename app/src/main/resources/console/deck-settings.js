@@ -105,8 +105,9 @@
     const hConn = hList.filter(x => x.connected).length;
     const mcpCap = [m.bytesIfShared != null ? `${F.bytes(m.bytesIfShared)} with one shared copy` : '', hConn ? `${Deck.count(hConn, 'harness', 'harnesses')} synced` : ''].filter(Boolean).join(' · ');
     fill($('[data-part="mcp"]'), { part: 'mcp', name: NAME.mcp, fig: F.bytes(m.bytesNow), cap: mcpCap, vis: mv });
-    // a mode counts as on when any command has it on; the figure is how many are, of how many splice carries
-    const md = S.modes, mdOn = md ? md.filter(x => Object.values(x.heads || {}).some(st => st.on)).length : null;
+    // a mode counts as on when any command, or a caller on its own (Claude Desktop), has it on; the figure is how many
+    // are, of how many splice carries
+    const md = S.modes, mdOn = md ? md.filter(x => Object.values(x.heads || {}).some(st => st.on) || S.modeOnlyFor(x).length).length : null;
     fill($('[data-part="modes"]'), { part: 'modes', name: NAME.modes, fig: md ? String(mdOn) : '—', unit: md ? `of ${md.length} on` : '', cap: md ? 'Tools Splice adds to a session' : 'Not read' });
     const dp = DP.summary();
     fill($('[data-part="desktop"]'), { part: 'desktop', name: NAME.desktop, fig: dp.fig, unit: dp.unit, cap: dp.cap, wait: dp.waiting, dot: dp.changed });
@@ -203,17 +204,18 @@
   };
 
   /* Modes (modes/README.md): one group a mode. Its summary and how it is answered, the tools it adds as the model sees
-     them, the callers it leaves out, and one row a command with On and Off, saved at once. A command the mode's
-     manifest never offers it on has no switch and says so. */
+     them, the callers it leaves out or is on for on its own, and one row a command with On and Off, saved at once. A
+     command the mode's manifest never offers it on has no switch and says so. */
   const MODE_KIND = { door: 'Answered inside Splice', mcp: 'MCP server' };
   const MODE_LEFT_OUT = { desktop: "Not offered to Claude Desktop's own sessions", door: 'Not offered to claude on the door', head: "Not offered to a command's own sessions" };
+  const MODE_ONLY_FOR = { desktop: "On for Claude Desktop's own sessions", door: 'On for claude on the door', head: "On for a command's own sessions" };
   function modesLens(body) {
     const list = S.modes;
     if (!list) { const { r, ctl } = row('modes', 'Modes'); r.querySelector('.sv').remove(); ctl.append(h('span', 'faint', 'Not read')); body.append(r); return; }
     if (!list.length) { const { r, ctl } = row('modes', 'Modes'); r.querySelector('.sv').remove(); ctl.append(h('span', 'faint', 'This Splice carries no mode')); body.append(r); return; }
     for (const m of list) {
       body.append(h('div', 'eyebrow lr-sec', m.name));
-      const about = row('mode:' + m.name, m.summary || m.name, [MODE_KIND[m.kind] || m.kind, ...(m.callers_off || []).map(c => MODE_LEFT_OUT[c]).filter(Boolean)].join(' · '));
+      const about = row('mode:' + m.name, m.summary || m.name, [MODE_KIND[m.kind] || m.kind, ...S.modeOnlyFor(m).map(c => MODE_ONLY_FOR[c]), ...(m.callers_off || []).map(c => MODE_LEFT_OUT[c])].filter(Boolean).join(' · '));
       about.r.querySelector('.sv').remove();
       const tools = h('div', 'kvs fill');
       (m.tools || []).forEach(t => { const d = h('div'); d.append(h('span', '', t.description || t.name), h('b', '', t.offered_as || t.name)); tools.append(d); });

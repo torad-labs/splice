@@ -25,12 +25,14 @@ public data class ModeManifest(
 )
 
 /** Who the manifest offers the mode to: [on] for every session by default, the heads it is [only] for (empty: every
- *  head), the heads it is never [off]ered on, and the callers it is never offered to. */
+ *  head), the heads it is never [off]ered on, the callers it is never offered to, and the callers it is on for by
+ *  default where [on] is false ([onFor], `on_for`), both defaults splice.toml's word overrides. */
 public data class ModeOffer(
     val on: Boolean,
     val only: List<String>,
     val off: List<String>,
     val callersOff: List<ModeCaller>,
+    val onFor: List<ModeCaller> = emptyList(),
 )
 
 /** One tool: its [name] as the manifest writes it, its description (`tools/<tool>.md`, trimmed), its input schema

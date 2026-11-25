@@ -349,7 +349,7 @@ splice can now write `~/.codex/hooks.json` (or `$CODEX_HOME/hooks.json`) itself:
 | `template` | door | off | A sample door mode |
 | `templateapp` | mcp | off | A sample MCP App |
 | `tableapp` | mcp | off | Turns a Markdown table into a sortable MCP App page |
-| `visual` | mcp | off | Lets the model draw charts, diagrams, small tools and whole pages in clients that draw MCP Apps |
+| `visual` | mcp | **on** for Claude Desktop | Lets the model draw charts, diagrams, small tools and whole pages in clients that draw MCP Apps; Desktop's own sessions, not a terminal's |
 
 A mode can hook the door at six moments: `session_start`, `before_tool_call`, `after_tool_call`, `on_stop`, `request` and `response`. An `mcp` mode is served by the daemon at `/mcp/<server>` and handed to launches as an extra MCP config. Turn modes on and off per command in Settings → **Modes**, through `splice setup --update`, or in `splice.toml` (the table is keyed by the mode's folder name):
 
@@ -361,7 +361,7 @@ on = false
 on = true
 ```
 
-**Who is affected.** Door and head sessions get the `ccd_session` tools unless you turn the mode off.
+**Who is affected.** Door and head sessions get the `ccd_session` tools unless you turn the mode off. Claude Desktop's own sessions get the `visual` tools: a manifest's `on_for` names callers a mode is on for while it is off for the rest, and `visual`'s names `desktop`, since a terminal draws nothing. `[modes.visual] on = true` gives it to every session, terminals included (for an app that draws from a session's transcript), and `on = false` takes it from Desktop too.
 
 **What to do.** Nothing is required. A per-head switch (`heads = { <head> = false }`) applies to heads declared in `splice.toml`; for a provider served without a head, rely on `on`. See [Modes and extensions](modes-and-extensions.md) and [`modes/README.md`](../../modes/README.md).
 

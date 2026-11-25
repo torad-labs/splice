@@ -126,19 +126,28 @@ class DesktopMcpModeDaemonTest {
         }
     }
 
+    // Before 0.7.0's on_for, visual shipped off for every caller, and this test began with Desktop listing no visual.
     @Test
-    fun `a mode switched on and off while the daemon runs is put in and taken out of Desktop's configuration`(
+    fun `visual is Desktop's with nothing in splice toml, and on false or true there is followed while the daemon runs`(
         @TempDir tmp: Path,
     ) {
         daemon(tmp, "") { fixture ->
             post(fixture.mgmt, "/api/desktop/on")
-            assertFalse("visual" in servers(fixture), "the mode ships off")
-            switch(fixture.mgmt, """{"on":true}""")
-            assertEquals(listOf("visual"), servers(fixture).keys.toList())
+            assertEquals(listOf("visual"), servers(fixture).keys.toList(), "on for Claude Desktop by its manifest")
+            assertEquals(emptyList<String>(), ownServers(fixture, launch(fixture)), "and not for claude on the door")
+            val row = get(fixture.mgmt, "/api/modes").getValue("modes").jsonArray.map { it.jsonObject }
+                .single { it.str("name") == "visual" }
+            assertEquals("""{"value":false,"from":"manifest"}""", row.getValue("on").toString())
+            val callers = row.getValue("callers").jsonObject
+            assertEquals("""{"on":true,"from":"manifest"}""", callers.getValue("desktop").toString())
+            assertEquals("""{"on":false,"from":"manifest"}""", callers.getValue("door").toString())
             switch(fixture.mgmt, """{"on":false}""")
-            assertFalse("visual" in servers(fixture))
+            assertFalse("visual" in servers(fixture), "off for every session, Desktop included")
             val said = refusal(fixture)
             assertTrue("no MCP server named 'visual' is active" in said, "a Desktop holding the entry is told: $said")
+            switch(fixture.mgmt, """{"on":true}""")
+            assertEquals(listOf("visual"), servers(fixture).keys.toList())
+            assertEquals(listOf("visual"), ownServers(fixture, launch(fixture)), "on for every session, the door's too")
         }
     }
 

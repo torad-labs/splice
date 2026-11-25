@@ -3,8 +3,9 @@ package splice.modes.api
 
 import kotlinx.serialization.json.JsonObject
 
-private val TOP_KEYS =
-    setOf("name", "summary", "server", "handler", "tools", "kind", "on", "heads", "callers", "resources", "hooks")
+private val TOP_KEYS = setOf(
+    "name", "summary", "server", "handler", "tools", "kind", "on", "on_for", "heads", "callers", "resources", "hooks",
+)
 private const val NAME_RULE = "[a-z][a-z0-9]*"
 private const val TOOL_RULE = "[a-z][a-z0-9_]*, with no __"
 
@@ -61,11 +62,21 @@ internal class ManifestRead(
         val on = keys.boolean("on")
         val heads = keys.table("heads", setOf("only", "off"))
         val callers = keys.table("callers", setOf("off"))
-        val words = callers?.strings("off", required = false).orEmpty()
-        val callersOff = words.mapNotNull { word -> ModeCaller.entries.firstOrNull { it.wire == word } }
-        if (callersOff.size < words.size) fault.report("callers.off names a caller that is not door, head or desktop")
+        val callersOff = callersNamed("callers.off", callers?.strings("off", required = false).orEmpty())
+        val onFor = callersNamed("on_for", keys.strings("on_for", required = false).orEmpty())
+        // a default for a caller the manifest never offers the mode to says two things at once
+        for (both in onFor.filter { it in callersOff }) {
+            fault.report("on_for names ${both.wire}, which callers.off leaves out")
+        }
         val only = heads?.strings("only", required = false).orEmpty()
         val off = heads?.strings("off", required = false).orEmpty()
-        return ModeOffer(on ?: false, only, off, callersOff)
+        return ModeOffer(on ?: false, only, off, callersOff, onFor)
+    }
+
+    /** The callers [words] name, a finding under [key] when one is not a caller's word. */
+    private fun callersNamed(key: String, words: List<String>): List<ModeCaller> {
+        val named = words.mapNotNull { word -> ModeCaller.entries.firstOrNull { it.wire == word } }
+        if (named.size < words.size) fault.report("$key names a caller that is not door, head or desktop")
+        return named
     }
 }

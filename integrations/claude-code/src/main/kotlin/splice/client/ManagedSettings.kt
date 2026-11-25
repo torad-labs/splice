@@ -164,3 +164,15 @@ public const val TELEMETRY_SWITCH: String = "CLAUDE_CODE_ENABLE_TELEMETRY"
 private const val OTEL_PREFIX = "OTEL_"
 
 private val EMPTY = JsonObject(emptyMap())
+
+/** The managed setting that names the program Claude Code starts every session through. */
+public const val PROCESS_WRAPPER_KEY: String = "processWrapper"
+
+/** The managed setting that decides whether the policy a parent such as Claude Desktop hands a session it starts (the
+ *  SDK parent tier) layers under the administrator's own. Claude Code's default drops it as soon as any managed
+ *  settings exist, so Desktop's policy for its Code sessions is not applied and Desktop warns in each of them; only
+ *  [PARENT_SETTINGS_MERGE] keeps it. Claude Code honours the key only from managed settings. */
+public const val PARENT_SETTINGS_KEY: String = "parentSettingsBehavior"
+
+/** The value of [PARENT_SETTINGS_KEY] under which the parent's policy still applies beside the administrator's. */
+public const val PARENT_SETTINGS_MERGE: String = "merge"

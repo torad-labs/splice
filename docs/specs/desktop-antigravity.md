@@ -34,8 +34,9 @@ peer-message rather than human-operator authority. A Gemini session may also orc
 Desktop --stream-json--> <state>/desktop-launch (splice desktop launch) --> splice desktop acp --ACP--> agy acp --> Google
 ```
 
-Nothing outside splice is needed beyond Claude Code's managed `processWrapper` naming `<state>/desktop-launch`
-(`splice desktop wrapper` shows it), and Google's `agy`.
+Nothing outside splice is needed beyond Claude Code's managed `processWrapper` naming `<state>/desktop-launch` and
+`parentSettingsBehavior` set to `"merge"`, so Desktop's own policy still applies to the Code sessions it starts
+(`splice desktop wrapper` shows both), and Google's `agy`.
 
 ### 1. The catalog: Antigravity is one more login provider
 

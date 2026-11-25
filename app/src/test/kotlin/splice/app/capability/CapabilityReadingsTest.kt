@@ -44,6 +44,40 @@ class CapabilityReadingsTest {
     }
 
     @Test
+    fun `splice's wrapper without parentSettingsBehavior merge warns that Desktop's policy is not applied`() {
+        val spliceUnmerged = desktop(mode = DesktopMode.APP, wrapper = WrapperState.SPLICE).copy(parentMerges = false)
+        val facts = bare().copy(desktop = spliceUnmerged)
+        val row = CapabilityTools(facts).readings().single { it.name == "processWrapper" }
+        assertEquals(ToolLevel.WARN, row.level)
+        assertTrue("parentSettingsBehavior" in row.said && "warns in every Code session" in row.said, row.said)
+        val gap = CapabilityGaps(facts, false).afterUpgrade().single { it.kind == GapKind.PROCESS_WRAPPER }
+        assertTrue("\"parentSettingsBehavior\": \"merge\"" in gap.text, gap.text)
+    }
+
+    @Test
+    fun `another program's wrapper with no merge says both things, and with merge says only the program`() {
+        val otherUnmerged = desktop(mode = DesktopMode.APP, wrapper = WrapperState.OTHER).copy(parentMerges = false)
+        val gaps = CapabilityGaps(bare().copy(desktop = otherUnmerged), false).afterUpgrade()
+        val both = gaps.single { it.kind == GapKind.PROCESS_WRAPPER }.text
+        assertTrue("another program" in both && "parentSettingsBehavior" in both, both)
+        val merged = bare().copy(desktop = desktop(mode = DesktopMode.APP, wrapper = WrapperState.OTHER))
+        val one = CapabilityGaps(merged, false).afterUpgrade().single { it.kind == GapKind.PROCESS_WRAPPER }.text
+        assertTrue("another program" in one && "parentSettingsBehavior" !in one, one)
+    }
+
+    @Test
+    fun `no wrapper at all, or Desktop not in app mode, says nothing about parentSettingsBehavior`() {
+        for (desktop in listOf(
+            desktop(mode = DesktopMode.APP, wrapper = WrapperState.NONE).copy(parentMerges = false),
+            desktop(mode = DesktopMode.OFF, wrapper = WrapperState.SPLICE).copy(parentMerges = false),
+        )) {
+            val facts = bare().copy(desktop = desktop)
+            assertTrue(CapabilityGaps(facts, false).afterUpgrade().none { it.kind == GapKind.PROCESS_WRAPPER })
+            assertTrue(CapabilityTools(facts).readings().none { it.level == ToolLevel.WARN })
+        }
+    }
+
+    @Test
     fun `splice's own processWrapper, or none, is no action item`() {
         for (wrapper in listOf(WrapperState.SPLICE, WrapperState.NONE)) {
             val facts = bare().copy(desktop = desktop(mode = DesktopMode.APP, wrapper = wrapper))

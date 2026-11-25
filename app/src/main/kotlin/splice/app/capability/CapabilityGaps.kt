@@ -36,11 +36,27 @@ internal class CapabilityGaps(private val facts: Capabilities, private val claud
         "Claude Desktop is on the older Code-tab-only door; `splice desktop on` puts all of Desktop on splice",
     ).takeIf { facts.desktop.mode == DesktopMode.STANDARD }
 
-    private fun wrapper(): Gap? = Gap(
-        GapKind.PROCESS_WRAPPER,
-        "Claude Code's managed processWrapper names another program, so Desktop's Code tab gets no splice key; " +
-            "$WRAPPER_FIX (a root-owned file)",
-    ).takeIf { facts.desktop.mode == DesktopMode.APP && facts.desktop.wrapper == WrapperState.OTHER }
+    /** The managed settings, where they would send Desktop's Code tab through another program, or keep Claude Code from
+     *  applying Desktop's own policy to it (no `parentSettingsBehavior: merge`, whichever program the wrapper is). */
+    private fun wrapper(): Gap? {
+        val d = facts.desktop
+        if (d.mode != DesktopMode.APP) return null
+        val other = d.wrapper == WrapperState.OTHER
+        val unmerged = d.wrapper != WrapperState.NONE && !d.parentMerges
+        val text = when {
+            other && unmerged ->
+                "Claude Code's managed processWrapper names another program, so Desktop's Code tab gets no splice " +
+                    "key, and $PARENT_UNSET; $WRAPPER_FIX, and $MERGE_FIX (a root-owned file)"
+            other ->
+                "Claude Code's managed processWrapper names another program, so Desktop's Code tab gets no splice " +
+                    "key; $WRAPPER_FIX (a root-owned file)"
+            unmerged ->
+                "Claude Code's managed processWrapper runs splice's desktop-launch, but $PARENT_UNSET; " +
+                    "$MERGE_FIX (a root-owned file)"
+            else -> return null
+        }
+        return Gap(GapKind.PROCESS_WRAPPER, text)
+    }
 
     /** Side-by-side launchers, where nothing runs Claude Desktop or Claude Code beside the person's own yet. */
     private fun sideBySide(): Gap? {

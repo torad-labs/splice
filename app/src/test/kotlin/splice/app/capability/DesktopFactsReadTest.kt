@@ -32,12 +32,25 @@ class DesktopFactsReadTest {
         assertEquals(WrapperState.NONE, wrapper(home, null))
     }
 
-    private fun wrapper(home: Path, settings: String?): WrapperState {
+    @Test
+    fun `only parentSettingsBehavior merge counts as merging, whichever program the wrapper is`(@TempDir home: Path) {
+        val launch = """"processWrapper": "/s/desktop-launch""""
+        val other = """"processWrapper": "/usr/bin/other""""
+        assertEquals(true, facts(home, """{$launch, "parentSettingsBehavior": "merge"}""").parentMerges)
+        assertEquals(true, facts(home, """{$other, "parentSettingsBehavior": "merge"}""").parentMerges)
+        assertEquals(false, facts(home, """{$launch}""").parentMerges)
+        assertEquals(false, facts(home, """{$launch, "parentSettingsBehavior": "first-wins"}""").parentMerges)
+        assertEquals(false, facts(home, null).parentMerges)
+    }
+
+    private fun wrapper(home: Path, settings: String?): WrapperState = facts(home, settings).wrapper
+
+    private fun facts(home: Path, settings: String?): DesktopFacts {
         val file = home.resolve("managed-settings.json")
         Files.deleteIfExists(file)
         settings?.let { Files.writeString(file, it) }
         return UserHome.within(home) {
-            DesktopFactsRead(EnvReader { null }, osName = "Linux", managed = file).read(null).wrapper
+            DesktopFactsRead(EnvReader { null }, osName = "Linux", managed = file).read(null)
         }
     }
 }

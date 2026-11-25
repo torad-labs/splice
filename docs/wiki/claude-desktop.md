@@ -96,7 +96,18 @@ For Antigravity in **Code** and for live switching between Antigravity and Claud
 splice desktop wrapper --print
 ```
 
-Save the JSON the command prints as `managed-settings.json` and use the install command it prints as an administrator. The proposed JSON adds `processWrapper` pointing to splice's `desktop-launch` and preserves the other settings it can read. If it warns the existing JSON couldn't be read, inspect that file before replacing it. The file belongs to the administrator; splice never installs it for you.
+The file needs two keys, and the command prints it with both:
+
+```json
+{
+    "processWrapper": "<state>/desktop-launch",
+    "parentSettingsBehavior": "merge"
+}
+```
+
+`processWrapper` starts the Code tab through splice. `parentSettingsBehavior` set to `"merge"` is there so Claude Desktop's own policy still applies to the Code sessions it starts. Once a managed settings file exists, Claude Code uses it as the only policy source and drops the policy Desktop hands each Code session, so without the second key Desktop logs a `[custom-3p] configuration warning` at every start and shows "The policy from your inference configuration isn't fully applied on this computer" in every Code session.
+
+If the file already exists, add these two keys to it and keep what it holds: the JSON the command prints is that file with both keys set. Save it as `managed-settings.json` and use the install command it prints as an administrator. If it warns the existing JSON couldn't be read, it prints only the two keys and no install command: add them to that file by hand. The file belongs to the administrator; splice never installs it for you.
 
 | Platform | Claude Code managed settings |
 | --- | --- |
@@ -104,13 +115,13 @@ Save the JSON the command prints as `managed-settings.json` and use the install 
 | macOS | `/Library/Application Support/ClaudeCode/managed-settings.json` |
 | Windows (wrapper command path) | `C:\Program Files\ClaudeCode\managed-settings.json` |
 
-This is **Claude Code's** managed file, not the **Claude Desktop** provider configuration under `/etc/claude-desktop`. Verify the executable and setting with the check below (0 if correctly configured), then quit and reopen Desktop entirely.
+This is **Claude Code's** managed file, not the **Claude Desktop** provider configuration under `/etc/claude-desktop`. Verify the executable and both keys with the check below, then quit and reopen Desktop entirely. The check exits 0 when the file is complete and also when `processWrapper` is right but `parentSettingsBehavior` is not `"merge"`: the Code tab does start through splice, but the check then says Desktop warns in every Code session and its policy for Code is not applied, and how to fix it. It exits 1 when there is no file, no `processWrapper`, a `processWrapper` naming another program, or no launcher laid.
 
 ```bash
 splice desktop wrapper --check
 ```
 
-Use either `--print` or `--check`, not both. Bare `splice desktop wrapper` is the same as `--print`. If you stop using the wrapper, have the administrator remove its `processWrapper` entry; `splice desktop off` doesn't edit that managed file. The following are internal entry points, not interactive sign-in commands:
+Use either `--print` or `--check`, not both. Bare `splice desktop wrapper` is the same as `--print`. If you stop using the wrapper, have the administrator remove its `processWrapper` entry (and `parentSettingsBehavior` if nothing else needs it); `splice desktop off` doesn't edit that managed file. The following are internal entry points, not interactive sign-in commands:
 
 | Entry point | Role |
 | --- | --- |

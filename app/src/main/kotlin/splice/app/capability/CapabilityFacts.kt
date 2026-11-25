@@ -12,14 +12,16 @@ import java.nio.file.Path
 internal enum class WrapperState { SPLICE, OTHER, NONE }
 
 /** Claude Desktop: its [program] (null when not installed), the [mode] splice has it in, whether `claude-splice`
- *  ([sideBySideCli]) and the `Claude (Splice)` app launcher ([sideBySideApp]) are installed, and the managed
- *  [wrapper]. */
+ *  ([sideBySideCli]) and the `Claude (Splice)` app launcher ([sideBySideApp]) are installed, the managed [wrapper],
+ *  and whether the managed settings set `parentSettingsBehavior` to `"merge"` ([parentMerges]): without it Claude Code
+ *  drops the policy Desktop hands each Code session, and Desktop warns in every one, whatever the wrapper is. */
 internal data class DesktopFacts(
     val program: Path?,
     val mode: DesktopMode,
     val sideBySideCli: Boolean,
     val sideBySideApp: Boolean,
     val wrapper: WrapperState,
+    val parentMerges: Boolean = true,
 )
 
 /** The other harnesses: Antigravity's [agy] and [codex] on the PATH (null when absent), whether the Antigravity

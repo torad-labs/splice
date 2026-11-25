@@ -5,6 +5,7 @@ package splice.app.capability
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import splice.app.desktop.record.DesktopRecords
 import splice.app.desktop.setup.DesktopAppLibrary
 import splice.app.desktop.setup.DesktopAppMode
@@ -13,6 +14,9 @@ import splice.app.desktop.setup.DesktopPrograms
 import splice.app.desktop.setup.SideBySideDesktop
 import splice.app.desktop.setup.SideBySideLaunchers
 import splice.client.ManagedSettings
+import splice.client.PARENT_SETTINGS_KEY
+import splice.client.PARENT_SETTINGS_MERGE
+import splice.client.PROCESS_WRAPPER_KEY
 import splice.client.desktop.DesktopAppConfig
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.CLAUDE_SPLICE_COMMAND
@@ -43,7 +47,8 @@ internal class DesktopFactsRead(
             InstallCommand(quiet, quiet).runsShim(CLAUDE_SPLICE_COMMAND, env)
         }.getOrDefault(false)
         val app = Files.exists(SideBySideLaunchers(env, osName).desktopLauncherPath())
-        return DesktopFacts(program, mode(topology), cli, app, wrapper())
+        val settings = managedSettings()
+        return DesktopFacts(program, mode(topology), cli, app, wrapper(settings), parentMerges(settings))
     }
 
     /** Desktop's mode as `splice doctor` reads it (DesktopLook): splice's record, in [topology]'s state folder, against
@@ -57,22 +62,30 @@ internal class DesktopFactsRead(
         ).mode()
     }.getOrDefault(DesktopMode.OFF)
 
-    /** The `processWrapper` Claude Code's managed settings ([managed]) name: a program path,
+    /** The managed settings file ([managed]) as an object: null where there is none or it is no JSON object. */
+    private fun managedSettings(): JsonObject? = Cancellables.runCatchingBestEffort {
+        val file = managed?.takeIf { Files.isRegularFile(it) }
+        file?.let { JsonScalars.objectOrNull(Json, Files.readString(it)) }
+    }.getOrNull()
+
+    /** The `processWrapper` the managed [settings] name: a program path,
      *  or a command line as a list whose first word is the program. Splice's when that program is `desktop-launch`
      *  (DesktopPrograms); none when the key is absent or names no program. */
-    private fun wrapper(): WrapperState {
+    private fun wrapper(settings: JsonObject?): WrapperState {
+        val named = settings?.get(PROCESS_WRAPPER_KEY)
         val program = Cancellables.runCatchingBestEffort {
-            val file = managed?.takeIf { Files.isRegularFile(it) }
-            val named = file?.let { JsonScalars.objectOrNull(Json, Files.readString(it)) }?.get(PROCESS_WRAPPER)
             (named as? JsonArray)?.firstOrNull()?.let(JsonScalars::str) ?: JsonScalars.str(named)
         }.getOrNull()
         if (program.isNullOrBlank()) return WrapperState.NONE
         val name = Cancellables.runCatchingBestEffort { Path.of(program.trim()).fileName?.toString() }.getOrNull()
         return if (name == DESKTOP_LAUNCH) WrapperState.SPLICE else WrapperState.OTHER
     }
-}
 
-private const val PROCESS_WRAPPER = "processWrapper"
+    /** Whether the managed [settings] set `parentSettingsBehavior` to `"merge"`, as Claude Desktop's policy for its
+     *  Code sessions needs once any managed settings exist. */
+    private fun parentMerges(settings: JsonObject?): Boolean =
+        JsonScalars.str(settings?.get(PARENT_SETTINGS_KEY)) == PARENT_SETTINGS_MERGE
+}
 
 // The program DesktopPrograms lays for a managed processWrapper to name.
 private const val DESKTOP_LAUNCH = "desktop-launch"

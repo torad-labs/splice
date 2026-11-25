@@ -118,7 +118,7 @@ This is the checkup for an existing install. It asks nothing about the plans and
 5. Modes that are off. A running daemon restarts onto any mode you turn on.
 6. `[daemon] auto_update`.
 
-What only an administrator can change (Claude Code's managed `processWrapper`), or what needs a program splice doesn't install (systemd for the MCP hub), is printed with what to do. The checkup lays the Antigravity shim where it is missing and ends on `splice doctor`. Without a terminal, it only lists the gaps.
+What only an administrator can change (Claude Code's managed `processWrapper` and `parentSettingsBehavior`), or what needs a program splice doesn't install (systemd for the MCP hub), is printed with what to do. The checkup lays the Antigravity shim where it is missing and ends on `splice doctor`. Without a terminal, it only lists the gaps.
 
 ### 4. Check the result
 
@@ -244,11 +244,11 @@ Quit Desktop completely and reopen it after `on`, `off` or an upgrade, because D
 
 Other parts of the Desktop setup:
 
-- **Managed `processWrapper`.** Antigravity in the Code tab and live model switches need Claude Code's managed settings to name splice's launcher. splice never writes that administrator-owned file. It prints the file and the install command:
+- **Managed `processWrapper`.** Antigravity in the Code tab and live model switches need Claude Code's managed settings to name splice's launcher (`processWrapper`) and to set `parentSettingsBehavior` to `"merge"`, so Claude Desktop's own policy still applies to the Code sessions it starts and Desktop does not warn in each. splice never writes that administrator-owned file. It prints the file, with both keys added to what it holds, and the install command:
 
   ```bash
   splice desktop wrapper --print    # bare "splice desktop wrapper" is the same
-  splice desktop wrapper --check    # exit 0 when the managed file names splice's desktop-launch
+  splice desktop wrapper --check    # exit 0 when the managed file names splice's desktop-launch (and says so when "merge" is missing)
   ```
 
   Use one flag or the other, not both. The paths are `/etc/claude-code/managed-settings.json` (Linux), `/Library/Application Support/ClaudeCode/managed-settings.json` (macOS) and `C:\Program Files\ClaudeCode\managed-settings.json` (Windows). This is Claude Code's managed file, not Claude Desktop's.
@@ -396,7 +396,7 @@ None of these needs any action. See [Architecture and troubleshooting](architect
 - [ ] Each head you still use prints its replacement selector, and `splice claude check` reports what still starts past the gateway.
 - [ ] `splice setup --update` has offered what you want: launchers, Desktop, MCP, Codex hooks, modes, auto-update.
 - [ ] Claude Desktop, if you use it: after `splice desktop on`, Desktop was quit fully and reopened, and `splice desktop` shows mode `app`.
-- [ ] Gemini in the Code tab, if you want it: `splice desktop wrapper --check` exits 0.
+- [ ] Gemini in the Code tab, if you want it: `splice desktop wrapper --check` exits 0 and prints no note about `parentSettingsBehavior`.
 - [ ] Other machines using your LAN share have re-run `splice remote add http://<box>:<port>`.
 - [ ] Scripts that ran bare `splice login`, or relied on restart waiting for every compaction, are updated.
 - [ ] Team servers: `splice server audit` answers, and any new `[server]` tables pass `splice check-config`.

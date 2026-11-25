@@ -12,7 +12,8 @@
 // door puts the file of the daemon's own servers after the person's words, before their `--` (Nov 25): splice's too.
 package splice.launch.recipe
 
-import splice.client.END_OF_OPTIONS
+import splice.client.ClaudeArgv
+import splice.client.ClaudeOption
 import splice.client.mcp.HUB_PLUGIN_FLAG
 import splice.client.mcp.MCP_CONFIG_FLAG
 import splice.sessions.registry.LaunchMarker
@@ -44,18 +45,25 @@ public object LaunchRecipeArgs {
         return skip + withoutOwnFiles(arguments.drop(at), state)
     }
 
-    /** [words] without a `--mcp-config` file in splice's [state] before their `--`: the file of the daemon's own
-     *  servers, which a launch of `claude` on the door puts after the person's words. The launch the relaunch makes
-     *  names it again while its mode is on, and names none once it is off. */
+    /** [words] without the `--mcp-config` files in splice's [state] among their options: the file of the daemon's own
+     *  servers, which a launch of `claude` on the door puts after the person's words. A flag leaves with its values
+     *  only when every one is splice's, so a file of the person's after it keeps its flag. The launch the relaunch
+     *  makes names splice's file again while its mode is on, and names none once it is off. */
     private fun withoutOwnFiles(words: List<String>, state: Path): List<String> {
-        val end = words.indexOf(END_OF_OPTIONS).takeIf { it >= 0 } ?: words.size
-        val kept = mutableListOf<String>()
-        var at = 0
-        while (at < end) {
-            val ours = words[at] == MCP_CONFIG_FLAG && inState(words.getOrNull(at + 1), state)
-            if (ours) at += 2 else kept += words[at++]
+        val dropped = ClaudeArgv.options(words).each.filter { it.name == MCP_CONFIG_FLAG }
+            .flatMap { ownWords(words, it, state) }.toSet()
+        return words.filterIndexed { at, _ -> at !in dropped }
+    }
+
+    /** Where [option], a `--mcp-config`, names files in splice's [state] among [words]: those values, and the flag
+     *  too when it names no other. */
+    private fun ownWords(words: List<String>, option: ClaudeOption, state: Path): List<Int> {
+        if (option.flag != option.name) {
+            return listOf(option.at).filter { inState(option.flag.substringAfter('='), state) }
         }
-        return kept + words.drop(end)
+        val values = (option.at + 1 until option.next).toList()
+        val ours = values.filter { inState(words[it], state) }
+        return if (ours.isNotEmpty() && ours.size == values.size) ours + option.at else ours
     }
 
     /** Whether [value] is a file in splice's [state], where a launch writes its MCP files; any other is the person's. */

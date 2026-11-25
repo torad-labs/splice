@@ -45,7 +45,7 @@ internal class DoorRecipe(
         val chosen = wrapState.claude()
         if (chosen is ClaudeToRun.Refused) return LaunchOutcome.Refused(chosen.reason)
         // custom-provider (cp-overlay): the person's own --settings are merged into the one overlay, never a second one.
-        val modelGiven = ClaudeArgv.namesModel(extraArgs)
+        val modelGiven = ClaudeArgv.options(extraArgs).namesModel
         val held = held(door, modelGiven, caller.noProxy)
         val merged = when (val m = DoorOverlayMerge(door.overlay, caller.cwd, held).merge(extraArgs)) {
             is DoorOverlayMerge.Merged.Refused -> return LaunchOutcome.Refused(m.reason)

@@ -141,6 +141,42 @@ class McpModeDoorLaunchTest {
         }
     }
 
+    @Test
+    fun `a launch whose system prompt is -- is handed the file before the -- that ends options`(@TempDir tmp: Path) {
+        daemon(tmp, "[modes.visual]\non = true") {
+            val argv = launch(listOf("--system-prompt", "--", "--", "go"))
+            assertEquals(listOf("visual"), ownServers(argv))
+            val file = argv.indexOf("--mcp-config")
+            assertEquals(listOf("--system-prompt", "--"), argv.subList(file - 2, file), "the system prompt is --")
+            assertEquals(listOf("--", "go"), argv.subList(file + 2, argv.size), "the prompt is go: $argv")
+        }
+    }
+
+    @Test
+    fun `claude on the door launched with --strict-mcp-config is handed no mode's server`(@TempDir tmp: Path) {
+        daemon(tmp, "[modes.visual]\non = true") {
+            val own = """{"mcpServers":{}}"""
+            val argv = launch(listOf("--print", "--strict-mcp-config", "--mcp-config", own, "--allowedTools", "Read"))
+            assertEquals(emptyList<String>(), ownServers(argv))
+            assertEquals(1, argv.count { it == "--mcp-config" }, "its own config alone: $argv")
+        }
+    }
+
+    @Test
+    fun `a relaunch keeps the person's file that followed splice's under one flag`(@TempDir tmp: Path) {
+        daemon(tmp, "[modes.visual]\non = true") {
+            val mine = Files.writeString(tmp.resolve("mine.json"), """{"mcpServers":{}}""")
+            val first = launch(listOf("-n", "probe"))
+            val own = first[first.indexOf("--mcp-config") + 1]
+            val started = first.takeWhile { it != "--mcp-config" } + listOf("--mcp-config", own, mine.toString())
+            val again = relaunch(started)
+            assertEquals(listOf("visual"), ownServers(again))
+            val theirs = again.indexOf(mine.toString())
+            assertEquals("--mcp-config", again[theirs - 1], "the person's file keeps a flag: $again")
+            assertEquals(2, again.count { it == "--mcp-config" }, "the person's and splice's, once each: $again")
+        }
+    }
+
     /** A daemon over a splice.toml with one provider, no heads and [modes], carrying the modes its jar carries. */
     private fun daemon(tmp: Path, modes: String, check: suspend Running.() -> Unit) {
         val provider = DoorModeProvider()

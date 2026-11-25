@@ -10,17 +10,16 @@ import splice.client.PARENT_SETTINGS_MERGE
 
 /** What [managed], the managed settings file, says of `parentSettingsBehavior`, and what could be done about it. */
 internal class ParentSettingsText(private val managed: ManagedFileFacts) {
-    private val parent = managed.parent
-    private val file = managed.file
-
     /** The state of the key in the file, with the places splice did not read. */
     fun said(): String {
+        val parent = managed.parent
+        val file = managed.file
         val state = when {
             parent.merges ->
                 "$file sets $PARENT_SETTINGS_KEY to \"$PARENT_SETTINGS_MERGE\", so Claude Desktop's limits apply to " +
                     "the Code sessions it starts"
-            parent.absent -> "$file does not set $PARENT_SETTINGS_KEY, $DROPPED"
-            else -> "$file sets $PARENT_SETTINGS_KEY to ${parent.shown}, $DROPPED"
+            parent.absent -> "$file does not set $PARENT_SETTINGS_KEY, $PARENT_DROPS_POLICY"
+            else -> "$file sets $PARENT_SETTINGS_KEY to ${parent.shown}, $PARENT_DROPS_POLICY"
         }
         return state + unread()
     }
@@ -28,8 +27,8 @@ internal class ParentSettingsText(private val managed: ManagedFileFacts) {
     /** What to do, null where the file already says "merge". Setting a value other than "merge" is the
      *  administrator's choice, so it is not put as a fix. */
     fun fix(): String? = when {
-        parent.merges -> null
-        parent.absent ->
+        managed.parent.merges -> null
+        managed.parent.absent ->
             "add \"$PARENT_SETTINGS_KEY\": \"$PARENT_SETTINGS_MERGE\" to it (`splice desktop wrapper` shows what to " +
                 "put where)"
         else ->
@@ -46,5 +45,5 @@ internal class ParentSettingsText(private val managed: ManagedFileFacts) {
         }
 }
 
-private const val DROPPED = "so Claude Code drops the policy Claude Desktop hands each Code session it starts, " +
-    "and Desktop warns in every one"
+private const val PARENT_DROPS_POLICY = "so Claude Code drops the policy Claude Desktop hands each Code session it " +
+    "starts, and Desktop warns in every one"

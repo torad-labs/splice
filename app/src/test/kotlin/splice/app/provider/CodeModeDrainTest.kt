@@ -7,13 +7,16 @@ package splice.app.provider
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.future.asDeferred
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
@@ -94,30 +97,37 @@ internal class CodeModeDrainTest {
         val fixture = fixture(tmp, runtime, mock)
         val head = fixture.head
         val provider = fixture.provider
+        // Closed last, after the head has ended its request: the client waits for every request it sent to end, so a
+        // client closed while the turn is held by a failing test hangs it for the whole @Timeout and hides the failure.
+        val client = HttpClient.newHttpClient()
         try {
             head.start()
             val request = HttpRequest.newBuilder(URI("http://127.0.0.1:${head.port}/v1/messages"))
                 .header("Authorization", "Bearer ${fixture.token}")
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(REQUEST)).build()
-            HttpClient.newHttpClient().use { client ->
-                val answer = client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                withTimeout(10_000) { runtime.entered.await() }
-                process.await()
-                assertFalse(provider.stopped)
-                // The worker is still held mid-turn: the restart must not wait for it.
-                val stopping = async { head.stop() }
-                val response = withTimeout(10_000) { answer.await() }
-                withTimeout(10_000) { stopping.await() }
-                assertTrue(response.body().contains(RESTART_SAID), response.body())
-                assertFalse(response.body().contains("message_stop"), response.body())
-                assertTrue(provider.stopped)
+            val answer = client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+            // The worker is a JVM of its own, which splice itself gives 30 s to boot: wait for it to hold the turn, or
+            // for the turn to end without it, never for a guess of how long a loaded machine takes.
+            select {
+                runtime.entered.onAwait { }
+                answer.asDeferred().onAwait { fail("the turn ended before its worker held it: ${it.body()}") }
             }
+            process.await()
+            assertFalse(provider.stopped)
+            // The worker is still held mid-turn: the restart must not wait for it.
+            val stopping = async { head.stop() }
+            val response = withTimeout(10_000) { answer.await() }
+            withTimeout(10_000) { stopping.await() }
+            assertTrue(response.body().contains(RESTART_SAID), response.body())
+            assertFalse(response.body().contains("message_stop"), response.body())
+            assertTrue(provider.stopped)
         } finally {
             runtime.release.complete(Unit)
             head.stop()
             real.close()
             mock.stop()
+            client.close()
         }
     }
 

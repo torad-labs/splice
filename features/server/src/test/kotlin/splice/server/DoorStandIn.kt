@@ -7,6 +7,8 @@ package splice.server
 import io.ktor.http.ContentType
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
+import kotlinx.coroutines.delay
+import splice.core.server.ServedTokens
 import splice.core.server.ServedTurn
 import splice.core.server.ServedTurns
 import splice.core.server.TurnPace
@@ -25,6 +27,15 @@ internal class DoorStandIn : TeamGateway {
     @Volatile
     var timesOut: Boolean = false
 
+    /** What each turn's head says it billed: its tokens and its price; nothing by default. */
+    @Volatile
+    var billed: Pair<ServedTokens, Double>? = null
+
+    /** How long each turn's relay goes on once its answer is out, as one that hangs up on its upstream after
+     *  answering does; none by default. */
+    @Volatile
+    var finishingMs: Long = 0
+
     override suspend fun routed(
         call: ApplicationCall,
         voice: RefusalVoice,
@@ -40,6 +51,7 @@ internal class DoorStandIn : TeamGateway {
             val id = meta.servedTurn
             if (id != null) board?.ended(id, served())
             call.respondText(DOOR_ANSWER, ContentType.Application.Json)
+            delay(finishingMs)
         }
     }
 
@@ -52,8 +64,8 @@ internal class DoorStandIn : TeamGateway {
         model = "box-model",
         upstream = null,
         outcome = if (timesOut) STALLED_OUTCOME else "ok",
-        tokens = null,
-        costUsd = null,
+        tokens = billed?.first,
+        costUsd = billed?.second,
         pace = TurnPace(ttftMs = 1, timedOut = timesOut),
         speed = null,
     )

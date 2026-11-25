@@ -34,7 +34,9 @@ internal class TurnAdmission(
 ) {
     /** A turn of [key]'s person on [command], arriving on [route]: it takes one of its person's slots or is refused, is
      *  run by [relay] holding that slot until its answer ends or its client leaves, and however it ends, leaves its row
-     *  in the ledger. */
+     *  in the ledger. It is answered, and its person's next turn waits for its row, from the moment its slot is given
+     *  back: as its answer's last part is handed to its client's connection (AnswersInFlight), before the client can
+     *  have the whole answer and ask again, so a budget or a token cap is never read without it. */
     suspend fun served(
         call: ApplicationCall,
         key: ServerKey,
@@ -44,7 +46,7 @@ internal class TurnAdmission(
     ) {
         val turn = parts.books.turns.arrived(key, command, route)
         try {
-            val slot = slot(call, turn) ?: return
+            val slot = slot(call, turn)?.joined(TurnSlot(answered = turn.answered)) ?: return
             turn.gone = watched.turn(call, slot) { relay.relay(turn) }
         } finally {
             parts.books.turns.ended(call, turn)
@@ -127,8 +129,9 @@ internal class TurnAdmission(
     private fun external(refusal: UpstreamRefusal): Refusal =
         Refusal(refusal.status, refusal.message, refusal.retryAfterSeconds)
 
-    /** Why [person]'s budget, or their team's, refuses their next turn; null while none blocks. Their turns that ended
-     *  and are still being written are counted first, so a turn never slips past a budget its last turn spent. */
+    /** Why [person]'s budget, or their team's, refuses their next turn; null while none blocks. Their turns whose
+     *  answers are out and whose rows are still being written are counted first, so a turn never slips past a budget
+     *  its last turn spent. */
     private suspend fun spent(person: String): String? {
         if (!parts.books.budgets.holds(person)) return null
         parts.books.turns.settled(person)
@@ -136,8 +139,9 @@ internal class TurnAdmission(
     }
 
     /** Why [person]'s next turn waits on the tokens of their turns that ended in the last minute (F12); null while
-     *  those are under their cap, and when nothing caps them. Their turns that ended and are still being written are
-     *  counted first, as a budget's are, so a turn never slips past a cap its last turn reached. */
+     *  those are under their cap, and when nothing caps them. Their turns whose answers are out and
+     *  whose rows are still being written are counted first, as a budget's are, so a turn never slips past a cap its
+     *  last turn reached. */
     private suspend fun overTokens(person: String): LimitVerdict.Refused? {
         val cap = parts.limits.tokenCap(person) ?: return null
         parts.books.turns.settled(person)

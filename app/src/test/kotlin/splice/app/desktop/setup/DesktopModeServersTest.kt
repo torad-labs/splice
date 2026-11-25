@@ -13,6 +13,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -22,6 +23,8 @@ import splice.app.mcp.stdio.McpStdioResolution
 import splice.app.mcp.stdio.McpStdioTargets
 import splice.app.modes.DaemonModes
 import splice.app.modes.ModeMcp
+import splice.app.modes.ModeRows
+import splice.app.modes.PersonMcpNames
 import splice.core.config.StatePaths
 import splice.core.mode.ModeSetting
 import splice.core.util.EnvReader
@@ -81,7 +84,7 @@ class DesktopModeServersTest {
     /** `harbor` is an mcp mode on for every head; `quay` one splice.toml turns on for `acme` alone; `wharf` one on
      *  everywhere that its manifest leaves out for Desktop; `dock` a door mode on everywhere; `pier` an mcp mode
      *  off. */
-    private fun modes(): DaemonModes {
+    private fun modes(theirs: PersonMcpNames? = null): DaemonModes {
         val found = listOf(
             mode("dock", ModeKind.DOOR, on = true),
             mode("harbor", ModeKind.MCP, on = true),
@@ -94,6 +97,7 @@ class DesktopModeServersTest {
             mapOf("quay" to ModeSetting(heads = mapOf("acme" to true))),
             listOf("acme"),
             state,
+            theirs,
         )
     }
 
@@ -162,8 +166,11 @@ class DesktopModeServersTest {
         val project = Files.createDirectories(tmp.resolve("project"))
         val theirs = """{"command":"uvx","args":["their-harbor","$project"]}"""
         Files.writeString(home.resolve(".claude.json"), """{"mcpServers":{"harbor":$theirs}}""")
-        daemonSync(modes())
+        val held = modes(PersonMcpNames(home, paths))
+        daemonSync(held)
         assertEquals(theirs, servers().getValue("harbor").toString())
+        assertEquals("true", ModeRows(held).row(checkNotNull(held.mode("harbor"))).getValue("server_taken").toString())
+        assertNull(ModeMcp { held }.server("harbor", null, null), "the daemon's address for the name is theirs too")
         val seams = McpHarnessSyncSeams(osName = "Linux", frontLive = McpFrontCheck { _, _ -> false })
         val reached = McpStdioTargets(home, paths, env, LogSink {}, seams).resolve("harbor")
         val why = (reached as McpStdioResolution.Missing).why

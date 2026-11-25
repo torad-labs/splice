@@ -4,7 +4,7 @@
 // client that can draw them. The MCP host asks this for a server by name, head and caller (InProcessMcp), and gets one
 // only when a mode of that `server` name is on for that head: an off mode's name is nobody's, as it is in the launch
 // entry. The caller is the one the client's entry names (OwnMcpLaunch, and the stdio bridge for Claude Desktop), and
-// the mode is told it.
+// the mode is told it, or told none for a request that names none. A person's own server of a mode's name keeps it.
 package splice.app.modes
 
 import kotlinx.serialization.json.JsonArray
@@ -32,29 +32,32 @@ internal fun interface ModesNow {
  *  launch or Claude Desktop's configuration lists. */
 internal class ModeMcp(private val modes: ModesNow) : InProcessMcp, OwnMcpServers {
     /** The mcp modes on for [head] and offered to [caller] (a manifest's word for one: `door`, `head` or `desktop`),
-     *  in name order: the servers a launch there lists for its client. A caller no manifest names is offered none. */
+     *  in name order: the servers a launch there lists for its client. A caller no manifest names is offered none, and
+     *  a mode whose server name is one of the person's own servers is not listed: the name is theirs. */
     fun on(head: String, caller: String): List<FoundMode> {
         val held = modes.held() ?: return emptyList()
         val asking = ModeCaller.entries.firstOrNull { it.wire == caller } ?: return emptyList()
         return held.catalog.modes.filter { mode ->
             mode.manifest.kind == ModeKind.MCP && ModeRule.offeredTo(mode.manifest, asking) && held.state(mode, head).on
-        }
+        }.filterNot(held::taken)
     }
 
     /** The servers of the mcp modes on for [head] and offered to [caller], by name. */
     override fun names(head: String, caller: String): List<String> = on(head, caller).map { it.manifest.server }
 
-    /** The mode serving [name] for a client on [head] that names itself [caller]. Only an entry splice gives for a
-     *  mode names its caller (OwnMcpLaunch, and the bridge for Claude Desktop); an entry that names none is for the
-     *  person's own server of that name, which splice hosts at the same address, so the mode never answers it and
-     *  their server is never replaced by it. */
+    /** The mode serving [name] for a client on [head]. A request that names a caller (OwnMcpLaunch's entries, the
+     *  bridge for Claude Desktop) is held to the manifest's `[callers] off`; one that names none, or a word no manifest
+     *  uses, is from a caller that is not known (a host reading a page, an operator's tool), is answered as before,
+     *  and the mode is told no caller. A mode whose server name is one of the person's own servers is not served: the
+     *  address is theirs (DaemonModes.taken). */
     override fun server(name: String, head: String?, caller: String?): InProcessMcpServer? {
         val held = modes.held() ?: return null
-        val asking = ModeCaller.entries.firstOrNull { it.wire == caller }
         val mode = held.catalog.modes.firstOrNull { it.manifest.kind == ModeKind.MCP && it.manifest.server == name }
             ?: return null
+        val asking = ModeCaller.entries.firstOrNull { it.wire == caller }
         val on = if (head == null) held.everyHead(mode).on else held.state(mode, head).on
-        return if (on && asking != null) ModeMcpServer(mode, held.store(mode.name), head, asking) else null
+        val offered = on && (asking == null || ModeRule.offeredTo(mode.manifest, asking))
+        return if (offered && !held.taken(mode)) ModeMcpServer(mode, held.store(mode.name), head, asking) else null
     }
 }
 
@@ -63,8 +66,8 @@ internal class ModeMcpServer(
     private val mode: FoundMode,
     private val store: ModeStore,
     private val head: String?,
-    /** Who the client's entry says is calling, which the mode is told. */
-    private val caller: ModeCaller,
+    /** Who the request says is calling, which the mode is told; null when it says nothing. */
+    private val caller: ModeCaller?,
 ) : InProcessMcpServer {
     override fun tools(): JsonArray = JsonArray(
         mode.tools.map { tool ->

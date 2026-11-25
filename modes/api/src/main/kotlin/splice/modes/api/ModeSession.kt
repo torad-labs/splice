@@ -2,13 +2,14 @@
 package splice.modes.api
 
 /** The session: [id] is the id `/api/sessions` gives it, [folder] its working folder when splice knows it, [head]
- *  the head it runs on, [model] the model its request names, and [caller] who is asking. */
+ *  the head it runs on, [model] the model its request names, and [caller] who is asking: null when that is not known,
+ *  as for a call to an mcp mode's server whose request names no caller. */
 public data class ModeSession(
     val id: String,
     val folder: String?,
     val head: String,
     val model: String,
-    val caller: ModeCaller,
+    val caller: ModeCaller?,
 )
 
 /** Who sends a session's requests. [wire] is the word a manifest's `[callers] off` and `GET /api/modes` use. */

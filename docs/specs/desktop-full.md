@@ -57,7 +57,7 @@ access key it reads from the state folder at each start, and names `desktop` as 
 tools, `_meta` (`ui.resourceUri`, `ui.visibility`) and `ui://` resources pass through unchanged. The daemon writes the
 entry at start, catalog change, `on` and each `PUT /api/modes/<name>` of an mcp mode, and records the names it gave
 in `<state>/desktop-own-mcp.json` so commands that sync Desktop without the daemon keep them. A server of the person's
-with a mode's name keeps the name. Desktop reads the file at launch, so a switch shows at its next start; turned off,
+with a mode's name keeps the name there and at the daemon's address, and the mode's row says so (`server_taken`). Desktop reads the file at launch, so a switch shows at its next start; turned off,
 the server stops answering at once. Not yet read in the real app: which of Chat, Cowork and the Code tab list these
 servers and draw their pages waits for the sandbox of outcome 8.
 

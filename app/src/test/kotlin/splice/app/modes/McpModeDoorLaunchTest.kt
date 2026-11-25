@@ -1,7 +1,8 @@
 // An mcp mode reaching `claude` on the door, end to end on a daemon: a launch after the mode is on, whether splice.toml
 // turned it on before boot or `PUT /api/modes` while the daemon ran, is handed a `--mcp-config` file naming the mode's
 // server at the daemon's own address. Before, only a head's own launch was handed one, so `claude` on the door, the
-// launch every seat and most sessions get, never had the mode's tools.
+// launch every seat and most sessions get, never had the mode's tools. A host that reads a page with the management key
+// alone, naming no caller, is answered by the mode at its address.
 package splice.app.modes
 
 import com.sun.net.httpserver.HttpServer
@@ -20,6 +21,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.Daemon
@@ -87,6 +89,26 @@ class McpModeDoorLaunchTest {
         }
     }
 
+    @Test
+    fun `a bare bearer lists an on mode's tools and reads its page at its address, as a host reading a view does`(
+        @TempDir tmp: Path,
+    ) {
+        daemon(tmp, "[modes.visual]\non = true") { mgmt, _ ->
+            val listed = bare(mgmt, """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""").getValue("tools").jsonArray
+            assertEquals(
+                listOf("read_me", "show_widget", "html_render"),
+                listed.map { it.jsonObject.getValue("name").jsonPrimitive.content },
+            )
+            val read = bare(
+                mgmt,
+                """{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"ui://visual/reply.html"}}""",
+            )
+            val page = read.getValue("contents").jsonArray.single().jsonObject
+            assertEquals("text/html;profile=mcp-app", page.getValue("mimeType").jsonPrimitive.content)
+            assertTrue(page.getValue("text").jsonPrimitive.content.contains("<"), "the page's html")
+        }
+    }
+
     /** A daemon over a splice.toml with one provider, no heads and [modes], carrying the modes its jar carries. */
     private fun daemon(tmp: Path, modes: String, check: suspend (String, Path) -> Unit) {
         val provider = DoorModeProvider()
@@ -119,6 +141,20 @@ class McpModeDoorLaunchTest {
         }
         provider.stop()
         client.close()
+    }
+
+    /** The result of [body] posted to the visual mode's address with the management key alone, naming no caller and no
+     *  session, as the Eli app reads a page (splice-mcp-apps.ts). */
+    private suspend fun bare(mgmt: String, body: String): JsonObject {
+        val response = client.post("http://127.0.0.1:$controlPort/mcp/visual") {
+            header("Authorization", "Bearer $mgmt")
+            header("Accept", "application/json, text/event-stream")
+            header("Content-Type", "application/json")
+            setBody(body)
+        }
+        val text = response.bodyAsText()
+        assertEquals(200, response.status.value, text)
+        return json.parseToJsonElement(text).jsonObject.getValue("result").jsonObject
     }
 
     /** The recipe a launch of `claude` answers, asked as the shim asks. */

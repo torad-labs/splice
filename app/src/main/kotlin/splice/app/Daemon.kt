@@ -52,6 +52,7 @@ import splice.app.modes.ModeHooks
 import splice.app.modes.ModeMcp
 import splice.app.modes.ModeServerRoutes
 import splice.app.modes.ModeTools
+import splice.app.modes.PersonMcpNames
 import splice.app.probe.LocalWindowRefresh
 import splice.app.provider.AntigravityJoin
 import splice.app.server.DaemonServer
@@ -117,8 +118,10 @@ public class Daemon(
     internal var modeBoot: ModeBoot? = null
         set(boot) {
             field = boot
+            // the person's own MCP servers as the MCP host reads them, from the home ControlPlane gives it
+            val theirs = PersonMcpNames(statePaths.rootDir.parent ?: statePaths.rootDir, statePaths)
             controlPlane.modes = boot?.let {
-                DaemonModes(it.catalog, topology.modes, topology.heads.keys.toList(), statePaths.stateDir)
+                DaemonModes(it.catalog, topology.modes, topology.heads.keys.toList(), statePaths.stateDir, theirs)
             }
         }
 

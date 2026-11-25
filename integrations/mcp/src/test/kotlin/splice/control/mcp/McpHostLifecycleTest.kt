@@ -235,12 +235,13 @@ class McpHostLifecycleTest : McpHostFixture() {
                 )
                 val elapsed = overlap[2].toLong()
                 assertTrue(
-                    elapsed in 0 until FakeMcpTermReceipts.TERM_OVERLAP_WAIT_MS,
-                    "child $slot TERM overlap took ${elapsed}ms",
+                    elapsed in 0 until FakeMcpTermReceipts.HOST_TERM_GRACE_MS,
+                    "child $slot's peer got TERM ${elapsed}ms after it, not within the host's " +
+                        "${FakeMcpTermReceipts.HOST_TERM_GRACE_MS}ms grace: the host signalled them one after another",
                 )
             }
         } finally {
-            // This proves receipt overlap and actual cleanup, not a three-second total stop budget:
+            // This proves TERM overlap within one grace and actual cleanup, not a total stop budget:
             // production owns distinct shared TERM and forced-reap phases. Await exits without polling.
             children.forEach { child ->
                 child.onExit().get(MCP_HOST_STREAM_WAIT_MS, TimeUnit.MILLISECONDS)

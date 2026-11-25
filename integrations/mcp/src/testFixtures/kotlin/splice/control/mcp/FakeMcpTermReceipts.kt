@@ -20,8 +20,10 @@ import java.util.concurrent.TimeUnit
  *  JDK's watch service polls every two seconds, as long as the host's whole TERM grace, so the first child was killed
  *  before it was told its peer had been signalled with it. */
 public object FakeMcpTermReceipts {
-    /** WHY: retain the test's three-second bound for real TERM receipt/overlap, not total reaping. */
-    public const val TERM_OVERLAP_WAIT_MS: Long = 3_000L
+    /** WHY: the host's TERM grace (McpProcessStop's DESTROY_GRACE_MS, private to it). A host that signals its children
+     *  in one pass gets the peer's TERM to a child milliseconds after its own; one that waits a grace between them
+     *  cannot get it there sooner than this, so this is what tells "together" from "one after another". */
+    public const val HOST_TERM_GRACE_MS: Long = 2_000L
 
     // WHY: a receipt contains only a PID, process birth timestamp, and optional elapsed milliseconds.
     private const val RECEIPT_BYTES = 128
@@ -62,8 +64,8 @@ public object FakeMcpTermReceipts {
         check(receipt.size == 2)
         val handle = ProcessHandle.of(receipt[0].toLong()).orElseThrow()
         check(handle.isAlive && handle.info().startInstant().orElseThrow().toString() == receipt[1])
+        // Written however late the peer was: the test judges the time, so a late peer fails in words, not as a gap.
         val elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
-        check(elapsed < TERM_OVERLAP_WAIT_MS) { "peer TERM overlap took ${elapsed}ms" }
         SecureFile.createNew0600(
             directory.resolve("$slot.overlap"),
             "${receipt.joinToString("|")}|$elapsed".toByteArray(),

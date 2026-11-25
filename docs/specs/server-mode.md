@@ -154,7 +154,9 @@ action = "block"            # or "warn"
 - `splice server budget set --person|--team <name> --daily-usd N --monthly-usd N --action block|warn`, and
   `server budget list --json` with what each has spent today and this month and whether it is over. A blocked
   budget refuses before the upstream with a message naming the budget; warn serves and reads over. Spend survives
-  a restart. A team budget holds every member.
+  a restart. A team budget holds every member. A turn's spend counts from the moment the last part of its answer is
+  handed to its client's connection, so a client that asks again once it has the whole answer is held to what that
+  answer cost.
 
 ### F4 upstream-pool, prefill-keepalive and openai-route (`pool.test.ts`, `keepalive.test.ts`, `openai-route.test.ts`)
 
@@ -512,7 +514,7 @@ Drafted checks for these exist and are committed with the P2 plan once P1 has la
 - **F12 access and token caps.** `splice server team set <team> --commands a,b` and `server person set <email>
   --commands a,b|all`; the person's setting wins over the team's. A command a person may not use is a 403
   `permission_error` naming it. `[server.limits] tpm_per_person` refuses a person's next turn with 429 once their
-  last minute's tokens reach the cap.
+  last minute's tokens reach the cap, the turn whose answer they have just had among them, as for budgets (F3).
 
 ## The team gateway (gateway-no-heads)
 

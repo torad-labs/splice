@@ -8,6 +8,13 @@
 // A row is written once the answer has ended, on the ledger's own scope: the response is never held open while a head
 // is still writing its own row, and a stop waits a moment for the rows still being written.
 //
+// A person's next turn reads their budget and their tokens a minute only once the rows of their answered turns are
+// written (settled). A turn is answered from the moment the last part of its answer is handed to the client's
+// connection, where its slot is given back (AnswersInFlight), or from its end when it has no such moment. The client
+// cannot have the whole answer before that hand-over, so it cannot ask again before the turn counts as answered.
+// Counted only once the relay returned, which can come after the client has the answer, the last turn could go
+// uncounted and a person go over by about one turn's usage.
+//
 // A head can say its row comes later than its answer: code mode returns a turn while the round that writes its script
 // still streams, and the turn's bill is whole only once that round settles (ServedTurnBoard.holds). Such a row waits
 // for its head however long that is, so the request is billed what it cost; a ledger that stops writes it with what
@@ -18,7 +25,6 @@ import io.ktor.server.application.ApplicationCall
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.future.asDeferred
 import kotlinx.coroutines.job
@@ -62,8 +68,8 @@ internal class TurnLedger(private val parts: LedgerParts, io: CoroutineDispatche
     private val job = scope.coroutineContext.job
     private val rows = LedgerRows(parts)
 
-    // Each row still being written, by the turn it is of.
-    private val pending = ConcurrentHashMap<Job, LedgerTurn>()
+    // Every turn from its arrival until its row is written; a person's next turn waits on those of theirs answered.
+    private val pending = ConcurrentHashMap.newKeySet<LedgerTurn>()
 
     // Completed as the ledger stops: a row still waiting on its head is then written with what it has.
     private val stopping = CompletableDeferred<Unit>()
@@ -72,8 +78,12 @@ internal class TurnLedger(private val parts: LedgerParts, io: CoroutineDispatche
     private val broken = AtomicReference<String?>(null)
 
     /** A turn of [key]'s person on [command], arriving now on [route], for the team they are on now. */
-    fun arrived(key: ServerKey, command: ServedCommand, route: String): LedgerTurn =
-        LedgerTurn(key, command, route, parts.clock.millis(), parts.people.team(key.person, parts.teams))
+    fun arrived(key: ServerKey, command: ServedCommand, route: String): LedgerTurn {
+        val turn = LedgerTurn(key, command, route, parts.clock.millis(), parts.people.team(key.person, parts.teams))
+        pending.add(turn)
+        turn.row.invokeOnCompletion { pending.remove(turn) }
+        return turn
+    }
 
     /** The header that names [turn] to its head, which from now on is expected to say how it went. */
     fun named(turn: LedgerTurn): Pair<String, String> {
@@ -110,8 +120,9 @@ internal class TurnLedger(private val parts: LedgerParts, io: CoroutineDispatche
             Cancellables.runCatchingCancellable { parts.ledger.add(written) }
                 .onFailure { log("[server] a ledger row was not written: ${SafeFailureText.render(it)}\n") }
         }
-        pending[row] = turn
-        row.invokeOnCompletion { pending.remove(row) }
+        turn.answered.complete()
+        // Written, failed, or cancelled as the ledger stops: nothing waits on it any longer.
+        row.invokeOnCompletion { turn.row.complete() }
         row.start()
     }
 
@@ -138,12 +149,15 @@ internal class TurnLedger(private val parts: LedgerParts, io: CoroutineDispatche
         }
     }
 
-    /** Waits, a moment at most, for the rows still being written of [person]'s turns and their team's. A row its head
-     *  holds for a round still streaming has no bill yet, so nothing waits on it. */
+    /** Waits, a moment at most, for the rows still to be written of [person]'s turns and their team's whose answers
+     *  their clients may have whole (LedgerTurn.answered). A turn still answering is not waited on, and neither is a
+     *  row its head holds for a round still streaming, which has no bill yet. */
     suspend fun settled(person: String) {
         val team = parts.people.team(person, parts.teams)
-        val theirs = pending.filterValues { !parts.board.holds(it.id) && (it.key.person == person || onTeam(it, team)) }
-        withTimeoutOrNull(HEAD_WORD_MS) { theirs.keys.forEach { it.join() } }
+        val theirs = pending.filter {
+            it.answered.isCompleted && !parts.board.holds(it.id) && (it.key.person == person || onTeam(it, team))
+        }
+        withTimeoutOrNull(HEAD_WORD_MS) { theirs.forEach { it.row.join() } }
     }
 
     /** Whether [turn] counts toward [team]'s budget, as the turn of someone on it when it arrived; never when there

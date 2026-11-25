@@ -6,6 +6,7 @@
 // own or the server's, is read here with the others, and so are the commands they may use (CommandAccess).
 package splice.server
 
+import kotlinx.coroutines.CompletableJob
 import splice.core.topology.ServerLimits
 import splice.core.topology.ServerTeams
 import splice.core.wire.HttpStatus
@@ -15,19 +16,26 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** One admitted turn's places in flight, among its [person]'s turns and the whole [server]'s (ServerLoad), every one
- *  given back once however often [release] is called. */
-internal class TurnSlot(private val person: PersonUse? = null, private val server: ServerLoad.Place? = null) {
+ *  given back once however often [release] is called. Just before they are, the turn is marked
+ *  [answered] (LedgerTurn.answered), so a turn that asks once this one's place is free waits for this one's row. */
+internal class TurnSlot(
+    private val person: PersonUse? = null,
+    private val server: ServerLoad.Place? = null,
+    private val answered: CompletableJob? = null,
+) {
     private val released = AtomicBoolean()
 
     fun release() {
         if (released.compareAndSet(false, true)) {
+            answered?.complete()
             person?.ended()
             server?.giveBack()
         }
     }
 
     /** One slot holding this one's places and [other]'s, given back together. Neither is released apart from it. */
-    fun joined(other: TurnSlot): TurnSlot = TurnSlot(person ?: other.person, server ?: other.server)
+    fun joined(other: TurnSlot): TurnSlot =
+        TurnSlot(person ?: other.person, server ?: other.server, answered ?: other.answered)
 }
 
 /** What asking to start a turn came to. */

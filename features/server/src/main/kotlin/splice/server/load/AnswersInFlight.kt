@@ -14,6 +14,8 @@
 // connection gives it back as the answer's last part is handed to the socket, just before it is written: the relay
 // has read its upstream to the end by then, so the upstream call the place counts is over, and the client cannot yet
 // have the whole answer.
+// The same moment marks the turn answered (LedgerTurn.answered): the client's next turn waits for this one's row, so it
+// finds this one counted against its budget and its tokens a minute.
 package splice.server.load
 
 import io.ktor.server.application.ApplicationCall

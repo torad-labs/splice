@@ -3,6 +3,8 @@
 // it on the way. Never a word of its prompt or its answer.
 package splice.server.ledger
 
+import kotlinx.coroutines.CompletableJob
+import kotlinx.coroutines.Job
 import splice.core.server.ServedTurn
 import splice.core.turn.SERVED_TURN_HEADER
 import splice.server.ChatAsk
@@ -46,6 +48,14 @@ internal class LedgerTurn(
     /** Whether splice refused it for a failure of its own: a ledger it cannot write, or its head not running. */
     @Volatile
     var failedOwn: Boolean = false
+
+    /** Completed once its client may have its whole answer: as the answer's last part is handed to the client's
+     *  connection (AnswersInFlight, through its slot), or as it ends, whichever is first. From then on its person's
+     *  next turn waits for its [row] before a budget or a token cap is read. */
+    val answered: CompletableJob = Job()
+
+    /** Completed once its row is written, or once the ledger stops without writing it. */
+    val row: CompletableJob = Job()
 
     /** How long after it arrived [atMs] is. */
     fun since(atMs: Long): Long = atMs - startedMs

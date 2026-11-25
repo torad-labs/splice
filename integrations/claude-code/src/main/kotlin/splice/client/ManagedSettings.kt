@@ -51,6 +51,20 @@ public class ManagedSettings(
      *  of `managed-settings.d` in filename order. A folder that is absent or can't be listed adds no drop-in. */
     public fun sources(): List<Path> = listOf(file) + dropIns()
 
+    /** What [settings], a managed settings file read as an object (null where there is none), say of
+     *  [PARENT_SETTINGS_KEY]. */
+    public fun parentSetting(settings: JsonObject?): ParentSetting =
+        ParentSetting(settings?.get(PARENT_SETTINGS_KEY)?.takeUnless { it is JsonNull }?.toString())
+
+    /** The other places Claude Code reads managed settings that hold something on this machine, as words: each drop-in
+     *  of `managed-settings.d` and the system's own policy (macOS's managed preferences, Windows' registry). They are
+     *  only found, never read for their keys: a value set there outranks [file]'s. The remote settings of a config tree
+     *  are not looked for. */
+    public fun otherSources(): List<String> {
+        val system = policy.admin()?.let { "the system's managed policy" }
+        return dropIns().map(Path::toString) + listOfNotNull(system)
+    }
+
     /** Whether the managed settings that reach a session of the tree at [configDir] set telemetry: the switch or any
      *  OpenTelemetry variable in their `env`, merged per variable across the admin sources, or a headers helper of the
      *  one source Claude Code selects. Where no admin source holds a document, Windows' HKCU value is that source. */
@@ -169,10 +183,21 @@ private val EMPTY = JsonObject(emptyMap())
 public const val PROCESS_WRAPPER_KEY: String = "processWrapper"
 
 /** The managed setting that decides whether the policy a parent such as Claude Desktop hands a session it starts (the
- *  SDK parent tier) layers under the administrator's own. Claude Code's default drops it as soon as any managed
- *  settings exist, so Desktop's policy for its Code sessions is not applied and Desktop warns in each of them; only
- *  [PARENT_SETTINGS_MERGE] keeps it. Claude Code honours the key only from managed settings. */
+ *  SDK parent tier) layers under the administrator's own. Claude Code's default, "first-wins", drops it as soon as any
+ *  managed settings exist, so Desktop's limits for its Code sessions are not applied and Desktop warns in each of
+ *  them; only [PARENT_SETTINGS_MERGE] layers its restrictions in. Claude Code honours the key only from managed
+ *  settings, and takes it from the highest source that sets it. */
 public const val PARENT_SETTINGS_KEY: String = "parentSettingsBehavior"
 
-/** The value of [PARENT_SETTINGS_KEY] under which the parent's policy still applies beside the administrator's. */
+/** The value of [PARENT_SETTINGS_KEY] under which the parent's limits still apply beside the administrator's. */
 public const val PARENT_SETTINGS_MERGE: String = "merge"
+
+/** What a managed settings file says of [PARENT_SETTINGS_KEY]: nothing ([absent]), `"merge"` ([merges]), or another
+ *  value, which [shown] gives as JSON text (`"first-wins"` with its quotes). A `null` sets nothing, as in Claude Code. */
+public data class ParentSetting(public val shown: String? = null) {
+    /** Whether the file does not set the key. */
+    public val absent: Boolean get() = shown == null
+
+    /** Whether the file sets the key to [PARENT_SETTINGS_MERGE]. */
+    public val merges: Boolean get() = shown == "\"$PARENT_SETTINGS_MERGE\""
+}

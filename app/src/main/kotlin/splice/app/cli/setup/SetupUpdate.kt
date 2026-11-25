@@ -181,4 +181,4 @@ private enum class Offer { NOTHING, DECLINED, DONE }
 
 // The gaps `setup --update` can only say: root writes Claude Code's managed settings, and systemd is not splice's to
 // install. Every other gap has its offer above.
-private val SAID_ONLY = setOf(GapKind.PROCESS_WRAPPER, GapKind.HUB_SYSTEMD)
+private val SAID_ONLY = setOf(GapKind.PROCESS_WRAPPER, GapKind.PARENT_SETTINGS, GapKind.HUB_SYSTEMD)

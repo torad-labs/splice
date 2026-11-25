@@ -96,7 +96,7 @@ For Antigravity in **Code** and for live switching between Antigravity and Claud
 splice desktop wrapper --print
 ```
 
-The file needs two keys, and the command prints it with both:
+The file needs two keys:
 
 ```json
 {
@@ -105,9 +105,16 @@ The file needs two keys, and the command prints it with both:
 }
 ```
 
-`processWrapper` starts the Code tab through splice. `parentSettingsBehavior` set to `"merge"` is there so Claude Desktop's own policy still applies to the Code sessions it starts. Once a managed settings file exists, Claude Code uses it as the only policy source and drops the policy Desktop hands each Code session, so without the second key Desktop logs a `[custom-3p] configuration warning` at every start and shows "The policy from your inference configuration isn't fully applied on this computer" in every Code session.
+`processWrapper` starts the Code tab through splice. `parentSettingsBehavior` set to `"merge"` is there so the limits in Claude Desktop's own policy still apply to the Code sessions it starts. Claude Code's default, `"first-wins"`, treats an existing managed settings file as the only policy source and drops the policy Desktop hands each Code session, so without the second key Desktop logs a `[custom-3p] configuration warning` at every start and shows "The policy from your inference configuration isn't fully applied on this computer" in every Code session. (Claude Code defaults to `"merge"` only for Desktop's own gateway mode with an interactive sign-in; Desktop on splice uses a key, so the default is `"first-wins"` and the key matters.)
 
-If the file already exists, add these two keys to it and keep what it holds: the JSON the command prints is that file with both keys set. Save it as `managed-settings.json` and use the install command it prints as an administrator. If it warns the existing JSON couldn't be read, it prints only the two keys and no install command: add them to that file by hand. The file belongs to the administrator; splice never installs it for you.
+For each of the two keys the command says one of three things: already right, absent and to be added, or set to a value and to be changed.
+
+- **No file yet:** it prints the whole file above and the command that puts it in place.
+- **A file that exists:** it does not print a copy and gives no `install` line, because a copy would reset the file's owner and mode and could expose what its `env` holds. It names the two keys, each as "add", "change from X to Y" or "already right", and says to edit the file in place as an administrator. What the file holds is not printed. When both keys are already right it says so and asks for nothing.
+- **`"first-wins"` already in the file:** the administrator may have set it on purpose. The command says what changing it does (Claude Desktop's limits then apply underneath the administrator's own for the Code sessions Desktop starts) and that the choice is the administrator's.
+- **A file it can't read as JSON:** it says what the file needs and that it can't tell which of it is there.
+
+splice reads only that one file. Claude Code also reads the `managed-settings.d` drop-ins and, on macOS and Windows, the system's own policy, and takes `parentSettingsBehavior` from the highest source that sets it. Where one of those exists, the command, `--check` and `splice doctor` name it as unread and say the key may be set there; they do not call it missing. The file belongs to the administrator; splice never installs it for you.
 
 | Platform | Claude Code managed settings |
 | --- | --- |
@@ -115,7 +122,7 @@ If the file already exists, add these two keys to it and keep what it holds: the
 | macOS | `/Library/Application Support/ClaudeCode/managed-settings.json` |
 | Windows (wrapper command path) | `C:\Program Files\ClaudeCode\managed-settings.json` |
 
-This is **Claude Code's** managed file, not the **Claude Desktop** provider configuration under `/etc/claude-desktop`. Verify the executable and both keys with the check below, then quit and reopen Desktop entirely. The check exits 0 when the file is complete and also when `processWrapper` is right but `parentSettingsBehavior` is not `"merge"`: the Code tab does start through splice, but the check then says Desktop warns in every Code session and its policy for Code is not applied, and how to fix it. It exits 1 when there is no file, no `processWrapper`, a `processWrapper` naming another program, or no launcher laid.
+This is **Claude Code's** managed file, not the **Claude Desktop** provider configuration under `/etc/claude-desktop`. Verify the executable and both keys with the check below, then quit and reopen Desktop entirely. The check exits 0 when the file is complete and also when `processWrapper` is right but `parentSettingsBehavior` is not `"merge"`: the Code tab does start through splice. The first line of each case says the whole state (`... and parentSettingsBehavior is "merge" in <file>`, `..., but <file> does not set parentSettingsBehavior: ...` or `..., but <file> sets parentSettingsBehavior to "first-wins": ...`), so it never reads as the all-clear, and the lines after it say what Desktop will do and what to change. It exits 1 when there is no file, no `processWrapper`, a `processWrapper` naming another program, or no launcher laid. `splice doctor` has a `parentSettingsBehavior` row for any managed file that exists while Desktop is on splice, with or without a `processWrapper`: a warning where the key is absent, a note where the administrator set another value, and nothing where there is no file, since the key has no effect without one.
 
 ```bash
 splice desktop wrapper --check

@@ -14,8 +14,6 @@ import splice.app.desktop.setup.DesktopPrograms
 import splice.app.desktop.setup.SideBySideDesktop
 import splice.app.desktop.setup.SideBySideLaunchers
 import splice.client.ManagedSettings
-import splice.client.PARENT_SETTINGS_KEY
-import splice.client.PARENT_SETTINGS_MERGE
 import splice.client.PROCESS_WRAPPER_KEY
 import splice.client.desktop.DesktopAppConfig
 import splice.core.terminal.TerminalOutput
@@ -30,12 +28,12 @@ import splice.topology.TopologyStatePaths
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** [managed] is Claude Code's managed settings file on this OS (ManagedSettings.file), where a processWrapper is
- *  named; null reads none. */
+/** [managed] is Claude Code's managed settings on this OS, whose file names a processWrapper and a
+ *  parentSettingsBehavior; null reads none. */
 internal class DesktopFactsRead(
     private val env: EnvReader,
     private val osName: String,
-    private val managed: Path? = ManagedSettings(osName).file,
+    private val managed: ManagedSettings? = ManagedSettings(osName),
 ) {
     private val quiet = TerminalOutput { }
 
@@ -48,7 +46,7 @@ internal class DesktopFactsRead(
         }.getOrDefault(false)
         val app = Files.exists(SideBySideLaunchers(env, osName).desktopLauncherPath())
         val settings = managedSettings()
-        return DesktopFacts(program, mode(topology), cli, app, wrapper(settings), parentMerges(settings))
+        return DesktopFacts(program, mode(topology), cli, app, wrapper(settings), managedFile(settings))
     }
 
     /** Desktop's mode as `splice doctor` reads it (DesktopLook): splice's record, in [topology]'s state folder, against
@@ -64,7 +62,7 @@ internal class DesktopFactsRead(
 
     /** The managed settings file ([managed]) as an object: null where there is none or it is no JSON object. */
     private fun managedSettings(): JsonObject? = Cancellables.runCatchingBestEffort {
-        val file = managed?.takeIf { Files.isRegularFile(it) }
+        val file = managed?.file?.takeIf { Files.isRegularFile(it) }
         file?.let { JsonScalars.objectOrNull(Json, Files.readString(it)) }
     }.getOrNull()
 
@@ -81,10 +79,13 @@ internal class DesktopFactsRead(
         return if (name == DESKTOP_LAUNCH) WrapperState.SPLICE else WrapperState.OTHER
     }
 
-    /** Whether the managed [settings] set `parentSettingsBehavior` to `"merge"`, as Claude Desktop's policy for its
-     *  Code sessions needs once any managed settings exist. */
-    private fun parentMerges(settings: JsonObject?): Boolean =
-        JsonScalars.str(settings?.get(PARENT_SETTINGS_KEY)) == PARENT_SETTINGS_MERGE
+    /** The managed settings file as [settings] read it, where it exists (a file that is no JSON object says nothing of
+     *  the key), with the other places Claude Code reads that hold something and that are not read here. */
+    private fun managedFile(settings: JsonObject?): ManagedFileFacts? {
+        val file = managed?.file?.takeIf { Files.isRegularFile(it) } ?: return null
+        val elsewhere = Cancellables.runCatchingBestEffort { managed.otherSources() }.getOrDefault(emptyList())
+        return ManagedFileFacts(file, managed.parentSetting(settings), elsewhere)
+    }
 }
 
 // The program DesktopPrograms lays for a managed processWrapper to name.

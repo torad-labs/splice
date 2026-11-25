@@ -35,7 +35,7 @@ Desktop --stream-json--> <state>/desktop-launch (splice desktop launch) --> spli
 ```
 
 Nothing outside splice is needed beyond Claude Code's managed `processWrapper` naming `<state>/desktop-launch` and
-`parentSettingsBehavior` set to `"merge"`, so Desktop's own policy still applies to the Code sessions it starts
+`parentSettingsBehavior` set to `"merge"`, so the limits in Desktop's own policy still apply to the Code sessions it starts
 (`splice desktop wrapper` shows both), and Google's `agy`.
 
 ### 1. The catalog: Antigravity is one more login provider

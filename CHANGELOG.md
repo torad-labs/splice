@@ -159,11 +159,15 @@
 - **A turn's row names the Claude Code subagent and parent agent that sent it** on `/api/perf/turns`.
 - **`splice desktop launch`** is what a managed `processWrapper` starts the Code tab through, and `splice desktop`
   says each Desktop feature that depends on the backend, working or why not.
-- **`splice desktop wrapper` asks for both managed settings.** Claude Code's managed settings file needs
-  `"parentSettingsBehavior": "merge"` beside `processWrapper`: without it Claude Code drops the policy Claude Desktop
-  hands each Code session, and Desktop warns in every one. `--print` shows the file with both keys added to what it
-  holds, `--check` says when only the second is missing (exit 0: the wrapper works), and `splice doctor` and
-  `splice upgrade` say the same.
+- **`splice desktop wrapper` asks for both managed settings, and says for each what to do.** Claude Code's managed
+  settings file needs `"parentSettingsBehavior": "merge"` beside `processWrapper`: without it Claude Code drops the
+  policy Claude Desktop hands each Code session, and Desktop warns in every one. For each key `--print` says whether
+  it is already right, to be added, or set to another value and to be changed; it prints the whole file only where
+  there is none, and for a file that exists says to edit it in place (a copy would reset its owner and mode). A
+  `"first-wins"` already there is the administrator's choice and is said so. `--check` exits 0 where the wrapper works
+  and its first line says when `parentSettingsBehavior` is not `"merge"`. `splice doctor` and `splice upgrade` say the
+  same for any managed file that exists with Desktop on splice, with or without a `processWrapper`, and name a
+  drop-in or system policy they did not read.
 - **A command-auth provider signs in from the terminal or the console**, and `splice doctor` reports on it.
 - **A provider's declared effort vocabulary names its models' reasoning levels.** An openai-chat provider whose
   endpoint lists nothing about reasoning (a team gateway, a llama.cpp server) had no effort control in Claude Desktop's

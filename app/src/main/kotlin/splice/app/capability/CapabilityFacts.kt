@@ -4,6 +4,7 @@
 package splice.app.capability
 
 import splice.app.desktop.setup.DesktopMode
+import splice.client.ParentSetting
 import splice.core.mcp.McpHarness
 import java.nio.file.Path
 
@@ -11,17 +12,27 @@ import java.nio.file.Path
  *  program, or none (no managed file, or one without the key). */
 internal enum class WrapperState { SPLICE, OTHER, NONE }
 
+/** The managed settings file Claude Code reads on this machine, where it exists: its [file], what it says of
+ *  `parentSettingsBehavior` ([parent]), and the other places Claude Code reads that hold something and that splice did
+ *  not read ([elsewhere]): a value set there outranks the file's. */
+internal data class ManagedFileFacts(
+    val file: Path,
+    val parent: ParentSetting,
+    val elsewhere: List<String> = emptyList(),
+)
+
 /** Claude Desktop: its [program] (null when not installed), the [mode] splice has it in, whether `claude-splice`
  *  ([sideBySideCli]) and the `Claude (Splice)` app launcher ([sideBySideApp]) are installed, the managed [wrapper],
- *  and whether the managed settings set `parentSettingsBehavior` to `"merge"` ([parentMerges]): without it Claude Code
- *  drops the policy Desktop hands each Code session, and Desktop warns in every one, whatever the wrapper is. */
+ *  and the managed settings file ([managedFile], null where there is none): without `parentSettingsBehavior`
+ *  "merge" in it Claude Code drops the policy Desktop hands each Code session, and Desktop warns in every one,
+ *  whatever else the file holds. */
 internal data class DesktopFacts(
     val program: Path?,
     val mode: DesktopMode,
     val sideBySideCli: Boolean,
     val sideBySideApp: Boolean,
     val wrapper: WrapperState,
-    val parentMerges: Boolean = true,
+    val managedFile: ManagedFileFacts? = null,
 )
 
 /** The other harnesses: Antigravity's [agy] and [codex] on the PATH (null when absent), whether the Antigravity

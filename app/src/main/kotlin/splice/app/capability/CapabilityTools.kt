@@ -4,12 +4,14 @@
 package splice.app.capability
 
 import splice.app.desktop.setup.DesktopMode
+import splice.client.PARENT_SETTINGS_KEY
 import splice.core.mcp.McpHarness
 import splice.diagnostics.doctor.ToolLevel
 import splice.diagnostics.doctor.ToolReading
 
 internal class CapabilityTools(private val facts: Capabilities) {
-    fun readings(): List<ToolReading> = listOfNotNull(desktop(), wrapper(), agy(), shim(), codex(), codexHooks(), hub())
+    fun readings(): List<ToolReading> =
+        listOfNotNull(desktop(), wrapper(), parent(), agy(), shim(), codex(), codexHooks(), hub())
 
     /** Claude Desktop, said when splice has it on, or its Claude (Splice) app launcher is installed, or when it is
      *  installed at all. `claude-splice` runs Claude Code in a terminal, not Desktop, so it is no use of Desktop. */
@@ -38,19 +40,14 @@ internal class CapabilityTools(private val facts: Capabilities) {
     }
 
     /** The managed processWrapper, said while Desktop runs on splice in app mode: Desktop then passes the Code tab no
-     *  key, so a wrapper other than splice's `desktop-launch` starts it with none (docs/specs/desktop-full.md). Where
-     *  the managed settings do not set `parentSettingsBehavior` to "merge", whichever program the wrapper is, Desktop's
-     *  policy for its Code sessions is dropped and Desktop warns in each. */
+     *  key, so a wrapper other than splice's `desktop-launch` starts it with none (docs/specs/desktop-full.md). */
     private fun wrapper(): ToolReading? {
         if (facts.desktop.mode != DesktopMode.APP) return null
-        val merges = facts.desktop.parentMerges
         return when (facts.desktop.wrapper) {
             WrapperState.SPLICE -> ToolReading(
                 WRAPPER_ROW,
-                if (merges) ToolLevel.OK else ToolLevel.WARN,
-                "Claude Code's managed processWrapper runs splice's desktop-launch" +
-                    if (merges) "" else "; $PARENT_UNSET",
-                MERGE_FIX.takeUnless { merges },
+                ToolLevel.OK,
+                "Claude Code's managed processWrapper runs splice's desktop-launch",
             )
             WrapperState.NONE -> ToolReading(
                 WRAPPER_ROW,
@@ -61,10 +58,26 @@ internal class CapabilityTools(private val facts: Capabilities) {
                 WRAPPER_ROW,
                 ToolLevel.WARN,
                 "Claude Code's managed processWrapper names another program, so the Code tab starts with no key " +
-                    "for splice" + if (merges) "" else "; and $PARENT_UNSET",
-                if (merges) WRAPPER_FIX else "$WRAPPER_FIX, and $MERGE_FIX",
+                    "for splice",
+                WRAPPER_FIX,
             )
         }
+    }
+
+    /** The managed settings file's `parentSettingsBehavior`, said while Desktop runs on splice in app mode and the
+     *  file exists, with or without a processWrapper: without "merge" in it Desktop's limits for the Code tab are
+     *  not applied and Desktop warns in every Code session. Where the file sets another value, that is the
+     *  administrator's choice: said, not warned. No file at all is fine: the key has no effect then. */
+    private fun parent(): ToolReading? {
+        val managed = facts.desktop.managedFile
+        if (facts.desktop.mode != DesktopMode.APP || managed == null) return null
+        val text = ParentSettingsText(managed)
+        val level = when {
+            managed.parent.merges -> ToolLevel.OK
+            managed.parent.absent -> ToolLevel.WARN
+            else -> ToolLevel.INFO
+        }
+        return ToolReading(PARENT_ROW, level, text.said(), text.fix())
     }
 
     private fun agy(): ToolReading? {
@@ -152,6 +165,7 @@ internal class CapabilityTools(private val facts: Capabilities) {
 
 private const val DESKTOP_ROW = "claude-desktop"
 private const val WRAPPER_ROW = "processWrapper"
+private const val PARENT_ROW = PARENT_SETTINGS_KEY
 private const val AGY_ROW = "agy"
 private const val SHIM_ROW = "antigravity shim"
 private const val CODEX_ROW = "codex"
@@ -164,11 +178,3 @@ internal const val INSTALL_ALL = "splice install --all"
 // What a person whose managed processWrapper names another program does: only root writes that file.
 internal const val WRAPPER_FIX =
     "point processWrapper in Claude Code's managed settings at splice's desktop-launch in its state folder"
-
-// Where the managed settings lack `parentSettingsBehavior: merge`, Claude Code drops the policy Claude Desktop hands
-// each Code session and Desktop says so in every one. `splice desktop wrapper` shows the file with both keys.
-internal const val PARENT_UNSET =
-    "the managed settings do not set parentSettingsBehavior to \"merge\", so Desktop's own policy for the Code " +
-        "tab is not applied and Desktop warns in every Code session"
-internal const val MERGE_FIX = "add \"parentSettingsBehavior\": \"merge\" to Claude Code's managed settings " +
-    "(`splice desktop wrapper` shows the file)"

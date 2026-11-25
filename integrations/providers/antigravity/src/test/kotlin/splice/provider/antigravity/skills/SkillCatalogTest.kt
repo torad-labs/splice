@@ -15,13 +15,14 @@ internal class SkillCatalogTest {
     lateinit var tmp: Path
 
     @Test
-    fun `nearest workspace skills win and the gitfile stops ancestor discovery`() {
+    fun `the person's skills win, then the nearest workspace's, and the gitfile stops ancestor discovery`() {
         val repo = tmp.resolve("parent/repo")
         val work = Files.createDirectories(repo.resolve("work"))
         Files.writeString(repo.resolve(".git"), "gitdir: elsewhere\n")
-        writeSkill(work.resolve(".claude/skills/shared"), "# Nearest Claude\n")
-        writeSkill(work.resolve(".agents/skills/shared"), "# Nearest agents\n")
-        writeSkill(repo.resolve(".claude/skills/shared"), "# Root Claude\n")
+        writeSkill(work.resolve(".claude/skills/near"), "# Nearest Claude\n")
+        writeSkill(work.resolve(".agents/skills/near"), "# Nearest agents\n")
+        writeSkill(repo.resolve(".claude/skills/near"), "# Root Claude\n")
+        writeSkill(work.resolve(".claude/skills/shared"), "# Project copy\n")
         writeSkill(repo.resolve(".agents/skills/root-agent"), "# Repository skill\n")
         writeSkill(tmp.resolve("parent/.agents/skills/too-far"), "# Outside repository\n")
         writeSkill(home().resolve(".claude/skills/shared"), "# Claude user skill\n")
@@ -32,9 +33,11 @@ internal class SkillCatalogTest {
 
         val catalog = catalog(work)
         val result = catalog.load()
-        assertEquals(listOf("shared", "root-agent", "home-agent"), result.skillNames)
-        assertEquals(listOf("shared", "root-agent", "home-agent", "build"), result.commands.map { it.name })
-        assertEquals("Nearest Claude", result.commands.first().menuDescription)
+        assertEquals(listOf("shared", "home-agent", "near", "root-agent"), result.skillNames)
+        assertEquals(listOf("shared", "home-agent", "near", "root-agent", "build"), result.commands.map { it.name })
+        val menu = result.commands.associate { it.name to it.menuDescription }
+        assertEquals("Claude user skill", menu["shared"])
+        assertEquals("Nearest Claude", menu["near"])
         assertEquals("Build the app\n", SkillMarkdown().body(result.commands.last().file))
         assertNull(result.commands.last().folder)
         assertEquals(
@@ -166,7 +169,7 @@ internal class SkillCatalogTest {
 
         val catalog = ClaudeSkillCatalog(project, EnvReader(env::get), LogSink {})
         val result = catalog.load()
-        assertEquals(listOf("work", "parent", "configured", "home-agent"), result.skillNames)
+        assertEquals(listOf("configured", "home-agent", "work", "parent"), result.skillNames)
         assertEquals(listOf(project.resolve(".agents/skills").toRealPath()), catalog.nativeRoots())
     }
 

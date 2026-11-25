@@ -84,6 +84,10 @@ internal class DesktopSession(
     /** What the `system/init` said on `initialize`, until the first turn begins. */
     private var announced: SessionLook? = null
 
+    /** agy's own commands, as it last announced them; null until it announces a roster or answers a prompt. agy
+     *  announces one after `session/new`, and whether it does after `session/resume` is unknown, so the wait ends at
+     *  agy's first answered prompt: agy writes a prompt's updates before its reply, so a roster not heard by then is
+     *  none, and a roster heard later still takes its names. */
     private var agyCommands: List<AgyCommand>? = null
 
     override val agy: AgySession? get() = session
@@ -253,7 +257,7 @@ internal class DesktopSession(
         val uuid = JsonScalars.str(line, "uuid") ?: UUID.randomUUID().toString()
         val content = (line["message"] as? JsonObject)?.get("content") ?: JsonPrimitive("")
         if (!AcpLoginPrompt.matches(content)) {
-            // Before agy announces its roster, it may still own the typed command.
+            // Until agy announces its roster or answers a prompt, it may still own the typed command.
             val prompt = if (agyCommands == null) {
                 content
             } else {
@@ -328,6 +332,7 @@ internal class DesktopSession(
         val error = message["error"] as? JsonObject
         val result = message["result"] as? JsonObject
         stop = JsonScalars.str(result, "stopReason") ?: stop
+        if (agyCommands == null) agyCommands = emptyList()
         (result?.get("usage") as? JsonObject)?.let { usage = lists.usage(it) }
         if (prompts.isNotEmpty()) return
         val failure = error?.let {

@@ -1,0 +1,241 @@
+<!doctype html>
+<!--
+  The visual mode's view, ui://visual/reply.html (modes/visual): an MCP App
+  (https://modelcontextprotocol.io/extensions/apps/overview) that draws a show_widget call's fragment or a html_render
+  call's page in the host's sealed frame. It says ui/initialize, then ui/notifications/initialized, and draws from
+  ui/notifications/tool-input (a streaming call's tool-input-partial draws its fragment without running it). A host that
+  holds a page the call did not carry may hand it in tool-result's _meta["torad.ai/visual"].
+
+  It reaches nothing: its policy is the empty CSP (inline code only, no network), its origin opaque. The widget's own
+  scripts run here, in that frame, and nowhere else. It reports its height with size-changed and follows the host's light
+  or dark and its theme variables. A widget may call sendPrompt(text), which the host shows the person to send or not,
+  and openLink(url).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visual</title>
+<style>
+  :root { color-scheme: dark; }
+  :root[data-theme="light"] { color-scheme: light; }
+  html, body { margin: 0; padding: 0; background: transparent; }
+  body { font: 14.5px/1.5 var(--font-sans, ui-rounded, system-ui, sans-serif); color: var(--color-text-primary, CanvasText); overflow-wrap: anywhere; -webkit-text-size-adjust: 100%; }
+  #view { display: flow-root; }
+  #view :where(svg, img, canvas, video) { max-width: 100%; }
+  #view :where(pre, code) { font-family: var(--font-mono, ui-monospace, monospace); }
+  .reply-wait { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 13px; color: var(--color-text-tertiary, GrayText); }
+  .reply-wait::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--color-text-success, currentColor); animation: reply-breathe 2.4s ease-in-out infinite; }
+  @keyframes reply-breathe { 50% { opacity: .45; } }
+  @media (prefers-reduced-motion: reduce) { .reply-wait::before { animation: none; } }
+</style>
+</head>
+<body>
+<div id="view"></div>
+<script>
+(() => {
+  "use strict";
+  const PROTOCOL = "2026-01-26";
+  const META_KEY = "torad.ai/visual";
+  const root = document.documentElement;
+  const view = document.getElementById("view");
+  const waiting = new Map();
+  let next = 1;
+  let context = {};
+  let args = null;
+  let drawn = "";
+  let ran = false;
+  let waitTimer = 0;
+
+  const post = (message) => window.parent.postMessage({ jsonrpc: "2.0", ...message }, "*");
+  const ask = (method, params) => new Promise((resolve, reject) => {
+    const id = next++;
+    waiting.set(id, { resolve, reject });
+    post({ id, method, params });
+  });
+
+  // ---- The host's context: its light or dark, and its theme as the standard's variables.
+  function applyContext(changed) {
+    context = { ...context, ...(changed || {}) };
+    if (changed && changed.styles) context.styles = changed.styles;
+    root.dataset.theme = context.theme === "light" ? "light" : "dark";
+    const variables = (context.styles && context.styles.variables) || {};
+    for (const [name, value] of Object.entries(variables)) {
+      if (typeof name === "string" && name.startsWith("--") && typeof value === "string") root.style.setProperty(name, value);
+    }
+  }
+
+  // ---- Its height, as the frame should be: what the view holds, never the frame's own height read back.
+  let lastHeight = 0;
+  let lastWidth = 0;
+  function measure() {
+    const body = document.body;
+    const css = getComputedStyle(body);
+    const height = Math.ceil(body.getBoundingClientRect().height + parseFloat(css.marginTop || "0") + parseFloat(css.marginBottom || "0"));
+    const width = Math.ceil(root.clientWidth);
+    if (height === lastHeight && width === lastWidth) return;
+    lastHeight = height;
+    lastWidth = width;
+    post({ method: "ui/notifications/size-changed", params: { width, height } });
+  }
+  const sizes = new ResizeObserver(() => measure());
+  sizes.observe(document.body);
+  sizes.observe(view);
+
+  // ---- Drawing.
+  function wait(messages) {
+    clearInterval(waitTimer);
+    const lines = Array.isArray(messages) ? messages.filter((line) => typeof line === "string" && line.trim()) : [];
+    const line = document.createElement("div");
+    line.className = "reply-wait";
+    line.textContent = lines[0] || "Drawing…";
+    view.replaceChildren(line);
+    let at = 0;
+    if (lines.length > 1) waitTimer = setInterval(() => { at = (at + 1) % lines.length; line.textContent = lines[at]; }, 1800);
+  }
+
+  /**
+   * Runs one script the way the parser would have. A finished call is drawn once per frame: drawn again, the host loads
+   * a fresh frame, so every script starts in a realm of its own and never meets an earlier draw's declarations.
+   */
+  function run(old, put = (fresh) => old.replaceWith(fresh)) {
+    const fresh = document.createElement("script");
+    for (const attr of old.attributes) if (attr.name !== "src") fresh.setAttribute(attr.name, attr.value);
+    fresh.textContent = old.textContent;
+    put(fresh);
+  }
+
+  /** Puts `html` in the view; `live` runs its scripts (a finished call), otherwise it is only shown (a call still streaming). */
+  function place(html, live) {
+    clearInterval(waitTimer);
+    view.innerHTML = html;
+    const scripts = [...view.querySelectorAll("script")];
+    if (!live) {
+      for (const script of scripts) script.remove();
+      return;
+    }
+    for (const script of scripts) run(script);
+  }
+
+  /** A whole page: its styles join this head, its body's look joins this body, and its content and scripts the view. */
+  function placePage(html) {
+    const page = new DOMParser().parseFromString(html, "text/html");
+    for (const kept of document.querySelectorAll("[data-page]")) kept.remove();
+    const scripts = [];
+    for (const node of [...page.head.children]) {
+      if (node.tagName === "SCRIPT") scripts.push(node);
+      else if (node.tagName === "STYLE" || node.tagName === "LINK") {
+        const copy = document.importNode(node, true);
+        copy.dataset.page = "";
+        document.head.append(copy);
+      }
+    }
+    if (page.body.getAttribute("class")) document.body.className = page.body.getAttribute("class");
+    if (page.body.getAttribute("style")) document.body.setAttribute("style", page.body.getAttribute("style"));
+    clearInterval(waitTimer);
+    view.innerHTML = page.body.innerHTML;
+    const inBody = [...view.querySelectorAll("script")];
+    // The head's scripts run first, in their order, as the parser would have run them; then the body's, in place.
+    let after = null;
+    for (const script of scripts) run(script, (fresh) => {
+      if (after) after.after(fresh);
+      else view.prepend(fresh);
+      after = fresh;
+    });
+    for (const script of inBody) run(script);
+  }
+
+  function draw(next, final) {
+    if (!next || typeof next !== "object") return;
+    args = next;
+    const name = (context.toolInfo && context.toolInfo.tool && context.toolInfo.tool.name) || "";
+    const isPage = typeof next.html === "string" || name === "html_render" || (typeof next.path === "string" && typeof next.widget_code !== "string");
+    const code = isPage ? (typeof next.html === "string" ? next.html : "") : (typeof next.widget_code === "string" ? next.widget_code : "");
+    if (!code) {
+      if (!drawn) wait(next.loading_messages);
+      return;
+    }
+    const sig = (final ? "1" : "0") + code;
+    if (sig === drawn) return;
+    drawn = sig;
+    if (isPage && final) placePage(code);
+    else place(code, final);
+    if (final && !ran) {
+      ran = true;
+      // The view's own scripts came after the document loaded; a page that waits for it to load is told it has.
+      document.dispatchEvent(new Event("DOMContentLoaded", { bubbles: true }));
+      window.dispatchEvent(new Event("load"));
+    }
+    measure();
+  }
+
+  // ---- What the view may ask of the host.
+  // Each says whether it went: true once the person sent the words (or the link opened), false when not or the host won't.
+  window.sendPrompt = (text) => ask("ui/message", { role: "user", content: { type: "text", text: String(text) } }).then(() => true, () => false);
+  window.openLink = (url) => ask("ui/open-link", { url: String(url) }).then(() => true, () => false);
+  // A link opens outside the app, through the host and only on his tap. (A page could still navigate this frame itself;
+  // the host feeds a frame nothing after a load it didn't cause, and points it back.)
+  document.addEventListener("click", (event) => {
+    const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
+    if (!link) return;
+    const href = link.getAttribute("href") || "";
+    if (href.startsWith("#")) return;
+    event.preventDefault();
+    let url;
+    try { url = new URL(href, "https://invalid.example/"); } catch (error) { return; }
+    if (/^https?:$/.test(url.protocol) && url.host !== "invalid.example") window.openLink(url.href);
+  });
+
+  window.addEventListener("message", (event) => {
+    if (event.source !== window.parent) return;
+    const message = event.data;
+    if (!message || message.jsonrpc !== "2.0") return;
+    if (message.id !== undefined && !message.method) {
+      const asked = waiting.get(message.id);
+      if (!asked) return;
+      waiting.delete(message.id);
+      if (message.error) asked.reject(message.error);
+      else asked.resolve(message.result);
+      return;
+    }
+    const params = message.params || {};
+    switch (message.method) {
+      case "ui/notifications/tool-input-partial":
+        draw(params.arguments, false);
+        return;
+      case "ui/notifications/tool-input":
+        draw(params.arguments, true);
+        return;
+      case "ui/notifications/tool-result": {
+        const kept = params._meta && params._meta[META_KEY];
+        if (kept && typeof kept.html === "string" && !(args && typeof args.html === "string")) draw({ ...(args || {}), html: kept.html }, true);
+        return;
+      }
+      case "ui/notifications/host-context-changed":
+        applyContext(params);
+        return;
+      case "ui/notifications/tool-cancelled":
+        if (!drawn) wait(["This visual was cancelled."]);
+        return;
+      case "ping":
+      case "ui/resource-teardown":
+        if (message.id !== undefined) post({ id: message.id, result: {} });
+        return;
+      default:
+        if (message.id !== undefined && message.method) post({ id: message.id, error: { code: -32601, message: "Not offered by this view" } });
+    }
+  });
+
+  ask("ui/initialize", { protocolVersion: PROTOCOL, appInfo: { name: "splice-visual", version: "1.0.0" }, appCapabilities: {} })
+    .then((result) => {
+      applyContext(result && result.hostContext);
+      post({ method: "ui/notifications/initialized", params: {} });
+      // A height said before the host took the hello was not heard: say it again.
+      lastHeight = 0;
+      measure();
+    })
+    .catch(() => wait(["This app couldn't open the visual."]));
+})();
+</script>
+</body>
+</html>

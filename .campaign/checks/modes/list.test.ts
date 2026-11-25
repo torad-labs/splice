@@ -101,31 +101,31 @@ describe("modes-list", () => {
   test("an mcp mode is listed with its kind, its resources and its tool's _meta, and a head its manifest never offers it on", async () => {
     const tree = Tree.make();
     try {
-      tree.copyMode("template", "visual");
-      tree.edit("modes/visual/mode.toml", (t) => t.replace(/^kind\s*=.*$/m, 'kind = "mcp"').replace(/^off\s*=\s*\[\]\s*$/m, 'off = ["borealis"]'));
+      tree.copyMode("template", "sketch");
+      tree.edit("modes/sketch/mode.toml", (t) => t.replace(/^kind\s*=.*$/m, 'kind = "mcp"').replace(/^off\s*=\s*\[\]\s*$/m, 'off = ["borealis"]'));
       tree.edit(
-        "modes/visual/mode.toml",
+        "modes/sketch/mode.toml",
         (t) =>
-          `${t}\n[[resources]]\nuri = "ui://visual/app.html"\nname = "app"\nmimeType = "text/html;profile=mcp-app"\nfile = "app.html"\n_meta = { ui = { csp = { connectDomains = [] } } }\n`,
+          `${t}\n[[resources]]\nuri = "ui://sketch/app.html"\nname = "app"\nmimeType = "text/html;profile=mcp-app"\nfile = "app.html"\n_meta = { ui = { csp = { connectDomains = [] } } }\n`,
       );
-      tree.write("modes/visual/resources/app.html", "<!doctype html><title>app</title>\n");
-      tree.write("modes/visual/tools/say_back.meta.json", `${JSON.stringify({ ui: { resourceUri: "ui://visual/app.html" } })}\n`);
-      expect(tree.read("modes/visual/mode.toml")).toMatch(/^off = \["borealis"\]$/m);
+      tree.write("modes/sketch/resources/app.html", "<!doctype html><title>app</title>\n");
+      tree.write("modes/sketch/tools/say_back.meta.json", `${JSON.stringify({ ui: { resourceUri: "ui://sketch/app.html" } })}\n`);
+      expect(tree.read("modes/sketch/mode.toml")).toMatch(/^off = \["borealis"\]$/m);
       tree.jar();
       const H = await tree.harness();
       const s = await H.Splice.boot(await heads());
       try {
         const r = await s.api("/api/modes");
         expect(r.status).toBe(200);
-        const v = ((await r.json()) as { modes: Row[] }).modes.find((m) => m.name === "visual")!;
+        const v = ((await r.json()) as { modes: Row[] }).modes.find((m) => m.name === "sketch")!;
         expect(v.kind).toBe("mcp");
-        expect(v.server).toBe("visual");
-        expect(v.tools.map((x) => x.offered_as)).toEqual(["mcp__visual__say_back"]);
-        expect(v.tools[0]!._meta).toEqual({ ui: { resourceUri: "ui://visual/app.html" } });
+        expect(v.server).toBe("sketch");
+        expect(v.tools.map((x) => x.offered_as)).toEqual(["mcp__sketch__say_back"]);
+        expect(v.tools[0]!._meta).toEqual({ ui: { resourceUri: "ui://sketch/app.html" } });
         expect(v.resources).toHaveLength(1);
-        expect(v.resources[0]).toMatchObject({ uri: "ui://visual/app.html", name: "app", mimeType: "text/html;profile=mcp-app", _meta: { ui: { csp: { connectDomains: [] } } } });
+        expect(v.resources[0]).toMatchObject({ uri: "ui://sketch/app.html", name: "app", mimeType: "text/html;profile=mcp-app", _meta: { ui: { csp: { connectDomains: [] } } } });
         expect(v.heads.borealis).toEqual({ on: false, from: "never" });
-        const line = s.cli(["status"]).out.split("\n").find((l) => /\bmode\s+visual\b/.test(l));
+        const line = s.cli(["status"]).out.split("\n").find((l) => /\bmode\s+sketch\b/.test(l));
         expect(line).toMatch(/\bmcp\b/);
       } finally {
         await s.dispose();

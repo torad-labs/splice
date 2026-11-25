@@ -1,0 +1,20 @@
+{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "The page's title, as a person reads it above the page."
+    },
+    "height": {
+      "type": "integer",
+      "description": "Optional: the height the page asks for, in CSS pixels, from 1 to 10000.",
+      "minimum": 1,
+      "maximum": 10000
+    },
+    "html": {
+      "type": "string",
+      "description": "The whole page: a complete HTML document with its own <style> and <script>. At most 256 KiB."
+    }
+  },
+  "required": ["title", "html"]
+}

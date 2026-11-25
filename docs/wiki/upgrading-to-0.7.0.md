@@ -349,6 +349,7 @@ splice can now write `~/.codex/hooks.json` (or `$CODEX_HOME/hooks.json`) itself:
 | `template` | door | off | A sample door mode |
 | `templateapp` | mcp | off | A sample MCP App |
 | `tableapp` | mcp | off | Turns a Markdown table into a sortable MCP App page |
+| `visual` | mcp | off | Lets the model draw charts, diagrams, small tools and whole pages in clients that draw MCP Apps |
 
 A mode can hook the door at six moments: `session_start`, `before_tool_call`, `after_tool_call`, `on_stop`, `request` and `response`. An `mcp` mode is served by the daemon at `/mcp/<server>` and handed to launches as an extra MCP config. Turn modes on and off per command in Settings → **Modes**, through `splice setup --update`, or in `splice.toml` (the table is keyed by the mode's folder name):
 

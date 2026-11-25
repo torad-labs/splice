@@ -168,6 +168,7 @@ class SetupLocalModelTest {
             "ask local",
             "ask Share MCP servers between sessions? It uses less memory.",
             "ask mode tableapp",
+            "ask mode visual",
             "ask Install new splice releases automatically? The daemon installs each one itself.",
             "ask Install now?",
             "add codex",

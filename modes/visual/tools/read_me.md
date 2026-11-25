@@ -1,0 +1,1 @@
+Read how to draw visuals here: when a visual beats text and when it does not, the rules every visual follows (the host's theme, no network, sizes), and one module per kind of visual (chart, comparison, diagram, diff, explainer, tool, page). Call it once before your first visual of a session, naming the modules you need.

@@ -64,11 +64,11 @@ describe("modes-boot: the modes splice carries", () => {
     tree = Tree.make();
     tree.copyMode("template", "echo");
     tree.edit("modes/echo/mode.toml", (t) => t.replace(/^on\s*=.*$/m, "on = true"));
-    tree.copyMode("template", "visual");
-    tree.edit("modes/visual/mode.toml", (t) => t.replace(/^kind\s*=.*$/m, 'kind = "mcp"'));
-    tree.edit("modes/visual/mode.toml", (t) => `${t}\n[[resources]]\nuri = "ui://visual/app.html"\nmimeType = "text/html;profile=mcp-app"\nfile = "app.html"\n`);
-    tree.write("modes/visual/resources/app.html", "<!doctype html><title>app</title>\n");
-    tree.commit("echo and visual");
+    tree.copyMode("template", "sketch");
+    tree.edit("modes/sketch/mode.toml", (t) => t.replace(/^kind\s*=.*$/m, 'kind = "mcp"'));
+    tree.edit("modes/sketch/mode.toml", (t) => `${t}\n[[resources]]\nuri = "ui://sketch/app.html"\nmimeType = "text/html;profile=mcp-app"\nfile = "app.html"\n`);
+    tree.write("modes/sketch/resources/app.html", "<!doctype html><title>app</title>\n");
+    tree.commit("echo and sketch");
   }, LONG);
 
   afterAll(() => tree?.dispose());

@@ -1,18 +1,21 @@
 // NEW: server mode (docs/specs/server-mode.md, external upstream state and the readiness probe). What the decode
 // accepts in `[server.state]` and `[server.probe]` but the daemon could not act on: a state table naming no source
 // or more than one, a source that is no path, no http(s) URL and no command, a cadence or a wait that is no time at
-// all, a probe kind there is none of, a completion probe naming no model. A present `[server.state]` must name its
+// all, a probe kind there is none of, a completion probe naming no model, a `single_url` entry that is no openai-chat
+// provider on one `base_url` (#791). A present `[server.state]` must name its
 // one source, tuning keys alone included: the table is the operator turning the signal on, and a signal that reads
 // nothing would refuse turns on silence or never refuse at all. Each is a boot finding beside every other, naming
 // its key and never a value an operator wrote.
 package splice.core.topology.availability
 
-import splice.core.topology.ServerConfig
+import splice.core.topology.Dialect
 import splice.core.topology.ServerState
+import splice.core.topology.Topology
 import splice.core.topology.TopologyFinding
 import splice.core.topology.WebUrls
 
-internal class ServerAvailabilityChecks(private val server: ServerConfig) {
+internal class ServerAvailabilityChecks(private val topology: Topology) {
+    private val server = topology.server
 
     fun findings(): List<TopologyFinding> = state() + probe()
 
@@ -54,7 +57,27 @@ internal class ServerAvailabilityChecks(private val server: ServerConfig) {
                 .takeIf { probe.kind == COMPLETION && probe.model.isNullOrBlank() },
             TopologyFinding("$PROBE.timeout_seconds", seconds).takeIf { probe.timeoutSeconds < 1 },
             TopologyFinding("$PROBE.every_seconds", seconds).takeIf { probe.everySeconds < 1 },
-        )
+        ) + single(probe.singleUrl)
+    }
+
+    /** What `single_url` names: providers of splice.toml, each once, that speak openai-chat (the one dialect a probe
+     *  asks) from one `base_url`. A provider that lists upstreams is a pool, which the probe asks already. Each finding
+     *  names the entry by its place in the list, never by what the operator wrote. */
+    private fun single(names: List<String>): List<TopologyFinding> {
+        val path = "$PROBE.single_url"
+        val twice = TopologyFinding(path, "names a provider twice").takeIf { names.distinct().size != names.size }
+        val each = names.withIndex().mapNotNull { (at, name) ->
+            val provider = topology.providers[name]
+            val why = when {
+                provider == null -> "names a provider splice.toml does not declare"
+                provider.upstreams.isNotEmpty() -> "names a provider that lists upstreams, which the probe asks already"
+                provider.dialect != Dialect.OPENAI_CHAT -> "names a provider whose dialect is not \"openai-chat\""
+                provider.baseUrl.isBlank() -> "names a provider with no base_url"
+                else -> null
+            }
+            why?.let { TopologyFinding("$path[$at]", it) }
+        }
+        return listOfNotNull(twice) + each
     }
 }
 

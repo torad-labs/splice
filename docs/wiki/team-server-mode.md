@@ -350,8 +350,8 @@ model. For an `off` signal with a future end time, the header gives the remainin
 `retry_after_starting`. Only a new `up` signal resumes service. The current signal and the last check appear
 in the top-level `state` object at `GET /api/server/upstreams`, even without a pool.
 
-Use `[server.probe]` to check whether members of an `openai-chat` pool can actually complete a request rather
-than just answer `/health`.
+Use `[server.probe]` to check whether members of an `openai-chat` pool, or a provider on a single `base_url`, can
+actually complete a request rather than just answer `/health`.
 
 ```toml
 [server.probe]
@@ -360,6 +360,7 @@ model = "team-model"
 timeout_seconds = 30
 every_seconds = 60
 at_start = true
+single_url = ["solo"]   # optional: providers on one base_url to probe too
 ```
 
 Each member must return a valid completion for the named model within `timeout_seconds`. With `at_start = true`
@@ -367,13 +368,19 @@ Each member must return a valid completion for the named model within `timeout_s
 member immediately and take it out of rotation if a probe fails. Without a completion probe, each provider's
 `health_seconds` still controls the interval for its `/health` checks.
 
+A provider that is one server gets no probe unless `single_url` names it. A named provider (it must speak
+`openai-chat` and set `base_url`) is probed exactly like a pool member: until its probe passes, every turn for it
+is refused with a 503 naming it, and nothing is sent to its server. Whenever no server of a provider is up, the 503
+carries `Retry-After` set to the probe's interval (`every_seconds`, or the provider's `health_seconds` under the
+health probe), so Claude Code waits that long before it tries again.
+
 See the [configuration reference](configuration-reference.md#server-mode) for defaults and the
 [server mode spec](../specs/server-mode.md#external-upstream-state-serverstate) for signal formats, failure
 handling and exact retry rules.
 
 ### Pool limits, draining and stalled streams
 
-A small fixed pool of model servers takes only so many turns at once, whoever sends them. `[server.limits] inflight_total` caps the whole server's turns in flight, and `inflight_per_upstream` caps each server of a provider that lists `[[providers.<p>.upstreams]]`: a turn on such a provider is refused while every healthy server holds that many. A turn past either is refused at once, never queued, with `busy_status` (429, the default, which Claude Code and the OpenAI SDKs back off and retry on, or 503), `Retry-After: busy_retry_after` (5 seconds when left out) and `busy_message` or splice's own sentence naming the cap; it holds no slot of its person's and spends none of their turns a minute. With `inflight_per_upstream` a session's own server, or a person's preferred one, that is full hands the turn to a healthy server with room. A client that hangs up gives its place back at once, as it does its person's.
+A small fixed pool of model servers takes only so many turns at once, whoever sends them. `[server.limits] inflight_total` caps the whole server's turns in flight, and `inflight_per_upstream` caps each server of a provider that lists `[[providers.<p>.upstreams]]` or that `[server.probe] single_url` names: a turn on such a provider is refused while every healthy server holds that many. A turn past either is refused at once, never queued, with `busy_status` (429, the default, which Claude Code and the OpenAI SDKs back off and retry on, or 503), `Retry-After: busy_retry_after` (5 seconds when left out) and `busy_message` or splice's own sentence naming the cap; it holds no slot of its person's and spends none of their turns a minute. With `inflight_per_upstream` a session's own server, or a person's preferred one, that is full hands the turn to a healthy server with room. A client that hangs up gives its place back at once, as it does its person's.
 
 `[server] drain_seconds` makes a stop gentle. From the moment the daemon starts to stop, every request a key makes, turns on every route included, is a 503 with `Retry-After`, `GET /health` answers 503 `{"status":"draining"}` so a load balancer sends the server no more, and every answer already begun, a turn's or any other (a download, a mode's long poll, the drain's own 503s), gets up to that many seconds (45 at most) to reach its client before the listener closes. Without it, or at 0, the listener gives them its one second, as before.
 

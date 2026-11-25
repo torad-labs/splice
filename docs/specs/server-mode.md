@@ -381,7 +381,7 @@ retry_after_starting = 30
 
 `/health` proves a model server's process answers; it does not prove the model behind it can still complete a
 request, which is what a pool member is believed for. `[server.probe]` chooses the question every pooled upstream
-is asked:
+is asked, and each provider on one `base_url` that its `single_url` names:
 
 ```toml
 [server.probe]
@@ -390,14 +390,15 @@ model = "team-model"           # required for a completion probe
 timeout_seconds = 30
 every_seconds = 60
 at_start = true                # hold each member out until its first probe passes
+single_url = ["solo"]          # providers on one base_url the probe asks too (#791)
 ```
 
 - `kind = "health"` keeps today's check: `GET /health` beside the member's API root, a 2xx is up, asked at its
   provider's `health_seconds` as before.
 - `kind = "completion"` asks the member to really complete a minimal request for `model` every `every_seconds`,
-  and counts it up only on a well-formed completion answer within `timeout_seconds`. It currently covers the
-  chat-completions dialect, the only one pools allow, so a member whose model is wedged behind a healthy process
-  stops taking turns until a completion succeeds again.
+  and counts it up only on a well-formed completion answer within `timeout_seconds`. It covers the
+  chat-completions dialect, the only one pools and `single_url` allow, so a member whose model is wedged behind a
+  healthy process stops taking turns until a completion succeeds again.
 - `at_start` gates a completion probe's members at start. It defaults to `true`: every member takes no turn until
   its first completion passes, so a just-booted daemon refuses turns on a pool none of whose members has proved its
   model yet. Set it `false` to serve each member at once, as the health probe always does, and take it out only when
@@ -408,6 +409,18 @@ at_start = true                # hold each member out until its first probe pass
   up only on a 2xx whose body is a completion's envelope (for chat completions, a JSON object with a `choices`
   array), never on the text inside it: one output token can vanish into a reasoning model's thinking. Any other
   answer, or none within `timeout_seconds`, keeps it down, and the log line names the status and shape it saw.
+- `single_url` gives the probe to providers that are one server (#791). Each entry names an `openai-chat` provider
+  on one `base_url`; boot refuses an entry that names no provider, a provider that lists upstreams (the probe asks
+  those already), another dialect, or the same provider twice. A named provider becomes a pool of that one server,
+  listed in `GET /api/server/upstreams` under its provider's key, and is asked exactly what a pool member is asked,
+  `kind` and `at_start` included (under the health probe that is `/health` beside its `base_url`, so name there only
+  a provider whose server answers it). A turn for it is never sent before its probe passes: while it is down, every turn
+  route answers the 503 a pool none of whose members is up answers, naming the provider. It is then one server of
+  a pool in every other way too: `inflight_per_upstream` caps it, and a connection it refuses takes it out until a
+  check passes. A provider `single_url` leaves out serves its turns from its `base_url` as before.
+- A turn refused because no server of its provider is up carries `Retry-After`: the seconds between two checks of
+  that provider's servers, `every_seconds` for a completion probe and the provider's `health_seconds` for the
+  health probe, the soonest a check could bring one back (#791). Pools took the same 503 without it before.
 
 ### External mode JARs
 

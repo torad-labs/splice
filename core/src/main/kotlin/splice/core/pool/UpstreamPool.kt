@@ -64,6 +64,9 @@ public class UpstreamPool(
     startHealthy: Boolean = true,
     /** Whether an uncapped pool may still try down servers when none is up, for legacy health checks only. */
     private val allowUnhealthyFallback: Boolean = startHealthy,
+    /** The seconds between two checks of a server: how long a turn refused because none is up waits before it is worth
+     *  sending again, server mode's `Retry-After` (#791). */
+    public val recheckSeconds: Long = 1,
 ) {
     private val members = upstreams.map { UpstreamMember(it, startHealthy) }
     private val homes = SessionHomes()

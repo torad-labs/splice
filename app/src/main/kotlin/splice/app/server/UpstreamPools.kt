@@ -4,6 +4,8 @@
 // pool knows. Making a pool starts its checks: each server is asked at once and then at the check's interval, on its
 // own loop, so one server that hangs holds up no other's reading. What a check asks is `[server.probe]`'s (PoolCheck):
 // `/health` every `health_seconds` by default, or a real completion every `every_seconds`.
+// A provider on one base_url that `[server.probe] single_url` names is made a pool of that one server (#791), so the
+// same probe holds it out until it passes and a turn for it is refused while it is down, as a pool's is.
 //
 // It also keeps, for every provider a chat head was built for, pool or not, the headers the daemon's own requests to
 // that provider's server carry: server mode relays an OpenAI-style client's requests with them (F4, openai-route).
@@ -14,6 +16,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import splice.app.probe.MS_PER_SECOND
 import splice.core.pool.UpstreamPool
 import splice.core.topology.ProviderConfig
 import splice.core.topology.ServerProbe
@@ -61,9 +64,15 @@ internal class UpstreamPools(
     @Volatile
     private var checks = PoolCheck.Plan(http, log)
 
-    /** Set before any pool is made. Without this, a pool checks `/health` and starts each server up. */
+    // The providers on one base_url that `[server.probe] single_url` names (#791): each is a pool of that one server.
+    @Volatile
+    private var singles = emptySet<String>()
+
+    /** Set before any pool is made. Without this, a pool checks `/health` and starts each server up, and a provider on
+     *  one base_url has no pool. */
     fun configure(probe: ServerProbe, configDir: Path?) {
         checks = PoolCheck.Plan(http, log, probe, configDir)
+        singles = probe.singleUrl.toSet()
     }
 
     /** Each server of every pool made from now takes at most [most] turns at once, server mode's
@@ -73,23 +82,28 @@ internal class UpstreamPools(
         each = most
     }
 
-    /** The pool of the provider [key], or null when it lists no upstreams. The first call for a provider makes its
-     *  pool and starts its checks: a health check carries [headers], and a completion probe asks [ready], its
-     *  dialect's question. With a pool or without, the provider's requests carry the headers of the last call from
-     *  then. */
+    /** The pool of the provider [key], or null when it lists no upstreams and `single_url` does not name it. The first
+     *  call for a provider makes its pool and starts its checks: a health check carries [headers], and a completion
+     *  probe asks [ready], its dialect's question. A provider on one base_url that `single_url` names is a pool of
+     *  that one server, named by the provider's key, so the probe holds it out and its turns are refused as a pool's
+     *  are. With a pool or without, the provider's requests carry the headers of the last call from then. */
     fun of(key: String, provider: ProviderConfig, ready: PoolReadiness, headers: ServerHeaders): UpstreamPool? {
         carried[key] = headers
-        if (provider.upstreams.isEmpty()) return null
+        val single = key in singles && provider.baseUrl.isNotBlank()
+        val one = UpstreamConfig(key, provider.baseUrl)
+        val servers = provider.upstreams.ifEmpty { listOfNotNull(one.takeIf { single }) }
+        if (servers.isEmpty()) return null
         return pools.computeIfAbsent(key) {
             order[key] = order.size
             val check = checks.of(key, provider, headers, ready)
             UpstreamPool(
                 key,
-                provider.upstreams,
+                servers,
                 log,
                 cap = each,
                 startHealthy = check.startHealthy,
                 allowUnhealthyFallback = check is PoolCheck.Health,
+                recheckSeconds = (check.everyMs / MS_PER_SECOND).coerceAtLeast(1),
             ).also { pool ->
                 pool.upstreams.forEach { watch(Watched(pool, check), it, waitFirst = false) }
             }

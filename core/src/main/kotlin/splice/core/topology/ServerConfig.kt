@@ -250,7 +250,9 @@ public data class ServerState(
  *  only for the chat-completions dialect pools allow today), which must answer within [timeoutSeconds].
  *  [everySeconds] is how often the completion probe runs; a health probe keeps its provider's `health_seconds`.
  *  [atStart] gates a completion probe's members at start: true (the default) holds each out until its first probe
- *  passes, false serves it from the start as a health probe always does. */
+ *  passes, false serves it from the start as a health probe always does. [singleUrl] names openai-chat providers on
+ *  one `base_url` the probe asks too (#791): each is then a pool of that one server, held out and refused as a
+ *  pool's members are. */
 @Serializable
 public data class ServerProbe(
     val kind: String = "health",
@@ -258,4 +260,5 @@ public data class ServerProbe(
     @SerialName("timeout_seconds") val timeoutSeconds: Int = 30,
     @SerialName("every_seconds") val everySeconds: Int = 60,
     @SerialName("at_start") val atStart: Boolean = true,
+    @SerialName("single_url") val singleUrl: List<String> = emptyList(),
 )

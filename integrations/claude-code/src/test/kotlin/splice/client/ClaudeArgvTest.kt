@@ -81,18 +81,18 @@ class ClaudeArgvTest {
     // grammar as everything else here, so a --model that is a value or a positional word is not taken for one.
     @Test
     fun `namesModel finds --model as an option, spaced or joined, among other options`() {
-        assertEquals(true, ClaudeArgv.namesModel(listOf("--model", "opus")))
-        assertEquals(true, ClaudeArgv.namesModel(listOf("--model=opus")))
-        assertEquals(true, ClaudeArgv.namesModel(listOf("--verbose", "--add-dir", "/tmp", "--model", "opus")))
-        assertEquals(true, ClaudeArgv.namesModel(listOf("-p", "--model", "opus")))
+        assertEquals(true, ClaudeArgv.options(listOf("--model", "opus")).namesModel)
+        assertEquals(true, ClaudeArgv.options(listOf("--model=opus")).namesModel)
+        assertEquals(true, ClaudeArgv.options(listOf("--verbose", "--add-dir", "/tmp", "--model", "opus")).namesModel)
+        assertEquals(true, ClaudeArgv.options(listOf("-p", "--model", "opus")).namesModel)
     }
 
     @Test
     fun `namesModel passes over a --model that is another option's value, a positional word, or after --`() {
-        assertEquals(false, ClaudeArgv.namesModel(emptyList()))
-        assertEquals(false, ClaudeArgv.namesModel(listOf("--system-prompt", "--model")))
-        assertEquals(false, ClaudeArgv.namesModel(listOf("--", "--model", "opus")))
-        assertEquals(false, ClaudeArgv.namesModel(listOf("write --model docs")))
-        assertEquals(false, ClaudeArgv.namesModel(listOf("--models", "x")))
+        assertEquals(false, ClaudeArgv.options(emptyList()).namesModel)
+        assertEquals(false, ClaudeArgv.options(listOf("--system-prompt", "--model")).namesModel)
+        assertEquals(false, ClaudeArgv.options(listOf("--", "--model", "opus")).namesModel)
+        assertEquals(false, ClaudeArgv.options(listOf("write --model docs")).namesModel)
+        assertEquals(false, ClaudeArgv.options(listOf("--models", "x")).namesModel)
     }
 }

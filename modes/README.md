@@ -101,9 +101,10 @@ and a client that draws MCP Apps can show its pages.
   `resources/read` are answered in the reply to each request.
 - **How a client finds it.** Every launch on a head where the mode is on is handed one more `--mcp-config` file
   that names the server. `claude` on the door runs no head, so for it the mode's `on` decides, and a mode with a
-  non-empty `[heads] only` is not handed to it. A caller on `[callers] off` gets no such file. A session already
-  running when the mode is turned on does not see it until its next launch; turned off, the server stops answering
-  at once.
+  non-empty `[heads] only` is not handed to it. A caller on `[callers] off` gets no such file. A launch that passes
+  `--strict-mcp-config` asked for its own servers alone, so it is handed no mode's server, on the door or a head.
+  A session already running when the mode is turned on does not see it until its next launch; turned off, the server
+  stops answering at once.
 - **Claude Desktop.** Desktop's own sessions run no head either, so a mode on for every head, with an empty
   `[heads] only` and no `"desktop"` on `[callers] off`, is one of the MCP servers splice writes into the
   `claude_desktop_config.json` of each Desktop on the gateway: an entry naming splice's stdio bridge
@@ -127,12 +128,14 @@ and a client that draws MCP Apps can show its pages.
   `resource(uri)` gives for an entry with no file. A client that does not draw MCP Apps shows the tool's answer as
   any tool's result, so the answer has to stand without the page.
 - **The session.** A call's `ModeSession.id` is the client's MCP session id, not the id `/api/sessions` gives the
-  session, and its folder and model are not known: the MCP transport does not carry them. Its `caller` is the one the
-  request names in `X-Splice-Caller`: `door` for `claude` on the door, `head` for a head's own command, `desktop` for
-  Claude Desktop, and a named caller is held to `[callers] off`. A request that names none (a host reading a page with
-  the management key, an operator's tool) is answered while the mode is on, and its `caller` is null: who it is is not
-  known. Any holder of the key can name any caller, so the name tells the mode who says it is calling and grants
-  nothing.
+  session, and its folder and model are not known: the MCP transport does not carry them. Its `head` is the head the
+  request names in `X-Splice-Head` (empty for `claude` on the door and for Claude Desktop), and its `caller` the one it
+  names in `X-Splice-Caller`, which every entry splice gives for a mode carries: `door` for `claude`, on the door or
+  wrapped on the Claude head (whose entry also names that head, so the two are told apart), `head` for a head's own
+  command, `desktop` for Claude Desktop. A named caller is held to `[callers] off`. A request that names none (a
+  host reading a page with the management key, an operator's tool) is answered while the mode is on, and its
+  `caller` is null: who it is is not known. Any holder of the key can name any caller, so the name tells the mode
+  who says it is calling and grants nothing.
 
 ## Hooks
 
@@ -182,7 +185,8 @@ worker = { kind = "http", url = "http://127.0.0.1:9100/hook", auth_env = "HOOK_K
   writes it, its input as a JSON object, the session, and the mode's store. It answers `ModeAnswer.Text` or
   `ModeAnswer.Error`, which the model reads as an error result. A handler that throws is answered for it.
 - The session is `ModeSession(id, folder, head, model, caller)`: the id `/api/sessions` gives it, its folder when
-  known, its head, its model, and its caller (`door`, `head` or `desktop`).
+  known, its head, its model, and its caller (`door`, `head` or `desktop`; an mcp mode's call does not know its caller,
+  see "An mcp mode").
 - `ModeStore` keeps text per session for the mode, under splice's state folder, and survives a restart.
 - `resource(uri)` gives the content of a resource the manifest declares with no `file`; only an mcp mode is asked.
 - `routes` lists the management routes the mode answers (`ModeRoute`: method, path, and a handler from a

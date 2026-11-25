@@ -1,0 +1,27 @@
+# The visual mode (modes/README.md): an agent on any head draws a chart, a comparison, a diagram, an annotated diff,
+# an explainer, a small tool or a whole page as its reply or in the middle of it. Both drawing tools name one view,
+# resources/reply.html, so every host that draws MCP Apps draws them the same way; any other client shows the tool's
+# answer, which says what was drawn.
+name = "visual"
+summary = "Lets the model draw charts, diagrams, small tools and whole pages in clients that draw MCP Apps."
+server = "visual"
+handler = "splice.modes.visual.VisualMode"
+tools = ["read_me", "show_widget", "html_render"]
+kind = "mcp"
+on = false
+
+[heads]
+only = []
+off = []
+
+[callers]
+off = []
+
+# The view both drawing tools name. It loads nothing from any origin, and the code it draws runs inside it, so its
+# content security policy allows no origin to load from or connect to.
+[[resources]]
+uri = "ui://visual/reply.html"
+name = "reply"
+mimeType = "text/html;profile=mcp-app"
+file = "reply.html"
+_meta = { ui = { csp = { connectDomains = [], resourceDomains = [] } } }

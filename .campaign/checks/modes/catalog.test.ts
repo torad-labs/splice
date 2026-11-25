@@ -15,16 +15,16 @@ beforeAll(() => {
   requireTemplate();
   tree = Tree.make();
   tree.copyMode("template", "echo");
-  tree.copyMode("template", "visual");
-  tree.edit("modes/visual/mode.toml", (t) => t.replace(/^kind\s*=.*$/m, 'kind = "mcp"'));
+  tree.copyMode("template", "sketch");
+  tree.edit("modes/sketch/mode.toml", (t) => t.replace(/^kind\s*=.*$/m, 'kind = "mcp"'));
   tree.edit(
-    "modes/visual/mode.toml",
+    "modes/sketch/mode.toml",
     (t) =>
-      `${t}\n[[resources]]\nuri = "ui://visual/app.html"\nname = "app"\nmimeType = "text/html;profile=mcp-app"\nfile = "app.html"\n_meta = { ui = { csp = { connectDomains = [] } } }\n`,
+      `${t}\n[[resources]]\nuri = "ui://sketch/app.html"\nname = "app"\nmimeType = "text/html;profile=mcp-app"\nfile = "app.html"\n_meta = { ui = { csp = { connectDomains = [] } } }\n`,
   );
-  tree.write("modes/visual/resources/app.html", "<!doctype html><title>app</title><p>hello</p>\n");
-  tree.write("modes/visual/tools/say_back.meta.json", `${JSON.stringify({ ui: { resourceUri: "ui://visual/app.html" } })}\n`);
-  tree.commit("echo and visual, whole");
+  tree.write("modes/sketch/resources/app.html", "<!doctype html><title>app</title><p>hello</p>\n");
+  tree.write("modes/sketch/tools/say_back.meta.json", `${JSON.stringify({ ui: { resourceUri: "ui://sketch/app.html" } })}\n`);
+  tree.commit("echo and sketch, whole");
 }, LONG);
 
 afterAll(() => tree?.dispose());
@@ -50,7 +50,7 @@ function broken(breakIt: () => void): string {
 
 describe("modes-catalog", () => {
   test("a whole copy, door or mcp, passes its own tests", () => {
-    for (const name of ["echo", "visual"]) {
+    for (const name of ["echo", "sketch"]) {
       const t = tested(name);
       expect(t.code, t.out.slice(-6000)).toBe(0);
       expect(t.report.tests, `${name}'s tests ran`).toBeGreaterThan(0);

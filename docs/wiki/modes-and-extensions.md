@@ -164,6 +164,7 @@ sequenceDiagram
 | `tableapp` | `tableapp` | mcp | off | none | `render_table` (page `ui://tableapp/table`) |
 | `template` | `template` | door | off | `desktop` | `say_back` |
 | `templateapp` | `templateapp` | mcp | off | none | `show_note` (page `ui://templateapp/note`) |
+| `visual` | `visual` | mcp | off | none | `read_me`, `show_widget`, `html_render` (page `ui://visual/reply.html`) |
 
 `template` and `templateapp` are working examples to copy, not features; `splice setup` does not offer them.
 
@@ -194,6 +195,21 @@ on = false
 ### `tableapp`
 
 An mcp mode, off by default. `render_table` turns a Markdown pipe table into a sortable table page beside the conversation in clients that draw MCP Apps, and returns a clean plain-text table otherwise. Turn it on with `[modes.tableapp] on = true`.
+
+### `visual`
+
+An mcp mode, off by default, that lets the model of any head draw in the conversation, as its reply or in the middle of it. Turn it on with `[modes.visual] on = true`.
+
+- `read_me` gives the guidance on call, so it costs nothing until the model asks: when a visual beats text and when it does not, the rules every visual keeps (the host's theme variables, no network, a fluid width), and one module per kind of visual: `chart`, `comparison`, `diagram`, `diff`, `explainer`, `tool`, `page`. `modules` picks some; without it, every one comes back. The mode's `prompt.md` is one line that names the tools and says to call `read_me` first.
+- `show_widget` takes `title`, optional `loading_messages`, and `widget_code`, an HTML or SVG fragment of at most 256 KiB.
+- `html_render` takes `title`, `html`, a whole document of at most 256 KiB, and optional `height` (1 to 10000 CSS pixels). The mode keeps the page, and its answer names it as `vp_` and twelve hex digits. It takes the page as `html` only: a call naming `path` is refused, because the daemon may serve other machines and an mcp mode's call carries neither the session's folder nor who is calling, so a file read on the model's word could not be held to what that caller may read.
+- Both drawing tools name one view, `ui://visual/reply.html`, so every host that draws MCP Apps draws them the same way. The view loads nothing from any origin and its `_meta.ui.csp` allows none, so a visual's own code reaches no network either. A client that does not draw MCP Apps shows the tool's answer, which says what was drawn and asks the model to say it in words.
+- Kept pages survive a restart and have no expiry by age: at most 200 pages, the 201st taking the oldest's place. See [Disk and privacy](disk-and-privacy.md).
+
+| Route (management key) | What it answers |
+| --- | --- |
+| `GET /api/visual/view?uri=<ui://…>` | `{ html, meta }`: a view the mode declares, as `resources/read` gives it, `meta` its `_meta`; 404 for a view it does not have |
+| `GET /api/visual/pages/<vp_…>` | `{ html, title, height }`, `height` only when the call gave one; 404 for a page it does not keep |
 
 ## Capabilities
 

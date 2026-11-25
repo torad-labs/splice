@@ -1,0 +1,20 @@
+{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "A short name for the visual, such as monthly_costs or retry_flow."
+    },
+    "loading_messages": {
+      "type": "array",
+      "description": "One to three short lines shown while the visual streams in.",
+      "items": { "type": "string" }
+    },
+    "widget_code": {
+      "type": "string",
+      "description": "An HTML or SVG fragment, with no <html>, <head> or <body>. Inline <style> and <script> run once it is complete. At most 256 KiB."
+    }
+  },
+  "required": ["title", "widget_code"],
+  "additionalProperties": false
+}

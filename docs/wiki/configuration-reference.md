@@ -1,4 +1,3 @@
-| `[server.probe]` | `single_url` | list of provider keys / empty | `openai-chat` providers on one `base_url` to probe as a pool of one server; a turn waits for its probe to pass. |
 [README](../../README.md) · [Wiki Home](README.md)
 
 # Configuration Reference

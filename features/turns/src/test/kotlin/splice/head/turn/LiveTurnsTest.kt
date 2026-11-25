@@ -31,6 +31,7 @@ import splice.head.turn.listing.LiveTurn
 import splice.head.turn.listing.TurnSilence
 import splice.head.wire.TurnIdMint
 import splice.upstream.retry.InflightGate
+import kotlin.concurrent.thread
 
 class LiveTurnsTest {
 
@@ -100,6 +101,24 @@ class LiveTurnsTest {
         assertEquals(listOf("turn-2"), turns.list().map { it.id })
         second.release()
         assertEquals(emptyList<LiveTurn>(), turns.list())
+    }
+
+    @Test
+    fun `reading the list never fails as the one live turn ends`() {
+        var failure: Throwable? = null
+        val ending = thread {
+            repeat(ENDING_TURNS) {
+                val only = slot()
+                turns.admit(only, meta(null), null)
+                only.release()
+            }
+        }
+        while (ending.isAlive && failure == null) {
+            failure = runCatching { turns.list() + turns.sayings() }.exceptionOrNull()
+        }
+        ending.join()
+
+        assertNull(failure, "the console reads the turns while one of them ends: $failure")
     }
 
     @Test
@@ -366,3 +385,6 @@ class LiveTurnsTest {
         assertEquals(0L, turn.silence.idleMs, "and nothing has gone quiet yet")
     }
 }
+
+/** Turns that start and end one after another while the list is read, enough for a read to land inside an ending. */
+private const val ENDING_TURNS = 100_000

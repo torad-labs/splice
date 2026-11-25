@@ -187,6 +187,9 @@ jobs:
           # 3.2 the step above checked, which is what `#!/usr/bin/env bash` finds on a Mac with nothing added.
           PATH="/bin:$PATH" ./gradlew :integrations-claude-code:test --tests splice.client.login.LoginHookScriptSafetyTest
           ./gradlew :app:test --tests splice.app.cli.CommandParserTest
+          # The MCP host stops its child processes with signals and a shared grace period, and a Mac has no systemd unit to
+          # hold them: these tests start real child processes and check each one is signalled and gone.
+          ./gradlew :integrations-mcp:test --tests splice.control.mcp.McpHostLifecycleTest
       - name: build packaged daemon
         run: ./gradlew :app:shadowJar
       - name: launcher ownership across exec

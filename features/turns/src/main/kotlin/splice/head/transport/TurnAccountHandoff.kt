@@ -7,6 +7,10 @@
 //
 // AND A MODEL WITH ROOM TAKES THE TURN (Nov 17, 2026): [otherModel] says whether the turn's re-send goes on under another
 // model ([HeldModelFallback]) while no login can serve the one it asks for.
+//
+// AND IT DOES SO BEFORE ANY HELD LOGIN IS ASKED AGAIN (Nov 25, 2026): a turn that met the last free login's limit still
+// went back to a login held to an earlier reset, which refused it again, and only then went on under the model with
+// room: one more request to a spent login and one more round trip for each such turn.
 package splice.head.transport
 
 import kotlinx.coroutines.currentCoroutineContext
@@ -87,7 +91,18 @@ internal class TurnAccountHandoff(
         // Each login as a turn of this model meets it: a login whose provider refused another model for the week is
         // free for this one (Nov 3, 2026).
         return pool.view(drive.meta.scope.sessionId, drive.meta.route.upstreamModel).accounts
-            .any { it.available && it.label != current && it.label !in tried } || earlierHeld(drive, reset, gone(cause))
+            .any { it.available && it.label != current && it.label !in tried } || earlierTakes(drive, cause, reset)
+    }
+
+    /** Whether a login held to an earlier reset takes the turn. An earlier reset only shortens the hold the turn would
+     *  begin here: where a model with room takes the re-send, no hold begins, and the earlier login, itself held past
+     *  a rate limit's wait, could only refuse it again. */
+    private fun earlierTakes(drive: TurnDrive, cause: FailureCause, reset: Instant?): Boolean {
+        // What the turn holds for with no login to move to (RetryLimits), the endings [otherModel] turns into a
+        // re-send: a limit that names when it lifts, or a spent account.
+        val holds = cause is FailureCause.Provider.NeedsPayment ||
+            cause is FailureCause.Provider.Limited && !cause.isExhausted && cause.lift is Lift.At
+        return earlierHeld(drive, reset, gone(cause)) && !(holds && otherModel(drive, cause))
     }
 
     /** Whether the uncommitted turn's re-send goes on under another model, one some login serves now, while no login

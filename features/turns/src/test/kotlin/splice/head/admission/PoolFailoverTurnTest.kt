@@ -131,7 +131,9 @@ class PoolFailoverTurnTest {
     fun `a refused login with every other one held for the model goes on under a model with room`() = runBlocking {
         val rig = FailoverRig(directory, limited = emptyMap())
         rig.refused = setOf("one")
-        rig.weekSpent = setOf("two", "three")
+        // Each login's week ends at its own time, as each account's does, and two's comes first. The turn that meets
+        // three's limit goes on under the model with room, never back to two, held for the model too (Nov 25, 2026).
+        rig.weekSpent = mapOf("two" to 2 * HOUR_S, "three" to 3 * HOUR_S)
         rig.start()
         try {
             val body = rig.turn().second
@@ -552,10 +554,10 @@ private class FailoverRig(
     @Volatile
     var refused: Set<String> = emptySet()
 
-    /** The logins whose week of `model` is spent: the provider refuses that model on them, as Anthropic refuses one
-     *  model's week, and serves every other. */
+    /** The logins whose week of `model` is spent, each with how far out its week ends: the provider refuses that
+     *  model on them, as Anthropic refuses one model's week, and serves every other. */
     @Volatile
-    var weekSpent: Set<String> = emptySet()
+    var weekSpent: Map<String, Long> = emptyMap()
     private val labels = listOf("one", "two", "three")
     private val logins = labels.associateWith(::SyntheticLogin)
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
@@ -565,7 +567,7 @@ private class FailoverRig(
             val login = request.requestHeaders.getFirst("Authorization").orEmpty().removePrefix("Bearer ")
             requests += login
             val week = login in weekSpent && Regex(""""model"\s*:\s*"(synthetic--)?model"""").containsMatchIn(sent)
-            val resetIn = limited[login] ?: (2 * HOUR_S).takeIf { week }
+            val resetIn = limited[login] ?: weekSpent[login]?.takeIf { week }
             val claim = if (week) "seven_day_overage_included" else "five_hour"
             val unauthorized = refusedStatus ?: 401.takeIf { login == SHARE_NODE_TOKEN || login in refused }
             if (resetIn != null) fallsBackTo?.let(::fallBack)

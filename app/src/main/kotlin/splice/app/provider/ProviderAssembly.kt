@@ -7,7 +7,6 @@ package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
 import splice.app.TokenUrlRefreshCall
-import splice.app.provider.local.JdkHealthHttp
 import splice.app.provider.muse.MuseResponsesArm
 import splice.app.server.UpstreamPools
 import splice.core.config.StatePaths
@@ -41,7 +40,7 @@ internal class ProviderAssembly(
     private val passthroughAssembly = PassthroughAssembly()
 
     /** Server mode (F4): the pools of the providers that list upstreams, which server mode reads. */
-    internal val upstreamPools = UpstreamPools(probeScope, log, JdkHealthHttp())
+    internal val upstreamPools = UpstreamPools(probeScope, log)
     private val chatArm = ChatArm(probeScope, log, grokRefresh, upstreamPools, grokAccounts)
     internal val claudePoolChanges = claudeChanges
     private val passthroughArm = PassthroughArm(passthroughAssembly, claudeAccounts, claudePoolChanges)

@@ -396,7 +396,10 @@ single_url = ["solo"]          # providers on one base_url the probe asks too (#
 ```
 
 - `kind = "health"` keeps today's check: `GET /health` beside the member's API root, a 2xx is up, asked at its
-  provider's `health_seconds` as before.
+  provider's `health_seconds` as before. The whole answer, headers and body, must come back within 5 seconds; a
+  server that sends its headers and then stalls reads down, and is asked again at the next interval.
+- Either kind trusts what a turn of the provider trusts: Java's roots, the system's and the provider's own
+  `ca_file`. An https member signed by a private CA that its turns reach passes its check too.
 - `kind = "completion"` asks the member to really complete a minimal request for `model` every `every_seconds`,
   and counts it up only on a well-formed completion answer within `timeout_seconds`. It covers the
   chat-completions dialect, the only one pools and `single_url` allow, so a member whose model is wedged behind a
@@ -422,7 +425,10 @@ single_url = ["solo"]          # providers on one base_url the probe asks too (#
   check passes. A provider `single_url` leaves out serves its turns from its `base_url` as before.
 - A turn refused because no server of its provider is up carries `Retry-After`: the seconds between two checks of
   that provider's servers, `every_seconds` for a completion probe and the provider's `health_seconds` for the
-  health probe, the soonest a check could bring one back (#791). Pools took the same 503 without it before.
+  health probe (#791). That is about when every server will have been asked again, the longest a client usually
+  waits for a check that could bring one back, not the soonest: one can come back sooner (at start-up the first
+  check runs at once), or a check still under way can add up to its own timeout. A client that tries sooner is
+  only refused again. Pools took the same 503 without it before.
 
 ### External mode JARs
 

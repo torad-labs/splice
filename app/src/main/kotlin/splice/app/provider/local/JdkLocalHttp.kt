@@ -86,8 +86,9 @@ internal class JdkLocalHttp(
 
 internal class LocalHttpBodyTooLarge : IOException("HTTP body is too large")
 
-/** Legacy health checks share a default-trust client. Completion checks share a separate client per pool with its
- *  provider's trust and request timeout. A client and its selector thread are created on first use. */
+/** A probe client. Without [trust] it trusts Java's default roots, as the local-runtime probes do; a pool's checks pass
+ *  their provider's trust and their own request timeout, one client per pool. A client and its selector thread are
+ *  created on first use. */
 internal class JdkHealthHttp(
     trust: X509TrustManager? = null,
     private val timeout: Duration? = null,

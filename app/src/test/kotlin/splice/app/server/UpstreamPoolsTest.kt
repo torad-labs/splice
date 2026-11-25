@@ -21,6 +21,7 @@ import splice.core.topology.UpstreamConfig
 import splice.core.util.LogSink
 import splice.dialect.chat.ChatReadinessProbe
 import splice.upstream.Ticker
+import splice.upstream.transport.LocalHttp
 import splice.upstream.transport.LocalHttpReply
 import java.io.IOException
 import java.io.UncheckedIOException
@@ -64,11 +65,13 @@ class UpstreamPoolsTest {
             waited += everyMs
             nextCheck.receive()
         },
-        http = { headers ->
-            carried += headers
-            { _, url, _ ->
-                asked += url
-                answers[url]?.let { LocalHttpReply(it, "{}") }
+        http = { _, _ ->
+            HealthHttp { headers ->
+                carried += headers
+                LocalHttp { _, url, _ ->
+                    asked += url
+                    answers[url]?.let { LocalHttpReply(it, "{}") }
+                }
             }
         },
     )

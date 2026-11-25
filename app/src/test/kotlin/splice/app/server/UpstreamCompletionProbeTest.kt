@@ -26,7 +26,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.provider.local.JdkHealthHttp
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
@@ -136,7 +135,6 @@ class UpstreamCompletionProbeTest {
         val pools = UpstreamPools(
             scope = scope,
             log = { logged += it },
-            http = JdkHealthHttp(),
             dispatcher = Dispatchers.IO,
             ticker = Ticker { _ ->
                 val next = round
@@ -257,9 +255,9 @@ class UpstreamCompletionProbeTest {
         assertEquals(listOf(true, true), healthy(pool))
     }
 
-    @Test
-    fun `a completion probe trusts its provider's CA without changing legacy health trust`(@TempDir dir: Path) {
-        answers["gpu-1"] = Answer.Reply(200, COMPLETED)
+    /** Runs [check] against the box with both its servers behind one https server whose certificate a private CA
+     *  signed; the provider [check] gets names that CA in `ca_file`, relative to [dir]. */
+    private fun overPrivateCa(dir: Path, check: (ProviderConfig) -> Unit) {
         val tls = ProbeTls(dir)
         val secure = HttpsServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
             httpsConfigurator = HttpsConfigurator(tls.context)
@@ -268,10 +266,21 @@ class UpstreamCompletionProbeTest {
             start()
         }
         try {
-            val provider = box.copy(
-                caFile = tls.caFile.fileName.toString(),
-                upstreams = box.upstreams.map { it.copy(url = "https://127.0.0.1:${secure.address.port}/v1") },
+            check(
+                box.copy(
+                    caFile = tls.caFile.fileName.toString(),
+                    upstreams = box.upstreams.map { it.copy(url = "https://127.0.0.1:${secure.address.port}/v1") },
+                ),
             )
+        } finally {
+            secure.stop(0)
+        }
+    }
+
+    @Test
+    fun `a completion probe trusts its provider's CA`(@TempDir dir: Path) {
+        answers["gpu-1"] = Answer.Reply(200, COMPLETED)
+        overPrivateCa(dir) { provider ->
             val untrusted = pool(completion(), provider.copy(caFile = null))
             landed()
             assertEquals(listOf(false, false), healthy(untrusted), "the CA is not in the default roots")
@@ -279,13 +288,40 @@ class UpstreamCompletionProbeTest {
             val trusted = pool(completion(), provider, dir)
             landed()
             assertEquals(listOf(true, true), healthy(trusted), logged.toString())
-
-            val legacy = pool(ServerProbe(), provider, dir)
-            landed()
-            assertEquals(listOf(false, false), healthy(legacy), "legacy health still uses its original trust")
-        } finally {
-            secure.stop(0)
         }
+    }
+
+    @Test
+    fun `the health check trusts the CA its provider's ca_file names, as the provider's turns do`(@TempDir dir: Path) {
+        answers["gpu-1"] = Answer.Reply(200, "")
+        overPrivateCa(dir) { provider ->
+            val untrusted = pool(ServerProbe(), provider.copy(caFile = null))
+            landed()
+            assertEquals(listOf(false, false), healthy(untrusted), "the CA is not in the default roots")
+
+            val trusted = pool(ServerProbe(), provider, dir)
+            landed()
+            assertEquals(listOf(true, true), healthy(trusted), logged.toString())
+            assertTrue(asked.all { it.call == "GET /health" }, asked.toString())
+        }
+    }
+
+    @Test
+    fun `a health check whose server sends its headers and stalls reads it down, and its next check still runs`() {
+        answers["gpu-1"] = Answer.Reply(200, "")
+        answers["gpu-2"] = Answer.Reply(200, "")
+        val pool = pool(ServerProbe())
+        landed()
+        assertEquals(listOf(true, true), healthy(pool))
+
+        answers["gpu-2"] = Answer.StalledBody
+        nextRound()
+        assertEquals(listOf(true, false), healthy(pool))
+        assertTrue(logged.any { "gpu-2 failed its health check (no answer within 5 s)" in it }, logged.toString())
+
+        answers["gpu-2"] = Answer.Reply(200, "")
+        nextRound()
+        assertEquals(listOf(true, true), healthy(pool))
     }
 
     @Test

@@ -3,7 +3,9 @@
 // so every head of the provider balances over the same servers and a head rebuilt while the daemon runs keeps what the
 // pool knows. Making a pool starts its checks: each server is asked at once and then at the check's interval, on its
 // own loop, so one server that hangs holds up no other's reading. What a check asks is `[server.probe]`'s (PoolCheck):
-// `/health` every `health_seconds` by default, or a real completion every `every_seconds`.
+// `/health` every `health_seconds` by default, or a real completion every `every_seconds`, either through one client
+// of the pool's that trusts what its provider's turns trust and is bounded over the whole answer. The interval is also
+// the `Retry-After` of a turn refused while none is up: about when each server will have been asked again.
 // A provider on one base_url that `[server.probe] single_url` names is made a pool of that one server (#791), so the
 // same probe holds it out until it passes and a turn for it is refused while it is down, as a pool's is.
 //
@@ -17,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import splice.app.probe.MS_PER_SECOND
+import splice.app.provider.local.JdkHealthHttp
 import splice.core.pool.UpstreamPool
 import splice.core.topology.ProviderConfig
 import splice.core.topology.ServerProbe
@@ -30,7 +33,9 @@ import splice.upstream.codemode.ProcessTicker
 import splice.upstream.readiness.ReadinessReading
 import splice.upstream.transport.LocalHttp
 import java.nio.file.Path
+import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
+import javax.net.ssl.X509TrustManager
 
 /** The headers a request the daemon itself makes of a provider's server carries (a health check, an OpenAI-style
  *  client's request relayed as sent), read at each request: the provider's static headers and the key its turns
@@ -45,11 +50,17 @@ internal fun interface HealthHttp {
     fun with(headers: Map<String, String>): LocalHttp
 }
 
+/** The client one pool's checks ask its servers through: trusting [trust], what a turn of its provider trusts, with
+ *  each request's headers due within [timeout]. */
+internal fun interface CheckHttp {
+    fun of(trust: X509TrustManager, timeout: Duration): HealthHttp
+}
+
 internal class UpstreamPools(
     /** The daemon's own scope, which its stop cancels: the check loops end with it. */
     private val scope: CoroutineScope,
     private val log: LogSink,
-    private val http: HealthHttp,
+    private val http: CheckHttp = CheckHttp { trust, timeout -> JdkHealthHttp(trust, timeout) },
     private val dispatcher: CoroutineDispatcher = ProcessDispatchers().io(),
     private val ticker: Ticker = ProcessTicker(),
 ) {

@@ -1,7 +1,8 @@
 // What a Desktop session on agy does with local skills: a typed `/name args` reaches agy expanded (string and block
 // content, images kept, `$ARGUMENTS` filled) while Desktop's replay and the transcript keep what was typed; agy's own
-// commands pass through; `reload_skills` finds a new skill; `system/init` is said on `initialize` and not again on the
-// first turn; a peer's message reaches agy as it came, never expanded; and a new agy session gets the skill index in `_meta` only when agy offers it, never on resume.
+// commands pass through, and every command does until agy announces its roster or answers a prompt; `reload_skills`
+// finds a new skill; `system/init` is said on `initialize` and not again on the first turn; and a peer's message
+// reaches agy as it came, never expanded. The skill index itself is `DesktopSkillIndexTest`'s.
 package splice.provider.antigravity
 
 import kotlinx.coroutines.CompletableDeferred
@@ -16,7 +17,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -127,6 +127,25 @@ internal class DesktopSkillsTest {
     }
 
     @Test
+    fun `a resumed session whose agy announces no roster expands skills once agy has answered, until agy names one`() {
+        val rig = rig()
+        val folder = skill(rig.home.resolve(".claude/skills/audit"), "Run an audit", "Audit \$ARGUMENTS.")
+        val claims = """upd '{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"audit"}]}'""" +
+            "\n" + """stop "${'$'}id" end_turn"""
+        val agy = ScriptedAgy(onResume = RIG_RESUMED, turns = listOf("""stop "${'$'}id" end_turn""", claims))
+        rig.run(agy, extra = listOf("--resume=s-1")) {
+            initialize()
+            listOf("one", "two", "three").forEachIndexed { at, arg ->
+                send(user("\"/audit $arg\"", "u-$at"))
+                result()
+            }
+        }
+        val expanded = "<command-name>/audit</command-name>\n<command-args>two</command-args>\n" +
+            "Base directory for this skill: $folder\n\nAudit two."
+        assertEquals(listOf("/audit one", expanded, "/audit three"), sentText(rig))
+    }
+
+    @Test
     fun `an indented YAML fence does not end frontmatter or expose the remaining metadata`() {
         for ((index, fence) in listOf("---", "...").withIndex()) {
             val rig = rig("fence-$index")
@@ -204,93 +223,6 @@ internal class DesktopSkillsTest {
     }
 
     @Test
-    fun `a new agy session that offers it gets the index of skills agy cannot find itself`() {
-        val rig = rig()
-        val audit = skill(rig.home.resolve(".claude/skills/audit"), "Run an audit\nin depth", "Body")
-        skill(rig.project.resolve(".agents/skills/native-one"), "agy finds this itself", "Body")
-        rig.run(ScriptedAgy(onInitialize = hello(APPEND_OFFERED))) {
-            control("init-1", """{"subtype":"initialize"}""")
-            answer("init-1")
-        }
-        val append = rig.asked("session/new").single().obj("_meta").obj("antigravity").obj("systemPrompt")
-            .str("append").orEmpty()
-        assertTrue(append.startsWith("Local skills available"), append)
-        assertTrue("- audit: Run an audit in depth (${audit.resolve("SKILL.md")})" in append, append)
-        assertFalse("native-one" in append, append)
-    }
-
-    @Test
-    fun `no index goes to agy when it does not offer one or when a session is taken up again`() {
-        val silent = rig("silent")
-        val declined = rig("declined")
-        val quoted = rig("quoted")
-        val resumed = rig("resumed")
-        listOf(silent, declined, quoted, resumed).forEach {
-            skill(it.home.resolve(".claude/skills/audit"), "Audit", "Body")
-        }
-        silent.run(ScriptedAgy()) { initialize() }
-        declined.run(ScriptedAgy(onInitialize = hello(APPEND_DECLINED))) { initialize() }
-        quoted.run(ScriptedAgy(onInitialize = hello(APPEND_AS_TEXT))) { initialize() }
-        val again = ScriptedAgy(onInitialize = hello(APPEND_OFFERED), onResume = RIG_RESUMED)
-        resumed.run(again, extra = listOf("--resume=s-1")) { initialize() }
-        assertNull(silent.asked("session/new").single()["_meta"])
-        assertNull(declined.asked("session/new").single()["_meta"])
-        assertNull(quoted.asked("session/new").single()["_meta"], "only a JSON true offers the append")
-        assertNull(resumed.asked("session/resume").single()["_meta"])
-        assertEquals(emptyList<JsonObject>(), resumed.asked("session/new"))
-    }
-
-    @Test
-    fun `the startup index excludes body summaries and targets outside approved skill roots`() {
-        val rig = rig()
-        val homeSkills = Files.createDirectories(rig.home.resolve(".claude/skills"))
-        val plain = Files.createDirectories(homeSkills.resolve("plain"))
-        Files.writeString(plain.resolve("SKILL.md"), "# Local menu summary\nPrivate instructions\n")
-        val outside = skill(tmp.resolve("private-tree/directory"), "External description", "External body")
-        Files.createSymbolicLink(homeSkills.resolve("dir-alias"), outside)
-        val leaf = Files.createDirectories(homeSkills.resolve("leaf-alias"))
-        val leafTarget = skill(tmp.resolve("private-tree/leaf"), "External leaf description", "External leaf body")
-        Files.createSymbolicLink(leaf.resolve("SKILL.md"), leafTarget.resolve("SKILL.md"))
-        val rootTarget = skill(tmp.resolve("private-tree/root/target"), "External root description", "Body")
-        val projectClaude = Files.createDirectories(rig.project.resolve(".claude"))
-        Files.createSymbolicLink(projectClaude.resolve("skills"), rootTarget.parent)
-        val safe = skill(homeSkills.resolve(".library/approved"), "Explicit summary", "Approved instructions")
-        Files.createSymbolicLink(homeSkills.resolve("approved"), safe)
-
-        var menu: Map<String?, String?> = emptyMap()
-        rig.run(ScriptedAgy(onInitialize = hello(APPEND_OFFERED))) {
-            control("init-1", """{"subtype":"initialize"}""")
-            menu = answer("init-1").obj("response").array("commands").map { it.jsonObject }
-                .associate { it.str("name") to it.str("description") }
-        }
-
-        val append = indexSent(rig)
-        assertTrue("- approved: Explicit summary" in append, append)
-        assertEquals("Local menu summary", menu["plain"])
-        assertTrue("External description" in menu.values)
-        for (excluded in listOf("Local menu summary", "Private instructions", "External description", "private-tree")) {
-            assertFalse(excluded in append, append)
-        }
-    }
-
-    @Test
-    fun `a skill agy finds through a link in its own folder stays out of the index`() {
-        val rig = rig()
-        val outside = skill(tmp.resolve("shared/linked"), "Linked from outside", "Body")
-        val native = Files.createDirectories(rig.project.resolve(".agents/skills"))
-        Files.createSymbolicLink(native.resolve("linked"), outside)
-        val leaf = Files.createDirectories(native.resolve("leaf"))
-        val elsewhere = skill(tmp.resolve("shared/leaf-target"), "Leaf linked", "Body").resolve("SKILL.md")
-        Files.createSymbolicLink(leaf.resolve("SKILL.md"), elsewhere)
-        skill(rig.home.resolve(".claude/skills/audit"), "Run an audit", "Body")
-        rig.run(ScriptedAgy(onInitialize = hello(APPEND_OFFERED))) { initialize() }
-        val append = rig.asked("session/new").single().obj("_meta").obj("antigravity").obj("systemPrompt")
-            .str("append").orEmpty()
-        assertTrue("- audit: Run an audit" in append, append)
-        assertFalse("linked" in append || "Leaf linked" in append, append)
-    }
-
-    @Test
     fun `reload_skills before initialize leaves agy closed, and initialize still opens it with Desktop's servers`() {
         val rig = rig()
         skill(rig.home.resolve(".claude/skills/audit"), "Run an audit", "Body")
@@ -307,38 +239,6 @@ internal class DesktopSkillsTest {
         assertEquals(0, newBeforeInit)
         val servers = rig.asked("session/new").single().array("mcpServers").map { it.jsonObject.str("name") }
         assertEquals(listOf("docs"), servers)
-    }
-
-    @Test
-    fun `the index agy opens with lists the skills a reload before initialize found`() {
-        val rig = rig()
-        val gone = skill(rig.home.resolve(".claude/skills/gone"), "Removed before open", "Body")
-        rig.run(ScriptedAgy(onInitialize = hello(APPEND_OFFERED))) {
-            Files.delete(gone.resolve("SKILL.md"))
-            Files.delete(gone)
-            skill(rig.home.resolve(".claude/skills/fresh"), "Added before open", "Body")
-            control("reload-1", """{"subtype":"reload_skills"}""")
-            answer("reload-1")
-            initialize()
-        }
-        val append = indexSent(rig)
-        assertTrue("- fresh: Added before open" in append, append)
-        assertFalse("gone" in append, append)
-    }
-
-    @Test
-    fun `a claude skill that aliases or shares a name with one of agy's own stays out of the index`() {
-        val rig = rig()
-        val native = skill(rig.project.resolve(".agents/skills/shared"), "agy serves this", "Body")
-        val claude = Files.createDirectories(rig.project.resolve(".claude/skills"))
-        Files.createSymbolicLink(claude.resolve("shared"), native)
-        skill(rig.project.resolve(".agents/skills/twin"), "agy's twin", "Body")
-        skill(rig.home.resolve(".claude/skills/twin"), "A user skill named like agy's", "Body")
-        skill(rig.home.resolve(".claude/skills/audit"), "Run an audit", "Body")
-        rig.run(ScriptedAgy(onInitialize = hello(APPEND_OFFERED))) { initialize() }
-        val append = indexSent(rig)
-        assertTrue("- audit: Run an audit" in append, append)
-        assertFalse("shared" in append || "twin" in append, append)
     }
 
     @Test
@@ -442,7 +342,5 @@ internal class DesktopSkillsTest {
 }
 
 private const val APPEND_OFFERED = """"_meta":{"antigravity":{"tier":true,"systemPrompt":{"append":true}}}"""
-private const val APPEND_DECLINED = """"_meta":{"antigravity":{"systemPrompt":{"append":false}}}"""
-private const val APPEND_AS_TEXT = """"_meta":{"antigravity":{"systemPrompt":{"append":"true"}}}"""
 private const val NO_MODEL = "disable-model-invocation: true"
 private const val DOCS_SERVER = """"docs":{"type":"http","url":"https://mcp.example.test/docs"}"""

@@ -205,14 +205,17 @@ Each of these came up and was dropped. They stay out unless Marcos asks for them
 A Gemini session offers the person's Claude skills and commands as a Claude Code session does, without ever reading
 or writing `~/.gemini`.
 
-- **Where they come from** (`ClaudeSkillCatalog`, nearest first, and the first one with a given name wins):
-  `.claude/skills` and `.agents/skills` in the session folder and each parent up to the repository root (the folder
-  holding `.git`), or up to the filesystem root outside a repository. The walk never includes the home folder itself,
-  in any case: it stops at the folder just below home, even for a repository rooted at `$HOME`, and is empty for a
-  session run in `$HOME`, because the user sources that follow cover `~/.claude` and `~/.agents`. Then
-  `<CLAUDE_CONFIG_DIR or ~/.claude>/skills`; `~/.agents/skills`; the skills in
-  `$CLAUDE_CODE_DESKTOP_SKILLS_PLUGIN_DIR/skills` that its `manifest.json` doesn't turn off; then `.claude/commands`
-  along the same walk and `<config>/commands`. They are scanned when the session starts, before agy opens, and
+- **Where they come from** (`ClaudeSkillCatalog`, in this order, and the first one with a given name, or with a
+  real folder already taken, wins): the person's own folders first, `<CLAUDE_CONFIG_DIR or ~/.claude>/skills`,
+  `~/.agents/skills` and the skills in `$CLAUDE_CODE_DESKTOP_SKILLS_PLUGIN_DIR/skills` that its `manifest.json`
+  doesn't turn off; then, nearest first, `.claude/skills` and `.agents/skills` in the session folder and each parent
+  up to the repository root (the folder holding `.git`), or up to the filesystem root outside a repository. The walk
+  never includes the home folder itself, in any case: it stops at the folder just below home, even for a repository
+  rooted at `$HOME`, and is empty for a session run in `$HOME`, because the person's folders cover `~/.claude` and
+  `~/.agents`. Personal over project is Claude Code's rule: when the person and a project both have a skill of that
+  name, the slash menu, `/name` and the index all use the person's copy, whether the two copies are links to one
+  install or differ, and the project's is not offered. Then `.claude/commands` along the same walk and
+  `<config>/commands`, which a skill of the same name shadows. They are scanned when the session starts, before agy opens, and
   again on each `reload_skills`. Discovery keeps only bounded metadata and file paths; the selected skill or
   command's body is read from disk when invoked.
 - **Who may start one**, from the frontmatter as Claude Code reads it: `user-invocable: false` keeps a skill out of
@@ -231,7 +234,11 @@ or writing `~/.gemini`.
   body. In the body, `$ARGUMENTS` is replaced by the arguments; if the body has no `$ARGUMENTS` and there are
   arguments, they are added after it as `ARGUMENTS: …`. In a message made of blocks, only that text block changes and
   images stay where they were. Desktop's replay and the transcript keep what was typed. agy's own commands go through
-  as typed, as do all commands until agy announces its native roster (which may be empty). `/login` and
+  as typed, as do all commands until agy announces its native roster (which may be empty) or answers the session's
+  first prompt. agy announces one after `session/new`; whether it does after `session/resume` or `session/load` is
+  not known (the installed agy's readable files, its changelog included, don't say). agy writes a prompt's updates before its reply, so a roster not
+  heard by that reply is taken as none, and a resumed session without one expands local skills from its second
+  message on. A roster heard later still takes its names for agy. `/login` and
   `/splice:login` are never expanded, even when a local command has that name: as text alone
   they open Splice Console's Accounts page and never reach agy, and in a message with an image they go to agy as
   typed.
@@ -250,8 +257,21 @@ or writing `~/.gemini`.
     the one the session already has;
   - skills only, and only those the model may choose (not `disable-model-invocation: true`; a `user-invocable:
     false` skill is included);
-  - only skills whose real directory and file stay inside their declared skill root; links outside that root can
-    still appear in local autocomplete, but are not sent in the startup index;
+  - trust follows who wrote the folder, not where a link lands (`SkillRoot.indexPath`). A skill in one of the
+    person's own folders (`<config>/skills`, `~/.agents/skills`, the Desktop plugin's `skills`) is listed whatever its
+    entry or the folder itself links to, because a link there is how toolkits, stow and dotfile managers install
+    skills. It is listed by the path where the person put it (`~/.claude/skills/<name>/SKILL.md`), never by the
+    link's target, so the index never names where a link lands and agy's read follows the link to what is installed
+    now, as Claude Code's would. A skill in a project's `.claude/skills` is listed only when its real folder and real
+    `SKILL.md` lie inside the project (the repository root that ends the walk, or outside a repository the folder
+    holding that `.claude`), and by its real path, so a link the project wrote can point neither the index nor a
+    later read the model starts at a file outside the project. Because the person's folders come first, a skill a
+    toolkit links into both `~/.claude/skills` and a project's `.claude/skills` is listed once, by the person's path;
+    the project's copy only ever drops out, so it can neither keep the person's out nor bring a path outside the
+    project in. A skill left out this way still appears in local autocomplete, where only the person can start it.
+    What goes with a skill the person starts is another matter: typing `/name` sends agy the skill's body and a
+    `Base directory for this skill:` line holding its real folder, the link's target included, so its relative
+    paths resolve;
   - leaving out every skill agy serves itself: one found in an `.agents/skills` folder of the
     session's walk (even when its entry or its `SKILL.md` links elsewhere), one whose real folder is that of such a
     skill (a `.claude/skills` alias that links into `.agents/skills`), and one sharing such a skill's name;

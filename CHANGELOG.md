@@ -147,10 +147,11 @@
   visual. `GET /api/visual/view?uri=` and `GET /api/visual/pages/<id>` give the view and a kept page with the
   management key. `html_render` takes the page as `html` only: it reads no file. `[modes.visual] on = true` turns it
   on for every session, terminals included, and `on = false` off for every one, Desktop included.
-- **A mode can be on for some callers alone.** A manifest's `on_for` names the callers (`door`, `head`, `desktop`) a
-  mode is on for by default while its `on` is false; splice.toml's `[modes.<name>] on` still decides for every
-  caller. `GET /api/modes` adds `on_for` and `callers`, each caller's value; `splice status`, `splice setup` and
-  Settings > Modes say when a mode is on for Claude Desktop alone.
+- **A mode can be on in Claude Desktop alone.** A manifest's `on_for = ["desktop"]` puts a mode on for Claude
+  Desktop's own sessions while its `on` is false; splice.toml's `[modes.<name>] on` still decides for every session.
+  `GET /api/modes` adds `on_for` and `callers`, each caller's value; `splice status` and `splice setup` say when a
+  mode is on for Claude Desktop alone, and Settings > Modes gives such a mode an Every session switch: Default, On or
+  Off.
 - **The keyed team listener serves the door.** `/door/v1` answers on a team's server from the gateway's providers,
   with each person's allowlist applied to the provider a model resolves to, and a streamed turn's client is pinged
   at `[server] keepalive_seconds` when that is shorter than splice's own probe.

@@ -204,18 +204,45 @@
   };
 
   /* Modes (modes/README.md): one group a mode. Its summary and how it is answered, the tools it adds as the model sees
-     them, the callers it leaves out or is on for on its own, and one row a command with On and Off, saved at once. A
-     command the mode's manifest never offers it on has no switch and says so. */
+     them, the callers it leaves out, and one row a command with On and Off, saved at once. A command the mode's
+     manifest never offers it on has no switch and says so. A mode whose manifest puts it on for Claude Desktop alone
+     (on_for) also has one switch for every session, Default, On or Off, with what Claude Desktop and the terminal get
+     now and what the default is, and its commands' rows are named as the terminal's. */
   const MODE_KIND = { door: 'Answered inside Splice', mcp: 'MCP server' };
   const MODE_LEFT_OUT = { desktop: "Not offered to Claude Desktop's own sessions", door: 'Not offered to claude on the door', head: "Not offered to a command's own sessions" };
-  const MODE_ONLY_FOR = { desktop: "On for Claude Desktop's own sessions", door: 'On for claude on the door', head: "On for a command's own sessions" };
+  const MODE_ONLY_FOR = { desktop: 'Claude Desktop', door: 'claude on the door', head: "a command's own sessions" };
+  const onOff = st => (st && st.on ? 'on' : 'off');
+  /** the switch for every session of a mode with on_for: Default (splice.toml says nothing), On or Off, and a line on
+   *  what Claude Desktop and claude in a terminal get now and what the default is */
+  function modeEvery(m) {
+    const box = h('div', 'lr'); box.dataset.item = 'mode:' + m.name + ':every';
+    const sub = h('div', 'lr-sub');
+    const line = h('div', 'lr-cmd'); line.dataset.mode = m.name; line.dataset.every = ''; line.dataset.item = 'mode:' + m.name + ':every-switch';
+    const sv = Deck.saveState({ rest: () => '' });
+    const t = told.get(line.dataset.item);
+    if (t && Date.now() - t.at < Deck.px('--dur') * 8) sv.set(t.state, t.word);
+    const held = x => (x.on && x.on.from === 'splice.toml' ? x.on.value : null);
+    const opts = [{ v: null, label: 'Default' }, { v: true, label: 'On' }, { v: false, label: 'Off' }];
+    // a save changes every line of the mode (what Desktop and the terminal get, each command's switch): the glass is drawn again
+    const pick = v => commit(line, sv, () => S.setModeEvery(m.name, v), () => c.set(held((S.modes || []).find(x => x.name === m.name) || m)))
+      .then(res => { if (res.state !== 'refused') reopen(); });
+    let c; c = Deck.choice(opts, held(m), pick, { label: m.name + ' in every session' });
+    const right = h('span', 'lr-acts'); right.append(sv);
+    line.append(h('span', '', 'Every session'), c, right);
+    const callers = m.callers || {};
+    const dflt = (m.on_for || []).map(x => MODE_ONLY_FOR[x] || x).join(', ');
+    const now = h('div', 'faint small lr-now');
+    now.textContent = `Now ${onOff(callers.desktop)} in Claude Desktop, ${onOff(callers.door)} in claude in a terminal. Default: on in ${dflt} only. Claude Desktop takes a change when it is reopened.`;
+    sub.append(line, now); box.append(sub);
+    return box;
+  }
   function modesLens(body) {
     const list = S.modes;
     if (!list) { const { r, ctl } = row('modes', 'Modes'); r.querySelector('.sv').remove(); ctl.append(h('span', 'faint', 'Not read')); body.append(r); return; }
     if (!list.length) { const { r, ctl } = row('modes', 'Modes'); r.querySelector('.sv').remove(); ctl.append(h('span', 'faint', 'This Splice carries no mode')); body.append(r); return; }
     for (const m of list) {
       body.append(h('div', 'eyebrow lr-sec', m.name));
-      const about = row('mode:' + m.name, m.summary || m.name, [MODE_KIND[m.kind] || m.kind, ...S.modeOnlyFor(m).map(c => MODE_ONLY_FOR[c]), ...(m.callers_off || []).map(c => MODE_LEFT_OUT[c])].filter(Boolean).join(' · '));
+      const about = row('mode:' + m.name, m.summary || m.name, [MODE_KIND[m.kind] || m.kind, ...(m.callers_off || []).map(c => MODE_LEFT_OUT[c])].filter(Boolean).join(' · '));
       about.r.querySelector('.sv').remove();
       const tools = h('div', 'kvs fill lr-tools');
       (m.tools || []).forEach(t => { const d = h('div'); d.append(h('span', '', t.description || t.name), h('b', '', t.offered_as || t.name)); tools.append(d); });
@@ -232,9 +259,12 @@
         about.r.append(hooks);
       }
       body.append(about.r);
+      const partly = (m.on_for || []).length > 0;
+      if (partly) body.append(modeEvery(m));
       // one line a command, as a setting's per-command values are drawn: its dot and name, the switch, what splice said
       const box = h('div', 'lr'); box.dataset.item = 'mode:' + m.name + ':cmds';
       const sub = h('div', 'lr-sub');
+      if (partly && Object.keys(m.heads || {}).length) sub.append(h('div', 'faint small', 'In the terminal, by command'));
       for (const [cmd, st] of Object.entries(m.heads || {})) {
         const line = h('div', 'lr-cmd'), nm = h('span'), dot = h('i'); dot.style.setProperty('--pc', pc(cmd)); nm.append(dot, provName(cmd)); nm.title = cmdName(cmd);
         line.dataset.mode = m.name; line.dataset.cmd = cmd; line.dataset.item = 'mode:' + m.name + ':' + cmd;

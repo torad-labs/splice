@@ -102,6 +102,15 @@ window.SETTINGS_LIVE = (() => {
     S.modes = S.modes.map(x => (x.name === name ? res.body : x));
     return { state: 'applied' };
   };
+  /** A mode turned on (true) or off (false) for every session, Claude Desktop's included, or back to its manifest's
+   *  default (null): PUT /api/modes/<name> writes or clears [modes.<name>] on, the daemon gives Claude Desktop the
+   *  mode or takes it away in its configuration, and the row splice answers replaces the one held. */
+  S.setModeEvery = async (name, on) => {
+    const res = await API.put('/api/modes/' + encodeURIComponent(name), { on });
+    if (!res.ok || !res.body || res.body.name !== name) return { state: 'refused', why: why(res) };
+    S.modes = S.modes.map(x => (x.name === name ? res.body : x));
+    return { state: 'applied' };
+  };
   /** The callers a mode is on for while it is off for every command, as its manifest's on_for leaves it when splice.toml
    *  says nothing (GET /api/modes' callers; none from a splice that does not say) */
   S.modeOnlyFor = m => (m.on && m.on.value ? [] : Object.entries(m.callers || {}).filter(([, st]) => st && st.on).map(([c]) => c));

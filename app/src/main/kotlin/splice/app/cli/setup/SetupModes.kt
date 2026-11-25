@@ -63,15 +63,23 @@ internal class SetupModes(
     private val env: EnvReader,
     private val rows: ModeRows = CarriedModes(),
 ) {
-    /** The modes the person turned on; null when nothing was asked (no console, or no mode is off). */
+    /** The modes the person turned on; null when nothing was asked (no console, or no mode is off). A mode on for
+     *  some callers alone is not asked about: the few who want it in every session are told where to turn it on. */
     fun offer(path: Path): List<String>? {
         if (!prompts.hasConsole()) return null
         val all = Cancellables.runCatchingBestEffort { rows(path) }.getOrDefault(emptyList())
-        if (all.none { !it.on }) return null
+        val partly = all.filter { it.onlyFor.isNotEmpty() }
+        if (all.none { !it.on } && partly.isEmpty()) return null
         val listed = all.joinToString(", ") { "${it.name} (${it.said})" }
         prompts.frame.step("Modes add tools to every session on splice's door: $listed")
-        return all.filterNot { it.on }.filter { prompts.frame.confirm("Turn on ${it.name}? ${it.summary}", false) }
-            .map { it.name }
+        for (mode in partly) {
+            prompts.frame.step(
+                "${mode.name} in every session: Settings > Modes, or [modes.${mode.name}] on = true in splice.toml",
+            )
+        }
+        val off = all.filterNot { it.on }
+        return off.takeIf { it.isNotEmpty() }
+            ?.filter { prompts.frame.confirm("Turn on ${it.name}? ${it.summary}", false) }?.map { it.name }
     }
 
     fun summary(on: List<String>): List<String> =

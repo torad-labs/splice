@@ -64,13 +64,24 @@ internal class ManifestRead(
         val callers = keys.table("callers", setOf("off"))
         val callersOff = callersNamed("callers.off", callers?.strings("off", required = false).orEmpty())
         val onFor = callersNamed("on_for", keys.strings("on_for", required = false).orEmpty())
-        // a default for a caller the manifest never offers the mode to says two things at once
+        val only = heads?.strings("only", required = false).orEmpty()
+        val off = heads?.strings("off", required = false).orEmpty()
+        checkOnFor(onFor, callersOff, on == true, only.isNotEmpty())
+        return ModeOffer(on ?: false, only, off, callersOff, onFor)
+    }
+
+    /** `on_for` is said only where every place that shows a mode can show it truthfully: for Claude Desktop alone,
+     *  which runs no head, so beside an empty `[heads] only`, a false `on` and no `[callers] off` naming it. */
+    private fun checkOnFor(onFor: List<ModeCaller>, callersOff: List<ModeCaller>, on: Boolean, only: Boolean) {
+        if (onFor.isEmpty()) return
+        for (unserved in onFor.filter { it != ModeCaller.DESKTOP }) {
+            fault.report("on_for names ${unserved.wire}, which splice does not serve yet: on_for takes desktop alone")
+        }
         for (both in onFor.filter { it in callersOff }) {
             fault.report("on_for names ${both.wire}, which callers.off leaves out")
         }
-        val only = heads?.strings("only", required = false).orEmpty()
-        val off = heads?.strings("off", required = false).orEmpty()
-        return ModeOffer(on ?: false, only, off, callersOff, onFor)
+        if (on) fault.report("on_for does nothing while on is true: the mode is on for every caller already")
+        if (only) fault.report("on_for needs an empty heads.only: Claude Desktop runs no head, so never gets the mode")
     }
 
     /** The callers [words] name, a finding under [key] when one is not a caller's word. */

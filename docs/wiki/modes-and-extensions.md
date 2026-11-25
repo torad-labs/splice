@@ -94,9 +94,9 @@ Use `server_routes` and `server_admin_only` to [expose a mode on the team listen
 
 | Where | What you can do |
 | --- | --- |
-| `splice setup` | Lists every mode with its state (`on`, `off`, or `on for Claude Desktop`), then asks "Turn on <mode>? <summary>" for each one that is off; a yes writes `on = true` |
+| `splice setup` | Lists every mode with its state (`on`, `off`, or `on for Claude Desktop`), then asks "Turn on <mode>? <summary>" for each one that is off; a yes writes `on = true`. A mode on for Claude Desktop alone is not asked about; setup says where to have it in every session |
 | `splice setup --update` | Offers the modes that are off and restarts a running daemon onto any you turn on |
-| Console → Settings → **Modes** | One group per mode: its summary, how it is answered ("Answered inside Splice" or "MCP server"), the tools it adds, the callers it leaves out or is on for on its own ("On for Claude Desktop's own sessions"), its hooks, and an On/Off switch per command |
+| Console → Settings → **Modes** | One group per mode: its summary, how it is answered ("Answered inside Splice" or "MCP server"), the tools it adds, the callers it leaves out, its hooks, and an On/Off switch per command. A mode on for Claude Desktop alone (`visual`) also has an **Every session** switch: Default (on in Claude Desktop only), On (every session) or Off (none, Desktop included), with a line saying what Claude Desktop and `claude` in a terminal get now; its per-command switches are the terminal's |
 | `splice status` | One plain line per mode, read from the running daemon: the heads it is on for, and `for desktop` when it is on for Desktop while off for every head |
 | `GET /api/modes` | Each mode's `name`, `summary`, `kind`, `server`, `prompt`, `tools`, `resources`, `hooks`, `callers_off`, `on_for`, `on` `{value, from}`, `heads` `{<head>: {on, from}}` and `callers` `{door, head, desktop: {on, from}}`, each caller's every-head value; `from` is `manifest`, `splice.toml`, `head` or `never` |
 | `PUT /api/modes/{name}` | Body `{on?, heads?: {<head>: true \| false \| null}}`; `null` clears a key. The next request follows, no restart. 404 unknown mode, 400 bad body, 409 write refused, 503 when `splice.toml` can't be written |

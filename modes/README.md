@@ -33,7 +33,7 @@ ship off.
 | `tools` | list of strings | required | The tools, in the order they are offered; each has `tools/<tool>.json` and `tools/<tool>.md`. |
 | `kind` | `"door"` or `"mcp"` | `"door"` | `"door"`: splice holds and answers each call inside itself, and the client never sees it. `"mcp"`: the mode is a real MCP server the daemon answers under `server`, so the client sees its tools and calls as any MCP tool's (see "An mcp mode"). |
 | `on` | boolean | `false` | Whether the mode is on for every session by default. splice.toml's `[modes.<name>]` overrides it. |
-| `on_for` | list of callers | `[]` | Callers the mode is on for by default while `on` is false: `"door"`, `"head"` or `"desktop"`, as in `[callers] off`. A default like `on`, so splice.toml's `[modes.<name>]` overrides it for every caller. A caller that `[callers] off` also names is a finding. `visual` says `["desktop"]`: on for Claude Desktop, which draws, and not for a terminal, which draws nothing. |
+| `on_for` | list of callers | `[]` | Callers the mode is on for by default while `on` is false. Today it takes `"desktop"` alone: on for Claude Desktop's own sessions and for no terminal's. A default like `on`, so splice.toml's `[modes.<name>] on` overrides it for every caller. `visual` says `["desktop"]`: Desktop draws, and a terminal draws nothing. |
 | `[heads]` `only` | list of heads | `[]` | Empty: every head. Otherwise the only heads the mode is ever offered on. |
 | `[heads]` `off` | list of heads | `[]` | Heads the mode is never offered on. |
 | `[callers]` `off` | list of callers | `[]` | Callers the mode is never offered to: `"door"` (Claude Code on splice's door, plain `claude`), `"head"` (a head's own command, e.g. `claude-astra`) or `"desktop"` (Claude Desktop's own sessions). |
@@ -44,6 +44,11 @@ ship off.
 | `mimeType` | string | required | e.g. `text/html;profile=mcp-app` for an MCP App. |
 | `file` | string | none | Its content, a file under `resources/`; without it, the handler gives the content. |
 | `_meta` | inline table | none | Passed to the client as written, e.g. `{ ui = { csp = { connectDomains = [] } } }`. |
+
+`on_for` is said only where every place that shows a mode can show it truthfully, as a hook moment appears when
+splice serves it, never as a name that does nothing. So these are findings that refuse boot: `"door"` or `"head"`
+(not served yet), a caller `[callers] off` also names, `on_for` beside `on = true` (where it does nothing), and
+`on_for` beside a non-empty `[heads] only` (Claude Desktop runs no head, so it would never get the mode).
 
 Names: a mode's name is a lowercase letter, then lowercase letters and digits (`[a-z][a-z0-9]*`), so one word is the
 folder, the Gradle id `:modes-<name>` and the package `splice.modes.<name>`. A `server` and each tool name are
@@ -94,10 +99,11 @@ So with nothing in splice.toml, `visual` (`on_for = ["desktop"]`) is given to Cl
 no terminal's; `on = true` gives it to every session, and `on = false` to none.
 
 What the door adds is listed by `GET /api/modes`, by `splice status`, and on the console's Settings > Modes, where a
-switch per head writes `[modes.<name>]`. A mode's row in `GET /api/modes` carries `on` (its every-head value),
+switch per head writes `[modes.<name>]`, and a mode with `on_for` has one more switch, for every session: Default
+clears `on`, On writes `on = true` and Off `on = false`, with what Claude Desktop and the terminal get now. A mode's row in `GET /api/modes` carries `on` (its every-head value),
 `heads` (each head's), `on_for` (the manifest's), and `callers`: each caller's every-head value, `{on, from}`, which
 for `visual` with nothing in splice.toml says `desktop` on and `door` and `head` off. `splice status` says `on for
-desktop` for such a mode, and the console `On for Claude Desktop's own sessions`. `splice check-config` lists a broken mode's findings, and a
+desktop` for such a mode, and the console `Now on in Claude Desktop, off in claude in a terminal`. `splice check-config` lists a broken mode's findings, and a
 `[modes.<name>]` table naming no mode, as boot does.
 
 ## An mcp mode

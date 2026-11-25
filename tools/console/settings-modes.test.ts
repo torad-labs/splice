@@ -23,6 +23,20 @@ const fresh = (): Mode[] => [
   },
 ];
 let modes = fresh();
+/** canvas's row with splice.toml's [modes.canvas] on at [on] (null: no table) */
+const canvasRow = (on: boolean | null) => {
+  const from = on === null ? "manifest" : "splice.toml";
+  const st = (v: boolean) => ({ on: v, from });
+  return {
+    on: { value: on === true, from }, heads: { acme: st(on === true), beta: st(on === true) },
+    callers: { door: st(on === true), head: st(on === true), desktop: st(on !== false) },
+  };
+};
+const canvas = (): Mode => ({
+  name: "canvas", summary: "Draws a made-up canvas.", kind: "mcp", server: "canvas", prompt: false, server_taken: false,
+  tools: [{ name: "draw", offered_as: "mcp__canvas__draw", description: "Draw." }], resources: [], callers_off: [], on_for: ["desktop"],
+  ...canvasRow(null),
+});
 let refuse = "";
 
 let s: Stub;
@@ -34,6 +48,11 @@ beforeAll(async () => {
     "/api/config": { effective: { effort: "high" }, layers: { perHead: {} }, knobs: {} },
     "/api/upgrade": { installed: "1.2.3", latest: "1.2.3", rollback_target: null },
     "/api/modes": () => ({ modes }),
+    // the daemon's rule for a mode whose manifest says on_for = ["desktop"]: splice.toml's on, else Desktop alone
+    "PUT /api/modes/canvas": (_u: URL, body: unknown) => {
+      const on = (body as { on: boolean | null }).on;
+      return Object.assign(modes.find((x) => x.name === "canvas")!, canvasRow(on));
+    },
     "PUT /api/modes/template": (_u: URL, body: unknown) => {
       if (refuse) return Response.json({ error: refuse }, { status: 409 });
       const heads = (body as { heads: Record<string, boolean | null> }).heads;
@@ -79,22 +98,53 @@ test("the part counts the modes that are on, and its glass names each mode, what
   }
 }, 30_000);
 
-test("a mode on for Claude Desktop alone counts as on, and its glass says so beside commands that are off", async () => {
-  modes = [...fresh(), {
-    name: "canvas", summary: "Draws a made-up canvas.", kind: "mcp", server: "canvas", prompt: false, server_taken: false,
-    tools: [{ name: "draw", offered_as: "mcp__canvas__draw", description: "Draw." }], resources: [], callers_off: [], on_for: ["desktop"],
-    on: { value: false, from: "manifest" }, heads: { acme: { on: false, from: "manifest" }, beta: { on: false, from: "manifest" } },
-    callers: { door: { on: false, from: "manifest" }, head: { on: false, from: "manifest" }, desktop: { on: true, from: "manifest" } },
-  }];
+test("a mode on for Claude Desktop alone says what Desktop and the terminal get, and its switch sets every session", async () => {
+  modes = [...fresh(), canvas()];
   const page = await at();
+  const every = () => glass(page).locator('[data-mode="canvas"][data-every]');
+  const now = () => glass(page).locator('[data-item="mode:canvas:every"] .lr-now');
+  const sent = () => s.calls.filter((c) => c.method === "PUT" && c.path === "/api/modes/canvas").map((c) => c.body);
   try {
     const part = page.locator('[data-part="modes"]');
     await expect(part).toContainText("2");
     await expect(part).toContainText("of 3 on");
     await part.click();
-    const g = glass(page);
-    await expect(g).toContainText("MCP server · On for Claude Desktop's own sessions");
+    // the default: on in Claude Desktop alone, off in the terminal and on every command
+    await expect(every().getByRole("radio", { name: "Default" })).toHaveAttribute("aria-checked", "true");
+    await expect(now()).toContainText("Now on in Claude Desktop, off in claude in a terminal. Default: on in Claude Desktop only.");
+    await expect(glass(page)).toContainText("In the terminal, by command");
     await expect(row(page, "canvas", "acme").getByRole("radio", { name: "Off" })).toHaveAttribute("aria-checked", "true");
+
+    // On: every session, and every command's switch shows it
+    await every().getByRole("radio", { name: "On" }).click();
+    await expect.poll(sent).toEqual([{ on: true }]);
+    await expect(now()).toContainText("Now on in Claude Desktop, on in claude in a terminal.");
+    await expect(row(page, "canvas", "acme").getByRole("radio", { name: "On" })).toHaveAttribute("aria-checked", "true");
+    await expect(page.locator('[data-part="modes"]')).toContainText("2");
+
+    // Off: no session, Claude Desktop's included, and the mode no longer counts as on
+    await every().getByRole("radio", { name: "Off" }).click();
+    await expect.poll(sent).toEqual([{ on: true }, { on: false }]);
+    await expect(now()).toContainText("Now off in Claude Desktop, off in claude in a terminal.");
+    await expect(row(page, "canvas", "acme").getByRole("radio", { name: "Off" })).toHaveAttribute("aria-checked", "true");
+    await expect(page.locator('[data-part="modes"]')).toContainText("1");
+
+    // Default: the table cleared, Claude Desktop alone again
+    await every().getByRole("radio", { name: "Default" }).click();
+    await expect.poll(sent).toEqual([{ on: true }, { on: false }, { on: null }]);
+    await expect(now()).toContainText("Now on in Claude Desktop, off in claude in a terminal.");
+    bunExpect(modes.find((x) => x.name === "canvas")!.callers).toEqual(canvasRow(null).callers);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("a mode without on_for has no switch for every session, as before", async () => {
+  const page = await at();
+  try {
+    await page.locator('[data-part="modes"]').click();
+    await expect(glass(page).locator("[data-every]")).toHaveCount(0);
+    await expect(glass(page)).not.toContainText("In the terminal, by command");
   } finally {
     await page.close();
   }

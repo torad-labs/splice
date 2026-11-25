@@ -128,12 +128,13 @@ class DesktopMcpModeDaemonTest {
 
     // Before 0.7.0's on_for, visual shipped off for every caller, and this test began with Desktop listing no visual.
     @Test
-    fun `visual is Desktop's with nothing in splice toml, and on false or true there is followed while the daemon runs`(
+    fun `visual is Desktop's with nothing in splice toml, and on false, true and cleared are followed while it runs`(
         @TempDir tmp: Path,
     ) {
         daemon(tmp, "") { fixture ->
             post(fixture.mgmt, "/api/desktop/on")
             assertEquals(listOf("visual"), servers(fixture).keys.toList(), "on for Claude Desktop by its manifest")
+            val freshFile = Files.readString(fixture.profile.resolve(DESKTOP_CONFIG))
             assertEquals(emptyList<String>(), ownServers(fixture, launch(fixture)), "and not for claude on the door")
             val row = get(fixture.mgmt, "/api/modes").getValue("modes").jsonArray.map { it.jsonObject }
                 .single { it.str("name") == "visual" }
@@ -148,6 +149,13 @@ class DesktopMcpModeDaemonTest {
             switch(fixture.mgmt, """{"on":true}""")
             assertEquals(listOf("visual"), servers(fixture).keys.toList())
             assertEquals(listOf("visual"), ownServers(fixture, launch(fixture)), "on for every session, the door's too")
+            switch(fixture.mgmt, """{"on":null}""")
+            assertEquals(freshFile, Files.readString(fixture.profile.resolve(DESKTOP_CONFIG)), "back to the default")
+            assertEquals(emptyList<String>(), ownServers(fixture, launch(fixture)), "and the door has it no more")
+            val back = get(fixture.mgmt, "/api/modes").getValue("modes").jsonArray.map { it.jsonObject }
+                .single { it.str("name") == "visual" }.getValue("callers").jsonObject
+            assertEquals("""{"on":true,"from":"manifest"}""", back.getValue("desktop").toString())
+            assertEquals("""{"on":false,"from":"manifest"}""", back.getValue("door").toString())
         }
     }
 

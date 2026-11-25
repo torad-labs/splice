@@ -9,10 +9,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.app.cli.peer.PeerMcpLaunch
-import splice.app.control.peer.PEER_MCP_SERVER
 import splice.client.mcp.McpPlan
 import splice.client.mcp.McpServerInput
 import splice.client.mcp.McpSharing
+import splice.client.mcp.PEER_MCP_SERVER
 import splice.core.config.StatePaths
 import splice.core.mcp.McpHarness
 import splice.core.mcp.McpUserRegistry

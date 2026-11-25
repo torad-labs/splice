@@ -32,8 +32,11 @@ internal class ControlAudit(private val log: LogSink) {
      *  `<json N bytes sha256:xxxxxxxxxxxx>`. Logged only when it differs from the key's last logged launch. */
     fun launch(key: String, argv: List<String>) {
         val shown = ClaudeArgv.promptFree(argv).map { arg ->
-            if (!arg.startsWith("{")) return@map arg
-            "<json ${arg.toByteArray().size} bytes sha256:${InputDigest.hex(arg).take(HASH_CHARS)}>"
+            // a value given in the same word as its flag, `--mcp-config={...}`, is a value as well
+            val flag = arg.substringBefore("={", "").takeIf { it.startsWith("-") }?.let { "$it=" }.orEmpty()
+            val value = arg.removePrefix(flag)
+            if (!value.startsWith("{")) return@map arg
+            "$flag<json ${value.toByteArray().size} bytes sha256:${InputDigest.hex(value).take(HASH_CHARS)}>"
         }
         val repeats = synchronized(lastLaunch) {
             val last = lastLaunch[key]

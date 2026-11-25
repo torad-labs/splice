@@ -12,6 +12,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import splice.client.mcp.PEER_MCP_SERVER
 import splice.control.mcp.inprocess.InProcessMcpHost
 import splice.control.mcp.inprocess.InProcessMcpServer
 import splice.core.util.JsonScalars
@@ -19,7 +20,6 @@ import splice.core.wire.HttpStatus
 import splice.sessions.peer.PeerPrincipal
 import splice.sessions.peer.owner.PeerOwnerProcesses
 
-internal const val PEER_MCP_SERVER = "splice-peers"
 internal const val PEER_MCP_ENDPOINT = "/mcp/$PEER_MCP_SERVER"
 
 internal class PeerMcpTools(

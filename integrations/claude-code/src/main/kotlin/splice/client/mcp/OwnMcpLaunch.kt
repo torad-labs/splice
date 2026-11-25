@@ -65,7 +65,7 @@ public class OwnMcpLaunch(
 
 /** The start of the name of every file of the daemon's own servers: each entry in one is splice's, with its MCP key
  *  (McpKeyHolders). A caller's word holds no `-`, so a launch with no head never shares a head's file name. */
-internal const val OWN_MCP_FILE_PREFIX: String = "own-mcp-"
+public const val OWN_MCP_FILE_PREFIX: String = "own-mcp-"
 
 /** Claude Code's switch that runs only the MCP servers the launch's own `--mcp-config` names. */
 private const val STRICT_MCP_FLAG = "--strict-mcp-config"

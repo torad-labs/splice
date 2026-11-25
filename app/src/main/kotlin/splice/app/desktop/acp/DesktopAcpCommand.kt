@@ -11,7 +11,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.serialization.json.buildJsonObject
 import splice.app.cli.peer.PEER_NAME_ENV
 import splice.app.cli.peer.PeerMcpLaunch
-import splice.app.control.peer.PEER_MCP_SERVER
+import splice.client.mcp.PEER_MCP_SERVER
 import splice.core.config.KeyStorePath
 import splice.core.harness.HarnessCatalog
 import splice.core.harness.HarnessDefinition

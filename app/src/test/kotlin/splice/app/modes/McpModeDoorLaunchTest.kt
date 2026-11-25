@@ -167,6 +167,29 @@ class McpModeDoorLaunchTest {
         }
     }
 
+    // The build of Nov 25 put the mode's file, and the peer server, after the person's words as a flag and its value;
+    // the sessions it started are relaunched by this one.
+    @Test
+    fun `a relaunch of a session the build of Nov 25 started names the mode's file once, and none once off`(
+        @TempDir tmp: Path,
+    ) {
+        daemon(tmp, "[modes.visual]\non = true") {
+            val first = launch(listOf("-n", "probe"))
+            val file = first.single { it.startsWith("--mcp-config=") }.substringAfter('=')
+            val peer = """{"mcpServers":{"splice-peers":{"type":"stdio","command":"/x/splice"}}}"""
+            val earlier = first.filterNot { it.startsWith("--mcp-config=") } +
+                listOf("--mcp-config", file, "--mcp-config", peer)
+            val again = relaunch(earlier)
+            assertEquals(listOf("visual"), ownServers(again))
+            assertEquals(listOf("--mcp-config=$file"), again.filter { it.startsWith("--mcp-config") }, "once: $again")
+            assertEquals(listOf("-n", "probe"), personsWords(again))
+            switch(on = false)
+            val off = relaunch(earlier)
+            assertEquals(emptyList<String>(), off.filter { it.startsWith("--mcp-config") }, "none: $off")
+            assertEquals(listOf("-n", "probe"), off.drop(3), "the person's words alone after the overlay: $off")
+        }
+    }
+
     @Test
     fun `claude on the door launched with --strict-mcp-config is handed no mode's server`(@TempDir tmp: Path) {
         daemon(tmp, "[modes.visual]\non = true") {

@@ -11,9 +11,9 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.app.cli.AdminSupport
 import splice.app.control.peer.PEER_MCP_ENDPOINT
-import splice.app.control.peer.PEER_MCP_SERVER
 import splice.app.control.peer.PeerMcpWire
 import splice.client.mcp.MCP_CONFIG_FLAG
+import splice.client.mcp.PEER_MCP_SERVER
 import splice.control.mcp.inprocess.InProcessMcpHost
 import splice.control.mcp.inprocess.InProcessMcpServer
 import splice.core.config.InstallPaths
@@ -128,11 +128,19 @@ internal class PeerMcpLaunch(env: EnvReader) {
     val command: String = InstallPaths(envReader = env).binDir.resolve("splice").toAbsolutePath().toString()
     val args: List<String> = listOf("peer", "mcp")
 
+    /** Claude Desktop's command line [argv] with the peer server after its words, before a `--`: the line may start with
+     *  another wrapper in front of Claude Code, which hands Claude Code the words after its own. */
     fun claudeArgs(argv: List<String>): List<String> {
-        val config = buildJsonObject { putJsonObject("mcpServers") { put(PEER_MCP_SERVER, entry()) } }
         val split = argv.indexOf("--").takeIf { it >= 0 } ?: argv.size
-        return argv.take(split) + listOf(MCP_CONFIG_FLAG, config.toString()) + argv.drop(split)
+        return argv.take(split) + listOf(MCP_CONFIG_FLAG, config().toString()) + argv.drop(split)
     }
+
+    /** A splice launch's recipe [argv], Claude Code's binary first, with the peer server right after the binary as the
+     *  one word `--mcp-config=<json>`, which takes no word after it as a value: every other word keeps the meaning it
+     *  had, an option left without its value included. A relaunch knows the word as splice's (LaunchRecipeArgs). */
+    fun inFront(argv: List<String>): List<String> = argv.take(1) + "$MCP_CONFIG_FLAG=${config()}" + argv.drop(1)
+
+    private fun config(): JsonObject = buildJsonObject { putJsonObject("mcpServers") { put(PEER_MCP_SERVER, entry()) } }
 
     fun entry(): JsonObject = buildJsonObject {
         put("type", "stdio")

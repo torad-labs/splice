@@ -65,7 +65,8 @@ internal class ServerListenerWiring(
         val cli = server.signin?.let { signin(it, signinSecret) }
         val browser = browserSignin(cli, reach.env)
         val optional = OptionalRoutes(ListenerSignins(cli, browser, clock), reach.mods)
-        return ServerListener(server, parts, tls, stores.admin, io, log, optional)
+        val requests = ServerRequests(server, parts, tls != null, stores.admin, io, log, optional)
+        return ServerListener(server, tls, parts.limits.load, requests, log)
     }
 
     private fun signin(policy: ServerSignin, secret: String?): SigninParts {

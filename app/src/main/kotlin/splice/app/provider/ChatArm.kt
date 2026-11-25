@@ -13,11 +13,13 @@ import splice.app.provider.local.LocalProbeInputs
 import splice.app.provider.local.LocalRowsCheck
 import splice.app.provider.local.RuntimeSlotCount
 import splice.app.provider.local.SlotTables
+import splice.app.server.PoolReadiness
 import splice.app.server.UpstreamPools
 import splice.core.auth.Credentials
 import splice.core.topology.AuthKind
 import splice.core.topology.ProviderConfig
 import splice.core.util.LogSink
+import splice.dialect.chat.ChatReadinessProbe
 import splice.dialect.chat.SlotAffinity
 import splice.oauth.grok.GrokRefresh
 import splice.provider.openai.ApiKeyAuthProvider
@@ -64,8 +66,11 @@ internal class ChatArm(
             ?: KeyAuth().of(ctx)
         if (providerCfg.isLocal) refuseContradictedRows(ctx)
         // A provider that is several servers: its turns go where its pool says, and each server's health check carries
-        // what a turn carries (the provider's headers and its key as it stands at the check).
-        val pool = pools.of(ctx.head.provider, providerCfg) {
+        // what a turn carries (the provider's headers and its key as it stands at the check). A completion probe
+        // (`[server.probe]`) asks this dialect's minimal completion, with the login a turn sends.
+        val quirks = overlay.chatQuirks(providerCfg, key, label)
+        val ready = PoolReadiness(ChatReadinessProbe(quirks.maxTokensField), auth, providerCfg.staticHeaders)
+        val pool = pools.of(ctx.head.provider, providerCfg, ready) {
             probeInputs.headers(providerCfg, (auth as? ApiKeyAuthProvider)?.keyNow())
         }
         val provider = OpenAiChatProvider(
@@ -80,7 +85,7 @@ internal class ChatArm(
             ),
             // The profile and its TOML overlay live in QuirksOverlay with the other two dialects
             // (DR-155) — this arm's job is auth selection and provider construction.
-            quirks = overlay.chatQuirks(providerCfg, key, label),
+            quirks = quirks,
             display = { ctx.cfg.current().showReasoning },
             affinity = slotAffinity(ctx, (auth as? ApiKeyAuthProvider)?.keyNow()),
             replies = chatReplies(providerCfg).words(providerCfg.errorMessages).recording(ctx.head.provider),

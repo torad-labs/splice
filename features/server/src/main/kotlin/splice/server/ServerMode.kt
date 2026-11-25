@@ -72,7 +72,7 @@ public class ServerMode(
     public val keyApi: KeyApi = KeyApi(keys, log, audit)
 
     /** The upstreams as they read now, as the control plane lists them. */
-    public val upstreamApi: UpstreamApi = UpstreamApi(upstreams)
+    public val upstreamApi: UpstreamApi = UpstreamApi(upstreams, server.state, clock)
 
     // Each person's caps, and the server's own beside them with its drain at stop (#791).
     private val limits =

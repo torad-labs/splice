@@ -114,7 +114,7 @@ The `mcp_*_ms` host limits and other serving knobs are **not** members of `Daemo
 | `models_url` | string | dialect's roster URL | Override where splice fetches the model roster. |
 | `discovery` | table | no filters | Catalog selection from discovered models, below. |
 | `upstreams` | array of tables | empty | Health-checked pool; choose a healthy upstream with least in flight. Required string keys `name` (unique stable name) and `url` (base URL); no field defaults. |
-| `health_seconds` | integer | 5 | Health probe interval, minimum 1. |
+| `health_seconds` | integer | 5 | Interval for the default `/health` probe, minimum 1. A [completion probe](#server-mode) uses its own interval. |
 | `hourly_usd` | number | unset | Hourly rental cost metered while host is up; otherwise token pricing only. |
 | `picker` | bool | unset | Show/hide provider models in the gateway picker, subject to the door's default rules and a legacy head override. |
 | `ca_file` | string | unset | Additional PEM trust bundle; relative to config dir; `~/` expands. |
@@ -365,7 +365,7 @@ The daemon reads this table at startup. Restart it and reopen Desktop after chan
 
 ## Server mode
 
-`[server]` is off with no `listen`. There is no implicit server port. All subobjects have member defaults except `signin`, `telemetry` and `forward_auth` (unset = disabled). Sources: [ServerConfig.kt](../../core/src/main/kotlin/splice/core/topology/ServerConfig.kt):17–229, `ServerLedgerConfig.kt:14–107`, `ServerKeyFormat.kt`, `ServerChecks.kt`, `ServerIdentityChecks.kt`, `ServerLedgerChecks.kt`, `metering/ServerMeteringChecks.kt`.
+`[server]` is off with no `listen`. There is no implicit server port. Omitting `signin`, `telemetry`, `forward_auth` or `state` disables that feature; omitting `probe` keeps the default health check. Sources: [ServerConfig.kt](../../core/src/main/kotlin/splice/core/topology/ServerConfig.kt), `ServerLedgerConfig.kt:14–107`, `ServerKeyFormat.kt`, `ServerChecks.kt`, `ServerIdentityChecks.kt`, `ServerLedgerChecks.kt`, `availability/ServerAvailabilityChecks.kt`, `metering/ServerMeteringChecks.kt`.
 
 | Key | TOML type | Default | Meaning |
 |---|---|---|---|
@@ -382,6 +382,8 @@ The daemon reads this table at startup. Restart it and reopen Desktop after chan
 | `key_prefix` | string | `spk_` | Prefix for newly minted keys only. |
 | `metrics_prefix` | string | `splice_server_` | Literal prefix of all server Prometheus series. |
 | `limits`, `reference`, `teams`, `export`, `budgets`, `client`, `signin`, `telemetry`, `forward_auth`, `backup` | table | as below | Server controls. |
+| `state` | table | unset | External upstream signal. See [examples](team-server-mode.md#external-upstream-state-and-readiness). |
+| `probe` | table | health check | Pooled upstream readiness check. See [examples](team-server-mode.md#external-upstream-state-and-readiness). |
 | `cost_meters` | map of tables | empty | Named external hourly cost checks. |
 
 | TOML table | Key | Type / default | Meaning |
@@ -392,6 +394,13 @@ The daemon reads this table at startup. Restart it and reopen Desktop after chan
 | `[server.limits]` | `inflight_total` | integer / 0 | Whole server's turns in flight at once. |
 | `[server.limits]` | `inflight_per_upstream` | integer / 0 | Turns in flight per server of a pooled provider. |
 | `[server.limits]` | `busy_status`, `busy_retry_after`, `busy_message` | 429 or 503 / 429; seconds / 5; string / unset | The answer to a turn past either cap. |
+| `[server.state]` | `file`, `url`, `command` | string; string; string array / unset | Exactly one source: a file path, an HTTP(S) URL, or a command and its arguments. |
+| `[server.state]` | `every_seconds` | integer / 5 | Polling interval for the external signal. |
+| `[server.state]` | `message_starting`, `message_off` | strings / `Upstream is starting; retry shortly.`, `Upstream is off until {until}.` | Refusal text unless the state source supplies its own. |
+| `[server.state]` | `retry_after_starting` | integer / 30 | Seconds to retry while starting or off without a future end time. |
+| `[server.probe]` | `kind`, `model` | string / `health`; string / unset | `health` checks `/health`; `completion` requires a model ID. |
+| `[server.probe]` | `timeout_seconds`, `every_seconds` | integers / 30, 60 | Completion probe timeout and polling interval, respectively. |
+| `[server.probe]` | `at_start` | bool / true | With a completion probe, hold each pool member out until it first passes. |
 | `[server.reference]` | `input_usd_per_mtok`, `cached_usd_per_mtok`, `output_usd_per_mtok` | numbers / unset each | Reference price per million tokens, for comparison in reports. |
 | `[server.teams]` | `by_domain` | map of strings / empty | Quoted email domain to team assignment, used if no explicit team. |
 | `[server.budgets]` | `person_daily_usd` | number / unset | Default daily USD budget per person, unless individually set. |

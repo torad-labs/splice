@@ -128,6 +128,7 @@ internal class OpenAiRoute(
      *  the configured status, or told in the conversation as an OpenAI answer. It takes no slot and reaches no
      *  provider. */
     private suspend fun outdated(call: ApplicationCall, asked: Asked, told: String) {
+        if (admission.refusesNotice(call, asked.key, HeadCommand(asked.head))) return
         if (minimum.refused(call, voice, told)) return
         val sent = relay.sent(call, asked.head) ?: return
         notice.answer(call, sent, told)

@@ -2,17 +2,16 @@
 // carries on a machine that is a team's front door: where it listens, which commands it serves, the PEM files it speaks
 // TLS from, the proxies whose word on a client's address it takes, who administers it, what each person may hold at
 // once, how often a silent stream is kept alive (F4), the oldest splice a laptop may run (F9), the identity provider a
-// person signs in with (F2), and the collector Claude Code's own telemetry is relayed to (F8). A file with no
+// person signs in with (F2), the collector Claude Code's own telemetry is relayed to (F8), the external signal that
+// says whether the upstream is up, starting or off, and how pooled upstreams are probed for readiness. A file with no
 // `[server]` decodes to the defaults, which serve nothing.
 package splice.core.topology
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import splice.core.client.ClientVersion
-import splice.core.client.ClientVersionParser
-import splice.core.client.OUTDATED_IN_CONVERSATION
-import splice.core.client.SPLICE_CLIENT_HEADER
 import splice.core.topology.toml.TomlKeys
+import java.net.URI
+import java.net.URISyntaxException
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -73,6 +72,10 @@ public data class ServerConfig(
     @SerialName("metrics_prefix") val metricsPrefix: String = DEFAULT_SERVER_METRICS_PREFIX,
     /** External hourly meters by stable name. An empty table starts no probes. */
     @SerialName("cost_meters") val costMeters: Map<String, ServerCostMeter> = emptyMap(),
+    /** `[server.state]`: the external signal that says whether the upstream is up, starting or off; null reads none. */
+    val state: ServerState? = null,
+    /** `[server.probe]`: how a pooled upstream earns its turns, and whether it holds any before its first probe. */
+    val probe: ServerProbe = ServerProbe(),
 ) {
     /** Whether the file carries a `[server]` table at all, whatever it holds. */
     val declared: Boolean get() = this != ServerConfig()
@@ -133,59 +136,6 @@ public data class ServerLimits(
 // enough that a freed slot is taken soon after it frees.
 private const val DEFAULT_BUSY_RETRY_AFTER = 5
 
-/** `[server.client]` (F9, F15): the oldest splice a laptop may run against this server, and optionally where laptops
- *  fetch the client build its policy wants. [minimum] is a dotted splice version, as in "0.10.0"; null lets every
- *  laptop in. [downloadUrl] is an http(s) base URL advertised in `GET /server/profile` and `GET /server/install`. */
-@Serializable
-public data class ServerClient(
-    val minimum: String? = null,
-    @SerialName("download_url") val downloadUrl: String? = null,
-    /** #791: the request header a laptop's launcher names its version in; blank reads `x-splice-client`. */
-    @SerialName("version_header") val versionHeader: String = "",
-    /** #791: what an older laptop's turn is answered with: 200 says the notice in the conversation, 400 or 426
-     *  (Upgrade Required) refuses the turn with it. */
-    @SerialName("outdated_status") val outdatedStatus: Int = OUTDATED_IN_CONVERSATION,
-    /** #791: what an older laptop is told, `{version}` and `{minimum}` filled in; blank says splice's own words. */
-    @SerialName("outdated_message") val outdatedMessage: String = "",
-    /** #791: whether a laptop may report its version once with `POST /server/client/checkin`, for a launcher that
-     *  sends no version on each turn. */
-    val checkin: Boolean = false,
-) {
-    /** [minimum] as a version compared number by number, or null when none is set or it is no version. */
-    public val floor: ClientVersion? get() = ClientVersionParser().parse(minimum)
-
-    /** The header a laptop's version is read from. */
-    public val header: String get() = versionHeader.trim().ifEmpty { SPLICE_CLIENT_HEADER }
-}
-
-/** `[server.forward_auth]`: dashboard access for admins and the emails or `@domain` rules in [allow]. */
-@Serializable
-public data class ServerForwardAuth(
-    val allow: List<String> = emptyList(),
-    /** HTTPS origin serving both the protected app and the browser sign-in routes. Null keeps key-only mode. */
-    @SerialName("browser_origin") val browserOrigin: String? = null,
-    @SerialName("session_seconds") val sessionSeconds: Int = DEFAULT_BROWSER_SESSION_SECONDS,
-    @SerialName("email_header") val emailHeader: String = "X-Auth-Request-Email",
-    @SerialName("role_header") val roleHeader: String? = null,
-    /** Optional separate OAuth registration for the browser callback, at the same issuer. */
-    @SerialName("client_id") val clientId: String? = null,
-    @SerialName("client_secret_env") val clientSecretEnv: String? = null,
-) {
-    /** Whether [person] (lowercased email) is admitted by [allow] or by being an [isAdmin]. */
-    public fun admits(person: String, isAdmin: Boolean): Boolean {
-        if (isAdmin) return true
-        val domain = person.substringAfterLast('@', "")
-        return allow.any { raw ->
-            val entry = raw.trim().lowercase()
-            if (entry.startsWith("@")) {
-                domain.isNotEmpty() && domain == entry.removePrefix("@")
-            } else {
-                PersonEmails.read(entry) == person
-            }
-        }
-    }
-}
-
 /** `[server.telemetry]` (F8): [forwardTo] is the operator's OTLP/HTTP collector, as in "http://otel.lan:4318", which
  *  each signal is posted under (`/v1/logs`, `/v1/metrics`, `/v1/traces`) with the person who sent it on every resource. */
 @Serializable
@@ -218,43 +168,6 @@ public data class ServerCostMeter(
     val url: String? = null,
     val argv: List<String>? = null,
 )
-
-/** `[server.signin]` (F2): the OpenID Connect provider a team member signs in with, the client this server is
- *  registered there as, the email domains it admits, how long a key minted by a sign-in lives, and how many sign-ins
- *  one address may try in a minute. */
-@Serializable
-public data class ServerSignin(
-    /** The provider's issuer URL, which its `/.well-known/openid-configuration` is under and its ID tokens name. */
-    val issuer: String = "",
-    @SerialName("client_id") val clientId: String = "",
-    /** The environment variable the client secret is read from; the secret itself is never in splice.toml. */
-    @SerialName("client_secret_env") val clientSecretEnv: String? = null,
-    /** The email domains whose people may sign in, as in `["team.example"]`. */
-    val domains: List<String> = emptyList(),
-    @SerialName("key_days") val keyDays: Int = DEFAULT_SIGNIN_KEY_DAYS,
-    /** Sign-ins one client address may try in any minute; 0 is no cap. */
-    @SerialName("rate_per_minute") val ratePerMinute: Int = DEFAULT_SIGNIN_RATE_PER_MINUTE,
-    /** When set, the signed ID token must also carry this exact hosted domain in its `hd` claim. */
-    @SerialName("hosted_domain") val hostedDomain: String? = null,
-) {
-    /** Whether [email], a lowercased one, is in one of [domains]. */
-    public fun admits(email: String): Boolean {
-        val domain = email.substringAfterLast('@', "")
-        return domain.isNotEmpty() && domains.any { it.trim().lowercase().removePrefix("@") == domain }
-    }
-}
-
-// why: a month, as the spec's example sets it: a laptop that signs in at the start of each month never sees its key
-// expire, and a person who left is out within the month even if nobody offboards them.
-private const val DEFAULT_SIGNIN_KEY_DAYS = 30
-
-// why: a person signs in a few times a day at most; twenty a minute from one address covers an office behind one NAT
-// all signing in at nine, and holds a script trying codes to a trickle.
-private const val DEFAULT_SIGNIN_RATE_PER_MINUTE = 20
-
-// why: an hour keeps a dashboard tab working through a working session, and an offboarded person's browser is out
-// within the hour even if nobody revokes its session.
-private const val DEFAULT_BROWSER_SESSION_SECONDS = 3_600
 
 /** The listener's TLS material: the certificate chain and the private key, each a PEM file. */
 public data class ServerPem(val cert: Path, val key: Path) {
@@ -296,5 +209,53 @@ public object PersonEmails {
     }
 }
 
+/** Reads a web address an operator names in `[server]`: an http(s) URL with a host. */
+internal object WebUrls {
+    /** [text] as a URI when it is an http(s) URL with a host, or null. */
+    fun read(text: String): URI? {
+        val uri = try {
+            URI(text)
+        } catch (_: URISyntaxException) {
+            null
+        }
+        return uri?.takeIf { it.host != null && it.scheme in setOf("http", "https") }
+    }
+}
+
 /** What a server port collision names as its owner in [Topology.portCollisions]: its own key path. */
 internal const val SERVER_LISTEN_OWNER: String = "server.listen"
+
+/** `[server.state]`: one external source the operator's own automation keeps current, saying whether the upstream
+ *  behind this server is up, starting or off, read every [everySeconds]. Exactly one of [file], [url] and [command]
+ *  names the source; a table naming none reads nothing and refuses boot, tuning keys alone included. [messageStarting]
+ *  and [messageOff] are the words a refused turn carries (a source may bring its own); `{until}` in [messageOff] is
+ *  where the time the upstream is off until goes. [retryAfterStarting] is the `Retry-After` a turn refused while the
+ *  upstream is starting carries, and the one an off signal with no future `until` falls back to. */
+@Serializable
+public data class ServerState(
+    /** A file holding the state, as plain text (`up`, `starting`, `off`, `off until <RFC3339>`) or JSON. */
+    val file: String? = null,
+    /** An http(s) URL a GET reads the state from, in the same plain-text or JSON form as [file]. */
+    val url: String? = null,
+    /** A command run as its argv stands, its standard output read as the state, in the same form as [file]. */
+    val command: List<String>? = null,
+    @SerialName("every_seconds") val everySeconds: Int = 5,
+    @SerialName("message_starting") val messageStarting: String = "Upstream is starting; retry shortly.",
+    @SerialName("message_off") val messageOff: String = "Upstream is off until {until}.",
+    @SerialName("retry_after_starting") val retryAfterStarting: Int = 30,
+)
+
+/** `[server.probe]`: what a pooled upstream is asked before its health is believed. [kind] `health` asks its
+ *  `/health` as before; `completion` asks it to really complete a minimal request for [model] (required then, and
+ *  only for the chat-completions dialect pools allow today), which must answer within [timeoutSeconds].
+ *  [everySeconds] is how often the completion probe runs; a health probe keeps its provider's `health_seconds`.
+ *  [atStart] gates a completion probe's members at start: true (the default) holds each out until its first probe
+ *  passes, false serves it from the start as a health probe always does. */
+@Serializable
+public data class ServerProbe(
+    val kind: String = "health",
+    val model: String? = null,
+    @SerialName("timeout_seconds") val timeoutSeconds: Int = 30,
+    @SerialName("every_seconds") val everySeconds: Int = 60,
+    @SerialName("at_start") val atStart: Boolean = true,
+)

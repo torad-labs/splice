@@ -166,7 +166,7 @@ class DesktopModeServersTest {
         val project = Files.createDirectories(tmp.resolve("project"))
         val theirs = """{"command":"uvx","args":["their-harbor","$project"]}"""
         Files.writeString(home.resolve(".claude.json"), """{"mcpServers":{"harbor":$theirs}}""")
-        val held = modes(PersonMcpNames(home, paths))
+        val held = modes(PersonMcpNames(home, paths, env, "Linux"))
         daemonSync(held)
         assertEquals(theirs, servers().getValue("harbor").toString())
         assertEquals("true", ModeRows(held).row(checkNotNull(held.mode("harbor"))).getValue("server_taken").toString())
@@ -178,11 +178,15 @@ class DesktopModeServersTest {
     }
 
     @Test
-    fun `a server Desktop already holds under a mode's name stays as it is`() {
+    fun `a server of the person's in Desktop's own file under a mode's name stays, and the mode's row says so`() {
         Files.createDirectories(home)
         val config = Files.createDirectories(profile).resolve("claude_desktop_config.json")
         Files.writeString(config, """{"mcpServers":{"harbor":{"command":"/opt/harbor/bin/serve"}}}""")
-        daemonSync(modes())
+        val held = modes(PersonMcpNames(home, paths, env, "Linux"))
+        daemonSync(held)
         assertEquals("""{"command":"/opt/harbor/bin/serve"}""", servers().getValue("harbor").toString())
+        assertEquals("true", ModeRows(held).row(checkNotNull(held.mode("harbor"))).getValue("server_taken").toString())
+        assertNull(ModeMcp { held }.server("harbor", null, null), "the daemon's address for the name is theirs too")
+        assertFalse("harbor" in ModeMcp { held }.names("", "door"), "no launch is given the mode")
     }
 }

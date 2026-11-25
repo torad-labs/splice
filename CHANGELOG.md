@@ -85,6 +85,10 @@
   splice too, run a second Desktop beside your own, on a config folder of its own.
 - Another lab's model is listed under an id Claude's clients keep, such as `claude-xai--4.7`. The selectors of
   today keep working.
+- **For mode authors: `ModeSession.caller` can be null.** An mcp mode's call is told the caller its request names
+  (`door`, `head` or `desktop`), and null when it names none, as when a host reads a page with the management key.
+  A mode jar built against an older `:modes-api` that uses `caller` as always set fails on such a call: rebuild it and
+  handle null. The caller is a header the client writes, so a mode must not decide anything that matters on it.
 
 - **Four console pages moved into others, and their addresses follow.** Requests and Usage are in Activity, Models
   is in Providers, and Compare is Providers' Compare models. An old link or bookmark lands on the page that took its

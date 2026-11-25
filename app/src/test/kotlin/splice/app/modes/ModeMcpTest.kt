@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.StatePaths
 import splice.core.mode.ModeSetting
+import splice.core.util.EnvReader
 import splice.modes.api.FoundMode
 import splice.modes.api.Mode
 import splice.modes.api.ModeAnswer
@@ -112,7 +113,8 @@ class ModeMcpTest {
         val home = Files.createDirectories(state.resolve("home"))
         val servers = names.joinToString(",") { """"$it":{"command":"their-$it"}""" }
         Files.writeString(home.resolve(".claude.json"), """{"mcpServers":{$servers}}""")
-        return PersonMcpNames(home, StatePaths(baseOverride = state.resolve("splice"), homeDir = home))
+        val paths = StatePaths(baseOverride = state.resolve("splice"), homeDir = home)
+        return PersonMcpNames(home, paths, EnvReader { null }, "Linux")
     }
 
     private fun text(result: JsonObject) = result.getValue(

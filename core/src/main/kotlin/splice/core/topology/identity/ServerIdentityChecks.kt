@@ -1,6 +1,11 @@
-package splice.core.topology
+package splice.core.topology.identity
 
 import splice.core.listen.IpLiterals
+import splice.core.topology.PersonEmails
+import splice.core.topology.ServerConfig
+import splice.core.topology.ServerForwardAuth
+import splice.core.topology.ServerKeyFormat
+import splice.core.topology.TopologyFinding
 import splice.core.wire.NETWORK_PORT_MAX
 import java.net.URI
 import java.net.URISyntaxException

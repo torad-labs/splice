@@ -44,7 +44,8 @@ internal class RateLimitStore(
             // race persistRateLimit concurrently with headers from different rounds; keepFresher
             // keeps whichever snapshot is fresher instead of last-write-wins.
             keepFresher(candidate)
-            CoalescedFlush.scheduleCoalesced(USAGE_FLUSH_DELAY_MS, rlWriteScheduled) { flushRateLimit() }
+            val owner = file.ratelimitFile
+            CoalescedFlush.scheduleCoalesced(USAGE_FLUSH_DELAY_MS, rlWriteScheduled, owner) { flushRateLimit() }
         }
     }
 

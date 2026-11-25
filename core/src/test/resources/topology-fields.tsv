@@ -299,6 +299,12 @@ server.limits.rpm_per_person
 server.limits.tpm_per_person	
 server.listen	
 server.metrics_prefix	
+server.probe	
+server.probe.at_start	
+server.probe.every_seconds	
+server.probe.kind	
+server.probe.model	
+server.probe.timeout_seconds	
 server.reference	
 server.reference.cached_usd_per_mtok	
 server.reference.input_usd_per_mtok	
@@ -311,6 +317,14 @@ server.signin.hosted_domain
 server.signin.issuer	
 server.signin.key_days	
 server.signin.rate_per_minute	
+server.state	
+server.state.command	
+server.state.every_seconds	
+server.state.file	
+server.state.message_off	
+server.state.message_starting	
+server.state.retry_after_starting	
+server.state.url	
 server.stream_idle_seconds	
 server.teams	
 server.teams.by_domain	

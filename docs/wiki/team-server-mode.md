@@ -324,12 +324,52 @@ name = "gpu-2"
 url = "http://10.0.0.22:8080/v1"
 ```
 
-- splice asks each server `GET /health` beside its API root (`http://10.0.0.21:8080/health`), where llama-server and vLLM answer it. A server that answers anything but a 2xx takes no turn until it does again.
+- By default, splice asks each server `GET /health` beside its API root (`http://10.0.0.21:8080/health`), where llama-server and vLLM answer it. A server that answers anything but a 2xx takes no turn until it does again.
 - A turn goes to the healthy server with the fewest turns in flight, or to the one its person was set to with `--upstream` while that one is healthy.
 - A Claude Code session's later turns (by its `X-Claude-Code-Session-Id`) go back to the server that served its last one while it is healthy, however busy, because that server holds the session's prompt in its cache. A session whose server goes down moves once and stays where it moved when the old one is back.
 - A server that refuses a connection is left at once and the same turn goes to another.
 - With none up, a turn is refused within seconds in words that name them: a 503 once a health check or an earlier turn has found them down, and an overloaded error from the turn that finds them down itself.
 - `GET /api/server/upstreams` on the control plane lists each server's provider, name, address, health and turns in flight.
+
+### External upstream state and readiness
+
+Use `[server.state]` when your own automation knows whether the upstream can take a turn, for example while a
+model loads or during a scheduled GPU shutdown. It works for pooled providers and providers with a single
+`base_url`.
+
+```toml
+[server.state]
+file = "/run/box/state"
+```
+
+Choose exactly one source: a `file` (relative paths resolve beside `splice.toml`), a `url` read with GET,
+or a `command` whose output is read without running a shell. The source reports `up`, `starting`, `off`,
+or `off until <RFC3339>`, or a JSON object such as `{"state":"off","message":"Scheduled maintenance"}`.
+`starting` and `off` refuse team-server turns with a 503 and `Retry-After` before the request reaches the
+model. For an `off` signal with a future end time, the header gives the remaining seconds; otherwise it uses
+`retry_after_starting`. Only a new `up` signal resumes service. The current signal and the last check appear
+in the top-level `state` object at `GET /api/server/upstreams`, even without a pool.
+
+Use `[server.probe]` to check whether members of an `openai-chat` pool can actually complete a request rather
+than just answer `/health`.
+
+```toml
+[server.probe]
+kind = "completion"
+model = "team-model"
+timeout_seconds = 30
+every_seconds = 60
+at_start = true
+```
+
+Each member must return a valid completion for the named model within `timeout_seconds`. With `at_start = true`
+(the default), a member takes no team-server turns until its first probe passes. Set it to `false` to serve the
+member immediately and take it out of rotation if a probe fails. Without a completion probe, each provider's
+`health_seconds` still controls the interval for its `/health` checks.
+
+See the [configuration reference](configuration-reference.md#server-mode) for defaults and the
+[server mode spec](../specs/server-mode.md#external-upstream-state-serverstate) for signal formats, failure
+handling and exact retry rules.
 
 ### Pool limits, draining and stalled streams
 

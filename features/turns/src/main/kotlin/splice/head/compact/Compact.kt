@@ -96,7 +96,7 @@ public class CompactStats(
                 }
             },
         )
-        AsyncFileIo.submit {
+        AsyncFileIo.submit(owner = file) {
             Cancellables.runCatchingCancellable {
                 Files.createDirectories(file.parent)
                 JsonlSink.appendLine(file, row, force = JsonlSink.PAGE_CACHE_FORCE)

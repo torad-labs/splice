@@ -97,9 +97,9 @@ private object MidnightSweeps {
         }
     }
 
-    /** Hands [sweep] to the file lane after [delayMs]; a lane that refuses it then clears [armed]. */
-    fun after(delayMs: Long, armed: AtomicBoolean, sweep: FileIoTask) {
-        val handOver = Runnable { if (!AsyncFileIo.submit(task = sweep)) armed.set(false) }
+    /** Hands [sweep] to the file lane after [delayMs], owned by [owner]; a lane that refuses it then clears [armed]. */
+    fun after(delayMs: Long, armed: AtomicBoolean, owner: Path, sweep: FileIoTask) {
+        val handOver = Runnable { if (!AsyncFileIo.submit(owner = owner, task = sweep)) armed.set(false) }
         val _ = timer.schedule(handOver, delayMs, TimeUnit.MILLISECONDS)
     }
 }
@@ -152,7 +152,7 @@ public class ActivityDays(
         armMidnightSweep(now)
         val today = day(now)
         val file = dir.resolve("$prefix-$today.jsonl")
-        return AsyncFileIo.submit {
+        return AsyncFileIo.submit(owner = dir) {
             Cancellables.discard(
                 Cancellables.runCatchingCancellable {
                     AutoCloseable(record::finished).use {
@@ -218,7 +218,7 @@ public class ActivityDays(
     private fun armMidnightSweep(now: Long) {
         if (!armed.compareAndSet(false, true)) return
         val midnight = day(now).plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-        MidnightSweeps.after(maxOf(minOf(midnight - now, maxSweepWaitMs), MIN_SWEEP_GAP_MS), armed) {
+        MidnightSweeps.after(maxOf(minOf(midnight - now, maxSweepWaitMs), MIN_SWEEP_GAP_MS), armed, dir) {
             armed.set(false)
             val at = clock()
             try {

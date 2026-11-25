@@ -31,8 +31,8 @@ internal class PoolRoute(
 ) : VendorRoute {
     private val walk = PoolWalk(pool, preferred, session, served)
 
-    /** No place for the turn under the pool's cap: its servers that are up all full, or none up, said as the turn that
-     *  ran out of them is (NoPlaceLeft). Null once it has its place. */
+    /** No place for the turn: all available servers are full, or none is up and the pool will not send a turn to a
+     *  down server (NoPlaceLeft). Null once it has its place. */
     override fun noPlace(): UpstreamEnding? = when {
         walk.server() != null -> null
         pool.up -> TurnDeclined(FailureCause.Splice.Declined(pool.full()))

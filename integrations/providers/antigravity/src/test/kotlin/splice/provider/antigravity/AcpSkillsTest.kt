@@ -70,7 +70,7 @@ internal class AcpSkillsTest {
         val catalog = ClaudeSkillCatalog(project, EnvReader(env::get), LogSink {}).load()
         val byName = catalog.commands.associateBy { it.name }
 
-        assertEquals("Project version", byName["shared"]?.description)
+        assertEquals("User version", byName["shared"]?.description, "personal over project, as in Claude Code")
         assertEquals("User helper", byName["user-only"]?.description)
         assertEquals("<file>", byName["user-only"]?.hint)
         assertEquals("Multiline folded description", byName["linked-skill"]?.description)

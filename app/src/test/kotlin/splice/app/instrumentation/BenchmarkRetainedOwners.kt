@@ -316,7 +316,7 @@ internal class BenchmarkRetainedOwners(
             put("virtual_until_ms", now)
             put("await_elapsed_ms", waitElapsed)
             put("interrupted", Thread.currentThread().isInterrupted)
-            put("global_pending_tasks", pending.count)
+            put("global_pending_tasks", AsyncFileIo.workSnapshot.pending)
             put("aggregate_pending_path_count", pending.paths.size)
             put("checkpoint_pending", checkpoint in pending.paths)
             put("io", Json.encodeToJsonElement(AsyncFileIo.workSnapshot))

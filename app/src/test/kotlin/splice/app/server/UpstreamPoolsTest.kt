@@ -11,11 +11,15 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
+import splice.core.auth.AuthDescription
+import splice.core.auth.AuthProvider
+import splice.core.auth.Credentials
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
 import splice.core.topology.UpstreamConfig
 import splice.core.util.LogSink
+import splice.dialect.chat.ChatReadinessProbe
 import splice.upstream.Ticker
 import splice.upstream.transport.LocalHttpReply
 import java.io.IOException
@@ -38,6 +42,17 @@ class UpstreamPoolsTest {
             UpstreamConfig("gpu-2", "http://10.0.0.22:8080/v1"),
         ),
         healthSeconds = 2,
+    )
+
+    /** A completion probe's question and login, which a health check never asks. */
+    private val ready = PoolReadiness(
+        ChatReadinessProbe("max_tokens"),
+        object : AuthProvider {
+            override suspend fun credentials(): Credentials? = null
+
+            override suspend fun describe(): AuthDescription = AuthDescription(false, "api-key")
+        },
+        emptyMap(),
     )
 
     /** The pools, checking on the test's scheduler: a check runs the moment the test lets the clock tick. */
@@ -66,7 +81,7 @@ class UpstreamPoolsTest {
         runTest {
             answers["http://10.0.0.21:8080/health"] = 200
             answers["http://10.0.0.22:8080/health"] = 503
-            val pool = checkNotNull(pools().of("box", box) { emptyMap() })
+            val pool = checkNotNull(pools().of("box", box, ready) { emptyMap() })
             assertEquals(listOf("http://10.0.0.21:8080/health", "http://10.0.0.22:8080/health"), asked)
             assertEquals(listOf(true, false), pool.readings().map { it.healthy })
             assertEquals(listOf(2_000L, 2_000L), waited)
@@ -80,7 +95,7 @@ class UpstreamPoolsTest {
     @Test
     fun `a check carries what a turn carries, as it stands when the check is made`() = runTest {
         var key = "first"
-        pools().of("box", box) { mapOf("Authorization" to "Bearer $key") }
+        pools().of("box", box, ready) { mapOf("Authorization" to "Bearer $key") }
         key = "rotated"
         tick()
         val sent = carried.map { it["Authorization"] }
@@ -96,7 +111,7 @@ class UpstreamPoolsTest {
             if (broken) throw UncheckedIOException(IOException("no key file"))
             emptyMap()
         }
-        val pool = checkNotNull(pools().of("box", box, headers))
+        val pool = checkNotNull(pools().of("box", box, ready, headers))
         assertEquals(listOf(false, false), pool.readings().map { it.healthy })
         broken = false
         tick()
@@ -109,8 +124,8 @@ class UpstreamPoolsTest {
             answers["http://10.0.0.21:8080/health"] = 200
             answers["http://10.0.0.22:8080/health"] = 200
             val pools = pools()
-            val first = checkNotNull(pools.of("box", box) { emptyMap() })
-            val second = checkNotNull(pools.of("box", box) { emptyMap() })
+            val first = checkNotNull(pools.of("box", box, ready) { emptyMap() })
+            val second = checkNotNull(pools.of("box", box, ready) { emptyMap() })
 
             val turn = checkNotNull(first.lease())
             assertEquals(listOf(1, 0), second.readings().map { it.inflight })
@@ -125,7 +140,7 @@ class UpstreamPoolsTest {
         answers["http://10.0.0.22:8080/health"] = 200
         val pools = pools()
         pools.capEach(1)
-        val pool = checkNotNull(pools.of("box", box) { emptyMap() })
+        val pool = checkNotNull(pools.of("box", box, ready) { emptyMap() })
 
         val held = listOf(checkNotNull(pool.lease()), checkNotNull(pool.lease()))
         assertNull(pool.lease(), "a turn was placed past inflight_per_upstream on a pool no turn had reserved in")
@@ -137,7 +152,7 @@ class UpstreamPoolsTest {
     fun `a provider that is one server has no pool, and no row in the upstream list`() = runTest {
         val pools = pools()
         val one = box.copy(baseUrl = "http://10.0.0.9:8080/v1", upstreams = emptyList())
-        assertNull(pools.of("solo", one) { emptyMap() })
+        assertNull(pools.of("solo", one, ready) { emptyMap() })
         assertEquals(emptyList<Pair<String, Int>>(), rows(pools))
     }
 

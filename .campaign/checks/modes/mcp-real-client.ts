@@ -95,11 +95,11 @@ try {
   await d.start(jar(), `${toml(h, d.port, standin, list)}\n[modes.templateapp]\non = true\n`);
   const command = list[0]!.command;
 
-  // 1. the launch names splice's own servers, in a file of its state
+  // 1. the launch names splice's own servers, in a file of its state, as the one word --mcp-config=<file>
   const l = await launch(d, command, h.work);
-  const files = l.argv.flatMap((arg, at) => (arg === "--mcp-config" ? [l.argv[at + 1] ?? ""] : []));
+  const files = l.argv.flatMap((arg) => (arg.startsWith("--mcp-config=") ? [arg.slice("--mcp-config=".length)] : []));
   const own = files.find((file) => file.startsWith(h.state) && /own-mcp-/.test(file));
-  must(`a launch of ${command} carries --mcp-config with the file of splice's own servers`, own !== undefined, l.argv);
+  must(`a launch of ${command} carries --mcp-config=<file> with the file of splice's own servers`, own !== undefined, l.argv);
   if (!own) throw new Error("no file to read an entry from");
   const servers = (JSON.parse(readFileSync(own, "utf8")) as { mcpServers: Record<string, { type: string; url: string; headers: Record<string, string> }> }).mcpServers;
   const entry = servers.templateapp;

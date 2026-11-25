@@ -57,8 +57,7 @@ class OwnMcpHeadLaunchTest(@param:TempDir private val tmp: Path) {
     private fun modeFiles(vararg words: String): List<String> {
         val outcome = service.launchOutcome(spec, words.toList(), false, caller = LaunchCaller(cwd = tmp.toString()))
         val argv = (outcome as? LaunchOutcome.Ready)?.recipe?.argv ?: error("the launch was refused: $outcome")
-        return argv.indices.filter { argv[it] == "--mcp-config" }.map { argv[it + 1] }
-            .filter { it == state.resolve("own-mcp-$HEAD-head.json").toString() }
+        return argv.filter { it == "--mcp-config=${state.resolve("own-mcp-$HEAD-head.json")}" }
     }
 
     @Test

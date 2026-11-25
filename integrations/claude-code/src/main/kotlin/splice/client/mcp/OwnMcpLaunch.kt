@@ -30,18 +30,17 @@ public class OwnMcpLaunch(
     private val dir: Path,
     private val log: LogSink,
 ) {
-    /** [args] with the daemon's own servers for [head] and [caller] added: a `--mcp-config` of their own after
-     *  whatever the launch already carries and before the `--` that ends its options, which Claude Code reads beside
-     *  it (the flag takes several files, and each use of it adds to them). A flag and a file of its own keeps the pair
-     *  every reader of a launch's arguments looks for (LaunchRecipeArgs, McpKeyHolders). Unchanged when [asked], the
-     *  person's own words (the same words as [args] on the door), say `--strict-mcp-config`, which asks for their own
-     *  servers alone; when the daemon answers no server for that launch; or when the file cannot be written: the launch
-     *  then runs without them, and the log says so. */
-    public fun added(args: List<String>, head: String, caller: String, asked: List<String> = args): List<String> {
+    /** [args] with the daemon's own servers for [head] and [caller] added after them, as the one word
+     *  `--mcp-config=<file>`, which Claude Code reads beside the launch's other files. As one word it takes nothing
+     *  after it as a value: a launch puts it in front of the person's words, which keep the meaning they had, a
+     *  prompt and an option missing its value alike, and a relaunch takes it out there with splice's other words
+     *  (LaunchRecipeArgs; McpKeyHolders reads it in either spelling). Unchanged when [asked], the person's own words,
+     *  say `--strict-mcp-config`, which asks for their own servers alone; when the daemon answers no server for that
+     *  launch; or when the file cannot be written: the launch then runs without them, and the log says so. */
+    public fun added(args: List<String>, head: String, caller: String, asked: List<String>): List<String> {
         if (ClaudeArgv.options(asked).has(STRICT_MCP_FLAG)) return args
         val file = file(head, caller) ?: return args
-        val end = ClaudeArgv.options(args).end
-        return args.take(end) + listOf(MCP_CONFIG_FLAG, file.toString()) + args.drop(end)
+        return args + "$MCP_CONFIG_FLAG=$file"
     }
 
     private fun file(head: String, caller: String): Path? {
@@ -67,7 +66,7 @@ public class OwnMcpLaunch(
 
 /** The start of the name of every file of the daemon's own servers: each entry in one is splice's, with its MCP key
  *  (McpKeyHolders). A caller's word holds no `-`, so a launch with no head never shares a head's file name. */
-internal const val OWN_MCP_FILE_PREFIX: String = "own-mcp-"
+public const val OWN_MCP_FILE_PREFIX: String = "own-mcp-"
 
 /** Claude Code's switch that runs only the MCP servers the launch's own `--mcp-config` names. */
 private const val STRICT_MCP_FLAG = "--strict-mcp-config"

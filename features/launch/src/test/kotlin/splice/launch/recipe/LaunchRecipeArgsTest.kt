@@ -16,6 +16,10 @@ private const val SEED = 20_261_026L
 private const val SKIP = "--dangerously-skip-permissions"
 private const val MARK = """{"spliceLaunch":true}"""
 
+// why: the peer server's inline config as a launch gives it, its one server splice's peer server
+private const val PEER =
+    """{"mcpServers":{"splice-peers":{"type":"stdio","command":"/x/splice","args":["peer","mcp"]}}}"""
+
 /** What a person types after `claude`: none of it is a file in splice's state, and none is splice's own hub flag. */
 private val GIVEN = listOf(
     listOf("--agent", "reviewer"), listOf("-n", "splice-review-3"), listOf("--allow-dangerously-skip-permissions"),
@@ -105,5 +109,39 @@ class LaunchRecipeArgsTest {
 
             assertEquals(skip + given, read, "run $run: launched as ${skip + settings + mcp + given}")
         }
+    }
+
+    // Nov 26, 2026: the servers splice gives every launch, the file of the daemon's own and the peer server, are
+    // splice's wherever a build put them: in front as one word now, after the person's words as two on Nov 25's build.
+    @Test
+    fun `a relaunch drops splice's servers the build of Nov 25 put after the person's words, and keeps the person's`() {
+        val own = state.resolve("own-mcp-door.json").toString()
+        val started = listOf(
+            "--settings", MARK, "-n", "probe", "--mcp-config", "/home/p/servers.json",
+            "--mcp-config", own, "--mcp-config", PEER, "--", "go",
+        )
+        assertEquals(
+            listOf("-n", "probe", "--mcp-config", "/home/p/servers.json", "--", "go"),
+            LaunchRecipeArgs.callerArgs(started, state, wrapped = true),
+        )
+    }
+
+    @Test
+    fun `a relaunch drops splice's servers given in front as one word`() {
+        val own = state.resolve("own-mcp-door.json").toString()
+        val started = listOf("--mcp-config=$PEER", SKIP, "--settings", MARK, "--mcp-config=$own", "-n", "probe")
+        assertEquals(listOf(SKIP, "-n", "probe"), LaunchRecipeArgs.callerArgs(started, state, wrapped = true))
+    }
+
+    @Test
+    fun `a file or an inline config of the person's own is never dropped, and keeps its flag`() {
+        val own = state.resolve("own-mcp-door.json").toString()
+        val mine = """{"mcpServers":{"splice-peers":{"type":"stdio","command":"/x"},"docs":{"type":"stdio"}}}"""
+        val started =
+            listOf("--settings", MARK, "-n", "probe", "--mcp-config", own, "/home/p/a.json", "--mcp-config=$mine")
+        assertEquals(
+            listOf("-n", "probe", "--mcp-config", "/home/p/a.json", "--mcp-config=$mine"),
+            LaunchRecipeArgs.callerArgs(started, state, wrapped = true),
+        )
     }
 }

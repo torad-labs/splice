@@ -1,8 +1,9 @@
 // An mcp mode reaching `claude` on the door, end to end on a daemon: a launch after the mode is on, whether splice.toml
 // turned it on before boot or `PUT /api/modes` while the daemon ran, is handed a `--mcp-config` file naming the mode's
 // server at the daemon's own address. Before, only a head's own launch was handed one, so `claude` on the door, the
-// launch every seat and most sessions get, never had the mode's tools. The file is a flag before a `--` in the
-// person's words, and a relaunch carries none of its own: the launch it makes names it again while the mode is on.
+// launch every seat and most sessions get, never had the mode's tools. The file is one word in front of the person's
+// words, which keep the meaning they had, and a relaunch carries none of its own: the launch it makes names it again
+// while the mode is on.
 // A host that reads a page with the management key alone, naming no caller, is answered by the mode at its address.
 package splice.app.modes
 
@@ -133,13 +134,38 @@ class McpModeDoorLaunchTest {
     }
 
     @Test
-    fun `a launch whose own words hold -- is handed the file as a flag before them`(@TempDir tmp: Path) {
+    fun `with no mode on, a launch hands the person's words on exactly as given`(@TempDir tmp: Path) {
+        daemon(tmp, "") {
+            val words = listOf("-n", "probe", "--mcp-config", "/home/p/mine.json", "--", "--draw", "a chart")
+            val argv = launch(words)
+            assertEquals(listOf("--settings"), argv.subList(1, 2), "splice's overlay first: $argv")
+            assertEquals(words, argv.drop(3))
+        }
+    }
+
+    @Test
+    fun `a launch's own words follow the mode's file exactly as given, a -- among them included`(@TempDir tmp: Path) {
         daemon(tmp, "[modes.visual]\non = true") {
-            val argv = launch(listOf("-n", "probe", "--", "--draw", "a chart"))
-            assertEquals(listOf("visual"), ownServers(argv))
-            assertEquals(listOf("--", "--draw", "a chart"), argv.takeLast(3), "the prompt's words are as given")
-            val file = argv.indexOf("--mcp-config")
-            assertEquals(true, file in 0..<argv.indexOf("--"), "the file is before the --: $argv")
+            val asked = listOf(
+                listOf("-n", "probe", "--", "--draw", "a chart"),
+                listOf("--system-prompt", "--", "--", "go"),
+            )
+            for (words in asked) {
+                val argv = launch(words)
+                assertEquals(listOf("visual"), ownServers(argv))
+                assertEquals(words, personsWords(argv), "after splice's words: $argv")
+            }
+        }
+    }
+
+    @Test
+    fun `a launch whose last option lacks its value keeps it last, for Claude Code to refuse`(@TempDir tmp: Path) {
+        daemon(tmp, "[modes.visual]\non = true") {
+            for (last in listOf("--system-prompt", "--model", "-n")) {
+                val argv = launch(listOf("--verbose", last))
+                assertEquals(listOf("visual"), ownServers(argv))
+                assertEquals(last, argv.last(), "nothing fills its value: $argv")
+            }
         }
     }
 
@@ -149,23 +175,35 @@ class McpModeDoorLaunchTest {
             val first = launch(listOf("-n", "probe"))
             val again = relaunch(first)
             assertEquals(listOf("visual"), ownServers(again))
-            assertEquals(1, again.count { it == "--mcp-config" }, "the file is there once: $again")
+            assertEquals(1, again.count { it.startsWith("--mcp-config") }, "the file is there once: $again")
             assertEquals(listOf("-n", "probe"), LaunchRecipeArgs.callerArgs(again.drop(1), state, wrapped = true))
             switch(on = false)
             val off = relaunch(again)
             assertEquals(emptyList<String>(), ownServers(off))
-            assertEquals(0, off.count { it == "--mcp-config" }, "no server that no longer answers: $off")
+            assertEquals(0, off.count { it.startsWith("--mcp-config") }, "no server that no longer answers: $off")
         }
     }
 
+    // The build of Nov 25 put the mode's file, and the peer server, after the person's words as a flag and its value;
+    // the sessions it started are relaunched by this one.
     @Test
-    fun `a launch whose system prompt is -- is handed the file before the -- that ends options`(@TempDir tmp: Path) {
+    fun `a relaunch of a session the build of Nov 25 started names the mode's file once, and none once off`(
+        @TempDir tmp: Path,
+    ) {
         daemon(tmp, "[modes.visual]\non = true") {
-            val argv = launch(listOf("--system-prompt", "--", "--", "go"))
-            assertEquals(listOf("visual"), ownServers(argv))
-            val file = argv.indexOf("--mcp-config")
-            assertEquals(listOf("--system-prompt", "--"), argv.subList(file - 2, file), "the system prompt is --")
-            assertEquals(listOf("--", "go"), argv.subList(file + 2, argv.size), "the prompt is go: $argv")
+            val first = launch(listOf("-n", "probe"))
+            val file = first.single { it.startsWith("--mcp-config=") }.substringAfter('=')
+            val peer = """{"mcpServers":{"splice-peers":{"type":"stdio","command":"/x/splice"}}}"""
+            val earlier = first.filterNot { it.startsWith("--mcp-config=") } +
+                listOf("--mcp-config", file, "--mcp-config", peer)
+            val again = relaunch(earlier)
+            assertEquals(listOf("visual"), ownServers(again))
+            assertEquals(listOf("--mcp-config=$file"), again.filter { it.startsWith("--mcp-config") }, "once: $again")
+            assertEquals(listOf("-n", "probe"), personsWords(again))
+            switch(on = false)
+            val off = relaunch(earlier)
+            assertEquals(emptyList<String>(), off.filter { it.startsWith("--mcp-config") }, "none: $off")
+            assertEquals(listOf("-n", "probe"), off.drop(3), "the person's words alone after the overlay: $off")
         }
     }
 
@@ -175,22 +213,20 @@ class McpModeDoorLaunchTest {
             val own = """{"mcpServers":{}}"""
             val argv = launch(listOf("--print", "--strict-mcp-config", "--mcp-config", own, "--allowedTools", "Read"))
             assertEquals(emptyList<String>(), ownServers(argv))
-            assertEquals(1, argv.count { it == "--mcp-config" }, "its own config alone: $argv")
+            assertEquals(1, argv.count { it.startsWith("--mcp-config") }, "its own config alone: $argv")
         }
     }
 
     @Test
-    fun `a relaunch keeps the person's file that followed splice's under one flag`(@TempDir tmp: Path) {
+    fun `a relaunch keeps every file of the person's own, under its flag, beside the mode's once`(@TempDir tmp: Path) {
         daemon(tmp, "[modes.visual]\non = true") {
-            val mine = Files.writeString(tmp.resolve("mine.json"), """{"mcpServers":{}}""")
-            val first = launch(listOf("-n", "probe"))
-            val own = first[first.indexOf("--mcp-config") + 1]
-            val started = first.takeWhile { it != "--mcp-config" } + listOf("--mcp-config", own, mine.toString())
-            val again = relaunch(started)
+            val mine = Files.writeString(tmp.resolve("mine.json"), """{"mcpServers":{}}""").toString()
+            val theirs = Files.writeString(tmp.resolve("theirs.json"), """{"mcpServers":{}}""").toString()
+            val words = listOf("-n", "probe", "--mcp-config", mine, theirs)
+            val again = relaunch(launch(words))
             assertEquals(listOf("visual"), ownServers(again))
-            val theirs = again.indexOf(mine.toString())
-            assertEquals("--mcp-config", again[theirs - 1], "the person's file keeps a flag: $again")
-            assertEquals(2, again.count { it == "--mcp-config" }, "the person's and splice's, once each: $again")
+            assertEquals(words, personsWords(again), "the person's files keep their flag: $again")
+            assertEquals(1, again.count { it.startsWith("--mcp-config=") }, "splice's once: $again")
         }
     }
 
@@ -212,6 +248,10 @@ class McpModeDoorLaunchTest {
             assertTrue(page.getValue("text").jsonPrimitive.content.contains("<"), "the page's html")
         }
     }
+
+    /** What follows splice's words in [argv]: its binary, the overlay and the file of the daemon's own servers. */
+    private fun personsWords(argv: List<String>): List<String> =
+        argv.drop(argv.indexOfFirst { it.startsWith("--mcp-config=") } + 1)
 
     /** A daemon over a splice.toml with one provider, no heads and [modes], carrying the modes its jar carries. */
     private fun daemon(tmp: Path, modes: String, check: suspend Running.() -> Unit) {
@@ -247,10 +287,9 @@ class McpModeDoorLaunchTest {
         client.close()
     }
 
-    /** The servers the launch's `--mcp-config` files name at the daemon's own MCP address, by name. */
+    /** The servers the file of the daemon's own servers in [argv] names at the daemon's MCP address, by name. */
     private fun ownServers(argv: List<String>): List<String> {
-        val files = argv.indices.filter { argv[it] == "--mcp-config" }.map { argv[it + 1] }
-            .filter { !it.trimStart().startsWith("{") }
+        val files = argv.filter { it.startsWith("--mcp-config=") }.map { it.substringAfter('=') }
         return files.flatMap { file ->
             val servers = json.parseToJsonElement(Files.readString(Path.of(file))).jsonObject
                 .getValue("mcpServers").jsonObject

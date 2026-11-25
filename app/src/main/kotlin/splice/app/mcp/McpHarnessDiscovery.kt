@@ -6,7 +6,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.app.MCP_HUB_FRONT_PORT
 import splice.app.cli.AdminSupport
-import splice.app.control.peer.PEER_MCP_SERVER
+import splice.client.mcp.PEER_MCP_SERVER
 import splice.core.config.Knob
 import splice.core.config.UserHome
 import splice.core.mcp.McpHarness

@@ -64,7 +64,7 @@ internal class PeersMount(parts: PeerParts, private val guard: ControlGuard) {
 
     suspend fun launched(caller: LaunchCaller, recipe: LaunchRecipe): LaunchRecipe {
         if (!subscribe(caller)) return recipe
-        return recipe.copy(argv = PeerMcpLaunch(EnvReader(System::getenv)).claudeArgs(recipe.argv))
+        return recipe.copy(argv = PeerMcpLaunch(EnvReader(System::getenv)).inFront(recipe.argv))
     }
 
     private suspend fun subscribe(caller: LaunchCaller): Boolean {

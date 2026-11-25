@@ -9,6 +9,7 @@ import com.sun.net.httpserver.HttpServer
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.put
@@ -17,6 +18,7 @@ import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -140,16 +142,38 @@ class DesktopMcpModeDaemonTest {
         }
     }
 
+    @Test
+    fun `with its own state folder, the person's server in Desktop's file keeps the name at launch and in the list`(
+        @TempDir tmp: Path,
+    ) {
+        daemon(tmp, "[modes.visual]\non = true", state = tmp.resolve("srv/splice/state"), xdg = false) { fixture ->
+            assertEquals(listOf("visual"), ownServers(fixture, launch(fixture)), "the mode, before the person has one")
+            val theirs = Files.createDirectories(fixture.profile).resolve(DESKTOP_CONFIG)
+            Files.writeString(theirs, """{"mcpServers":{"visual":{"command":"/opt/visual/bin/serve"}}}""")
+            val row = get(fixture.mgmt, "/api/modes").getValue("modes").jsonArray.map { it.jsonObject }
+                .single { it.str("name") == "visual" }
+            assertEquals("true", row.getValue("server_taken").toString(), "GET /api/modes says the name is theirs")
+            assertEquals(emptyList<String>(), ownServers(fixture, launch(fixture)), "and no launch is given the mode")
+        }
+    }
+
     /** A daemon over a splice.toml with one provider, no heads and [modes], carrying the modes its jar carries, with
-     *  Desktop's configuration and the daemon's state under [tmp]. */
-    private fun daemon(tmp: Path, modes: String, check: suspend (ModeDesktopFixture) -> Unit) {
+     *  the daemon's state at [state] and Desktop's configuration under [tmp]: in `XDG_CONFIG_HOME` where [xdg], else
+     *  where Desktop keeps it in the home folder. */
+    private fun daemon(
+        tmp: Path,
+        modes: String,
+        state: Path = tmp.resolve("state"),
+        xdg: Boolean = true,
+        check: suspend (ModeDesktopFixture) -> Unit,
+    ) {
         val provider = ModeDesktopProvider()
         val home = Files.createDirectories(tmp.resolve("home"))
         val config = tmp.resolve("splice.toml").also { Files.writeString(it, toml(tmp, provider.baseUrl, modes)) }
         val fixture = mapOf(
             "HOME" to home.toString(),
-            "XDG_CONFIG_HOME" to tmp.resolve("config").toString(),
-            "SPLICE_STATE_DIR" to tmp.resolve("state").toString(),
+            "XDG_CONFIG_HOME" to tmp.resolve("config").toString().takeIf { xdg },
+            "SPLICE_STATE_DIR" to state.toString(),
             "SPLICE_CONFIG" to config.toString(),
             "SPLICE_CONTROL_PORT" to controlPort.toString(),
         )
@@ -159,7 +183,7 @@ class DesktopMcpModeDaemonTest {
             UserHome.within(home) {
                 DesktopManagedPolicy.within(tmp.resolve("etc/managed-settings.json")) {
                     runBlocking {
-                        val statePaths = StatePaths(baseOverride = tmp.resolve("state"), envReader = env)
+                        val statePaths = StatePaths(baseOverride = state, envReader = env)
                         val mgmt = MgmtKey(statePaths).get()
                         val daemon = Daemon(
                             topology = TopologyLoader.loadOrMaterialize(config),
@@ -223,6 +247,40 @@ class DesktopMcpModeDaemonTest {
         seams = McpHarnessSyncSeams(frontLive = McpFrontCheck { _, _ -> false }, controlPortOverride = controlPort),
         pipes = pipes,
     )
+
+    private suspend fun get(mgmt: String, path: String): JsonObject {
+        val response = client.get("http://127.0.0.1:$controlPort$path") { header("Authorization", "Bearer $mgmt") }
+        val body = response.bodyAsText()
+        assertEquals(200, response.status.value, body)
+        return json.parseToJsonElement(body).jsonObject
+    }
+
+    /** The argv a launch of `claude` on the door answers, asked as the shim asks. */
+    private suspend fun launch(fixture: ModeDesktopFixture): List<String> {
+        val response = client.post("http://127.0.0.1:$controlPort/launch/claude") {
+            header("Authorization", "Bearer ${fixture.mgmt}")
+            header("Content-Type", "application/json")
+            setBody("""{"cwd":${JsonPrimitive(fixture.home.toString())}}""")
+        }
+        val body = response.bodyAsText()
+        assertEquals(200, response.status.value, body)
+        return json.parseToJsonElement(body).jsonObject.getValue("argv").jsonArray.map { it.jsonPrimitive.content }
+    }
+
+    /** The servers [argv]'s files in splice's state folder name, as `--mcp-config <file>` or `--mcp-config=<file>`. */
+    private fun ownServers(fixture: ModeDesktopFixture, argv: List<String>): List<String> {
+        val given = argv.indices.mapNotNull { at ->
+            when {
+                argv[at] == "--mcp-config" -> argv.getOrNull(at + 1)
+                argv[at].startsWith("--mcp-config=") -> argv[at].removePrefix("--mcp-config=")
+                else -> null
+            }
+        }
+        val state = fixture.statePaths.stateDir.toString()
+        return given.filter { it.startsWith(state) }.flatMap { file ->
+            json.parseToJsonElement(Files.readString(Path.of(file))).jsonObject.getValue("mcpServers").jsonObject.keys
+        }
+    }
 
     private suspend fun post(mgmt: String, path: String) {
         val response = client.post("http://127.0.0.1:$controlPort$path") {

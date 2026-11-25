@@ -67,6 +67,7 @@ import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.config.TurnKey
+import splice.core.config.UserHome
 import splice.core.retired.RetiredHeads
 import splice.core.topology.HeadModel
 import splice.core.topology.ProviderConfig
@@ -118,8 +119,9 @@ public class Daemon(
     internal var modeBoot: ModeBoot? = null
         set(boot) {
             field = boot
-            // the person's own MCP servers as the MCP host reads them, from the home ControlPlane gives it
-            val theirs = PersonMcpNames(statePaths.rootDir.parent ?: statePaths.rootDir, statePaths)
+            // the person's own MCP servers, from the same home Desktop's sync and the launches read, whatever the state
+            // folder is
+            val theirs = PersonMcpNames(UserHome.dir(statePaths.envReader), statePaths)
             controlPlane.modes = boot?.let {
                 DaemonModes(it.catalog, topology.modes, topology.heads.keys.toList(), statePaths.stateDir, theirs)
             }

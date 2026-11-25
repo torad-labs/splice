@@ -189,4 +189,33 @@ class DesktopModeServersTest {
         assertNull(ModeMcp { held }.server("harbor", null, null), "the daemon's address for the name is theirs too")
         assertFalse("harbor" in ModeMcp { held }.names("", "door"), "no launch is given the mode")
     }
+
+    @Test
+    fun `after splice's state folder moves, the mode is still served and listed, under one current entry`() {
+        Files.createDirectories(home)
+        val config = Files.createDirectories(profile).resolve("claude_desktop_config.json")
+        // the entry an earlier splice laid while its state folder was elsewhere, as at a move of the state root
+        val earlier = tmp.resolve("home/.claude-codex/state/desktop-mcp").toAbsolutePath()
+        Files.writeString(config, """{"mcpServers":{"harbor":{"command":"$earlier","args":["harbor"]}}}""")
+        val held = modes(PersonMcpNames(home, paths, env, "Linux"))
+        assertEquals("false", ModeRows(held).row(checkNotNull(held.mode("harbor"))).getValue("server_taken").toString())
+        assertTrue("harbor" in ModeMcp { held }.names("", "door"), "a launch is given the mode")
+        assertTrue(ModeMcp { held }.server("harbor", null, null) != null, "its address answers the mode")
+        assertTrue(daemonSync(held))
+        assertEquals(mapOf("harbor" to listOf("harbor")), bridged(), "the current bridge entry")
+        assertEquals(setOf("harbor"), servers().keys, "and no stale one beside it")
+    }
+
+    @Test
+    fun `a Desktop file kept as a link is read again after its target changes`() {
+        Files.createDirectories(home)
+        val target = Files.createDirectories(tmp.resolve("dotfiles")).resolve("claude_desktop_config.json")
+        Files.writeString(target, """{"mcpServers":{}}""")
+        Files.createSymbolicLink(Files.createDirectories(profile).resolve("claude_desktop_config.json"), target)
+        val held = modes(PersonMcpNames(home, paths, env, "Linux"))
+        val harbor = checkNotNull(held.mode("harbor"))
+        assertEquals("false", ModeRows(held).row(harbor).getValue("server_taken").toString())
+        Files.writeString(target, """{"mcpServers":{"harbor":{"command":"/opt/harbor/bin/serve"}}}""")
+        assertEquals("true", ModeRows(held).row(harbor).getValue("server_taken").toString(), "their new server is seen")
+    }
 }

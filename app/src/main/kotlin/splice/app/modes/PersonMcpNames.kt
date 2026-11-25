@@ -20,8 +20,8 @@ import splice.core.mcp.McpUserRegistry
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import java.io.IOException
+import java.io.UncheckedIOException
 import java.nio.file.Files
-import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
 
@@ -50,16 +50,20 @@ internal class PersonMcpNames(
         val stamps = (files + (listOf(usualDesktop) + profiles).map(desktop::configIn)).map(::stamp)
         last?.takeIf { it.stamps == stamps }?.let { return it.names }
         val declared = read.inputs().map { it.name } + servers(usualDesktop).keys
-        val inProfiles = profiles.flatMap { profile -> servers(profile).filterValues { !bridge.ours(it) }.keys }
+        val inProfiles = profiles.flatMap { profile ->
+            servers(profile).filter { (name, entry) -> !bridge.ours(name, entry) }.keys
+        }
         val names = (declared + inProfiles).toSet()
         last = Reading(stamps, names)
         return names
     }
 
-    /** Each gateway profile; none when Desktop's config folder can't be listed. */
+    /** Each gateway profile; none when Desktop's config folder can't be listed, which fails no request or launch. */
     private fun gatewayProfiles(): List<Path> = try {
         gateways.profiles()
     } catch (_: IOException) {
+        emptyList()
+    } catch (_: UncheckedIOException) {
         emptyList()
     }
 
@@ -68,11 +72,14 @@ internal class PersonMcpNames(
         desktop.serversIn(appData)
     } catch (_: IOException) {
         JsonObject(emptyMap())
+    } catch (_: UncheckedIOException) {
+        JsonObject(emptyMap())
     }
 
-    /** [path]'s modification time and size, or null when it is no file or can't be asked. */
+    /** [path]'s modification time and size, through a link as the read follows one (a configuration a dotfile manager
+     *  keeps as a link changes in its target), or null when it is no file or can't be asked. */
     private fun stamp(path: Path): Pair<FileTime, Long>? = try {
-        if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
+        if (Files.isRegularFile(path)) {
             Files.getLastModifiedTime(path) to Files.size(path)
         } else {
             null

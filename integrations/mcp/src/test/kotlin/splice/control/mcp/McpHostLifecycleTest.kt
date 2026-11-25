@@ -211,7 +211,9 @@ class McpHostLifecycleTest : McpHostFixture() {
 
     @Test
     fun `shutdown signals stubborn children together within one grace period`(@TempDir directory: Path) = runBlocking {
-        val receipts = directory.resolve("term-receipts").toAbsolutePath()
+        // The children refuse a receipt directory reached through a link, and a Mac's temp directory sits behind one
+        // (/var is /private/var), so the test names the real directory it got.
+        val receipts = directory.toRealPath().resolve("term-receipts")
         assertEquals(null, SecureFile.ownerOnlyDirectory(receipts))
         boot(shutdownDirectory = receipts)
         val pids = listOf("fake2", "fake3").map { name ->
@@ -233,12 +235,13 @@ class McpHostLifecycleTest : McpHostFixture() {
                 )
                 val elapsed = overlap[2].toLong()
                 assertTrue(
-                    elapsed in 0 until FakeMcpTermReceipts.TERM_OVERLAP_WAIT_MS,
-                    "child $slot TERM overlap took ${elapsed}ms",
+                    elapsed in 0 until FakeMcpTermReceipts.HOST_TERM_GRACE_MS,
+                    "child $slot's peer got TERM ${elapsed}ms after it, not within the host's " +
+                        "${FakeMcpTermReceipts.HOST_TERM_GRACE_MS}ms grace: the host signalled them one after another",
                 )
             }
         } finally {
-            // This proves receipt overlap and actual cleanup, not a three-second total stop budget:
+            // This proves TERM overlap within one grace and actual cleanup, not a total stop budget:
             // production owns distinct shared TERM and forced-reap phases. Await exits without polling.
             children.forEach { child ->
                 child.onExit().get(MCP_HOST_STREAM_WAIT_MS, TimeUnit.MILLISECONDS)

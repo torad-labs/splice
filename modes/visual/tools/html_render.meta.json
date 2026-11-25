@@ -1,5 +1,6 @@
 {
   "ui": {
-    "resourceUri": "ui://visual/reply.html"
+    "resourceUri": "ui://visual/reply.html",
+    "visibility": ["model"]
   }
 }

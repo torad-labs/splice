@@ -54,6 +54,22 @@ class VisualModeServedTest {
     }
 
     @Test
+    fun `a host is shown that the drawing tools are the model's to call and not the view's`() {
+        val listed = checkNotNull(ModeMcp { daemon(on = true) }.server("visual", "acme")).tools().map { it.jsonObject }
+            .associate { it.getValue("name").jsonPrimitive.content to it["_meta"] }
+        val row = ModeRows(daemon(on = true)).all().getValue("modes").jsonArray.map { it.jsonObject }
+            .single { it.getValue("name").jsonPrimitive.content == "visual" }
+        val rowed = row.getValue("tools").jsonArray.map { it.jsonObject }
+            .associate { it.getValue("name").jsonPrimitive.content to it["_meta"] }
+        for (shown in listOf(listed, rowed)) {
+            for (tool in listOf("show_widget", "html_render")) {
+                val ui = checkNotNull(shown[tool]).jsonObject.getValue("ui").jsonObject
+                assertEquals("""["model"]""", ui.getValue("visibility").toString(), "$tool in $shown")
+            }
+        }
+    }
+
+    @Test
     fun `its MCP server answers only while it is on, and resources-read gives the view the route gives`() {
         assertNull(ModeMcp { daemon(on = null) }.server("visual", "acme"), "the mode ships off")
         val modes = daemon(on = true)

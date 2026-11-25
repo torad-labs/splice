@@ -138,6 +138,15 @@ class VisualModeTest {
     }
 
     @Test
+    fun `the first page id in html_render's answer is its own page, whatever id its title names`() {
+        val old = idOf(page("Report", "<p>old</p>"))
+        val revised = page("Report (replaces $old)", "<p>new</p>")
+        val first = idOf(revised)
+        assertTrue(first != old, (revised as ModeAnswer.Text).text)
+        assertEquals("<p>new</p>", field(get("/api/visual/pages/$first"), "html"))
+    }
+
+    @Test
     fun `a kept page is still there for a restarted daemon`() {
         val id = idOf(page("Kept", "<p>kept</p>"))
         val restarted = VisualMode()

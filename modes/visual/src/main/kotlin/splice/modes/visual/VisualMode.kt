@@ -54,9 +54,11 @@ internal class VisualMode : Mode {
         return when (val drawing = DrawingRead(HTML_RENDER, "html").read(call.input)) {
             is Drawing.Refused -> ModeAnswer.Error(drawing.why)
             is Drawing.Ready -> {
+                // The id leads: a host finds the kept page as the first id in this text, and the title is the
+                // model's own words, which may name another page's id.
                 val id = pages.keep(call.store, drawing)
                 ModeAnswer.Text(
-                    "Kept the page \"${drawing.title}\" as $id. Clients that draw MCP Apps draw it in the " +
+                    "$id is the page \"${drawing.title}\", kept. Clients that draw MCP Apps draw it in the " +
                         "conversation. Any other client shows only this answer, so your reply should say in words " +
                         "what the page holds.",
                 )

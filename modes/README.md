@@ -81,7 +81,7 @@ The manifest's `on` and `on_for` are the default. splice.toml overrides them per
 
 ```toml
 [modes.<name>]
-on = true                  # every head and every caller; false: none, Claude Desktop included
+on = true                  # every head and caller; false: none, Desktop included. heads wins for a head it names
 heads = { kimi = false }   # per head
 server_routes = true       # on a team server: key holders reach it at /server/mod/<name>/...
 server_admin_only = true   # and only the server's admins
@@ -96,7 +96,8 @@ For a mode, a head and a caller, in this order:
 3. Otherwise the manifest decides: its `on`, or, for a caller its `on_for` names, on.
 
 So with nothing in splice.toml, `visual` (`on_for = ["desktop"]`) is given to Claude Desktop's own sessions and to
-no terminal's; `on = true` gives it to every session, and `on = false` to none.
+no terminal's; `on = true` gives it to every session, and `on = false` to none, except on a head that `heads` names, which
+keeps its own setting.
 
 What the door adds is listed by `GET /api/modes`, by `splice status`, and on the console's Settings > Modes, where a
 switch per head writes `[modes.<name>]`, and a mode with `on_for` has one more switch, for every session: Default

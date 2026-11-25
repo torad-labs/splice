@@ -73,7 +73,7 @@ The manifest's `on` and `on_for` are the default; `splice.toml` overrides them p
 
 ```toml
 [modes.tableapp]
-on = true                  # every head and every caller; false: none, Claude Desktop included
+on = true                  # every head and caller; false: none, Desktop included. heads wins for a head it names
 heads = { kimi = false }   # per head; each must be a head splice.toml declares
 ```
 
@@ -83,7 +83,7 @@ For a mode, a head and a caller, in this order:
 2. Otherwise `heads.<head>` decides, then `on`.
 3. Otherwise the manifest's `on` decides, or, for a caller its `on_for` names, the mode is on.
 
-So with nothing in `splice.toml`, `visual` (whose manifest says `on_for = ["desktop"]`) is on for Claude Desktop's own sessions and for no terminal's; `[modes.visual] on = true` turns it on for every session and `on = false` off for every one.
+So with nothing in `splice.toml`, `visual` (whose manifest says `on_for = ["desktop"]`) is on for Claude Desktop's own sessions and for no terminal's; `[modes.visual] on = true` turns it on for every session and `on = false` off for every one, except on a head that `heads` names, which keeps its own setting.
 
 | Key in `[modes.<name>]` | Type | Rule |
 | --- | --- | --- |
@@ -96,7 +96,7 @@ Use `server_routes` and `server_admin_only` to [expose a mode on the team listen
 | --- | --- |
 | `splice setup` | Lists every mode with its state (`on`, `off`, or `on for Claude Desktop`), then asks "Turn on <mode>? <summary>" for each one that is off; a yes writes `on = true`. A mode on for Claude Desktop alone is not asked about; setup says where to have it in every session |
 | `splice setup --update` | Offers the modes that are off and restarts a running daemon onto any you turn on |
-| Console → Settings → **Modes** | One group per mode: its summary, how it is answered ("Answered inside Splice" or "MCP server"), the tools it adds, the callers it leaves out, its hooks, and an On/Off switch per command. A mode on for Claude Desktop alone (`visual`) also has an **Every session** switch: Default (on in Claude Desktop only), On (every session) or Off (none, Desktop included), with a line saying what Claude Desktop and `claude` in a terminal get now; its per-command switches are the terminal's |
+| Console → Settings → **Modes** | One group per mode: its summary, how it is answered ("Answered inside Splice" or "MCP server"), the tools it adds, the callers it leaves out, its hooks, and an On/Off switch per command. A mode on for Claude Desktop alone (`visual`) also has an **Every session** switch: Default (on in Claude Desktop only), On (every session) or Off (none, Desktop included; a command switched On below keeps it), with a line saying what Claude Desktop and `claude` in a terminal get now; its per-command switches are the terminal's |
 | `splice status` | One plain line per mode, read from the running daemon: the heads it is on for, and `for desktop` when it is on for Desktop while off for every head |
 | `GET /api/modes` | Each mode's `name`, `summary`, `kind`, `server`, `prompt`, `tools`, `resources`, `hooks`, `callers_off`, `on_for`, `on` `{value, from}`, `heads` `{<head>: {on, from}}` and `callers` `{door, head, desktop: {on, from}}`, each caller's every-head value; `from` is `manifest`, `splice.toml`, `head` or `never` |
 | `PUT /api/modes/{name}` | Body `{on?, heads?: {<head>: true \| false \| null}}`; `null` clears a key. The next request follows, no restart. 404 unknown mode, 400 bad body, 409 write refused, 503 when `splice.toml` can't be written |

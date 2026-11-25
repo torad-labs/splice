@@ -4,11 +4,14 @@
 // wrap and binary it reads. #791 (Nov 23, 2026): it plants what a head's launch plants from the same helpers (the
 // client's timers and wall header from the heads' walls, the windows from the door's, NO_PROXY with the door's host),
 // and says every value that is no secret again in the overlay's `env`, which a person's settings files cannot outrank.
+// modes-mcp (Nov 25, 2026): the servers the daemon answers itself are no head's, so they are named here as on a head's
+// launch: before, only a head's launch named them, and `claude` on the door never had an mcp mode's tools.
 package splice.launch.recipe
 
 import splice.client.ClaudeArgv
 import splice.client.desktop.DoorOverlayMerge
 import splice.client.desktop.GATEWAY_BASE_URL
+import splice.client.mcp.OwnMcpLaunch
 import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapStateRead
 import splice.client.wrap.WrappedHead
@@ -23,6 +26,9 @@ internal class DoorRecipe(
     private val wrapState: WrapStateRead,
     private val claudeBinary: String,
     envReader: EnvReader,
+    /** The MCP servers the daemon answers itself (the mcp modes that are on), read at each launch, so a mode switched
+     *  on reaches the next one; null adds none. */
+    private val ownMcp: OwnMcpNow,
 ) {
     private val ambient = LaunchAmbient(envReader)
 
@@ -39,7 +45,7 @@ internal class DoorRecipe(
         val chosen = wrapState.claude()
         if (chosen is ClaudeToRun.Refused) return LaunchOutcome.Refused(chosen.reason)
         // custom-provider (cp-overlay): the person's own --settings are merged into the one overlay, never a second one.
-        val modelGiven = ClaudeArgv.namesModel(extraArgs)
+        val modelGiven = ClaudeArgv.options(extraArgs).namesModel
         val held = held(door, modelGiven, caller.noProxy)
         val merged = when (val m = DoorOverlayMerge(door.overlay, caller.cwd, held).merge(extraArgs)) {
             is DoorOverlayMerge.Merged.Refused -> return LaunchOutcome.Refused(m.reason)
@@ -49,7 +55,8 @@ internal class DoorRecipe(
             add((chosen as? ClaudeToRun.Wrapped)?.path ?: claudeBinary)
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             addAll(LaunchMarker.settingsArgs(merged.overlay))
-            addAll(merged.args)
+            // the door runs no head here, so a mode's every-head value decides, and its server is asked for with none
+            addAll(ownMcp()?.added(merged.args, "", OWN_MCP_CALLER_DOOR) ?: merged.args)
         }
         val config = wrap.ownHome().configRootUnsets(caller.inheritedConfigDir, headDirs)
         val headers = ambient.customHeaders(door.wallMs, emptyList(), merged.headers)
@@ -80,3 +87,8 @@ private const val STARTING_MODEL = "ANTHROPIC_MODEL"
 
 /** What a launch with `--dangerously-skip-permissions` is told, after where it runs. */
 internal const val DANGER = "Claude Code runs with --dangerously-skip-permissions (no permission prompts)."
+
+/** The servers the daemon answers itself as the launch service holds them now: assigned after the recipe is built. */
+internal fun interface OwnMcpNow {
+    operator fun invoke(): OwnMcpLaunch?
+}

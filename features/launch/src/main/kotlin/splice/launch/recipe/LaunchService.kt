@@ -117,7 +117,7 @@ public class LaunchService(
     private val onGateway = GatewayLaunch()
 
     /** What a launch of `claude` on the [door] runs. */
-    internal val onDoor = DoorRecipe(wrap, wrapState, claudeBinary, envReader)
+    internal val onDoor = DoorRecipe(wrap, wrapState, claudeBinary, envReader) { ownMcp }
 
     /** What a launch merges with the environment it inherits: NO_PROXY and the custom headers. */
     private val ambient = LaunchAmbient(envReader)
@@ -205,7 +205,7 @@ public class LaunchService(
         // V4-445: Claude Code reads ~/.claude.json only while CLAUDE_CONFIG_DIR is unset. Set to the vanilla dir it
         // reads ~/.claude/.claude.json, a file that holds none of the operator's mcpServers, projects or account.
         val environment = speed.environment(launchEnvironment(spec, held, slots, caller))
-        val hub = hubArgs(caller, wrapped, effective, claude)
+        val hub = hubArgs(caller, wrapped, effective, claude, extraArgs)
         val argv = buildList {
             // V4-129: the real absolute path when `claude` on PATH is currently the wrap shim itself
             // (see [wrapState]'s KDoc) — bare [claudeBinary] otherwise, byte-identical to every launch
@@ -247,12 +247,14 @@ public class LaunchService(
     }
 
     /** MCP hub step 6: what the hub adds to this launch. A wrapped launch reads the user's own config home and falls
-     *  back to the V4-445 file; a head's launch reads the head's home. */
+     *  back to the V4-445 file; a head's launch reads the head's home. [asked], the person's words, decide whether the
+     *  daemon's own servers join them. */
     private fun hubArgs(
         caller: LaunchCaller,
         wrapped: WrappedLaunch?,
         effective: LaunchSpec,
         claude: String,
+        asked: List<String>,
     ): HubLaunchArgs {
         val launch = HubLaunchFor(
             configDir = wrapped?.configDir ?: effective.trees.own,
@@ -264,7 +266,8 @@ public class LaunchService(
         val carried = hubLaunch?.args(launch) ?: HubLaunchArgs(emptyList())
         // a wrapped launch is the door's; a head's own launch is its head's, in the words a mode's manifest uses
         val asking = if (wrapped == null) OWN_MCP_CALLER_HEAD else OWN_MCP_CALLER_DOOR
-        return ownMcp?.let { carried.copy(args = it.added(carried.args, effective.signIn.headKey, asking)) } ?: carried
+        val head = effective.signIn.headKey
+        return ownMcp?.let { carried.copy(args = it.added(carried.args, head, asking, asked)) } ?: carried
     }
 
     /** Writes the head's config unless the launch is [wrapped], which materializes nothing. gpt-speed: a head signed in
@@ -437,5 +440,5 @@ public class LaunchService(
 private const val CONFIG_DIR_ENV = "CLAUDE_CONFIG_DIR"
 
 // why: who a launch is for, in the words a mode's manifest uses for its callers (modes/README.md, `[callers] off`).
-private const val OWN_MCP_CALLER_DOOR = "door"
+internal const val OWN_MCP_CALLER_DOOR: String = "door"
 private const val OWN_MCP_CALLER_HEAD = "head"

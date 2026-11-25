@@ -78,7 +78,7 @@ class SideBySideLaunchTest {
     fun `the recipe sets the profile's CLAUDE_CONFIG_DIR and never takes it out`(@TempDir home: Path) {
         val ready = assertInstanceOf(SideBySideLaunch.Started.Ready::class.java, start("--profile", "work"))
         val wrap = WrappedHead(home, stateStore = WrapStateStore(home.resolve("wrap-state.json")))
-        val recipe = DoorRecipe(wrap, wrap, "claude", EnvReader { null })
+        val recipe = DoorRecipe(wrap, wrap, "claude", EnvReader { null }) { null }
             .outcome(ready.spec, ready.args, false, LaunchCaller(), emptyList())
         val launched = assertInstanceOf(LaunchOutcome.Ready::class.java, recipe).recipe
         assertEquals("/profiles/work", launched.env["CLAUDE_CONFIG_DIR"])

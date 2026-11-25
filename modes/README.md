@@ -100,8 +100,10 @@ and a client that draws MCP Apps can show its pages.
   (`/mcp/<server>`): there is no process to start. `initialize`, `tools/list`, `tools/call`, `resources/list` and
   `resources/read` are answered in the reply to each request.
 - **How a client finds it.** Every launch on a head where the mode is on is handed one more `--mcp-config` file
-  that names the server. A caller on `[callers] off` gets no such file. A session already running when the mode is
-  turned on does not see it until its next launch; turned off, the server stops answering at once.
+  that names the server. `claude` on the door runs no head, so for it the mode's `on` decides, and a mode with a
+  non-empty `[heads] only` is not handed to it. A caller on `[callers] off` gets no such file. A session already
+  running when the mode is turned on does not see it until its next launch; turned off, the server stops answering
+  at once.
 - **What the client is told.** Each tool under its own name (the client shows `mcp__<server>__<tool>`), with its
   description, schema and `_meta` as the folder writes them. `prompt.md` is the server's `instructions`.
 - **Pages.** A tool whose `tools/<tool>.meta.json` says `{ "ui": { "resourceUri": "ui://<server>/<page>" } }` names

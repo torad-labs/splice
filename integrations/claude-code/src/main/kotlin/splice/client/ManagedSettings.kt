@@ -1,17 +1,18 @@
 // NEW: server mode (docs/specs/server-mode.md, F8), and #791 (managed settings detection). The settings an organisation
-// manages for Claude Code, which no other settings override, at Claude Code's own paths, written once here: the
+// manages for Claude Code, which no other settings override, at Claude Code's own places, written once here: the
 // platform's `managed-settings.json` and, beside it, the `managed-settings.d` folder whose `*.json` drop-ins Claude Code
-// merges over it in filename order, skipping hidden files; and the `remote-settings.json` Claude Code keeps in a config
-// tree for settings the organisation sends it. `splice claude check`, `splice desktop wrapper`, the MCP plan and a
-// launch's telemetry decision all read those paths from here. Claude Code uses one managed source and never merges two:
-// `remote-settings.json` when it sets anything, the platform's files otherwise, merged as Claude Code merges them (a
-// later drop-in's value replacing or, with `null`, clearing an earlier one's). Where that source sets telemetry of its
-// own (a `null` or blank value sets nothing), a launch adds none of splice's: the organisation's collector stays the
-// one the session reports to (#791 widened that read from `remote-settings.json` alone). A file that is absent, can't
-// be read, or is no JSON object as `JSON.parse` reads one (an unquoted word or a raw control character in a string
-// makes it none; a key written twice keeps its last value) sets nothing, as Claude Code itself reads it: a
-// `remote-settings.json` so broken leaves the platform's files the source. A macOS configuration profile
-// (`com.anthropic.claudecode`) or a Windows registry policy (`HKLM\SOFTWARE\Policies\ClaudeCode`) is not read here.
+// merges over it in filename order, skipping hidden files; the `remote-settings.json` Claude Code keeps in a config tree
+// for settings the organisation sends it; and the operating system's policy ([PlatformPolicy]): macOS's
+// `com.anthropic.claudecode` managed preferences, and Windows' `Settings` value under HKLM and, as a fallback, HKCU.
+// `splice claude check`, `splice desktop wrapper`, the MCP plan and a launch's telemetry decision all read those
+// places from here. Claude Code ranks the sources remote settings, then the system's admin policy (the plist or HKLM),
+// then the files merged as it merges them (a later drop-in's value replacing or, with `null`, clearing an earlier
+// one's), and reads HKCU only when none of those holds a document. Most keys come from the first source that sets a
+// policy key, but `env` merges per variable across the three admin sources, the highest that defines a variable giving
+// its value. Where the settings that reach a session set telemetry of their own (a `null` or blank value sets nothing),
+// a launch adds none of splice's: the organisation's collector stays the one the session reports to. A document that is
+// absent, can't be read, or is no JSON object as `JSON.parse` reads one (an unquoted word or a raw control character in
+// a string makes it none; a key written twice keeps its last value) sets nothing, as Claude Code itself reads it.
 package splice.client
 
 import kotlinx.serialization.json.Json
@@ -29,10 +30,11 @@ import kotlin.io.path.name
 /** The managed settings of a machine on [osName] (this one's when it is not given), whose platform folder is
  *  [platformDir] where one is given (a test's own folder) and Claude Code's own for that system otherwise:
  *  `/Library/Application Support/ClaudeCode` on macOS, `C:\Program Files\ClaudeCode` on Windows, and
- *  `/etc/claude-code` on Linux and every other system. */
+ *  `/etc/claude-code` on Linux and every other system. [policy] is the system's own policy store. */
 public class ManagedSettings(
     osName: String = System.getProperty(OS_NAME_PROPERTY).orEmpty(),
     platformDir: Path? = null,
+    private val policy: PlatformPolicy = PlatformPolicy(osName),
 ) {
     private val platform: Path = platformDir ?: Path.of(
         when {
@@ -49,15 +51,41 @@ public class ManagedSettings(
      *  of `managed-settings.d` in filename order. A folder that is absent or can't be listed adds no drop-in. */
     public fun sources(): List<Path> = listOf(file) + dropIns()
 
-    /** Whether the managed settings that reach a session of the tree at [configDir] set telemetry: the switch, any
-     *  OpenTelemetry variable in their `env`, or a headers helper of their own, in the one source that is [active]. */
-    public fun setsTelemetry(configDir: Path): Boolean = telemetry(active(configDir))
+    /** Whether the managed settings that reach a session of the tree at [configDir] set telemetry: the switch or any
+     *  OpenTelemetry variable in their `env`, merged per variable across the admin sources, or a headers helper of the
+     *  one source Claude Code selects. Where no admin source holds a document, Windows' HKCU value is that source. */
+    public fun setsTelemetry(configDir: Path): Boolean {
+        val admin = listOfNotNull(remote(configDir), policy.admin(), files())
+        val selected = admin.firstOrNull { policyKeyed(it.settings) }
+        if (selected != null) return telemetry(adminEnv(admin), selected.settings)
+        val fallback = policy.userFallback()?.settings?.takeIf { admin.none(PolicyDocument::unreadable) }
+        return fallback != null && telemetry(fallback[MANAGED_ENV] as? JsonObject ?: EMPTY, fallback)
+    }
 
-    /** The one managed source that reaches a session of the tree at [configDir], as Claude Code picks it: the tree's
-     *  `remote-settings.json` when it is an object with any key, and the platform's files as they merge
-     *  ([effective]) otherwise. Claude Code never merges the two, so nothing of the platform's rides along under it. */
-    private fun active(configDir: Path): JsonObject =
-        read(configDir.resolve(REMOTE_SETTINGS))?.takeIf { it.isNotEmpty() } ?: effective()
+    /** The tree's remote settings, or null where the tree holds none it can read. */
+    private fun remote(configDir: Path): PolicyDocument? =
+        read(configDir.resolve(REMOTE_SETTINGS))?.let { PolicyDocument(it, unreadable = false) }
+
+    /** The platform's managed settings files as one document ([effective]), unreadable where a file of them exists
+     *  and can't be read as an object; null where no file exists. */
+    private fun files(): PolicyDocument? {
+        val present = sources().filter(Files::exists)
+        if (present.isEmpty()) return null
+        return PolicyDocument(effective(), unreadable = present.any { read(it) == null })
+    }
+
+    /** The `env` of the admin sources, ranked highest first, merged per variable: each variable's value comes from
+     *  the highest source whose `env` defines it, and a `null` there defines nothing. */
+    private fun adminEnv(admin: List<PolicyDocument>): JsonObject {
+        val laid = admin.reversed().mapNotNull { it.settings?.get(MANAGED_ENV) as? JsonObject }
+            .fold(emptyMap<String, JsonElement>()) { under, over -> under + over.filterValues { it !is JsonNull } }
+        return JsonObject(laid)
+    }
+
+    /** Whether [settings] holds a policy key: any key but Claude Code's two control keys, set to a value other than
+     *  `null`. A document without one leaves the next source in the ranking to supply the policy. */
+    private fun policyKeyed(settings: JsonObject?): Boolean =
+        settings.orEmpty().any { (key, value) -> key !in CONTROL_KEYS && value !is JsonNull }
 
     /** The platform's managed settings as Claude Code merges its files ([sources]), each over the ones before it: a
      *  later file's value for a key replaces an earlier one, a list joins the earlier one's, an object such as `env`
@@ -95,11 +123,12 @@ public class ManagedSettings(
         }
     }
 
-    /** Whether [managed] sets telemetry; a key whose value is blank sets nothing, as an unset one does. */
-    private fun telemetry(managed: JsonObject): Boolean {
-        val env = (managed[MANAGED_ENV] as? JsonObject).orEmpty().filterValues(::sets).keys
-        val helper = managed[Keys.OTEL_HEADERS_HELPER]?.let(::sets) == true
-        return helper || env.any { it == TELEMETRY_SWITCH || it.startsWith(OTEL_PREFIX) }
+    /** Whether [env] or [selected]'s headers helper sets telemetry; a key whose value is blank sets nothing, as an
+     *  unset one does. */
+    private fun telemetry(env: JsonObject, selected: JsonObject?): Boolean {
+        val set = env.filterValues(::sets).keys
+        val helper = selected?.get(Keys.OTEL_HEADERS_HELPER)?.let(::sets) == true
+        return helper || set.any { it == TELEMETRY_SWITCH || it.startsWith(OTEL_PREFIX) }
     }
 
     private fun sets(value: JsonElement): Boolean =
@@ -124,6 +153,9 @@ private const val DROP_IN_SUFFIX = ".json"
 /** The file Claude Code keeps an organisation's remotely managed settings in, inside a config tree. */
 private const val REMOTE_SETTINGS = "remote-settings.json"
 private const val MANAGED_ENV = "env"
+
+// why: the two keys that steer how Claude Code reads its managed sources and are no policy of their own.
+private val CONTROL_KEYS = setOf("wslInheritsWindowsSettings", "managedSourcesBehavior")
 
 /** The variable that turns Claude Code's telemetry on. */
 public const val TELEMETRY_SWITCH: String = "CLAUDE_CODE_ENABLE_TELEMETRY"

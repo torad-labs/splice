@@ -13,11 +13,14 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeFalse
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
 import splice.client.ManagedSettings
+import splice.client.PlatformPolicy
 import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.TranscriptModelRewrite
 import splice.client.resume.originals.TranscriptOriginals
@@ -39,6 +42,10 @@ import java.nio.file.Path
 
 private const val CLIENT = "x-splice-client"
 private const val RELAY = "https://gateway.team.example/server/otlp"
+private const val LINUX = "Linux"
+private const val WINDOWS = "Windows 11"
+private const val MAC = "Mac OS X"
+private const val PLIST = "com.anthropic.claudecode.plist"
 
 // why: the launch only writes the command; Claude Code is what runs it, so any command will do here
 private const val OTEL_HELPER = "printf '{\"Authorization\":\"Bearer k\"}'"
@@ -57,8 +64,9 @@ class LaunchTeamServerTest(@param:TempDir private val tmp: Path) {
             TranscriptModelRewrite(originals = TranscriptOriginals(StatePaths(baseOverride = tmp.resolve("state")))),
         ),
     ).apply {
-        // why: a test never reads the machine's own managed settings (/etc/claude-code); this folder stands in for it.
-        managed = ManagedSettings(platformDir = tmp.resolve("platform"))
+        // why: a test never reads the machine's own managed settings (/etc/claude-code, a profile, the registry); this
+        // folder stands in for the files, and a Linux machine holds no system policy.
+        managed = ManagedSettings(platformDir = tmp.resolve("platform"), policy = PlatformPolicy(LINUX))
     }
 
     @Test
@@ -176,8 +184,8 @@ class LaunchTeamServerTest(@param:TempDir private val tmp: Path) {
         assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "nor in remote settings")
     }
 
-    // #791: Claude Code reads one managed source, the remote settings when there are any, and never merges the
-    // platform's files under them, so a helper the platform sets does not stand once remote settings replace it.
+    // #791: Claude Code takes most keys from one managed source, the remote settings when they set any, so a helper
+    // the platform's files set does not stand once remote settings replace them.
     @Test
     fun `remote settings replace the platform's managed settings rather than adding to them`() {
         val relayed = spec(TeamServerLaunch(LaunchTelemetry(RELAY, OTEL_HELPER)))
@@ -240,6 +248,109 @@ class LaunchTeamServerTest(@param:TempDir private val tmp: Path) {
         Files.writeString(remote, """{"env":123,"env":{}}""")
         assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "the last env stands, as Claude Code's")
     }
+
+    // #791: Claude Code merges `env` per variable across its admin sources, so telemetry a managed file sets reaches
+    // the session even where remote settings, ranked above the file, are the source of every other key.
+    @Test
+    fun `telemetry a managed file sets stands under remote settings that set other variables`() {
+        val relayed = spec(TeamServerLaunch(LaunchTelemetry(RELAY, OTEL_HELPER)))
+        Files.createDirectories(platform())
+        Files.createDirectories(tree())
+        Files.writeString(platform().resolve("managed-settings.json"), """{"env":{"OTEL_METRICS_EXPORTER":"otlp"}}""")
+        val remote = tree().resolve("remote-settings.json")
+        Files.writeString(remote, """{"env":{"SOME_OTHER_SETTING":"1"},"otelHeadersHelper":null}""")
+        assertNull(launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "the file's variable merges under remote's")
+        Files.writeString(remote, """{"env":{"OTEL_METRICS_EXPORTER":""}}""")
+        assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "remote settings define it blank")
+    }
+
+    // #791: on Windows an organisation may set its policy only in the registry, as Group Policy writes it: JSON in a
+    // `Settings` value under HKLM\SOFTWARE\Policies\ClaudeCode, or under HKCU, which Claude Code reads only when no
+    // admin source holds a document. A stand-in for reg.exe answers `reg query` as Windows does.
+    @Test
+    fun `a Windows registry policy that sets telemetry turns the relay off as a managed file does`() {
+        assumeFalse(System.getProperty("os.name").lowercase().startsWith("windows"), "the stand-in is a shell script")
+        val relayed = spec(TeamServerLaunch(LaunchTelemetry(RELAY, OTEL_HELPER)))
+        val vars = mapOf("CORP_HELPER" to "corp-helper", "NO_HELPER" to "")
+        val policy = PlatformPolicy(WINDOWS, reg = standInReg(), env = EnvReader { vars[it] })
+        service.managed = ManagedSettings(WINDOWS, platform(), policy)
+        Files.createDirectories(platform())
+        assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "the registry holds no policy")
+        registry("hklm", "REG_SZ", """{"env":{"CLAUDE_CODE_ENABLE_TELEMETRY":"1"}}""")
+        assertNull(launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "HKLM set telemetry")
+        registry("hklm", "REG_SZ", """{"permissions":{"deny":[]}}""")
+        registry("hkcu", "REG_SZ", """{"env":{"OTEL_METRICS_EXPORTER":"otlp"}}""")
+        assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "HKLM holds a document, HKCU is unread")
+        Files.delete(regDir().resolve("hklm.out"))
+        assertNull(launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "HKCU stands where no admin source holds one")
+        Files.writeString(platform().resolve("managed-settings.json"), """{"cleanupPeriodDays":7}""")
+        assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "a managed file holds a document")
+        Files.delete(platform().resolve("managed-settings.json"))
+        Files.delete(regDir().resolve("hkcu.out"))
+        registry("hklm", "REG_EXPAND_SZ", """{"otelHeadersHelper":"%NO_HELPER%"}""")
+        assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "the helper expands to nothing")
+        registry("hklm", "REG_EXPAND_SZ", """{"otelHeadersHelper":"%CORP_HELPER%"}""")
+        assertNull(launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "the helper expands to the organisation's")
+        assertNull(settings()["otelHeadersHelper"])
+    }
+
+    // #791: on macOS an organisation may set its policy only through a configuration profile, which macOS keeps as the
+    // `com.anthropic.claudecode` managed preferences: the person's own plist when there is one, the device's otherwise.
+    // macOS's own plutil reads them, so this runs where plutil is.
+    @Test
+    fun `a macOS configuration profile that sets telemetry turns the relay off as a managed file does`() {
+        assumeTrue(Files.isExecutable(Path.of("/usr/bin/plutil")), "plutil is macOS's")
+        val relayed = spec(TeamServerLaunch(LaunchTelemetry(RELAY, OTEL_HELPER)))
+        val preferences = tmp.resolve("Managed Preferences")
+        val personal = preferences.resolve("alex")
+        Files.createDirectories(personal)
+        val policy = PlatformPolicy(MAC, preferences = preferences, user = "alex")
+        service.managed = ManagedSettings(MAC, platform(), policy)
+        assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "no profile is installed")
+        val device = preferences.resolve(PLIST)
+        val otel = "<key>env</key><dict><key>OTEL_METRICS_EXPORTER</key><string>otlp</string></dict>"
+        Files.writeString(device, plist(otel))
+        assertNull(launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "the device's profile set telemetry")
+        Files.writeString(personal.resolve(PLIST), plist("<key>cleanupPeriodDays</key><integer>7</integer>"))
+        assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "the person's profile is the source")
+        Files.writeString(personal.resolve(PLIST), plist("<key>otelHeadersHelper</key><string>corp-helper</string>"))
+        assertNull(launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "the person's profile set a helper")
+        assertNull(settings()["otelHeadersHelper"])
+    }
+
+    private fun regDir(): Path = tmp.resolve("reg")
+
+    /** A stand-in for reg.exe: `reg query <key> /v Settings` prints `hklm.out` or `hkcu.out` beside it and exits 0,
+     *  or exits 1, as reg.exe does for a key or value it can't find, where that file is absent. */
+    private fun standInReg(): Path {
+        Files.createDirectories(regDir())
+        val script = regDir().resolve("reg")
+        Files.writeString(
+            script,
+            """
+            #!/bin/sh
+            case "${'$'}2" in HKLM*) out=hklm.out ;; *) out=hkcu.out ;; esac
+            [ -f "${'$'}(dirname "${'$'}0")/${'$'}out" ] || exit 1
+            cat "${'$'}(dirname "${'$'}0")/${'$'}out"
+            """.trimIndent() + "\n",
+        )
+        script.toFile().setExecutable(true)
+        return script
+    }
+
+    /** [hive]'s `Settings` value holding [json] as [type], in reg.exe's own layout and line endings. */
+    private fun registry(hive: String, type: String, json: String) {
+        val root = if (hive == "hklm") "HKEY_LOCAL_MACHINE" else "HKEY_CURRENT_USER"
+        val key = "$root\\SOFTWARE\\Policies\\ClaudeCode"
+        Files.writeString(regDir().resolve("$hive.out"), "\r\n$key\r\n    Settings    $type    $json\r\n\r\n")
+    }
+
+    private fun plist(body: String): String =
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0"><dict>$body</dict></plist>
+        """.trimIndent() + "\n"
 
     private fun platform(): Path = tmp.resolve("platform")
 

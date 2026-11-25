@@ -475,14 +475,22 @@ Drafted checks for these exist and are committed with the P2 plan once P1 has la
   The laptop recipe sets `CLAUDE_CODE_ENABLE_TELEMETRY=1` and
   `OTEL_EXPORTER_OTLP_ENDPOINT=<server>/server/otlp` with an `otelHeadersHelper` that sends the key, and never sets
   `OTEL_LOG_USER_PROMPTS`. Where any of the organisation's managed settings sets a telemetry key, splice adds no
-  telemetry of its own; managed settings that set none leave the relay on. splice reads the file sources (#791): the
-  platform's `managed-settings.json` (`/etc/claude-code`, `/Library/Application Support/ClaudeCode`,
-  `C:\Program Files\ClaudeCode`) with each `managed-settings.d/*.json` beside it merged over it in filename order, as
-  Claude Code merges them (a later file's value replaces an earlier one's, `env` merges per variable, and a key a later
-  file sets to `null` is cleared), and the command's `remote-settings.json`. A malformed or unreadable file sets
-  nothing. A macOS configuration profile (the `com.anthropic.claudecode` managed preferences domain) and a Windows
-  registry policy (`HKLM` or `HKCU\SOFTWARE\Policies\ClaudeCode`) are not read: an organisation that sets its
-  telemetry only there gets splice's relay beside it unless the same keys are also in a managed settings file.
+  telemetry of its own; managed settings that set none leave the relay on. splice reads every managed source Claude
+  Code honors on the machine (#791), ranked as Claude Code ranks them: the command's `remote-settings.json`; then the
+  operating system's admin policy, which is the macOS configuration profile (the `com.anthropic.claudecode` managed
+  preferences domain: `/Library/Managed Preferences/<user>/com.anthropic.claudecode.plist` when it can be read, the
+  device's `/Library/Managed Preferences/com.anthropic.claudecode.plist` otherwise, converted by `/usr/bin/plutil`)
+  or the Windows registry policy (the JSON `Settings` value, `REG_SZ` or `REG_EXPAND_SZ`, under
+  `HKLM\SOFTWARE\Policies\ClaudeCode`, read with `reg.exe query`); then the platform's `managed-settings.json`
+  (`/etc/claude-code`, `/Library/Application Support/ClaudeCode`, `C:\Program Files\ClaudeCode`) with each
+  `managed-settings.d/*.json` beside it merged over it in filename order, as Claude Code merges them (a later file's
+  value replaces an earlier one's, `env` merges per variable, and a key a later file sets to `null` is cleared); and
+  last the user-writable `HKCU\SOFTWARE\Policies\ClaudeCode` value, read only when none of the sources above it
+  holds a document. A telemetry variable counts from `env` merged per variable across the first three sources (the
+  highest that defines a variable gives its value); an `otelHeadersHelper` counts from the one source Claude Code
+  selects, the highest that sets any policy key. A malformed or unreadable document sets nothing, and each command
+  that reads one runs for at most five seconds. WSL's inheritance of the Windows chain
+  (`wslInheritsWindowsSettings`) is not read: such a session is judged by `/etc/claude-code` and its remote settings.
 - **F9 client version policy.** `[server.client] minimum`. Each launch sends `x-splice-client: <version>` in
   `ANTHROPIC_CUSTOM_HEADERS`. An older client's turn is answered 200 with an assistant message naming the version
   to upgrade to, streamed or not, and nothing reaches the upstream (Claude Code retries a refusal about six times

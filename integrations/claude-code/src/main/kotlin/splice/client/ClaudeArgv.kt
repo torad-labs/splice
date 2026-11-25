@@ -211,7 +211,9 @@ private data class OptionSpec(val takes: Takes, val prompt: Boolean = false) {
 }
 
 private const val LONG = "--"
-private const val END_OF_OPTIONS = "--"
+
+/** The word after which Claude Code reads no flag: every word after it is the prompt's. */
+public const val END_OF_OPTIONS: String = "--"
 
 private val SWITCH = OptionSpec(Takes.NOTHING)
 private val ONE = OptionSpec(Takes.ONE)

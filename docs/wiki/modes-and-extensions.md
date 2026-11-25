@@ -45,7 +45,7 @@ The manifest's keys, the handler contract (`splice.modes.api.Mode`, `ModeAnswer.
 ### An mcp mode
 
 - **Where it is served:** the daemon answers `initialize`, `tools/list`, `tools/call`, `resources/list` and `resources/read` at `/mcp/<server>`.
-- **How a client finds it:** every launch on a head where the mode is on gets one more `--mcp-config` file (for `claude` on the door, which runs no head, where the mode is on for every head), `~/.splice/state/own-mcp-<command>-<caller>.json` (owner-only, with an MCP-scoped key). A caller on `[callers] off` gets none.
+- **How a client finds it:** every launch on a head where the mode is on gets one more `--mcp-config` file (for `claude` on the door, which runs no head, where the mode is on for every head), `~/.splice/state/own-mcp-<command>-<caller>.json`, or `own-mcp-door.json` for `claude` on the door (owner-only, with an MCP-scoped key). A caller on `[callers] off` gets none.
 - **Timing:** a session already running when the mode is turned on sees it only on its next launch; turned off, the server stops answering at once. Claude Desktop's own sessions are not handed the file.
 - **Pages:** a tool whose `tools/<tool>.meta.json` says `{ "ui": { "resourceUri": "ui://<server>/<page>" } }` shows that page in clients that draw MCP Apps. Others show the tool's answer as any tool's result.
 

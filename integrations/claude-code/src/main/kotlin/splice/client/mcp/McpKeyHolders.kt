@@ -6,8 +6,8 @@
 // management key, or by a rotation of the MCP key alone. A head's file is rewritten at each launch, so what it says now
 // is what the next session gets, not what a running one holds: that is the key published when it started. No key is
 // read. An entry is splice's by the header splice writes beside its bearer (X-Splice-Head, or the hub's
-// X-Splice-Launch), and the key's age is its publication file's, which is written only when the key changes
-// (McpAccessPublication).
+// X-Splice-Launch), or by being in a file of the daemon's own servers (OwnMcpLaunch), and the key's age is its
+// publication file's, which is written only when the key changes (McpAccessPublication).
 package splice.client.mcp
 
 import kotlinx.serialization.json.Json
@@ -84,7 +84,8 @@ public class McpKeyHolders(stateDir: Path) {
     /** Whether [file] carries an entry splice wrote: [missing] when there is no file, null when it can't be read. */
     private fun carries(file: Path, missing: Boolean?): Boolean? = try {
         val servers = Json.parseToJsonElement(Files.readString(file)).jsonObject[Keys.MCP_SERVERS] as? JsonObject
-        servers?.values?.any(::spliceWrote) ?: false
+        val own = file.fileName?.toString().orEmpty().startsWith(OWN_MCP_FILE_PREFIX)
+        servers?.values?.any { spliceWrote(it, own) } ?: false
     } catch (_: NoSuchFileException) {
         missing
     } catch (_: IOException) {
@@ -94,9 +95,11 @@ public class McpKeyHolders(stateDir: Path) {
         null
     }
 
-    /** An entry splice wrote: its bearer beside the header that names the head, or the hub launch, it was written for. */
-    private fun spliceWrote(entry: JsonElement): Boolean {
+    /** An entry splice wrote: its bearer beside the header that names the head, or the hub launch, it was written for;
+     *  in a file of the daemon's [own] servers, every bearer, since `claude` on the door asks for them with no head. */
+    private fun spliceWrote(entry: JsonElement, own: Boolean): Boolean {
         val headers = (entry as? JsonObject)?.get("headers") as? JsonObject ?: return false
-        return AUTHORIZATION_HEADER in headers && (MCP_HEAD_HEADER in headers || HUB_LAUNCH_HEADER in headers)
+        val named = own || MCP_HEAD_HEADER in headers || HUB_LAUNCH_HEADER in headers
+        return AUTHORIZATION_HEADER in headers && named
     }
 }

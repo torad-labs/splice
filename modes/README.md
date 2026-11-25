@@ -111,7 +111,9 @@ and a client that draws MCP Apps can show its pages.
   `resource(uri)` gives for an entry with no file. A client that does not draw MCP Apps shows the tool's answer as
   any tool's result, so the answer has to stand without the page.
 - **The session.** A call's `ModeSession.id` is the client's MCP session id, not the id `/api/sessions` gives the
-  session, and its folder and model are not known: the MCP transport does not carry them.
+  session, and its folder, model and caller are not known: the MCP transport does not carry them. Its `head` is the
+  head its launch named (empty for `claude` on the door), and its `caller` reads `head` for every call: the wrapped
+  `claude` on the Claude head is a door caller whose entry names a head, so the entry cannot tell the two apart.
 
 ## Hooks
 
@@ -161,7 +163,8 @@ worker = { kind = "http", url = "http://127.0.0.1:9100/hook", auth_env = "HOOK_K
   writes it, its input as a JSON object, the session, and the mode's store. It answers `ModeAnswer.Text` or
   `ModeAnswer.Error`, which the model reads as an error result. A handler that throws is answered for it.
 - The session is `ModeSession(id, folder, head, model, caller)`: the id `/api/sessions` gives it, its folder when
-  known, its head, its model, and its caller (`door`, `head` or `desktop`).
+  known, its head, its model, and its caller (`door`, `head` or `desktop`; an mcp mode's call does not know its caller,
+  see "An mcp mode").
 - `ModeStore` keeps text per session for the mode, under splice's state folder, and survives a restart.
 - `resource(uri)` gives the content of a resource the manifest declares with no `file`; only an mcp mode is asked.
 - `routes` lists the management routes the mode answers (`ModeRoute`: method, path, and a handler from a

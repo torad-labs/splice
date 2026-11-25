@@ -6,6 +6,7 @@ package splice.client.mcp
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import splice.client.END_OF_OPTIONS
 import splice.client.Keys
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -29,17 +30,23 @@ public class OwnMcpLaunch(
     private val log: LogSink,
 ) {
     /** [args] with the daemon's own servers for [head] and [caller] added: a `--mcp-config` of their own after
-     *  whatever the launch already carries, which Claude Code reads beside it (the flag takes several files, and each
-     *  use of it adds to them). A flag and a file of its own keeps the pair every reader of a launch's arguments
+     *  whatever the launch already carries and before its `--`, which Claude Code reads beside it (the flag takes
+     *  several files, and each use of it adds to them). A flag and a file of its own keeps the pair every reader of a launch's arguments
      *  looks for (LaunchRecipeArgs, McpKeyHolders). Unchanged when the daemon answers no server for that launch, or
      *  the file cannot be written: the launch then runs without them, and the log says so. */
-    public fun added(args: List<String>, head: String, caller: String): List<String> =
-        file(head, caller)?.let { args + listOf(MCP_CONFIG_FLAG, it.toString()) } ?: args
+    public fun added(args: List<String>, head: String, caller: String): List<String> {
+        val file = file(head, caller) ?: return args
+        // before a `--` among them, after which Claude Code reads every word as the prompt's
+        val end = args.indexOf(END_OF_OPTIONS).takeIf { it >= 0 } ?: args.size
+        return args.take(end) + listOf(MCP_CONFIG_FLAG, file.toString()) + args.drop(end)
+    }
 
     private fun file(head: String, caller: String): Path? {
         val names = servers.names(head, caller)
         if (names.isEmpty()) return null
-        val file = dir.resolve("own-mcp-${head.ifBlank { "claude" }}-$caller.json")
+        // a launch with no head (`claude` on the door) has a file of its own: the Claude head's names that head
+        val named = if (head.isBlank()) caller else "$head-$caller"
+        val file = dir.resolve("$OWN_MCP_FILE_PREFIX$named.json")
         return try {
             val body = buildJsonObject {
                 putJsonObject(
@@ -54,3 +61,7 @@ public class OwnMcpLaunch(
         }
     }
 }
+
+/** The start of the name of every file of the daemon's own servers: each entry in one is splice's, with its MCP key
+ *  (McpKeyHolders). A caller's word holds no `-`, so a launch with no head never shares a head's file name. */
+internal const val OWN_MCP_FILE_PREFIX: String = "own-mcp-"

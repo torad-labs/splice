@@ -8,9 +8,11 @@
 // launch through the wrapped `claude`, or splice's own mark on macOS (LaunchMarker); then the MCP hub's file for the
 // launch, or a wrapped launch's own file, as one --mcp-config in splice's state, with a --plugin-dir-no-mcp for each
 // plugin the hub runs. Everything after that is the person's, and so is the --effort a launch adds there (Oct 28): a
-// relaunch starts at the effort its session started at, and adds none of its own beside it.
+// relaunch starts at the effort its session started at, and adds none of its own beside it. A launch of `claude` on the
+// door puts the file of the daemon's own servers after the person's words, before their `--` (Nov 25): splice's too.
 package splice.launch.recipe
 
+import splice.client.END_OF_OPTIONS
 import splice.client.mcp.HUB_PLUGIN_FLAG
 import splice.client.mcp.MCP_CONFIG_FLAG
 import splice.sessions.registry.LaunchMarker
@@ -39,7 +41,21 @@ public object LaunchRecipeArgs {
             at += 2
             while (arguments.getOrNull(at) == HUB_PLUGIN_FLAG && at + 1 < arguments.size) at += 2
         }
-        return skip + arguments.drop(at)
+        return skip + withoutOwnFiles(arguments.drop(at), state)
+    }
+
+    /** [words] without a `--mcp-config` file in splice's [state] before their `--`: the file of the daemon's own
+     *  servers, which a launch of `claude` on the door puts after the person's words. The launch the relaunch makes
+     *  names it again while its mode is on, and names none once it is off. */
+    private fun withoutOwnFiles(words: List<String>, state: Path): List<String> {
+        val end = words.indexOf(END_OF_OPTIONS).takeIf { it >= 0 } ?: words.size
+        val kept = mutableListOf<String>()
+        var at = 0
+        while (at < end) {
+            val ours = words[at] == MCP_CONFIG_FLAG && inState(words.getOrNull(at + 1), state)
+            if (ours) at += 2 else kept += words[at++]
+        }
+        return kept + words.drop(end)
     }
 
     /** Whether [value] is a file in splice's [state], where a launch writes its MCP files; any other is the person's. */

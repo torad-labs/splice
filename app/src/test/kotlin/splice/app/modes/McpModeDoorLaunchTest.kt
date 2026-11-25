@@ -1,7 +1,8 @@
 // An mcp mode reaching `claude` on the door, end to end on a daemon: a launch after the mode is on, whether splice.toml
 // turned it on before boot or `PUT /api/modes` while the daemon ran, is handed a `--mcp-config` file naming the mode's
 // server at the daemon's own address. Before, only a head's own launch was handed one, so `claude` on the door, the
-// launch every seat and most sessions get, never had the mode's tools.
+// launch every seat and most sessions get, never had the mode's tools. The file is a flag before a `--` in the
+// person's words, and a relaunch carries none of its own: the launch it makes names it again while the mode is on.
 package splice.app.modes
 
 import com.sun.net.httpserver.HttpServer
@@ -14,7 +15,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -31,6 +32,7 @@ import splice.core.config.UserHome
 import splice.core.testing.TestPorts
 import splice.core.util.EnvReader
 import splice.head.awaitListening
+import splice.launch.recipe.LaunchRecipeArgs
 import splice.topology.TopologyLoader
 import java.net.InetSocketAddress
 import java.nio.file.Files
@@ -66,29 +68,81 @@ class McpModeDoorLaunchTest {
     private val json = Json { ignoreUnknownKeys = true }
     private val controlPort = TestPorts.reserve()
 
+    /** The running daemon a test asks: its management key, the person's home and splice's state folder. */
+    private inner class Running(private val mgmt: String, private val home: Path, val state: Path) {
+        /** The argv a launch of `claude` answers for the person's [words], asked as the shim asks. */
+        suspend fun launch(words: List<String> = emptyList()): List<String> {
+            val args = JsonArray(words.map(::JsonPrimitive))
+            val response = client.post("http://127.0.0.1:$controlPort/launch/claude") {
+                header("Authorization", "Bearer $mgmt")
+                header("Content-Type", "application/json")
+                setBody("""{"cwd":${JsonPrimitive(home.toString())},"args":$args}""")
+            }
+            val body = response.bodyAsText()
+            assertEquals(200, response.status.value, body)
+            return json.parseToJsonElement(body).jsonObject.getValue("argv").jsonArray.map { it.jsonPrimitive.content }
+        }
+
+        /** The visual mode switched [on] for every head, as the console's switch does. */
+        suspend fun switch(on: Boolean) {
+            val switched = client.put("http://127.0.0.1:$controlPort/api/modes/visual") {
+                header("Authorization", "Bearer $mgmt")
+                header("Content-Type", "application/json")
+                setBody("""{"on":$on}""")
+            }
+            assertEquals(200, switched.status.value, switched.bodyAsText())
+        }
+
+        /** What a Continue or a model move starts the session of [argv] with again: the person's words, which the
+         *  wrapped `claude` launches on the door once more. */
+        suspend fun relaunch(argv: List<String>): List<String> =
+            launch(LaunchRecipeArgs.callerArgs(argv.drop(1), state, wrapped = true))
+    }
+
     @Test
     fun `claude on the door is handed the server of an mcp mode splice toml turned on`(@TempDir tmp: Path) {
-        daemon(tmp, "[modes.visual]\non = true") { mgmt, home ->
-            assertEquals(listOf("visual"), ownServers(launch(mgmt, home)))
+        daemon(tmp, "[modes.visual]\non = true") {
+            assertEquals(listOf("visual"), ownServers(launch()))
         }
     }
 
     @Test
     fun `claude on the door is handed the server of an mcp mode switched on while the daemon runs`(@TempDir tmp: Path) {
-        daemon(tmp, "") { mgmt, home ->
-            assertEquals(emptyList<String>(), ownServers(launch(mgmt, home)), "the mode ships off")
-            val switched = client.put("http://127.0.0.1:$controlPort/api/modes/visual") {
-                header("Authorization", "Bearer $mgmt")
-                header("Content-Type", "application/json")
-                setBody("""{"on":true}""")
-            }
-            assertEquals(200, switched.status.value, switched.bodyAsText())
-            assertEquals(listOf("visual"), ownServers(launch(mgmt, home)))
+        daemon(tmp, "") {
+            assertEquals(emptyList<String>(), ownServers(launch()), "the mode ships off")
+            switch(on = true)
+            assertEquals(listOf("visual"), ownServers(launch()))
+        }
+    }
+
+    @Test
+    fun `a launch whose own words hold -- is handed the file as a flag before them`(@TempDir tmp: Path) {
+        daemon(tmp, "[modes.visual]\non = true") {
+            val argv = launch(listOf("-n", "probe", "--", "--draw", "a chart"))
+            assertEquals(listOf("visual"), ownServers(argv))
+            assertEquals(listOf("--", "--draw", "a chart"), argv.takeLast(3), "the prompt's words are as given")
+            val file = argv.indexOf("--mcp-config")
+            assertEquals(true, file in 0..<argv.indexOf("--"), "the file is before the --: $argv")
+        }
+    }
+
+    @Test
+    fun `a relaunch names the mode's file once while it is on, and none once it is turned off`(@TempDir tmp: Path) {
+        daemon(tmp, "[modes.visual]\non = true") {
+            val first = launch(listOf("-n", "probe"))
+            val again = relaunch(first)
+            assertEquals(listOf("visual"), ownServers(again))
+            assertEquals(1, again.count { it == "--mcp-config" }, "the file is there once: $again")
+            assertEquals(listOf("-n", "probe"), LaunchRecipeArgs.callerArgs(again.drop(1), state, wrapped = true))
+            switch(on = false)
+            val off = relaunch(again)
+            assertEquals(emptyList<String>(), ownServers(off))
+            assertEquals(0, off.count { it == "--mcp-config" }, "no server that no longer answers: $off")
         }
     }
 
     /** A daemon over a splice.toml with one provider, no heads and [modes], carrying the modes its jar carries. */
-    private fun daemon(tmp: Path, modes: String, check: suspend (String, Path) -> Unit) {
+    private fun daemon(tmp: Path, modes: String, check: suspend Running.() -> Unit) {
         val provider = DoorModeProvider()
         val home = Files.createDirectories(tmp.resolve("home"))
         val fixture = mapOf("XDG_CONFIG_HOME" to tmp.resolve("config").toString())
@@ -110,7 +164,7 @@ class McpModeDoorLaunchTest {
                     daemon.start()
                     try {
                         awaitListening(controlPort)
-                        check(mgmt, home)
+                        Running(mgmt, home, statePaths.stateDir).check()
                     } finally {
                         daemon.stop()
                     }
@@ -121,21 +175,8 @@ class McpModeDoorLaunchTest {
         client.close()
     }
 
-    /** The recipe a launch of `claude` answers, asked as the shim asks. */
-    private suspend fun launch(mgmt: String, home: Path): JsonObject {
-        val response = client.post("http://127.0.0.1:$controlPort/launch/claude") {
-            header("Authorization", "Bearer $mgmt")
-            header("Content-Type", "application/json")
-            setBody("""{"cwd":${JsonPrimitive(home.toString())}}""")
-        }
-        val body = response.bodyAsText()
-        assertEquals(200, response.status.value, body)
-        return json.parseToJsonElement(body).jsonObject
-    }
-
     /** The servers the launch's `--mcp-config` files name at the daemon's own MCP address, by name. */
-    private fun ownServers(recipe: JsonObject): List<String> {
-        val argv = recipe.getValue("argv").jsonArray.map { it.jsonPrimitive.content }
+    private fun ownServers(argv: List<String>): List<String> {
         val files = argv.indices.filter { argv[it] == "--mcp-config" }.map { argv[it + 1] }
             .filter { !it.trimStart().startsWith("{") }
         return files.flatMap { file ->

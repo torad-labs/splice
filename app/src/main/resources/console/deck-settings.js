@@ -217,7 +217,7 @@
       body.append(h('div', 'eyebrow lr-sec', m.name));
       const about = row('mode:' + m.name, m.summary || m.name, [MODE_KIND[m.kind] || m.kind, ...S.modeOnlyFor(m).map(c => MODE_ONLY_FOR[c]), ...(m.callers_off || []).map(c => MODE_LEFT_OUT[c])].filter(Boolean).join(' · '));
       about.r.querySelector('.sv').remove();
-      const tools = h('div', 'kvs fill');
+      const tools = h('div', 'kvs fill lr-tools');
       (m.tools || []).forEach(t => { const d = h('div'); d.append(h('span', '', t.description || t.name), h('b', '', t.offered_as || t.name)); tools.append(d); });
       if (!(m.tools || []).length) tools.append(h('div', 'faint', 'No tools'));
       about.ctl.append(tools);

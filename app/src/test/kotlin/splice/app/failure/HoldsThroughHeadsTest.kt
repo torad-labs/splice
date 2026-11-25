@@ -130,6 +130,7 @@ internal class HoldsThroughHeadsTest : HoldRouteFixtures() {
 
             val stream = head.client.open(launched())
             eventually { stream.soFar().notices.isNotEmpty() }
+            awaitParkedFor(10.minutes + 2.seconds)
             assertEquals(1, provider.requests.size, "the limit, and nothing more before the reset")
             runClock(
                 2.seconds,
@@ -804,6 +805,12 @@ internal abstract class HoldRouteFixtures : HoldReplyFixtures() {
             seen = now
         }
     }
+
+    /** Waits in real time until a wait is parked on the virtual clock for [due], before the test moves the clock.
+     *  A held turn says it waits, then reads the clock and parks for what is left of its wait: a clock moved between
+     *  the two makes it park for [due] from the later time and wake a step late, and the test then waits in real time
+     *  for a send that only the clock's next step can bring. */
+    protected suspend fun ScriptedHeads.awaitParkedFor(due: Duration) = eventually { due in time.parkedDues() }
 
     /** At [due] the woken hold sends its retry over loopback; let it land before advancing the clock (#619). */
     protected suspend fun ScriptedHeads.awaitRetryAt(due: Duration, finished: () -> Boolean) {

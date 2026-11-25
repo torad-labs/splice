@@ -236,13 +236,18 @@ public class LiveTurns(
         bySlot[slot.countedSlot]?.quiet()
     }
 
+    /** The turns live now, oldest first. They are copied out of the map in one pass: a list made from the map's own
+     *  size and then its first element fails with NoSuchElementException when the one turn it counted ends between
+     *  the two, and a turn ends at the very moment its client has the answer and reads the listing. */
+    private fun liveOldestFirst(): List<Live> = live.values.toTypedArray().sortedBy { it.since }
+
     /** What each held turn says now, in the order the turns were admitted in. */
-    public fun sayings(): List<HeldSaying> = live.values.sortedBy { it.since }.mapNotNull { it.saying }
+    public fun sayings(): List<HeldSaying> = liveOldestFirst().mapNotNull { it.saying }
 
     /** Oldest first, the order the turns were admitted in. */
     public fun list(): List<LiveTurn> {
         val now = clock()
-        return live.values.sortedBy { it.since }.map { it.view(now) }
+        return liveOldestFirst().map { it.view(now) }
     }
 
     /** Stops the live turn [id] and answers true, or false when no turn with that id is live

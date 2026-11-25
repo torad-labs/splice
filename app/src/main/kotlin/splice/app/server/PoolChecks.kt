@@ -3,13 +3,13 @@
 // request, the same interval (`health_seconds`), and every server up from the start. `kind = "completion"` asks the
 // server to really complete a minimal request for the probe's model, in its provider's dialect (ReadinessProbe) and
 // with the login a turn of it sends, every `every_seconds` and within `timeout_seconds`; with `at_start` (the default)
-// a server takes no turn until its first completion comes back.
+// a server takes no turn until its first completion comes back. Either kind trusts what a turn of the provider trusts,
+// its `ca_file` included, and is bounded over its whole answer, body and all.
 package splice.app.server
 
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withTimeoutOrNull
 import splice.app.probe.MS_PER_SECOND
-import splice.app.provider.local.JdkHealthHttp
 import splice.app.provider.tls.ProviderTrust
 import splice.core.auth.AuthProvider
 import splice.core.auth.CredentialKey
@@ -19,6 +19,8 @@ import splice.core.topology.UpstreamConfig
 import splice.core.util.LogSink
 import splice.upstream.readiness.ReadinessProbe
 import splice.upstream.readiness.ReadinessReading
+import splice.upstream.transport.LocalHttp
+import splice.upstream.transport.LocalHttpReply
 import splice.upstream.transport.UpstreamHeaders
 import java.nio.file.Path
 import java.time.Duration
@@ -53,17 +55,31 @@ internal sealed class PoolCheck {
     /** Asks [upstream] once. */
     abstract suspend fun ask(upstream: UpstreamConfig): ReadinessReading
 
-    /** `kind = "health"`: `GET /health` beside the server's API root with the headers a turn carries, up on any 2xx. */
+    /** [client]'s answer to [method] [url] if the whole of it, headers and body, came back within [timeout]; null if
+     *  none did. Java 21's request timeout ends at the headers. Interrupting the send cancels the exchange while its
+     *  body handler is still reading, so even an unfinished response cannot freeze this member's reading or keep it
+     *  advertised as ready. */
+    protected suspend fun within(
+        timeout: Duration,
+        client: LocalHttp,
+        method: String,
+        url: String,
+        body: String?,
+    ): LocalHttpReply? = withTimeoutOrNull(timeout.toMillis()) { runInterruptible { client(method, url, body) } }
+
+    /** `kind = "health"`: `GET /health` beside the server's API root with the headers a turn carries, up on any 2xx
+     *  that comes back whole within [timeout]. */
     class Health(
         override val everyMs: Long,
         private val headers: ServerHeaders,
+        private val timeout: Duration,
         private val http: HealthHttp,
     ) : PoolCheck() {
         override val startHealthy: Boolean = true
 
         override suspend fun ask(upstream: UpstreamConfig): ReadinessReading {
-            val reply = http.with(headers.now())("GET", upstream.healthUrl, null)
-                ?: return ReadinessReading(false, "no answer")
+            val reply = within(timeout, http.with(headers.now()), "GET", upstream.healthUrl, null)
+                ?: return ReadinessReading(false, "no answer within ${timeout.seconds} s")
             return ReadinessReading(reply.status in OK_FROM until OK_BELOW, "HTTP ${reply.status}")
         }
     }
@@ -80,26 +96,26 @@ internal sealed class PoolCheck {
     ) : PoolCheck() {
         override suspend fun ask(upstream: UpstreamConfig): ReadinessReading {
             val request = ready.readiness.request(upstream.base, model)
-            val client = http.with(ready.headers())
-            // Java 21's request timeout ends at the headers. Interrupting send cancels the exchange while its body
-            // handler is still reading, so even an unfinished response cannot keep this member advertised as ready.
-            val reply = withTimeoutOrNull(timeout.toMillis()) {
-                runInterruptible { client("POST", request.url, request.body) }
-            } ?: return ReadinessReading(false, "no answer within ${timeout.seconds} s")
+            val reply = within(timeout, http.with(ready.headers()), "POST", request.url, request.body)
+                ?: return ReadinessReading(false, "no answer within ${timeout.seconds} s")
             return ready.readiness.read(reply.status, reply.body)
         }
     }
 
-    /** The configured check policy and the directory provider-relative files resolve against. */
+    /** The configured check policy and the directory provider-relative files resolve against. Every check of a pool
+     *  goes through one client of [http]'s, trusting what a turn of its provider trusts: Java's roots, the system's and
+     *  the provider's own `ca_file`. */
     class Plan(
-        private val healthHttp: HealthHttp,
+        private val http: CheckHttp,
         private val log: LogSink,
         private val probe: ServerProbe = ServerProbe(),
         private val configDir: Path? = null,
     ) {
         fun of(key: String, provider: ProviderConfig, headers: ServerHeaders, ready: PoolReadiness): PoolCheck {
+            val trust = ProviderTrust(log).manager(key, provider.caFile, configDir)
             if (probe.kind != COMPLETION_KIND) {
-                return Health(provider.healthSeconds * MS_PER_SECOND, headers, healthHttp)
+                val timeout = Duration.ofSeconds(HEALTH_TIMEOUT_S)
+                return Health(provider.healthSeconds * MS_PER_SECOND, headers, timeout, http.of(trust, timeout))
             }
             val timeout = Duration.ofSeconds(probe.timeoutSeconds.toLong())
             return Completion(
@@ -108,11 +124,14 @@ internal sealed class PoolCheck {
                 timeout,
                 probe.everySeconds * MS_PER_SECOND,
                 startHealthy = !probe.atStart,
-                http = JdkHealthHttp(ProviderTrust(log).manager(key, provider.caFile, configDir), timeout),
+                http = http.of(trust, timeout),
             )
         }
     }
 }
+
+// How long a `/health` check waits for the whole of its answer, headers and body: what bounded its headers before.
+private const val HEALTH_TIMEOUT_S = 5L
 
 // The statuses that say a server can take a turn, the 2xx: llama-server answers 200 once its model is loaded and 503
 // before.

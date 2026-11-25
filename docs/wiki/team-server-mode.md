@@ -366,13 +366,16 @@ single_url = ["solo"]   # optional: providers on one base_url to probe too
 Each member must return a valid completion for the named model within `timeout_seconds`. With `at_start = true`
 (the default), a member takes no team-server turns until its first probe passes. Set it to `false` to serve the
 member immediately and take it out of rotation if a probe fails. Without a completion probe, each provider's
-`health_seconds` still controls the interval for its `/health` checks.
+`health_seconds` still controls the interval for its `/health` checks, and a server whose `/health` answer does
+not come back whole within 5 seconds counts as down until its next check. Both kinds of check trust what the
+provider's turns trust, its `ca_file` included.
 
 A provider that is one server gets no probe unless `single_url` names it. A named provider (it must speak
 `openai-chat` and set `base_url`) is probed exactly like a pool member: until its probe passes, every turn for it
 is refused with a 503 naming it, and nothing is sent to its server. Whenever no server of a provider is up, the 503
 carries `Retry-After` set to the probe's interval (`every_seconds`, or the provider's `health_seconds` under the
-health probe), so Claude Code waits that long before it tries again.
+health probe), so Claude Code waits that long before it tries again. By then every server has usually been asked
+again; one can come back sooner, and a client that retries early is only refused again.
 
 See the [configuration reference](configuration-reference.md#server-mode) for defaults and the
 [server mode spec](../specs/server-mode.md#external-upstream-state-serverstate) for signal formats, failure

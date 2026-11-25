@@ -7,7 +7,6 @@
 package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
-import splice.app.provider.local.JdkHealthHttp
 import splice.app.provider.local.JdkLocalHttp
 import splice.app.provider.local.LocalProbeInputs
 import splice.app.provider.local.LocalRowsCheck
@@ -37,7 +36,7 @@ internal class ChatArm(
     private val log: LogSink,
     private val grokRefresh: GrokRefresh,
     /** Server mode (F4): the pools of the providers that list upstreams, shared by every head of each. */
-    private val pools: UpstreamPools = UpstreamPools(probeScope, log, JdkHealthHttp()),
+    private val pools: UpstreamPools = UpstreamPools(probeScope, log),
     /** The Grok sign-ins, held once for every arm that serves Grok (GrokResponsesArm asks the same owner). */
     private val grokAccounts: GrokAccountWiring = GrokAccountWiring(probeScope, log, grokRefresh),
 ) {

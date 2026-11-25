@@ -115,10 +115,10 @@ The `mcp_*_ms` host limits and other serving knobs are **not** members of `Daemo
 | `models_url` | string | dialect's roster URL | Override where splice fetches the model roster. |
 | `discovery` | table | no filters | Catalog selection from discovered models, below. |
 | `upstreams` | array of tables | empty | Health-checked pool; choose a healthy upstream with least in flight. Required string keys `name` (unique stable name) and `url` (base URL); no field defaults. |
-| `health_seconds` | integer | 5 | Interval for the default `/health` probe, minimum 1. A [completion probe](#server-mode) uses its own interval. |
+| `health_seconds` | integer | 5 | Interval for the default `/health` probe, minimum 1; each check must answer whole within 5 seconds. A [completion probe](#server-mode) uses its own interval. |
 | `hourly_usd` | number | unset | Hourly rental cost metered while host is up; otherwise token pricing only. |
 | `picker` | bool | unset | Show/hide provider models in the gateway picker, subject to the door's default rules and a legacy head override. |
-| `ca_file` | string | unset | Additional PEM trust bundle; relative to config dir; `~/` expands. |
+| `ca_file` | string | unset | Additional PEM trust bundle for turns and server-mode checks; relative to config dir; `~/` expands. |
 | `error_messages` | string | `filtered` | `whole` surfaces the provider error wording; `filtered` uses splice's filtering. |
 | `served_window` | table | unset | Probe for the provider's served context ceiling: string `url` and dotted JSON field path `field`, both schema `""` but required/validated if configured (`CustomProviderChecks.kt:18–24`). |
 | `pinned_model` | string | unset (first catalog row for gateway if unspecified) | Starting row for the provider on the gateway. |

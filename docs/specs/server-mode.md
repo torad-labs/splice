@@ -271,7 +271,9 @@ busy_message = ""            # blank: splice's own sentence naming the cap
   refused at once with `busy_status`, `Retry-After: busy_retry_after` and `busy_message` or a sentence naming the
   cap. These caps are asked after the person's token cap and before their turns in flight and turns a minute, so a
   turn they refuse spends none of its person's `rpm_per_person`. One slot holds both places, so a turn's end and its
-  client's hang-up each give both back, once. With `inflight_per_upstream` each admitted turn reserves a place in the pool at
+  client's hang-up each give both back, once. A turn that runs to its end gives them back as the last part of its
+  answer is handed to the client's connection, after its upstream has answered in full and before the client can have
+  the whole answer, so a client that asks again only once it has its answer is never refused for the turn before. With `inflight_per_upstream` each admitted turn reserves a place in the pool at
   admission, counted against the servers' room together with every lease, so turns admitted before any of them leased
   never add up past the cap; the turn's first lease takes its place. No lease is ever given on a server that is
   full, and a lease that holds no reserved place never takes one that is reserved: a turn that finds no place (every
@@ -282,8 +284,11 @@ busy_message = ""            # blank: splice's own sentence naming the cap
 - `drain_seconds`: from a stop's first moment every keyed request, a turn on any route (a command's, the OpenAI route,
   the team's door) or anything else a key asks, `/server/forward-auth` included, is a 503 with `Retry-After` in its
   client's shape, and `GET /health`
-  answers 503 `{"status":"draining"}`; the stop waits up to that long for the server's turns in flight to end, then closes the
-  listener. The drain is spent before the heads' own stop budget, which shrinks by what it took, so the daemon's whole
+  answers 503 `{"status":"draining"}`; the stop waits up to that long (and at least the one second of grace) for every
+  answer the listener has begun to be written to its client's connection, then closes the listener. That is every
+  answer, not only a turn's: a slow download, a mode's long poll on `/server/mod/` and the drain's own 503s hold the
+  stop too, until their last bytes are on the socket or their connection closes, and whatever is still unwritten when
+  the time is up is cut. The drain is spent before the heads' own stop budget, which shrinks by what it took, so the daemon's whole
   stop stays inside its cooperative cap; hence the 45-second ceiling, a boot finding past it.
 - `stream_idle_seconds`: a streamed answer silent that long after its last word is hung up on at the upstream, and the
   stream ends with an error event (504 in the ledger), on the Messages route and the OpenAI route alike, never with an

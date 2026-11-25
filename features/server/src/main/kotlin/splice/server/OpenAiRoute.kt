@@ -82,7 +82,7 @@ internal class OpenAiRoute(
     private val catalog = ShareCatalog(parts.heads, io, voice)
     private val relay = parts.carriers.relay.speaking(voice)
     private val bound = ProviderBound(parts.keys, log)
-    private val watched = WatchedRelay()
+    private val watched = WatchedRelay(parts.limits.load.answers)
     private val admission = TurnAdmission(parts, voice, catalog, watched)
     private val paths = RequestPaths()
     private val chatPath = listOf(HEAD_API_ROOT, "chat", "completions")

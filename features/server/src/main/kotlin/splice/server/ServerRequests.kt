@@ -57,8 +57,9 @@
 //
 // A stop drains first (#791, `[server] drain_seconds`): from its first moment every keyed request, a turn on any route
 // or anything else a key asks, is a 503 with `Retry-After` in its client's shape, and `/health` says draining; the stop
-// waits, up to the drain's length, for the turns in flight to end before it closes the listener. With no drain the
-// listener gives them its one second of grace, as before.
+// waits, up to the drain's length, for every answer the listener has begun, a turn's included, to be written to its
+// client's connection before it closes the listener (AnswersInFlight). With no drain the listener gives them its one
+// second of grace, as before.
 //
 // With `[server] stream_idle_seconds` a streamed turn whose answer falls silent that long after its first word is
 // ended with an error event, which Claude Code retries, instead of hanging: on a command's routes by the relay
@@ -137,7 +138,7 @@ internal class ServerRequests(
     private val forwardAuth = ForwardAuthRoute(server, parts.keys, parts.people, adminAccess, browser, voice, drain)
     private val publicRoutes = ServerPublicRoutes(server, addresses, secure, voice, forwardAuth)
     private val keyAdmission = KeyAdmission(parts.keys, addresses, log)
-    private val watched = WatchedRelay()
+    private val watched = WatchedRelay(parts.limits.load.answers)
     private val paths = RequestPaths()
     private val admission = TurnAdmission(parts, voice, catalog, watched)
     private val checkins = ClientCheckins(server.client, voice)

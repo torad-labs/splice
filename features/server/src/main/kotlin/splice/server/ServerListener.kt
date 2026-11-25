@@ -48,6 +48,7 @@ internal class ServerListener(
                 }
             }
             shutdownGracePeriod = SERVER_STOP_GRACE_MS
+            channelPipelineConfig = { pipeline -> load.answers.watch(pipeline) }
         }
         server.start(wait = false)
         engine = server
@@ -56,14 +57,17 @@ internal class ServerListener(
         log("[server] serving $commands to key holders on $scheme://${address.host}:${address.port}\n")
     }
 
-    /** Drains, then closes the listener: new turns are refused and `/health` says draining from now, and the turns in
-     *  flight are given up to `[server] drain_seconds` to end before the listener closes (#791). */
+    /** Drains, then closes the listener: new turns are refused and `/health` says draining from now, and the answers
+     *  in flight, the turns' among them, are given up to `[server] drain_seconds` to reach their clients before the
+     *  listener closes (#791). */
     suspend fun stop() {
         val engine = engine ?: return
         val drainMs = TimeUnit.SECONDS.toMillis(server.drainSeconds.toLong())
-        if (!load.drain(drainMs) && drainMs > 0) {
-            val left = load.inflight()
-            log("[server] stop: $left turn(s) still in flight after the drain; they are cut\n")
+        load.refuseNew()
+        if (!load.answers.written(maxOf(drainMs, SERVER_STOP_GRACE_MS)) && drainMs > 0) {
+            val left = load.answers.unwritten()
+            val turns = load.inflight()
+            log("[server] stop: $left answer(s) still unwritten after the drain, $turns of them turns; they are cut\n")
         }
         engine.stop(SERVER_STOP_GRACE_MS, SERVER_STOP_TIMEOUT_MS)
         this.engine = null
@@ -71,7 +75,9 @@ internal class ServerListener(
 }
 
 // why: a stop lets requests already in the listener finish for a second before it closes; a relayed turn still
-// streaming is cut, and its client's Claude Code retries it as it retries any cut turn.
+// streaming is cut, and its client's Claude Code retries it as it retries any cut turn. The listener waits that second
+// itself (AnswersInFlight): the engine's own grace keeps no connection open, since an event loop that shuts down closes
+// its connections before it runs the writes queued on it.
 private const val SERVER_STOP_GRACE_MS = 1_000L
 
 // why: the most a daemon stop waits on this listener in all, so a relay stuck on a head cannot hold up a restart.

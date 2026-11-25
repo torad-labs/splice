@@ -5,16 +5,14 @@
 // a provider once its healthy servers have no place left, every lease and every place reserved for a turn admitted
 // before it counted (UpstreamPool.reserve). A turn past either is refused at once, never queued, with
 // `busy_status` (429 or 503), `Retry-After: busy_retry_after` and `busy_message` or splice's own sentence, and it
-// counts toward neither. Its place is given back with its person's, through the one slot the turn holds (TurnSlot).
+// counts toward neither. Its place is given back with its person's, through the one slot the turn holds (TurnSlot):
+// as the last part of the turn's answer is handed to its connection (AnswersInFlight), or when its client hangs up.
 //
 // It is also where a stop's drain is said (`[server] drain_seconds`): from the moment the listener starts to stop,
-// every new turn is refused with a 503 and `Retry-After`, `/health` answers that the server is draining, and the stop
-// waits for the turns in flight here to end, up to the drain's length, before it closes the listener.
+// every new turn is refused with a 503 and `Retry-After` and `/health` answers that the server is draining. What the
+// stop then waits for is the listener's answers on the wire (AnswersInFlight), which outlast the turns counted here.
 package splice.server.load
 
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withTimeoutOrNull
 import splice.core.pool.UpstreamPool
 import splice.core.topology.ServerLimits
 import splice.core.wire.HttpStatus
@@ -23,8 +21,13 @@ import splice.server.TurnSlot
 import splice.server.UpstreamApi
 
 internal class ServerLoad(private val limits: ServerLimits, private val upstreams: UpstreamApi) {
-    // Every admitted turn in flight, the server's together; read by a drain, which waits for it to reach zero.
-    private val held = MutableStateFlow(0)
+    /** The listener's answers on the wire: what a stop's drain waits for, and what gives a turn's place back as the
+     *  last part of its answer goes out. */
+    val answers = AnswersInFlight()
+
+    // Every admitted turn in flight, the server's together.
+    @Volatile
+    private var held = 0
 
     /** Set once the listener starts to stop: from then on every new turn is refused. */
     @Volatile
@@ -39,7 +42,7 @@ internal class ServerLoad(private val limits: ServerLimits, private val upstream
         val pool = upstreams.pool(key)?.takeIf { limits.inflightPerUpstream > 0 }
         val refused = drainRefusal() ?: overTotal() ?: pool?.let { overPool(it, turn) }
         if (refused != null) return refused
-        held.value += 1
+        held += 1
         return LimitVerdict.Admitted(TurnSlot(server = Place(pool, turn)))
     }
 
@@ -54,9 +57,9 @@ internal class ServerLoad(private val limits: ServerLimits, private val upstream
     /** Why the next turn is past `inflight_total`; null while it is under it, or nothing caps it. */
     private fun overTotal(): LimitVerdict.Refused? {
         val total = limits.inflightTotal
-        if (total <= 0 || held.value < total) return null
+        if (total <= 0 || held < total) return null
         return busy(
-            "this server already has ${held.value} turns in flight, the most it takes at once " +
+            "this server already has $held turns in flight, the most it takes at once " +
                 "(inflight_total = $total); the next can start when one of them ends",
         )
     }
@@ -83,26 +86,20 @@ internal class ServerLoad(private val limits: ServerLimits, private val upstream
         HttpStatus.SERVICE_UNAVAILABLE,
     ).takeIf { draining }
 
-    /** Refuses every new turn from now, and waits up to [withinMs] for the turns in flight to end. Answers whether
-     *  they all did. */
-    suspend fun drain(withinMs: Long): Boolean {
-        refuseNew()
-        return withTimeoutOrNull(withinMs) { held.first { it == 0 } } != null
-    }
-
+    /** Refuses every new turn from now: the stop's drain has begun. */
     @Synchronized
-    private fun refuseNew() {
+    fun refuseNew() {
         draining = true
     }
 
     /** How many turns the server has in flight now. */
-    fun inflight(): Int = held.value
+    fun inflight(): Int = held
 
     /** The turn named [turn] ended: its place among the server's is free, and so is any it reserved in [pool] and
      *  never leased. */
     @Synchronized
     private fun ended(pool: UpstreamPool?, turn: String) {
-        held.value -= 1
+        held -= 1
         pool?.unreserve(turn)
     }
 

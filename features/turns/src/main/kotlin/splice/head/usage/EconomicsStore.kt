@@ -122,7 +122,7 @@ public class EconomicsStore(
             trimUnderLock()
             version += 1
         }
-        CoalescedFlush.scheduleCoalesced(ECONOMICS_FLUSH_DELAY_MS, writeScheduled) { flushScheduled() }
+        CoalescedFlush.scheduleCoalesced(ECONOMICS_FLUSH_DELAY_MS, writeScheduled, file) { flushScheduled() }
     }
 
     /**
@@ -179,7 +179,9 @@ public class EconomicsStore(
         // What the window dropped has to leave the FILE too, or the next boot reads it straight back
         // in. Scheduled only when an hour actually went, so a page poll that trims nothing — every
         // poll but the first of an hour — writes nothing.
-        if (dropped) CoalescedFlush.scheduleCoalesced(ECONOMICS_FLUSH_DELAY_MS, writeScheduled) { flushScheduled() }
+        if (dropped) {
+            CoalescedFlush.scheduleCoalesced(ECONOMICS_FLUSH_DELAY_MS, writeScheduled, file) { flushScheduled() }
+        }
         return ordered
     }
 
@@ -317,7 +319,7 @@ public class EconomicsStore(
         persist(snapshot, v)
         writeScheduled.set(false)
         if (synchronized(lock) { version > persistedVersion }) {
-            CoalescedFlush.scheduleCoalesced(ECONOMICS_FLUSH_DELAY_MS, writeScheduled) { flushScheduled() }
+            CoalescedFlush.scheduleCoalesced(ECONOMICS_FLUSH_DELAY_MS, writeScheduled, file) { flushScheduled() }
         }
     }
 

@@ -2,7 +2,7 @@
 // object) must reject submit() once saturated instead of growing the queue without bound. The
 // single background worker is blocked on a latch so nothing drains mid-test, so the lane must end
 // holding exactly MAX_PENDING_TASKS and reject the rest. The slots held when the test starts are
-// READ (pendingUnder's count), not assumed: the lane is process-wide, and a delayed task another test
+// READ (the lane's pending count), not assumed: the lane is process-wide, and a delayed task another test
 // scheduled holds a slot until it runs. If the cap check were removed, the lane would end past the
 // cap with nothing rejected, and both assertions below would fail.
 package splice.core.util
@@ -45,11 +45,15 @@ class AsyncFileIoTest {
         saturateThenDrain(heldByOthers = 1)
 
     @Test
-    fun `pending diagnostics count delayed tasks and include only nested paths below the root`(@TempDir root: Path) {
+    fun `pending writes under a root are its files and its owned tasks, delayed ones included, and no other`(
+        @TempDir root: Path,
+    ) {
         val started = CountDownLatch(1)
         val release = CountDownLatch(1)
         val tracked = root.resolve("nested/perf.jsonl").toAbsolutePath().normalize()
         val sibling = root.resolveSibling("${root.fileName}-sibling").resolve("perf.jsonl")
+        val owned = root.resolve("store").toAbsolutePath().normalize()
+        val ownedRan = CountDownLatch(1)
         assertTrue(
             AsyncFileIo.submit {
                 started.countDown()
@@ -61,16 +65,20 @@ class AsyncFileIoTest {
             assertTrue(AsyncFileIo.submitFor(tracked) {})
             assertTrue(AsyncFileIo.submitFor(sibling) {})
             assertTrue(AsyncFileIo.submit(delayMs = 50) {})
+            assertTrue(AsyncFileIo.submit(delayMs = 50, owner = owned) { ownedRan.countDown() })
+            assertTrue(AsyncFileIo.submit(owner = sibling.parent) {})
             val snapshot = AsyncFileIo.pendingUnder(root)
-            assertTrue(snapshot.count >= 4, "all our runnable and delayed slots remain held")
-            assertEquals(listOf(tracked), snapshot.paths, "a sibling with a matching string prefix is outside the root")
+            assertEquals(2, snapshot.count, "the file write and the delayed owned task; other slots are not the root's")
+            assertEquals(listOf(tracked, owned), snapshot.paths, "a sibling with the same name prefix is outside it")
         } finally {
             release.countDown()
         }
         assertTrue(AsyncFileIo.awaitFile(tracked))
         assertTrue(AsyncFileIo.awaitFile(sibling))
         assertTrue(AsyncFileIo.drain())
-        assertEquals(emptyList<Path>(), AsyncFileIo.pendingUnder(root).paths)
+        assertTrue(ownedRan.await(5, TimeUnit.SECONDS), "the delayed owned task runs once its delay passes")
+        assertTrue(AsyncFileIo.drain())
+        assertEquals(AsyncFileIo.PendingWrites(0, emptyList()), AsyncFileIo.pendingUnder(root))
     }
 
     private fun saturateThenDrain(heldByOthers: Int, onDrained: (rejected: Int) -> Unit = {}) {
@@ -100,7 +108,7 @@ class AsyncFileIoTest {
             // The lane is process-wide: the blocking task holds a slot, and so does any delayed task another
             // test in this JVM scheduled and the blocked worker cannot run yet. CI run 36387318177 counted
             // 2046 for an assumed 2047 on exactly that. So the slots already held are read, never assumed.
-            val held = AsyncFileIo.pendingUnder(Path.of("/")).count
+            val held = AsyncFileIo.workSnapshot.pending
             assertTrue(held >= 1 + heldByOthers, "the blocking task and the other caller's tasks hold slots ($held)")
 
             repeat(MAX_PENDING_TASKS + margin) {
@@ -114,7 +122,7 @@ class AsyncFileIoTest {
             // The cap is exact: the lane holds MAX_PENDING_TASKS, never one more and never one fewer. Only the
             // slots free when the loop began were ours to take; a task another thread submits mid-loop can take
             // one of them, which is why this bounds `accepted` from above instead of pinning it.
-            val saturated = AsyncFileIo.pendingUnder(Path.of("/")).count
+            val saturated = AsyncFileIo.workSnapshot.pending
             assertEquals(MAX_PENDING_TASKS, saturated, "expected the lane to saturate exactly at its cap")
             val free = MAX_PENDING_TASKS - held
             assertTrue(accepted.get() <= free, "accepted ${accepted.get()} past the $free free slots")

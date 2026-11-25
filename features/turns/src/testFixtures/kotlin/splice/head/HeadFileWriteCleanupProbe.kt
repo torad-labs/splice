@@ -54,7 +54,7 @@ public object HeadFileWriteCleanupProbe {
             if (trackedFile != null) {
                 assertTrue(messages.contains(trackedFile), messages)
             } else {
-                assertTrue(messages.contains("none tracked under"), messages)
+                assertTrue(messages.contains("nested"), messages)
                 assertEquals(1L, delayedStarted.count, "the refusal must observe a still-delayed slot")
             }
             val sentinel = roots.single().resolve(PROBE_SENTINEL)
@@ -98,7 +98,7 @@ public object HeadFileWriteCleanupProbe {
         }
     }
 
-    /** A delayed slot counts even though it has neither a tracked path nor a runnable task yet. */
+    /** A delayed task counts through its owner folder, though it has no tracked file and is not runnable yet. */
     public class DelayedWrite {
         @Test
         public fun holdsUntrackedDelayedWriterBeyondBody(@TempDir root: Path) {
@@ -106,7 +106,7 @@ public object HeadFileWriteCleanupProbe {
             Files.writeString(root.resolve(PROBE_SENTINEL), "retained")
             val target = root.resolve("nested/late-head-untracked.jsonl")
             assertTrue(
-                AsyncFileIo.submit(delayMs = UNTRACKED_DELAY_MS) {
+                AsyncFileIo.submit(delayMs = UNTRACKED_DELAY_MS, owner = target.parent) {
                     delayedStarted.countDown()
                     check(release.await(PROBE_RELEASE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                         "the synthetic writer was never released"

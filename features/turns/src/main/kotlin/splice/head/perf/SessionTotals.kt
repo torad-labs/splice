@@ -282,7 +282,7 @@ public class SessionTotals(
     }
 
     private fun schedule() {
-        CoalescedFlush.scheduleCoalesced(TOTALS_FLUSH_DELAY_MS, writeScheduled) { flushScheduled() }
+        CoalescedFlush.scheduleCoalesced(TOTALS_FLUSH_DELAY_MS, writeScheduled, file) { flushScheduled() }
     }
 
     internal fun flushScheduled() {

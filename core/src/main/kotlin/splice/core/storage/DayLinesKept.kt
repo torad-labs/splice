@@ -64,7 +64,7 @@ public class DayLinesKept(
     public fun keepOnly(keep: DayLineKeep): DayLinesGone {
         val ready = CountDownLatch(1)
         val result = AtomicReference<Result<DayLinesGone>?>(null)
-        val queued = AsyncFileIo.submit {
+        val queued = AsyncFileIo.submit(owner = dir) {
             try {
                 result.set(Cancellables.runCatchingCancellable { files.mutation.withLock { cut(keep) } })
             } finally {

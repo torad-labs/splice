@@ -138,7 +138,7 @@ public class DayFiles @JvmOverloads constructor(
     @Throws(IOException::class, InterruptedException::class)
     public fun deleteKept(retentionDays: Int): DayInventory {
         val wait = DayDeleteWait()
-        val queued = AsyncFileIo.submit {
+        val queued = AsyncFileIo.submit(owner = dir) {
             try {
                 val attempt = Cancellables.runCatchingCancellable {
                     if (ownerOnly) {

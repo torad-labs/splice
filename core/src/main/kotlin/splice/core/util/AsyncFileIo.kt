@@ -126,6 +126,23 @@ public object AsyncFileIo {
     private val latestByPath = HashMap<Path, CompletableFuture<Boolean>>()
     private val pendingByPath = HashMap<Path, Int>()
 
+    /** Accepted tasks that name the folder (or file) their write lands under, by that place: the slots a cleanup of
+     *  that folder must wait for although the task's own file is not known until it runs. Guarded by [pathLock]. */
+    private val owned = OwnedSlots()
+
+    private class OwnedSlots {
+        val byPlace = HashMap<Path, Int>()
+
+        fun take(place: Path) {
+            val _ = byPlace.merge(place, 1, Int::plus)
+        }
+
+        /** A count that reaches zero leaves the map, so a place with nothing pending is not listed. */
+        fun release(place: Path) {
+            val _ = byPlace.merge(place, -1) { held, step -> (held + step).takeIf { it > 0 } }
+        }
+    }
+
     /** Each path that has lost a write (refused by the lane or failed while running), with the wall time of its latest
      *  loss. Never cleared: a later write that lands does not bring the lost row back. */
     private val failedPaths = HashMap<Path, Long>()
@@ -145,12 +162,18 @@ public object AsyncFileIo {
         setExecuteExistingDelayedTasksAfterShutdownPolicy(false)
     }
 
-    public fun submit(delayMs: Long = 0L, task: FileIoTask): Boolean {
+    /** Queues [task], [delayMs] out when given. [owner] is the folder or file the task will write under, for a task
+     *  whose file is not known until it runs (a delayed flush); a cleanup of a folder holding [owner] waits for the
+     *  task through [pendingUnder]. A task with no [owner] writes nothing a folder's cleanup has to wait for. */
+    public fun submit(delayMs: Long = 0L, owner: Path? = null, task: FileIoTask): Boolean {
         if (pending.incrementAndGet() > MAX_PENDING_TASKS) {
             pending.decrementAndGet()
             recordDrop()
             return false
         }
+        val ownerKey = owner?.toAbsolutePath()?.normalize()
+        if (ownerKey != null) synchronized(pathLock) { owned.take(ownerKey) }
+        val releaseOwner = { if (ownerKey != null) synchronized(pathLock) { owned.release(ownerKey) } }
         peakPending.accumulateAndGet(pending.get(), ::maxOf)
         accepted.incrementAndGet()
         val queuedAt = MonoClock.nowMs()
@@ -171,6 +194,7 @@ public object AsyncFileIo {
                 peakRunMs.accumulateAndGet(elapsed, ::maxOf)
                 if (successful) completed.incrementAndGet() else failed.incrementAndGet()
                 running.decrementAndGet()
+                releaseOwner()
                 pending.decrementAndGet()
             }
         }
@@ -183,6 +207,7 @@ public object AsyncFileIo {
             true
         } catch (_: RejectedExecutionException) {
             accepted.decrementAndGet()
+            releaseOwner()
             pending.decrementAndGet()
             recordDrop()
             false
@@ -263,16 +288,17 @@ public object AsyncFileIo {
         false
     }
 
-    /** Delayed and runnable slots, with the not-done tracked paths below one temporary root. */
+    /** The writes still to run below one folder, delayed or runnable: [count] of them, at [paths]. */
     public data class PendingWrites(public val count: Int, public val paths: List<Path>)
 
-    /** A read-only cleanup diagnostic; untracked tasks still appear in [PendingWrites.count]. */
+    /** What a cleanup of [root] has to wait for: the not-done writes to a file below it ([submitFor]) and the
+     *  not-done tasks that named a place below it as their owner ([submit]), and nothing else. A write another
+     *  folder owns, or a task that names no owner, is not this folder's, however long the lane holds it. Read only. */
     public fun pendingUnder(root: Path): PendingWrites = synchronized(pathLock) {
         val normalized = root.toAbsolutePath().normalize()
-        PendingWrites(
-            pending.get(),
-            pendingByPath.keys.filter { path -> path.startsWith(normalized) },
-        )
+        val files = pendingByPath.filterKeys { it.startsWith(normalized) }
+        val ownedHere = owned.byPlace.filterKeys { it.startsWith(normalized) }
+        PendingWrites(files.values.sum() + ownedHere.values.sum(), (files.keys + ownedHere.keys).distinct())
     }
 
     /** An operation that deliberately hides a write exception still reports its diagnostic outcome. */

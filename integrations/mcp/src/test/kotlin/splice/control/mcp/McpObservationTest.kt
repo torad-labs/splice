@@ -34,8 +34,8 @@ class McpObservationTest : McpHostFixture() {
     fun `owned MCP calls retain independent session links without inference lifecycle events`() = runBlocking {
         observe()
         boot()
-        val first = checkNotNull(host.post("fake", null, MCP_HOST_INIT, head = "codex").sessionId)
-        val second = checkNotNull(host.post("fake", null, MCP_HOST_INIT, head = "claude").sessionId)
+        val first = checkNotNull(host.post("fake", null, MCP_HOST_INIT, entry = McpEntryNames("codex")).sessionId)
+        val second = checkNotNull(host.post("fake", null, MCP_HOST_INIT, entry = McpEntryNames("claude")).sessionId)
         val results = listOf(
             async { call(first, 7, "echo", "private-first") },
             async { call(second, 7, "echo", "private-second") },

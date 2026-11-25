@@ -37,12 +37,14 @@ public class InProcessMcpHost(private val servers: InProcessMcp) {
     // the protocol revisions spoken here, newest first: a client that asks for one of them gets it back
     private val spoken = listOf("2025-11-25", "2025-06-18", "2025-03-26")
 
-    /** Whether a server called [name] is answered here for a client on [head]. */
-    internal fun answers(name: String, head: String?): Boolean = servers.server(name, head) != null
+    /** Whether a server called [name] is answered here for a client on [head] that names itself [caller]. */
+    internal fun answers(name: String, head: String?, caller: String?): Boolean =
+        servers.server(name, head, caller) != null
 
-    /** The reply to one POSTed [body] for [name], or null when no server of that name is answered here for [head]. */
-    public suspend fun post(name: String, sessionId: String?, body: String, head: String?): McpReply? {
-        val server = servers.server(name, head) ?: return null
+    /** The reply to one POSTed [body] for [name], or null when no server of that name is answered here for [head].
+     *  [caller] is who the client's entry says it is, null when it says nothing. */
+    public suspend fun post(name: String, sessionId: String?, body: String, head: String?, caller: String?): McpReply? {
+        val server = servers.server(name, head, caller) ?: return null
         val message = codec.parse(body)
             ?: return refusal(JsonPrimitive(0), RPC_NOT_A_REQUEST, "not a JSON-RPC object")
         return when (codec.kind(message)) {

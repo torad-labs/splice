@@ -19,6 +19,7 @@ import splice.client.mcp.McpSharing
 import splice.codemode.NativeCodeModeRuntime
 import splice.codemode.WorkerSpawn
 import splice.control.mcp.FakeMcpServer
+import splice.control.mcp.McpEntryNames
 import splice.control.mcp.McpHost
 import splice.control.mcp.McpHostConfig
 import splice.control.mcp.McpProcessLauncher
@@ -182,12 +183,12 @@ object BenchmarkExecutionFixture {
         )
         try {
             val initializedAt = System.nanoTime()
-            val initialized = host.post("fixture", null, INIT, head = "bench")
+            val initialized = host.post("fixture", null, INIT, entry = McpEntryNames(head = "bench"))
             check(initialized.status == 200)
             val session = checkNotNull(initialized.sessionId)
             for (cache in listOf("cold", "warm")) {
                 val started = if (cache == "cold") initializedAt else System.nanoTime()
-                val reply = host.post("fixture", session, CALL, head = "bench")
+                val reply = host.post("fixture", session, CALL, entry = McpEntryNames(head = "bench"))
                 check(reply.status == 200)
                 val result = Json.parseToJsonElement(checkNotNull(reply.body)).jsonObject.getValue("result").jsonObject
                 val text = JsonScalars.str(result.getValue("content").jsonArray.single().jsonObject, "text")

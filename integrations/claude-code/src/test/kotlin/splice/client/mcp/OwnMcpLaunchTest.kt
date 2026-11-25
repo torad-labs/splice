@@ -43,7 +43,7 @@ class OwnMcpLaunchTest {
         assertEquals(listOf("--effort", "high", "--mcp-config", file.toString()), args)
         assertEquals(
             """{"mcpServers":{"harbor":{"type":"http","url":"http://127.0.0.1:3096/mcp/harbor",""" +
-                """"headers":{"Authorization":"Bearer k-mcp","X-Splice-Head":"acme"}}}}""",
+                """"headers":{"Authorization":"Bearer k-mcp","X-Splice-Head":"acme","X-Splice-Caller":"door"}}}}""",
             Files.readString(file),
         )
         assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(file)))

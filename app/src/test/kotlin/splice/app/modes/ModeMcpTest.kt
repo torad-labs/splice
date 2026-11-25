@@ -35,7 +35,9 @@ class ModeMcpTest {
      *  of the one resource its manifest declares with no file. */
     private class HarborMode : Mode {
         override fun answer(call: ModeCall): ModeAnswer = when (call.tool) {
-            "show_tide" -> ModeAnswer.Text("High at 04:10 on ${call.session.head} for ${call.session.id}.")
+            "show_tide" -> ModeAnswer.Text(
+                "High at 04:10 on ${call.session.head} for ${call.session.id}, asked by ${call.session.caller.wire}.",
+            )
             "sink_ship" -> ModeAnswer.Error("No ship to sink.")
             else -> error("a secret the model must not read")
         }
@@ -105,19 +107,23 @@ class ModeMcpTest {
 
     @Test
     fun `a client lists the mode's tools by their own names, with the _meta its folder writes`() {
-        val tools = checkNotNull(modes().server("harbor", "acme")).tools().map { it.jsonObject }
+        val tools = checkNotNull(modes().server("harbor", "acme", "head")).tools().map { it.jsonObject }
         assertEquals(listOf("show_tide", "sink_ship", "leak"), tools.map { it.getValue("name").jsonPrimitive.content })
         assertEquals("Does show_tide.", tools.first().getValue("description").jsonPrimitive.content)
         assertEquals("""{"ui":{"resourceUri":"ui://harbor/tide"}}""", tools.first().getValue("_meta").toString())
         assertEquals(setOf("name", "description", "inputSchema"), tools[1].keys)
-        assertEquals("Show the tide when asked.", checkNotNull(modes().server("harbor", "acme")).instructions())
+        val server = checkNotNull(modes().server("harbor", "acme", "head"))
+        assertEquals("Show the tide when asked.", server.instructions())
     }
 
     @Test
-    fun `call results include errors but never quote thrown exceptions`() = runBlocking {
-        val server = checkNotNull(modes().server("harbor", "acme"))
+    fun `call results say who asked, include errors and never quote thrown exceptions`() = runBlocking {
+        val server = checkNotNull(modes().server("harbor", "acme", "head"))
         val shown = server.call("show_tide", JsonObject(emptyMap()), "mcp-session-7")
-        assertEquals("High at 04:10 on acme for mcp-session-7.", text(shown))
+        assertEquals("High at 04:10 on acme for mcp-session-7, asked by head.", text(shown))
+        val fromDesktop = checkNotNull(modes().server("harbor", "acme", "desktop"))
+            .call("show_tide", JsonObject(emptyMap()), "mcp-session-8")
+        assertEquals("High at 04:10 on acme for mcp-session-8, asked by desktop.", text(fromDesktop))
         assertEquals("false", shown.getValue("isError").toString())
         val refused = server.call("sink_ship", JsonObject(emptyMap()), null)
         assertEquals("No ship to sink." to "true", text(refused) to refused.getValue("isError").toString())
@@ -130,7 +136,7 @@ class ModeMcpTest {
 
     @Test
     fun `its resources are listed, a file's content is read from the folder and the other's from the handler`() {
-        val server = checkNotNull(modes().server("harbor", "acme"))
+        val server = checkNotNull(modes().server("harbor", "acme", "head"))
         val listed = server.resources().map { it.jsonObject }
         assertEquals(
             listOf("ui://harbor/tide", "ui://harbor/live"),
@@ -150,14 +156,18 @@ class ModeMcpTest {
     }
 
     @Test
-    fun `a mode is a server only where it is on, and a door mode is never one`() {
+    fun `a mode is a server only where it is on, for an entry splice gave it, and a door mode is never one`() {
         val served = modes()
-        assertNull(served.server("harbor", "globex"), "its manifest keeps it off globex")
-        assertNull(served.server("dock", "acme"), "a door mode's calls never leave splice")
-        assertNull(served.server("quay", "globex"))
-        assertNull(served.server("quay", null), "splice.toml turned it on for acme alone")
-        assertEquals("quay", checkNotNull(served.server("quay", "acme")).let { "quay" })
-        assertNull(served.server("nobody", "acme"))
+        assertNull(served.server("harbor", "globex", "head"), "its manifest keeps it off globex")
+        assertNull(served.server("dock", "acme", "head"), "a door mode's calls never leave splice")
+        assertNull(served.server("quay", "globex", "head"))
+        assertNull(served.server("quay", null, "head"), "splice.toml turned it on for acme alone")
+        assertEquals("quay", checkNotNull(served.server("quay", "acme", "head")).let { "quay" })
+        assertNull(served.server("nobody", "acme", "head"))
+        assertNull(
+            served.server("quay", "acme", null),
+            "an entry that names no caller is for the person's own server of that name, which splice hosts there",
+        )
     }
 
     @Test

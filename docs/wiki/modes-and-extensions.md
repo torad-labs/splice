@@ -46,7 +46,10 @@ The manifest's keys, the handler contract (`splice.modes.api.Mode`, `ModeAnswer.
 
 - **Where it is served:** the daemon answers `initialize`, `tools/list`, `tools/call`, `resources/list` and `resources/read` at `/mcp/<server>`.
 - **How a client finds it:** every launch on a head where the mode is on gets one more `--mcp-config` file (for `claude` on the door, which runs no head, where the mode is on for every head), `~/.splice/state/own-mcp-<command>-<caller>.json` (owner-only, with an MCP-scoped key). A caller on `[callers] off` gets none.
-- **Timing:** a session already running when the mode is turned on sees it only on its next launch; turned off, the server stops answering at once. Claude Desktop's own sessions are not handed the file.
+- **Timing:** a session already running when the mode is turned on sees it only on its next launch; turned off, the server stops answering at once.
+- **Claude Desktop:** with Desktop on the gateway, a mode on for every head (no `[heads] only`, and no `"desktop"` on `[callers] off`) is listed in Desktop's `claude_desktop_config.json` as an entry naming splice's `desktop-mcp` bridge and the server, with no address or key; the bridge reaches the daemon with the MCP access key from the state folder. Splice updates that file at daemon start, at `splice desktop on` and when the mode is switched in the console or with `PUT /api/modes/<name>`, with no daemon restart, but Desktop reads it only when it starts: quit the whole app and reopen it.
+- **Same name as one of yours:** a server of yours with the mode's server name keeps the name, and Desktop is not given the mode under it. The daemon answers the mode only for an entry splice gave for it, which names its caller, so your own entry reaches your server even where splice hosts it at the same address.
+- **Who calls:** the mode is told its caller from the entry: `door`, `head` or `desktop`.
 - **Pages:** a tool whose `tools/<tool>.meta.json` says `{ "ui": { "resourceUri": "ui://<server>/<page>" } }` shows that page in clients that draw MCP Apps. Others show the tool's answer as any tool's result.
 
 ## Install an external mode

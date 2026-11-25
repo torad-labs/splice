@@ -1,5 +1,6 @@
 // NEW: the modes' routes (modes/README.md): `GET /api/modes` lists every mode splice found, whether each is on for
-// every head and per head, and its tools, behind the management key.
+// every head and per head, and its tools, behind the management key. A switch of an mcp mode brings Claude Desktop's
+// configuration up to date with it (DaemonDesktop.publishAgain), as a daemon start does.
 package splice.app.modes
 
 import io.ktor.http.HttpMethod
@@ -20,6 +21,7 @@ import splice.app.control.mount.ControlReplies
 import splice.core.util.Cancellables
 import splice.core.util.TopologyRefusal
 import splice.http.JsonReply
+import splice.modes.api.ModeKind
 
 private const val MODES_NOT_LOADED = "this daemon has not loaded its modes"
 
@@ -56,7 +58,12 @@ internal class ModesMount(private val ports: ConsolePorts, private val guard: Co
             Cancellables.runCatchingCancellable { Json.parseToJsonElement(text) }.getOrElse { JsonNull }
         }
         when (val switched = ModeSwitch(modes).put(name, body, ports.topology)) {
-            is Switched.Done -> ControlReplies.respond(call, ModeRows(modes).row(switched.mode).toString())
+            is Switched.Done -> {
+                // An mcp mode is one of Claude Desktop's MCP servers while it is on: its configuration follows now,
+                // for Desktop to read at its next start.
+                if (switched.mode.manifest.kind == ModeKind.MCP) ports.desktop?.publishAgain()
+                ControlReplies.respond(call, ModeRows(modes).row(switched.mode).toString())
+            }
             is Switched.Refused -> JsonReply(
                 HttpStatusCode.fromValue(switched.status),
                 ControlBodies.errorJson(switched.error),

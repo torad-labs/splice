@@ -131,7 +131,7 @@ internal class ControlLaunchWiring(
             it.hubLaunch = buildHubLaunch(home, sharing, temple, hub)
             // the mcp modes on for the launch's head and caller, read at each launch: a switch reaches the next one
             it.ownMcp = OwnMcpLaunch(
-                { head, caller -> ModeMcp { modes.held() }.on(head, caller).map { it.manifest.server } },
+                ModeMcp { modes.held() },
                 sharing,
                 statePaths.stateDir,
                 log,

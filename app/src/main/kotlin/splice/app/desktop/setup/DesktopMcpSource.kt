@@ -3,6 +3,8 @@
 // Splice plans them. Desktop starts only stdio servers, so each server it can start itself is given as a command, and
 // each one Splice hosts or the person reaches at a URL goes through the stdio bridge (`splice mcp stdio <name>`),
 // named only by its name: no address, header or key is ever written into Desktop's configuration.
+// Nov 25, 2026: the mcp modes the daemon gives Desktop (DesktopOwnMcp) are bridged the same way, after the person's
+// servers, and a server of the person's by a mode's name keeps the name.
 package splice.app.desktop.setup
 
 import kotlinx.serialization.json.JsonArray
@@ -39,11 +41,13 @@ internal fun interface DesktopMcpSource {
 }
 
 /** Splice's MCP servers, planned as every harness is given them, for the home and state folder [env] names unless
- *  given them, read afresh at each [wanted]. */
+ *  given them, read afresh at each [wanted], and the servers the daemon answers itself for Desktop ([own], the
+ *  daemon's record of them unless given the daemon's own reading). */
 internal class SpliceDesktopMcp(
     private val env: EnvReader,
     private val homeAt: Path? = null,
     private val pathsAt: StatePaths? = null,
+    private val own: DesktopOwnMcp? = null,
 ) : DesktopMcpSource {
     override fun wanted(): DesktopMcpWanted {
         val home = homeAt ?: UserHome.dir(env)
@@ -52,7 +56,8 @@ internal class SpliceDesktopMcp(
         // when Desktop starts it, so planning reads no key and mints none.
         val seams = McpHarnessSyncSeams(bearerOverride = McpBearer { "" })
         val sharing = McpHarnessSharing(paths, env, LogSink {}, seams)
-        val plan = sharing.planner(PLANNED_PREFIX).plan(sharing.inputs(home), McpHarness.CLAUDE.wire)
+        val inputs = sharing.inputs(home)
+        val plan = sharing.planner(PLANNED_PREFIX).plan(inputs, McpHarness.CLAUDE.wire)
         val stdio = LinkedHashMap<String, JsonElement>()
         val bridged = mutableListOf<String>()
         plan.rewritten.forEach { (name, entry) ->
@@ -64,6 +69,10 @@ internal class SpliceDesktopMcp(
                 web(url) -> bridged += name
             }
         }
+        // A server the daemon answers itself goes through the bridge too. A server of the person's by the same name
+        // keeps the name: the mode is not given to Desktop under it, and their server is never replaced.
+        val theirs = inputs.map { it.name }.toSet()
+        bridged += (own ?: DesktopOwnMcp(paths.stateDir)).names().filter { it !in theirs }
         return DesktopMcpWanted(JsonObject(stdio), bridged, DesktopPrograms(paths.stateDir))
     }
 

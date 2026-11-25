@@ -1,14 +1,17 @@
 // NEW: modes-mcp (Nov 21, 2026) — the mcp modes as MCP servers the daemon answers itself (modes/README.md, `kind`).
 // A door mode's tools ride the model's request and are answered inside the turn; an mcp mode is a server the client
 // lists and calls as any other, so its tools reach the client's own tool surface and its `ui://` resources reach the
-// client that can draw them. The MCP host asks this for a server by name and head (InProcessMcp), and gets one only
-// when a mode of that `server` name is on for that head: an off mode's name is nobody's, as it is in the launch entry.
+// client that can draw them. The MCP host asks this for a server by name, head and caller (InProcessMcp), and gets one
+// only when a mode of that `server` name is on for that head: an off mode's name is nobody's, as it is in the launch
+// entry. The caller is the one the client's entry names (OwnMcpLaunch, and the stdio bridge for Claude Desktop), and
+// the mode is told it.
 package splice.app.modes
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.client.mcp.OwnMcpServers
 import splice.control.mcp.inprocess.InProcessMcp
 import splice.control.mcp.inprocess.InProcessMcpServer
 import splice.modes.api.FoundMode
@@ -25,10 +28,11 @@ internal fun interface ModesNow {
     fun held(): DaemonModes?
 }
 
-/** The mcp modes that are on, each as the server its manifest names. */
-internal class ModeMcp(private val modes: ModesNow) : InProcessMcp {
-    /** The mcp modes on for [head] and offered to [caller] (a manifest's word for one, `door` or `head`), in name
-     *  order: the servers a launch there lists for its client. A caller no manifest names is offered none. */
+/** The mcp modes that are on, each as the server its manifest names: the server a client calls, and the names a
+ *  launch or Claude Desktop's configuration lists. */
+internal class ModeMcp(private val modes: ModesNow) : InProcessMcp, OwnMcpServers {
+    /** The mcp modes on for [head] and offered to [caller] (a manifest's word for one: `door`, `head` or `desktop`),
+     *  in name order: the servers a launch there lists for its client. A caller no manifest names is offered none. */
     fun on(head: String, caller: String): List<FoundMode> {
         val held = modes.held() ?: return emptyList()
         val asking = ModeCaller.entries.firstOrNull { it.wire == caller } ?: return emptyList()
@@ -37,12 +41,20 @@ internal class ModeMcp(private val modes: ModesNow) : InProcessMcp {
         }
     }
 
-    override fun server(name: String, head: String?): InProcessMcpServer? {
+    /** The servers of the mcp modes on for [head] and offered to [caller], by name. */
+    override fun names(head: String, caller: String): List<String> = on(head, caller).map { it.manifest.server }
+
+    /** The mode serving [name] for a client on [head] that names itself [caller]. Only an entry splice gives for a
+     *  mode names its caller (OwnMcpLaunch, and the bridge for Claude Desktop); an entry that names none is for the
+     *  person's own server of that name, which splice hosts at the same address, so the mode never answers it and
+     *  their server is never replaced by it. */
+    override fun server(name: String, head: String?, caller: String?): InProcessMcpServer? {
         val held = modes.held() ?: return null
+        val asking = ModeCaller.entries.firstOrNull { it.wire == caller }
         val mode = held.catalog.modes.firstOrNull { it.manifest.kind == ModeKind.MCP && it.manifest.server == name }
             ?: return null
         val on = if (head == null) held.everyHead(mode).on else held.state(mode, head).on
-        return if (on) ModeMcpServer(mode, held.store(mode.name), head) else null
+        return if (on && asking != null) ModeMcpServer(mode, held.store(mode.name), head, asking) else null
     }
 }
 
@@ -51,6 +63,8 @@ internal class ModeMcpServer(
     private val mode: FoundMode,
     private val store: ModeStore,
     private val head: String?,
+    /** Who the client's entry says is calling, which the mode is told. */
+    private val caller: ModeCaller,
 ) : InProcessMcpServer {
     override fun tools(): JsonArray = JsonArray(
         mode.tools.map { tool ->
@@ -64,9 +78,9 @@ internal class ModeMcpServer(
     )
 
     /** The handler's answer as a tool result. The session is the client's MCP session: the transport has no other
-     *  name for who is calling, and it has neither the session's folder nor its model. */
+     *  name for the session, and it has neither the session's folder nor its model. */
     override suspend fun call(tool: String, arguments: JsonObject, session: String?): JsonObject {
-        val asked = ModeSession(session.orEmpty(), null, head.orEmpty(), "", ModeCaller.HEAD)
+        val asked = ModeSession(session.orEmpty(), null, head.orEmpty(), "", caller)
         val call = ModeCall(tool, arguments, asked, store)
         return when (val run = ModeFailure.run(mode.name) { mode.handler.answer(call) }) {
             is ModeRun.Threw -> result(run.said, failed = true)

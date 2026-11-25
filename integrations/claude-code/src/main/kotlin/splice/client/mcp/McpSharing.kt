@@ -59,6 +59,10 @@ public fun interface McpRewrite {
 /** The header a hosted entry carries so the host knows which command a session belongs to. */
 public const val MCP_HEAD_HEADER: String = "X-Splice-Head"
 
+/** The header an entry for a server the daemon answers itself carries so the server knows who is calling: a mode's
+ *  word for its caller (`door`, `head` or `desktop`). */
+public const val MCP_CALLER_HEADER: String = "X-Splice-Caller"
+
 private val LOCATION_FLAG =
     Regex("--?(root|roots?-?dir|dir|directory|path|cwd|workspace|project|project-?dir|folder|home|base-?dir|work-?dir)")
 private val URL_SCHEME = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://")

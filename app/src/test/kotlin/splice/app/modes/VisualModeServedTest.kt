@@ -55,7 +55,8 @@ class VisualModeServedTest {
 
     @Test
     fun `a host is shown that the drawing tools are the model's to call and not the view's`() {
-        val listed = checkNotNull(ModeMcp { daemon(on = true) }.server("visual", "acme")).tools().map { it.jsonObject }
+        val listed = checkNotNull(ModeMcp { daemon(on = true) }.server("visual", "acme", "head")).tools()
+            .map { it.jsonObject }
             .associate { it.getValue("name").jsonPrimitive.content to it["_meta"] }
         val row = ModeRows(daemon(on = true)).all().getValue("modes").jsonArray.map { it.jsonObject }
             .single { it.getValue("name").jsonPrimitive.content == "visual" }
@@ -71,9 +72,9 @@ class VisualModeServedTest {
 
     @Test
     fun `its MCP server answers only while it is on, and resources-read gives the view the route gives`() {
-        assertNull(ModeMcp { daemon(on = null) }.server("visual", "acme"), "the mode ships off")
+        assertNull(ModeMcp { daemon(on = null) }.server("visual", "acme", "head"), "the mode ships off")
         val modes = daemon(on = true)
-        val server = checkNotNull(ModeMcp { modes }.server("visual", "acme"))
+        val server = checkNotNull(ModeMcp { modes }.server("visual", "acme", "head"))
         val read = checkNotNull(server.read("ui://visual/reply.html")).single().jsonObject
         assertEquals("text/html;profile=mcp-app", read.getValue("mimeType").jsonPrimitive.content)
         assertEquals(NO_ORIGIN, read.getValue("_meta").toString())
@@ -88,7 +89,7 @@ class VisualModeServedTest {
     @Test
     fun `a page html_render kept is read back by its id from disk, after a restart too`() = runBlocking {
         val modes = daemon(on = true)
-        val server = checkNotNull(ModeMcp { modes }.server("visual", "acme"))
+        val server = checkNotNull(ModeMcp { modes }.server("visual", "acme", "head"))
         val args = JsonObject(mapOf("title" to JsonPrimitive("Report"), "html" to JsonPrimitive("<p>report</p>")))
         val result = server.call("html_render", args, "mcp-session-1")
         assertEquals("false", result.getValue("isError").toString())

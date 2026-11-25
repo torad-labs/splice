@@ -11,14 +11,17 @@ import kotlinx.serialization.json.putJsonObject
 /** The daemon's MCP address: [prefix] is `http://127.0.0.1:<port>/mcp/`, and [bearer] the MCP-scoped key as it stands
  *  when an entry is written. */
 public class McpEndpoint(private val prefix: String, private val bearer: McpBearer) {
-    /** The entry for the server [name]: its address, the bearer ([token], read now when none is handed in), and the
-     *  head the client is on. Reading the access key throws IOException when it cannot be read. */
-    public fun entry(name: String, headKey: String?, token: String = bearer()): JsonObject = buildJsonObject {
-        put("type", "http")
-        put("url", prefix + name)
-        putJsonObject("headers") {
-            put("Authorization", "Bearer $token")
-            headKey?.takeIf { it.isNotEmpty() }?.let { put(MCP_HEAD_HEADER, it) }
+    /** The entry for the server [name]: its address, the bearer ([token], read now when none is handed in), the head
+     *  the client is on, and, for a server the daemon answers itself, who the client is ([caller]). Reading the access
+     *  key throws IOException when it cannot be read. */
+    public fun entry(name: String, headKey: String?, token: String = bearer(), caller: String? = null): JsonObject =
+        buildJsonObject {
+            put("type", "http")
+            put("url", prefix + name)
+            putJsonObject("headers") {
+                put("Authorization", "Bearer $token")
+                headKey?.takeIf { it.isNotEmpty() }?.let { put(MCP_HEAD_HEADER, it) }
+                caller?.let { put(MCP_CALLER_HEADER, it) }
+            }
         }
-    }
 }

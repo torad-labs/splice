@@ -249,6 +249,31 @@ class LaunchTeamServerTest(@param:TempDir private val tmp: Path) {
         assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "the last env stands, as Claude Code's")
     }
 
+    // Claude Code's `managedSourcesBehavior: "merge"` applies every admin source, but it reads a headers helper, like
+    // `apiKeyHelper`, from the highest source that sets any policy key only (the settings reference's table under
+    // "Read from the highest-priority source only"), and `env` per variable under either setting. So merging changes
+    // no launch's telemetry: a lower source's helper never runs, and the relay stays on beside it.
+    @Test
+    fun `with managed sources merged a lower source's helper never runs, and its variables still count`() {
+        val relayed = spec(TeamServerLaunch(LaunchTelemetry(RELAY, OTEL_HELPER)))
+        Files.createDirectories(platform())
+        Files.createDirectories(tree())
+        Files.writeString(platform().resolve("managed-settings.json"), """{"otelHeadersHelper":"corp-helper"}""")
+        val remote = tree().resolve("remote-settings.json")
+        Files.writeString(remote, """{"managedSourcesBehavior":"merge"}""")
+        assertNull(launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "merge is no policy key: the file is the source")
+        Files.writeString(remote, """{"managedSourcesBehavior":"merge","cleanupPeriodDays":7}""")
+        assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "the file's helper is below remote's")
+        assertEquals(OTEL_HELPER, settings()["otelHeadersHelper"]?.jsonPrimitive?.content)
+        Files.writeString(remote, """{"managedSourcesBehavior":"merge","otelHeadersHelper":"remote-helper"}""")
+        assertNull(launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "the highest source's helper is theirs")
+        Files.writeString(remote, """{"managedSourcesBehavior":"merge","cleanupPeriodDays":7}""")
+        Files.writeString(platform().resolve("managed-settings.json"), """{"env":{"OTEL_METRICS_EXPORTER":"otlp"}}""")
+        assertNull(launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "a lower source's variable merges in")
+        Files.writeString(remote, """{"cleanupPeriodDays":7}""")
+        assertNull(launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"], "the variable merges in without merge too")
+    }
+
     // #791: Claude Code merges `env` per variable across its admin sources, so telemetry a managed file sets reaches
     // the session even where remote settings, ranked above the file, are the source of every other key.
     @Test

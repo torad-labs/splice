@@ -503,7 +503,12 @@ Drafted checks for these exist and are committed with the P2 plan once P1 has la
   last the user-writable `HKCU\SOFTWARE\Policies\ClaudeCode` value, read only when none of the sources above it
   holds a document. A telemetry variable counts from `env` merged per variable across the first three sources (the
   highest that defines a variable gives its value); an `otelHeadersHelper` counts from the one source Claude Code
-  selects, the highest that sets any policy key. A malformed or unreadable document sets nothing, and each command
+  selects, the highest that sets any policy key (a document holding only `managedSourcesBehavior` or
+  `wslInheritsWindowsSettings` sets none). `managedSourcesBehavior: "merge"`, which makes Claude Code apply every admin
+  source, changes neither: Claude Code reads a headers helper from that one highest source whether it merges or not, so
+  a helper only a lower source sets never runs and splice's relay stays on beside it, while `env` merges per variable
+  under either setting (Claude Code v2.1.242 and later; settings reference, "Read from the highest-priority source
+  only"). A malformed or unreadable document sets nothing, and each command
   that reads one runs for at most five seconds. WSL's inheritance of the Windows chain
   (`wslInheritsWindowsSettings`) is not read: such a session is judged by `/etc/claude-code` and its remote settings.
 - **F9 client version policy.** `[server.client] minimum`. Each launch sends `x-splice-client: <version>` in

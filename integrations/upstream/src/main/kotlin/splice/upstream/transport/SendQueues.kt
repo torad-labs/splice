@@ -49,9 +49,33 @@ internal class CountedSocket(private val ledger: SocketLedger) : Socket() {
         key = SocketKeys.of(this)?.also { ledger.add(it, this) }
     }
 
+    /**
+     * Ends the connection itself before giving up the descriptor. A cancelled turn closes its upstream socket while a
+     * virtual thread is parked reading it, and on Linux the JDK's own close (half-close, then release the descriptor)
+     * can lose a race with the virtual-thread poller: the poller's epoll_wait holds the last reference to the socket
+     * when it is closed, sees nothing to report, and goes back to sleep with the release still pending. The kernel
+     * socket then outlives every descriptor, half-open: the upstream's tokens keep arriving and are acknowledged, so
+     * the upstream keeps generating for a client that is gone, until some other virtual-thread read wakes that poller
+     * (HeadServerLoadTest on the 64-thread box, Nov 24, 2026: a cancelled turn's connection open 30 s later).
+     * Shutting both directions first makes the socket readable and writable, so a poller holding it reports it and
+     * returns, and a socket that still lingers answers the upstream's next byte with a reset.
+     */
     override fun close() {
         key?.let(ledger::remove)
-        super.close()
+        try {
+            if (isConnected && !isClosed) {
+                Cancellables.discard(
+                    Cancellables.runCatchingCancellable { if (!isInputShutdown) shutdownInput() },
+                    "a connection the peer already reset has no input left to shut; the close below still runs",
+                )
+                Cancellables.discard(
+                    Cancellables.runCatchingCancellable { if (!isOutputShutdown) shutdownOutput() },
+                    "a connection the peer already reset has no output left to shut; the close below still runs",
+                )
+            }
+        } finally {
+            super.close()
+        }
     }
 
     @Synchronized

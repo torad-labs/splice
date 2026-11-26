@@ -1,7 +1,7 @@
 # Writing a Splice mod
 
 > **Nothing here is served today.** This folder holds the contract alone, its shapes as TypeScript
-> declarations ([`contract/index.ts`](contract/index.ts)), one JSON example per shape
+> declarations ([`contract/index.ts`](contract/index.ts)), worked JSON examples
 > ([`contract/examples/`](contract/examples/)) and an example mod ([`example/`](example/)). Splice
 > loads no mod yet. When the runner lands, a mod that uses an event Splice does not serve yet is
 > refused when it loads, and the refusal names the mod and the event. It never loads without that
@@ -31,7 +31,8 @@ Splice's core holds no code for any one mod. Everything a mod does goes through 
 ```
 
 Every path in `mod.json` is relative to the mod's root, the folder you install. `tools/` and
-`hooks/` sit at the root beside `.splice-mod/`, never inside it.
+`hooks/` sit at the root beside `.splice-mod/`, never inside it. Module paths in `hooks/hooks.json`
+are relative to `hooks/`, and each module exports `register`.
 
 Import the types only. A mod carries no runtime code from Splice:
 
@@ -46,19 +47,48 @@ import type { Register } from "<splice>/mods/contract/index.ts";
 | `name` | `[a-z][a-z0-9]*`, at most 40 characters, the same rule a Splice mode's name follows. It names the mod's MCP server and prefixes its rows. |
 | `version`, `description` | Shown to the person at install. |
 | `author`, `surfaces` | Optional. `surfaces` names the apps the mod adds to; absent means every app. |
-| `capabilities` | Optional. What the mod says it does, shown to the person at install. It is a description, not a wall. |
-| `tools` | Tool names. Each name has its files under `tools/`. |
-| `pages` | `{ name, title }`: a page an app opens. The mod draws it by answering `ui.render`. |
-| `commands` | `{ name, description }`: a command a person runs. The mod answers `command.run`. |
-| `views` | `{ uri, name, mimeType?, file? }`: a `ui://` view a tool's answer may return. With `file`, the view is that static HTML. Without it, the mod answers `ui.render` for that uri. |
+| `capabilities` | Optional. What the mod says it does, shown to the person at install, from the list below. It is a description, not a wall: Splice serves a mod the events it registers for whatever this list says. |
+| `tools` | Tool names. Each matches `[a-z][a-z0-9_]*` and contains no `__`, the rule a mode's tools follow. The model is offered the tool as `mcp__<mod>__<tool>`, and that whole name is at most 64 characters, so a 40-character mod name leaves 17 for the tool. Each tool has its files under `tools/`. |
+| `pages` | `{ name, title }`: a page an app opens. `name` is 1–40 characters of `a–z`, `0–9` and `-`; `title` is shown before the mod answers. The mod draws it by answering `ui.render`. |
+| `commands` | `{ name, description }`: a command a person runs. `name` is 1–40 characters of `a–z`, `0–9` and `-`. The mod answers `command.run`. |
+| `views` | `{ uri, name, mimeType?, file? }`: a `ui://` view a tool's answer may return. `mimeType` defaults to `text/html;profile=mcp-app`. With `file`, the view is that static HTML, relative to the mod's root. Without it, the mod answers `ui.render` for that uri. |
+
+For example, `campaignboard` and `reviews` are valid mod names; `campaign-board` is not.
+
+The capabilities a mod may name, each shown to the person as one line:
+
+| capability | the mod says it |
+|---|---|
+| `watch-sessions` | reads `session.start` and `session.end` |
+| `change-launch` | changes a process's environment, arguments or MCP configuration |
+| `watch-turns` | reads turn, request, stream and response events |
+| `change-requests` | changes what is sent to a model or what comes back |
+| `answer-tools` | answers tool calls on its own server |
+| `add-rows` | adds or changes rows in the session list |
+| `draw-ui` | draws pages, rows' views or tool views |
+| `run-commands` | answers commands a person runs |
+| `serve-http` | answers HTTP requests under its own path |
 
 ### Declared, never registered
 
-The handle has no `tool.register`, no `command.register` and no `ui.register`. Anything a session or
-an app must see before the mod runs, or without it running, is declared in `mod.json`. Anything
-that changes per request is answered by a hook.
+There is no `$.tool.register`, no `$.command.register` and no `$.ui.register`. Each moved into
+`mod.json`:
 
-The reason is that a tool list has to stay the same for the whole conversation. Splice writes every
+| instead of | declare it in `mod.json` | and answer it with |
+|---|---|---|
+| `$.tool.register` | `tools`, with each tool's files under `tools/` | a `tool.call` hook |
+| `$.command.register` | `commands` | a `command.run` hook |
+| `$.ui.register` | `pages` and `views` | a `ui.render` hook, or a view's static `file` |
+
+The handle `$` keeps what changes while the mod runs: `store`, `clock`, `log`, `sessions` and
+`ui.respond`. Anything a session or an app must see before the mod runs, or without it running, is
+declared in `mod.json`. Anything that changes per request is answered by a hook.
+
+The first reason is that Splice can list a mod's tools, commands and views without running its
+code. `GET /api/mods` reads them from the installed manifest, so an app can show what a disabled,
+failed or restarting mod offers, and a person can see what a mod adds before it ever runs.
+
+The second reason is that a tool list has to stay the same for the whole conversation. Splice writes every
 `tools/list` answer a session receives itself, and it refuses to carry a tool change partway through
 a conversation. A request that removes a tool mid-conversation is declined, and the turn is not sent,
 because Splice cannot make that removal hold. The tool list is also part of the prompt-cache key. If
@@ -71,9 +101,14 @@ files makes it the same for every session that runs the same version of the mod.
 
 `tools/<name>.json` is the input schema, `tools/<name>.md` is the description and
 `tools/<name>.meta.json` is the `_meta`. Splice assembles them into one `tools/list` entry
-(`ToolDefinition`) on the mod's own server.
+(`ToolDefinition`) on the mod's own server, named after the mod. A tool's name is
+`[a-z][a-z0-9_]*` with no `__`, and the name the model is offered, `mcp__<mod>__<tool>`, is at
+most 64 characters. The schema's root `type` is `object`; other JSON
+Schema keywords such as `oneOf` are preserved.
 
-A tool meant only for views and row buttons is marked:
+`_meta.ui.visibility` lists who may call the tool, `model`, `app` or both (`ToolVisibility`); absent
+means both. `_meta.ui.resourceUri` names the view its answers draw in, which must be a view the
+manifest declares. A tool meant only for views and row buttons is marked:
 
 ```json
 { "ui": { "visibility": ["app"] } }
@@ -108,26 +143,32 @@ export const register: Register = (on) => {
 ```
 
 Each handler is one layer of an onion. It can act before `next`, change `e` before passing it on,
-answer by itself without calling `next`, or change what `next` returned.
+answer by itself without calling `next`, or change what `next` returned. Use a literal event name,
+or narrow a dynamic name to one event first. That name determines which filter keys are valid and
+the types of `e`, `next(e)` and the handler's answer, including in `.catch`.
 
 ### Events
 
 | event | filter | what it is |
 |---|---|---|
-| `mod.start`, `mod.stop` | | The mod loaded or is about to unload. |
+| `mod.start`, `mod.stop` | | The mod loaded or is about to unload: `mod`, `version`. |
 | `session.start` | | A process began serving a session: `session` (the harness's own session id, the `session_id` of `GET /api/sessions`), `cwd`, `labels`, and `seenBefore`, true when that id was seen earlier. |
-| `session.end` | | The process serving that session is gone. One id is one session, a single row however many processes serve it. |
-| `launch.prepare` | | Per process, before it starts: `env`, `args`, `mcp`. To change the launch, pass a changed `e` to `next`. |
-| `sessions.list` | | `GET /api/sessions` is being answered. Wrap `await next(e)` to add rows or change them. When the reader did not ask for every row (`allRows` false), Splice drops every row a mod added (any row whose `mod` is set, or whose `kind` is not `session`) after the onion has run and before the answer goes out. Reading `allRows` is still worth it: a mod that reads it does less work and can shape its rows for the reader that asked. |
-| `turn.start` | | A turn began. |
-| `request.send` | | A request is about to go to the model. Change `body` and pass it on. |
-| `stream.event` | | One event of the model's stream. Return `null` to drop it. |
-| `tool.call` | `{ server?, tool? }` | A tool call. `caller` is `model` or `app`. |
-| `response.receive` | | The whole response, assembled from the stream. |
-| `turn.complete` | | The turn ended: `stopReason`, `usage`. |
-| `ui.render` | `{ surface?, slot?, page? }` | An app asks the mod to draw a page, a row or a view. |
-| `command.run` | `{ command }` | A person ran one of the mod's commands. |
-| `http.request` | `{ path?, method? }` | A request under the mod's own path, `/mods/<name>/…`. |
+| `session.end` | | The process serving that session is gone: `session`, `cwd` and `labels`. One id is one session, however many processes serve it. |
+| `launch.prepare` | | Per process, before it starts: `session` when known, `cwd`, `labels`, `env`, `args`, `mcp`. To change the launch, pass a changed `e` to `next`. |
+| `sessions.list` | | Splice is assembling normalized rows: `surface`, `allRows`. Wrap `await next(e)` to add rows or change them; `allRows` says whether the reader asked for mod rows. The legacy HTTP response does not use this chain's output. |
+| `turn.start` | | A turn began: `session`, `turn`, `labels`, `model`. |
+| `request.send` | | A request is about to go to the model: `session`, `turn`, `model`, `body`. Change `body` and pass it on. |
+| `stream.event` | | One event of the model's stream: `session`, `turn`, `event`. Return `null` to drop it. |
+| `tool.call` | `{ server?, tool? }` | `caller`, `session`, `turn?`, `server`, `tool`, `arguments`. A `model` call always carries `session`; an `app` call can be sessionless. Answer a `ToolResult`: `content`, `structuredContent?`, `isError?`, `_meta?`. |
+| `response.receive` | | The whole response, assembled from the stream: `session`, `turn`, `model`, `status`, `body`. |
+| `turn.complete` | | The turn ended: `session`, `turn`, `model`, `stopReason`, `usage` (`input`, `output`, `cacheRead`, `cacheWrite`). |
+| `ui.render` | `{ surface?, slot? }`; add `page` only with `slot: "page"` | An app asks the mod to draw a page, a row or a view. |
+| `command.run` | `{ command }` | A person ran one of the mod's commands: `command`, `args`, `session?`. Answer `{ text }`. |
+| `http.request` | `{ path?, method? }` | A request under the mod's own path, `/mods/<name>/…`: `method`, `path` (the part after it), `query`, `headers`, `body?`. Answer `{ status, headers?, body? }`. |
+
+For `tool.call`, the host binds the session from trusted launch or session provenance. A tool
+argument or untrusted request metadata cannot supply that identity. An app call tied to a session
+gets its identity from host context too.
 
 ### The handle `$`
 
@@ -139,40 +180,65 @@ answer by itself without calling `next`, or change what `next` returned.
 - `$.ui.respond({ text, ui })`: the answer a `tool.call` handler returns when it carries both the
   words the model reads and a declared `ui://` view.
 
-## Rows
+## App discovery and rows
 
-`GET /api/sessions` returns sessions only, as it always has, so no existing reader is handed a row
-it would mistake for a session. **`GET /api/sessions?kind=all`** returns every row: sessions and
-every mod's own rows. This contract chose that spelling. `kind` is the row field the query selects
-on, and `all` leaves room for a future `?kind=<a mod's kind>`.
+On connect, an app reads **`GET /api/mods`** ([example](contract/examples/mod-catalog.json)) on the
+management API.
+The `{ mods }` catalog includes installed mods even when disabled or failed, so an app can show
+what they offer without running them. Each entry carries the manifest's identity and declarations
+(including surfaces, capabilities, pages, views and tool names) along with the runtime, enabled
+flag and state. `runtime` is `ts`; `state` is one of `starting`, `running`, `restarting`, `stuck`,
+`failed` or `disabled`. An app chooses which surfaces and UI it supports.
 
-A row (`SessionRow`) has:
+**`GET /api/sessions?kind=all`** returns **`{ rows }`** of normalized v2 rows
+([example](contract/examples/sessions-list-response.json)). Plain `GET /api/sessions` stays on
+the existing SessionsRoutes wire: `sessions` with `session_id` and `waiting_for`, plus `reading`,
+`note_versions`, `gone_mark`, and, when present, `gone_held`, `gone_older` and `error`.
+Splice builds that answer from host sessions alone without invoking `sessions.list`. No mod output
+can change it, including a mod row incorrectly marked as a session.
+
+The v2 `SessionRow` is either a `HostSessionRow` or a `ModSessionRow`. In TypeScript, check
+`row.mod !== undefined` to narrow to a mod row. The fields include:
 
 - `id`: for a session, `id` **is** the harness's own session id, the value `GET /api/sessions` has
   always answered as `session_id`. A row has no separate `session_id` field: key every lookup of a
   session on `id`. A mod's own rows are `<mod>:<id>`. A session id never contains `:`, so the two
   cannot collide.
-- `kind`: `session`, or a kind the mod names.
+- `kind`: `session` is reserved for host rows, which have no `mod`. A mod row has its own kind and
+  a required `mod` naming its owner.
 - `parent`: the `id` of the row this one sits under. When no row in the same answer carries that
-  id, Splice keeps the row and reports that its parent was not found, naming the mod, the row and the
+  id, Splice keeps the row at the top level and reports that its parent was not found, naming the mod, the row and the
   missing id, where the person sees a mod's state. A hierarchy that silently collapsed would look the
   same as a mod with no hierarchy, so it is said instead.
 - `title`.
 - `status`, from one set every row shares: `working`, `waiting` (waiting on the person), `paused`,
   `done` or `failed`.
 - `progress`: `{ done, total }`.
-- `needs`: `{ text, deadline? }`.
+- `needs`: `{ text, deadline? }`. On a session's row it carries what `waiting_for` says; `deadline`
+  is an ISO 8601 instant with its offset.
+- `labels`: the session's labels, or the labels a mod gives its row, under the rules below.
 - `actions`: up to four buttons. Each has a `label`, a `tool` on the mod's own server with its
   `arguments`, `confirm` to ask before calling, and at most one text `input`, which is collected
-  and passed as `arguments[input.name]`. An action may name only a tool its own mod declared.
+  and passed as `arguments[input.name]`. Use the bare tool name, not `mcp__<server>__<tool>`.
+
+For each handler's changes, the host checks its installed manifest rather than trusting the row's
+claim. New mod rows must name that mod, use its exact `<mod>:` prefix with a nonempty local ID and
+use a kind other than `session`; native session IDs must come from the host listing. Splice rejects
+a row that claims another mod's ownership, has more than four actions or names an action tool that
+the owning mod did not declare or that is not visible to apps. These are display and compatibility
+checks, not authorization. TypeScript checks the row shapes and action limit, not the installed
+manifest or the host's session IDs.
 
 See [`contract/examples/session-row.json`](contract/examples/session-row.json) and
 [`contract/examples/mod-row.json`](contract/examples/mod-row.json).
 
 ## `ui.render`
 
-The request carries the `surface`, a `slot` (`{ kind: "page", page }`, `{ kind: "row", row }` or
-`{ kind: "view", uri }`), the `width` and the `theme`. The answer is `{ html, title, height? }`.
+The request carries the `surface`, a `slot` ([page](contract/examples/ui-render-request.json),
+[row](contract/examples/ui-render-row-request.json) or [view](contract/examples/ui-render-view-request.json)),
+the `width` in CSS pixels, the `theme` (`light` or `dark`) and, when the page, row or view belongs
+to one, the `session`. The slot is `{ kind: "page", page }`, `{ kind: "row", row }` or
+`{ kind: "view", uri }`. The answer is `{ html, title, height? }`.
 `html` must be a self-contained document: the app frames it sandboxed with no origin to load from,
 so inline every style, script and image. An answer for a page name the manifest did not declare is
 refused, and the person is told the mod's name and the page's.
@@ -191,8 +257,8 @@ row: `SPLICE_LABEL_TICKET=ENG-412` becomes `labels.ticket = "ENG-412"`.
 - A session can have at most 16 labels.
 
 A variable that breaks one of these rules is left out, and the person is told which one. The limits
-exist because labels ride on every event of the session and on its row in every `GET /api/sessions`
-answer, which every app polls. However a launcher sets them, a session's labels must stay at a few
+exist because labels ride on session events and on the normalized row in
+`GET /api/sessions?kind=all`, which apps poll. However a launcher sets them, a session's labels must stay at a few
 kilobytes. Labels are keys a reader filters on, such as a ticket, a project or a lane, not a place
 to carry documents.
 
@@ -207,6 +273,6 @@ offered to it.
 [`example/`](example/) is a complete mod, `reviews`. A `session.start` hook opens a review for
 a session launched with `SPLICE_LABEL_REVIEW=<title>`. `sessions.list` adds a row for each open
 review, with Approve and Ask-for-changes buttons. The buttons call `resolve`, a tool marked for the
-app alone. A `queue` page and a `board` view list every open review. `bun test mods` checks every
-JSON file of the example and every example in `contract/examples/` against its declaration, and
-compiles `register.ts`, so a wrong field in any of them fails.
+app alone. A `queue` page and a `board` view list every open review. `bun test mods` checks the
+JSON examples against their declarations, compiles the configured hook modules, and checks that
+buttons on a row the example produces target tools declared by the mod and marked app-only.

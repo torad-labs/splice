@@ -2,9 +2,10 @@
 // its declaration in index.ts by the TypeScript compiler: each file becomes `const x: T = <json>;`,
 // so a misspelled field, a missing one or a value outside its set is a type error and fails here.
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
+import type { EventName, Handler, Handle, HooksFile, Json, ModManifest, On, Register, SessionStart, ToolMeta } from "./index.ts";
 
 const here = import.meta.dir;
 const contract = join(here, "index.ts");
@@ -14,11 +15,18 @@ const mod = join(here, "..", "example");
 const cases: ReadonlyArray<readonly [file: string, type: string]> = [
   [join(here, "examples/mod.json"), "ModManifest"],
   [join(here, "examples/hooks.json"), "HooksFile"],
-  [join(here, "examples/session-row.json"), "SessionRow"],
-  [join(here, "examples/mod-row.json"), "SessionRow"],
+  [join(here, "examples/mod-catalog.json"), "ModCatalogResponse"],
+  [join(here, "examples/sessions-list-response.json"), "SessionsListResponse"],
+  [join(here, "examples/session-row.json"), "HostSessionRow"],
+  [join(here, "examples/mod-row.json"), "ModSessionRow"],
+  [join(here, "examples/session-start.json"), "SessionStart"],
+  [join(here, "examples/session-end.json"), "SessionEnd"],
   [join(here, "examples/ui-render-request.json"), "UiRenderRequest"],
+  [join(here, "examples/ui-render-row-request.json"), "UiRenderRequest"],
+  [join(here, "examples/ui-render-view-request.json"), "UiRenderRequest"],
   [join(here, "examples/ui-render-answer.json"), "UiRenderAnswer"],
   [join(here, "examples/tool-definition.json"), "ToolDefinition"],
+  [join(here, "examples/tool-result.json"), "ToolResult"],
   [join(mod, ".splice-mod/mod.json"), "ModManifest"],
   [join(mod, "hooks/hooks.json"), "HooksFile"],
   [join(mod, "tools/resolve.json"), "ToolInputSchema"],
@@ -72,8 +80,18 @@ describe("a wrong field in an example is a type error", () => {
   });
 });
 
+function readJson<T>(file: string): T {
+  return JSON.parse(readFileSync(file, "utf8")) as T;
+}
+
 describe("the example mod", () => {
-  test("hooks/register.ts compiles against the contract", () => {
+  const manifest = readJson<ModManifest>(join(mod, ".splice-mod/mod.json"));
+  const hooks = readJson<HooksFile>(join(mod, "hooks/hooks.json"));
+  const modules = hooks.modules.map((module) => join(mod, "hooks", module));
+
+  test("the declared hook modules exist and compile against the contract", () => {
+    expect(modules.length).toBeGreaterThan(0);
+    for (const module of modules) expect(statSync(module).isFile()).toBe(true);
     const options: ts.CompilerOptions = {
       strict: true,
       noEmit: true,
@@ -85,16 +103,65 @@ describe("the example mod", () => {
       lib: ["lib.esnext.d.ts"],
       skipLibCheck: true,
     };
-    const program = ts.createProgram([join(mod, "hooks/register.ts")], options);
+    const program = ts.createProgram(modules, options);
     const found = ts.getPreEmitDiagnostics(program).map((d) => ts.flattenDiagnosticMessageText(d.messageText, "\n"));
     expect(found).toEqual([]);
   });
 
   test("every tool it declares has its schema and description beside the manifest", () => {
-    const manifest = JSON.parse(readFileSync(join(mod, ".splice-mod/mod.json"), "utf8")) as { tools: string[] };
-    for (const tool of manifest.tools) {
+    for (const tool of manifest.tools ?? []) {
       expect(readFileSync(join(mod, `tools/${tool}.json`), "utf8").length).toBeGreaterThan(0);
       expect(readFileSync(join(mod, `tools/${tool}.md`), "utf8").trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  test("the review row's actions use declared app-only tools on the example's own server", async () => {
+    const start: Handler<"session.start">[] = [];
+    const list: Handler<"sessions.list">[] = [];
+    // This test drives just the two hooks involved in producing a review row, not the runner.
+    const on: On = (event: EventName, handler: unknown) => {
+      if (event === "session.start") start.push(handler as Handler<"session.start">);
+      if (event === "sessions.list") list.push(handler as Handler<"sessions.list">);
+      return { catch() { return this; } };
+    };
+    for (const module of modules) {
+      const { register } = await import(module) as { register: Register };
+      register(on);
+    }
+
+    const store = new Map<string, Json>();
+    const handle: Handle = {
+      store: {
+        get: async (key) => store.get(key),
+        set: async (key, value) => { store.set(key, value); },
+        delete: async (key) => { store.delete(key); },
+        list: async (prefix = "") => [...store.keys()].filter((key) => key.startsWith(prefix)),
+      },
+      sessions: { list: async () => [], invalidate: () => {} },
+      clock: { now: Date.now, after: () => { throw new Error("this example does not schedule work"); } },
+      log: () => {},
+      ui: { respond: () => { throw new Error("this test does not call the board tool"); } },
+    };
+    const session = readJson<SessionStart>(join(here, "examples/session-start.json"));
+    const startChain = start.reduceRight<Parameters<Handler<"session.start">>[2]>(
+      (next, handler) => (event) => handler(handle, event, next), async () => {},
+    );
+    const listChain = list.reduceRight<Parameters<Handler<"sessions.list">>[2]>(
+      (next, handler) => (event) => handler(handle, event, next), async () => [],
+    );
+    await startChain(session);
+    const rows = await listChain({ surface: "console", allRows: true });
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+    expect(row.mod).toBe(manifest.name);
+    expect(row.id.startsWith(`${manifest.name}:`)).toBe(true);
+    const actions = row.actions ?? [];
+    expect(actions.length).toBeGreaterThan(0);
+    for (const action of actions) {
+      expect(manifest.tools ?? []).toContain(action.tool);
+      const file = join(mod, `tools/${action.tool}.meta.json`);
+      const meta = existsSync(file) ? readJson<ToolMeta>(file) : undefined;
+      expect(meta?.ui?.visibility ?? ["model", "app"]).toEqual(["app"]);
     }
   });
 });

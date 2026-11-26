@@ -39,8 +39,8 @@ export type Instant = string;
  *   is not portable across shells, so the label key is one case on the wire and cannot collide.
  * - value is 0–256 bytes of UTF-8 with no control characters (no newline, no tab, no NUL).
  * - at most 16 labels per session.
- * Why bounded: labels ride on every event of the session and on its row in every `GET /api/sessions`
- * answer, read by every app polling the list, so a session's labels must stay a few kilobytes at
+ * Why bounded: labels ride on session events and on the normalized row in `GET /api/sessions?kind=all`,
+ * read by apps polling the list, so a session's labels must stay a few kilobytes at
  * most however a launcher sets them; and they are for keys a reader filters on (a ticket, a
  * project, a lane), not a place to carry documents.
  */
@@ -94,6 +94,21 @@ export interface ModManifest {
   readonly views?: readonly ViewDeclaration[];
 }
 
+// App discovery uses the installed manifest, not a running hook.
+export const MOD_CATALOG_PATH = "/api/mods";
+
+/** `GET /api/mods`: the installed mods, including disabled and failed ones. */
+export interface ModCatalogResponse {
+  readonly mods: readonly ModCatalogEntry[];
+}
+
+/** The app-facing fields of a catalog entry. The runner may also supply operational diagnostics. */
+export interface ModCatalogEntry extends ModManifest {
+  readonly runtime: "ts";
+  readonly enabled: boolean;
+  readonly state: "starting" | "running" | "restarting" | "stuck" | "failed" | "disabled";
+}
+
 /** What a mod may say it does, each shown to the person at install as one line. */
 export type Capability =
   | "watch-sessions" // reads session.start / session.end
@@ -142,11 +157,12 @@ export interface HooksFile {
 /** `tools/<name>.json`: the tool's input, as a JSON Schema whose type is object. */
 export interface ToolInputSchema {
   readonly type: "object";
-  readonly properties?: { readonly [name: string]: JsonObject };
+  readonly properties?: { readonly [name: string]: boolean | JsonObject };
   readonly required?: readonly string[];
   readonly additionalProperties?: boolean | JsonObject;
   readonly description?: string;
   readonly $schema?: string;
+  readonly [keyword: string]: Json | undefined;
 }
 
 /** Who may call a tool: `model` is the model in the conversation, `app` is a row's action or a view. */
@@ -189,15 +205,19 @@ export type ToolContent =
   | { readonly type: "resource_link"; readonly uri: string; readonly name: string; readonly mimeType?: string };
 
 // ---------------------------------------------------------------------------------------------
-// Rows: what GET /api/sessions returns
+// Rows: the normalized v2 list, not the legacy SessionsRoutes wire
 
 /**
- * `GET /api/sessions` answers sessions only, as it always has, so no existing reader is handed a
- * row it would treat as a session. `GET /api/sessions?kind=all` answers every row: sessions and
- * every mod's own rows. The spelling is this contract's choice: `kind` is the row field it selects
- * on, and `all` leaves room for `?kind=<a mod's kind>` later.
+ * Only `GET /api/sessions?kind=all` returns the v2 envelope below. Plain `GET /api/sessions`
+ * stays on SessionsRoutes: `sessions` (with `session_id` and `waiting_for`), `reading`,
+ * `note_versions`, `gone_mark` and, when present, `gone_held`, `gone_older` and `error`.
+ * Build the legacy response from host sessions alone, without invoking the mod onion.
  */
 export const ALL_ROWS_QUERY = "kind=all";
+
+export interface SessionsListResponse {
+  readonly rows: readonly SessionRow[];
+}
 
 /** The one status set every row shares, so an app draws every mod's rows alike. */
 export type RowStatus =
@@ -207,16 +227,38 @@ export type RowStatus =
   | "done"
   | "failed";
 
-export interface SessionRow {
-  /** For a session, `id` IS the harness's own session id: the value `GET /api/sessions` has always
-   *  answered as `session_id`. A row has no separate `session_id` field, so key every lookup of a
-   *  session (a `parent`, a join) on `id`. A mod's own rows are `<mod>:<id>`; a session id never
-   *  contains `:`, so the two cannot collide. */
+export type SessionRow = HostSessionRow | ModSessionRow;
+
+export interface HostSessionRow extends RowFields {
+  /** The harness's own session ID (the legacy wire's `session_id`), never containing `:`. */
   readonly id: string;
-  /** "session" for a session; a mod names its own kinds, e.g. "task". */
+  readonly kind: "session";
+  readonly mod?: never;
+  readonly actions?: never;
+}
+
+/**
+ * At the v2 boundary, Splice validates rows added or changed by each handler against that mod's
+ * installed manifest, not against the row's own ownership claim. A new row must name the mod,
+ * use its exact prefix and a nonempty local ID, and must not claim the host-reserved `session`
+ * kind. A host row's identity must come from the host listing, not from mod output. Actions
+ * must name local tools declared by that same mod and visible to apps; reject a row attributed
+ * to another mod or with an invalid action or more than four actions. These checks protect
+ * display and compatibility, not authorization to call a tool.
+ */
+export interface ModSessionRow extends RowFields {
+  readonly id: `${string}:${string}`;
+  /** A mod-defined kind, e.g. "task". The host reserves "session". */
   readonly kind: string;
+  readonly mod: string;
+  /** At most four, drawn as buttons in order. */
+  readonly actions?: readonly [] | readonly [RowAction] | readonly [RowAction, RowAction]
+    | readonly [RowAction, RowAction, RowAction] | readonly [RowAction, RowAction, RowAction, RowAction];
+}
+
+interface RowFields {
   /** The row this one sits under: a session's `id` or another row's `id`. When no row in the same
-   *  answer carries that id, Splice keeps the row (at the top level) and reports that its parent was
+   *  answer carries that id, Splice keeps the row at the top level and reports that its parent was
    *  not found, naming the mod, the row and the missing id, where the person sees a mod's state. A
    *  hierarchy that silently collapses would look the same as a mod with no hierarchy. */
   readonly parent?: string;
@@ -225,14 +267,8 @@ export interface SessionRow {
   readonly progress?: RowProgress;
   /** What the row needs from the person. On a session's row this carries what `waiting_for` says. */
   readonly needs?: RowNeeds;
-  /** At most 4, drawn as buttons in order. */
-  readonly actions?: readonly RowAction[];
   /** The session's labels, or the labels a mod gives its row. */
   readonly labels?: Labels;
-  /** Which mod added the row. Absent for a session Splice serves. When the reader did not ask for
-   *  every row (`?kind=all`), Splice drops every row whose `mod` is set, or whose `kind` is not
-   *  `session`, after the `sessions.list` onion has run and before the answer goes out. */
-  readonly mod?: string;
 }
 
 export interface RowProgress {
@@ -248,7 +284,7 @@ export interface RowNeeds {
 /**
  * A button a reader draws on a row. Pressing it calls `tool` on the row's own mod's server with
  * `arguments`, plus the input's value under `input.name` when there is an input. An action names
- * only a tool its own mod declared; Splice refuses a row naming any other.
+ * the bare name of a tool declared by its own mod and visible to apps, never a qualified MCP name.
  */
 export interface RowAction {
   readonly label: string;
@@ -336,17 +372,11 @@ export interface LaunchPrepare {
   readonly mcp: JsonObject;
 }
 
-/**
- * When `allRows` is false, Splice drops from the answer every row a mod added (any row whose `mod` is
- * set, or whose `kind` is not `session`) after the onion has run and before the answer goes out, so a
- * reader asking plain `GET /api/sessions` is never handed a mod's row whatever a handler returned.
- * `allRows` is still worth reading: a mod that reads it skips building rows nobody will see, and can
- * shape its rows for the reader that asked.
- */
+/** The normalized listing request. The legacy HTTP response does not consume this onion's output. */
 export interface SessionsList {
   /** The surface asking. */
   readonly surface?: string;
-  /** Whether the reader asked for every row (`?kind=all`) or sessions only. */
+  /** Whether the normalized listing includes mod rows, as in `?kind=all`. */
   readonly allRows: boolean;
 }
 
@@ -373,15 +403,22 @@ export interface StreamEvent {
   readonly event: JsonObject;
 }
 
-export interface ToolCall {
-  readonly session?: string;
+/**
+ * For a model call, the host binds `session` from trusted launch/session provenance. It must not
+ * infer an identity from tool arguments or untrusted request metadata. App calls from views or
+ * actions can be sessionless; when an app call has a session, it too comes from host context.
+ */
+export type ToolCall = ToolCallFields & (
+  | { readonly caller: "model"; readonly session: string }
+  | { readonly caller: "app"; readonly session?: string }
+);
+
+interface ToolCallFields {
   readonly turn?: string;
   /** The MCP server the tool is on. A mod's own server is named after the mod. */
   readonly server: string;
   readonly tool: string;
   readonly arguments: JsonObject;
-  /** Who called it: the model, or an app through a row's action or a view. */
-  readonly caller: ToolVisibility;
 }
 
 export interface ResponseReceive {
@@ -443,7 +480,10 @@ export interface Events {
   "turn.complete": { payload: TurnComplete; filter: never; result: void };
   "ui.render": {
     payload: UiRenderRequest;
-    filter: { readonly surface?: string; readonly slot?: UiSlot["kind"]; readonly page?: string };
+    filter: { readonly surface?: string } & (
+      | { readonly slot: "page"; readonly page: string }
+      | { readonly slot?: UiSlot["kind"]; readonly page?: never }
+    );
     result: UiRenderAnswer;
   };
   "command.run": { payload: CommandRun; filter: { readonly command: string }; result: CommandAnswer };
@@ -452,7 +492,12 @@ export interface Events {
 
 export type EventName = keyof Events;
 export type Payload<E extends EventName> = Events[E]["payload"];
-export type Filter<E extends EventName> = Events[E]["filter"];
+type KeysOfUnion<T> = T extends unknown ? keyof T : never;
+type FilterKey = KeysOfUnion<Events[EventName]["filter"]>;
+type EventFilter<F> = F extends object ? F & { readonly [K in Exclude<FilterKey, keyof F>]?: never } : never;
+
+/** Keys belonging to other filters are invalid even when the filter is passed in a variable. */
+export type Filter<E extends EventName> = EventFilter<Events[E]["filter"]>;
 export type Result<E extends EventName> = Events[E]["result"];
 
 /** The rest of the chain: the next mod's handler, or Splice's own behaviour at the end. */
@@ -481,11 +526,20 @@ export interface Registration<E extends EventName> {
   catch(handler: CatchHandler<E>): Registration<E>;
 }
 
-/** The one primitive. Events with a filter type take an optional filter before the handler; the
- *  handler runs only for payloads the filter matches. */
+// Distribute over E, but compare each member with the whole inferred event type.
+type SingleEvent<E extends EventName, Whole = E> = E extends EventName
+  ? [Whole] extends [E] ? E : never
+  : never;
+
+/** Register one event at a time: narrow a dynamic name before calling. The event determines the
+ *  filter, the payload and the result of both the handler and its error handler. */
 export interface On {
-  <E extends EventName>(event: E, handler: Handler<E>): Registration<E>;
-  <E extends EventName>(event: E, filter: Filter<E>, handler: Handler<E>): Registration<E>;
+  <E extends EventName>(event: E & NoInfer<SingleEvent<E>>, handler: Handler<NoInfer<E>>): Registration<E>;
+  <E extends EventName>(
+    event: E & NoInfer<SingleEvent<E>>,
+    filter: Filter<NoInfer<E>>,
+    handler: Handler<NoInfer<E>>,
+  ): Registration<E>;
 }
 
 /** `hooks/register.ts` exports `register: Register`. Splice calls it once when the mod loads. */
@@ -512,7 +566,7 @@ export interface Handle {
   /** A line in Splice's log, under the mod's name. */
   log(msg: string): void;
   readonly sessions: {
-    /** Every row as `GET /api/sessions?kind=all` answers it now. */
+    /** The `rows` from the current normalized listing, as in `GET /api/sessions?kind=all`. */
     list(): Promise<readonly SessionRow[]>;
     /** Tells every reader the rows changed, so they ask again and `sessions.list` runs again. */
     invalidate(): void;

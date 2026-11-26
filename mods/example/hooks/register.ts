@@ -1,7 +1,7 @@
 // An example mod written against the contract. It does not run: Splice serves no mod events yet.
 // It shows the three shapes together: a lifecycle hook (session.start), rows with actions
 // (sessions.list and the resolve tool behind its buttons) and a page (ui.render).
-import type { Json, Register, SessionRow, UiRenderAnswer } from "../../contract/index.ts";
+import type { Json, ModSessionRow, Register, UiRenderAnswer } from "../../contract/index.ts";
 
 interface Review {
   readonly id: string;
@@ -18,7 +18,7 @@ function isReview(v: Json | undefined): v is Json & { id: string; session: strin
     typeof (v as { title?: unknown }).title === "string";
 }
 
-function row(r: Review): SessionRow {
+function row(r: Review): ModSessionRow {
   return {
     id: `${MOD}:${r.id}`,
     kind: "review",

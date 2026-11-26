@@ -9,6 +9,10 @@
       "reason": { "type": "string" }
     },
     "required": ["row", "verdict"],
+    "oneOf": [
+      { "properties": { "verdict": { "const": "approved" } } },
+      { "properties": { "verdict": { "const": "changes" } }, "required": ["reason"] }
+    ],
     "additionalProperties": false
   },
   "_meta": { "ui": { "visibility": ["app"] } }

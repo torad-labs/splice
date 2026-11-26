@@ -1,0 +1,57 @@
+{
+  "mods": [
+    {
+      "name": "reviews",
+      "version": "0.1.0",
+      "description": "Show open reviews in the session list.",
+      "surfaces": [
+        "console"
+      ],
+      "capabilities": [
+        "watch-sessions",
+        "add-rows",
+        "draw-ui",
+        "answer-tools"
+      ],
+      "tools": [
+        "resolve",
+        "board"
+      ],
+      "pages": [
+        {
+          "name": "queue",
+          "title": "Review queue"
+        }
+      ],
+      "views": [
+        {
+          "uri": "ui://reviews/board",
+          "name": "board"
+        }
+      ],
+      "runtime": "ts",
+      "enabled": true,
+      "state": "running"
+    },
+    {
+      "name": "campaignboard",
+      "version": "0.1.0",
+      "description": "Show campaign work in the session list.",
+      "pages": [
+        {
+          "name": "board",
+          "title": "Campaign board"
+        }
+      ],
+      "views": [
+        {
+          "uri": "ui://campaignboard/board",
+          "name": "board"
+        }
+      ],
+      "runtime": "ts",
+      "enabled": false,
+      "state": "disabled"
+    }
+  ]
+}

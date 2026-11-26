@@ -1,6 +1,6 @@
 // NEW: custom-provider (issue #680, cp-window). The window each provider with a `served_window` reports, read once per
 // daemon start, the first time one of its heads builds its catalog, and kept: a picked model's window is then the one
-// its provider really serves, and the door scales a session's counts to it (ModelCatalog.usageScale). A read that
+// its provider really serves, and the door scales a session's counts to it. A read that
 // fails leaves the declared windows in force and says why in one log line; `splice doctor` says it too.
 package splice.app.provider
 

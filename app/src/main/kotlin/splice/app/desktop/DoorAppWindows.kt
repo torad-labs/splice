@@ -18,13 +18,10 @@ internal class DoorAppWindows(desktop: DesktopConfig) {
     fun resolve(headers: Headers, ask: DoorAsk, lineup: DesktopLineup, route: DoorRoute): DoorAsk {
         if (!ask.appMode) return ask
         val beta = headers.getAll(ANTHROPIC_BETA_HEADER).orEmpty().joinToString(",")
-        val window = windows.of(headers[APP_MODE_HEADER], beta, ask.model, publishedWindow(lineup, route))
-        return ask.copy(appWindow = window)
-    }
-
-    private fun publishedWindow(lineup: DesktopLineup, route: DoorRoute): Long {
         val id = ModelTierSuffix.strip(route.upstream)
         val published = lineup.catalog.models.firstOrNull { it.provider == route.provider.key && it.id == id }
-        return published?.contextWindow ?: ModelServeWindows.forRow(route.provider.catalog, route.upstream)
+        val capacity = published?.contextWindow ?: ModelServeWindows.forRow(route.provider.catalog, route.upstream)
+        val window = windows.of(headers[APP_MODE_HEADER], beta, ask.model, capacity, published?.runtimeWindow)
+        return ask.copy(appWindow = window)
     }
 }

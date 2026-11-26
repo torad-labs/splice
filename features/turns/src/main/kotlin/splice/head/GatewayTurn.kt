@@ -28,8 +28,8 @@ import splice.head.wire.NATIVE_CLIENT_PING_MS
  *  [requestWindow] is the window the gateway read off THIS request — Claude Desktop's app mode, where the door has
  *  already weighed the request's beta and model against the windows splice.toml's `[desktop]` states. It outranks
  *  what the request's beta alone would say (ClientWindowWitness), which is the client's own million, not this
- *  install's. A hint means the gateway recognized the client but could not identify its selected window; null
- *  means the gateway did not interpret the request's window. */
+ *  install's. A bound describes the largest window the gateway's client might use, not a stated divisor;
+ *  null means the gateway did not interpret the request's window. */
 public class GatewayTurn(
     public val body: ByteArray,
     public val door: String,

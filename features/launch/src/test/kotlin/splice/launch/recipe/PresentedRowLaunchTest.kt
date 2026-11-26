@@ -21,8 +21,10 @@ import splice.client.ClaudePolicy
 import splice.client.wrap.WrapState
 import splice.client.wrap.WrapStateStore
 import splice.client.wrap.WrappedHead
+import splice.core.model.ClientWindow
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.model.WindowUsage
 import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
@@ -75,7 +77,8 @@ class PresentedRowLaunchTest(@param:TempDir private val tmp: Path) {
     private fun realCeiling(cat: ModelCatalog): Double {
         val env = service.launch(spec(cat), emptyList(), dangerouslySkipPermissions = false).env
         val compact = env.getValue("CLAUDE_CODE_AUTO_COMPACT_WINDOW").toLong()
-        return minOf(cat.clientContextWindowFor("bonsai-2-27b"), compact) / cat.usageScale("bonsai-2-27b")
+        val sizing = WindowUsage(cat).of("bonsai-2-27b", ClientWindow.Hint())
+        return minOf(checkNotNull(sizing.contextWindow), compact) / sizing.factor
     }
 
     @Test

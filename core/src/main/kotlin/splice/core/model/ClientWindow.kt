@@ -7,6 +7,9 @@ public sealed class ClientWindow {
 
     /** A record can outlive its process. A missing hint leaves only what the catalog can infer. */
     public data class Hint(val tokens: Long? = null) : ClientWindow()
+
+    /** The largest plausible divisor for a request whose client can use more than one window. */
+    public data class Bound(val tokens: Long) : ClientWindow()
 }
 
 /** The context window and scale used for one response's input counts. */

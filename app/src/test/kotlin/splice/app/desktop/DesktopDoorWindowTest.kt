@@ -48,6 +48,7 @@ import splice.head.GatewayTurn
 import splice.head.ProviderRuntime
 import splice.head.scripted.HeadShape
 import splice.head.scripted.HeadlessProvider
+import splice.head.scripted.HeadlessWindows
 import splice.head.scripted.reply
 import splice.head.scripted.withScriptedHeads
 import splice.usage.UsageHead
@@ -95,8 +96,8 @@ class DesktopDoorWindowTest {
         withScriptedHeads(tmp) {
             provider.script(reply { chatAnswer("answered") })
             val model = "claude-opus-5-5"
-            val runtime = headless.chat(HeadShape(model = model)).runtime
-            val request = Ask(model, headers = emptyList())
+            val runtime = headless.chat(HeadShape(model = model), windows = HeadlessWindows(1_000_000)).runtime
+            val request = Ask(model, headers = emptyList(), window = 1_000_000)
             val state = tmp.resolve("upgrade")
             val file = StatePaths(baseOverride = state.resolve("state")).desktopFile
             Files.createDirectories(file.parent)
@@ -133,7 +134,7 @@ class DesktopDoorWindowTest {
         withScriptedHeads(tmp) {
             provider.script(reply { chatAnswer("answered") })
             val row = "claude-fable-5-2[1m]"
-            val runtime = headless.chat(HeadShape(model = row), contextWindow = 1_000_000).runtime
+            val runtime = headless.chat(HeadShape(model = row), windows = HeadlessWindows(1_000_000)).runtime
             val bare = Ask(row, emptyList(), model = "claude-fable-5-2", window = 1_000_000)
             val app = bare.copy(headers = listOf("x-splice-desktop" to "app"))
             val discovery = Json.parseToJsonElement(asked(tmp, runtime, DesktopConfig(), MODELS, app)).jsonObject
@@ -142,6 +143,39 @@ class DesktopDoorWindowTest {
             assertEquals(12L, reportedInput(asked(tmp, runtime, DesktopConfig(), TURN, app)))
             val raw = countOf(asked(tmp, runtime, DesktopConfig(), COUNT, bare))
             assertEquals(raw, countOf(asked(tmp, runtime, DesktopConfig(), COUNT, app)))
+        }
+    }
+
+    @Test
+    fun `a native million model on a narrow row cannot undercount without a beta`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(reply { chatAnswer("answered") })
+            val model = "claude-fable-5-2"
+            val runtime = headless.chat(HeadShape(model = model)).runtime
+            val app = Ask(model, listOf("x-splice-desktop" to "app"))
+            assertEquals(60L, reportedInput(asked(tmp, runtime, DesktopConfig(), TURN, app)))
+            val stream = asked(tmp, runtime, DesktopConfig(), TURN, app.copy(stream = true))
+            assertEquals(60L, reportedInput(streamUsage(stream)))
+            val count = countOf(asked(tmp, runtime, DesktopConfig(), COUNT, app))
+            val standard = DesktopConfig(codeWindow = 200_000, codeWindow1m = 200_000)
+            val optIn = app.copy(headers = app.headers + ("anthropic-beta" to "context-1m-2025-08-07"))
+            assertEquals(countOf(asked(tmp, runtime, standard, COUNT, optIn)) * 5, count)
+            val legacy = app.copy(headers = emptyList())
+            assertEquals(60L, reportedInput(asked(tmp, runtime, DesktopConfig(), TURN, legacy)))
+        }
+    }
+
+    @Test
+    fun `a beta-free gateway model can use its advertised large runtime window`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(reply { chatAnswer("answered") })
+            val model = "muse-spark"
+            val runtime = headless.chat(HeadShape(model = model), windows = HeadlessWindows(1_000_000)).runtime
+            val app = Ask(model, listOf("x-splice-desktop" to "app"), model = "$prefix$model", window = 2_000_000)
+            val discovery = Json.parseToJsonElement(asked(tmp, runtime, DesktopConfig(), MODELS, app)).jsonObject
+            val advertised = discovery.getValue("data").jsonArray.single().jsonObject.getValue("runtime").jsonObject
+            assertEquals("2000000", advertised.getValue("max_input_tokens").jsonPrimitive.content)
+            assertEquals(24L, reportedInput(asked(tmp, runtime, DesktopConfig(), TURN, app)))
         }
     }
 

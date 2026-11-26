@@ -23,6 +23,7 @@ import splice.app.desktop.catalog.DoorCatalog
 import splice.app.desktop.catalog.ModelDiscovery
 import splice.client.desktop.GatewayDiscovery
 import splice.core.client.SESSION_HEADER
+import splice.core.model.ClientWindow
 import splice.core.speed.SessionSpeeds
 import splice.core.topology.desktop.DesktopConfig
 import splice.core.util.JsonScalars
@@ -40,7 +41,7 @@ internal data class DoorAsk(
     val request: JsonObject,
     val model: String,
     val session: String?,
-    val appWindow: Long? = null,
+    val appWindow: ClientWindow? = null,
     val appMode: Boolean = false,
 ) {
     /** Whether this is Claude Code's start-up check: one token, not streamed (desktop-door.md's table), whose answer

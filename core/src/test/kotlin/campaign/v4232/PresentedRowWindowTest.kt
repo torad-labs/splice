@@ -8,8 +8,10 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import splice.core.model.ClientWindow
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.model.WindowUsage
 
 class PresentedRowWindowTest {
     private val bonsai =
@@ -27,7 +29,8 @@ class PresentedRowWindowTest {
         val cat = catalog(bonsai)
 
         assertEquals(200_000L, cat.clientContextWindowFor("bonsai-2-27b"))
-        assertEquals(200_000.0 / 245_760, cat.usageScale("bonsai-2-27b"), 1e-12)
+        val sizing = WindowUsage(cat).of("bonsai-2-27b", ClientWindow.Hint(300_000))
+        assertEquals(200_000L, sizing.scale(245_760))
         assertFalse(cat.envGoverned("bonsai-2-27b"), "a status-line post reveals the client's table here, not the env")
         assertEquals(
             200_000L,
@@ -43,7 +46,6 @@ class PresentedRowWindowTest {
 
         assertTrue(cat.envGoverned("qwen-local"))
         assertEquals(cat.clientLaunchWindow, cat.clientContextWindowFor("qwen-local"))
-        assertEquals(1.0, cat.usageScale("qwen-local"))
     }
 
     @Test

@@ -3,6 +3,7 @@ package splice.head
 import io.ktor.server.application.ApplicationCall
 import splice.core.model.CLAUDE_CODE_ONE_MILLION
 import splice.core.model.CLIENT_WINDOW_HEADER
+import splice.core.model.ClaudeCodeNativeWindow
 import splice.core.model.ClientWindow
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
@@ -20,15 +21,26 @@ internal class ClientWindowWitness(private val posted: ClientWindows? = null) {
         turn: GatewayTurn? = GatewayTurns.of(call),
     ): UsageSizing {
         val learned = posted?.windowFor(sessionId)
-        val hint = learned ?: turn?.clientWindow?.takeIf { it > 0 }
         val request = turn?.requestWindow
+        val lane = turn?.clientWindow ?: headLaunch(catalog, model, turn)
+        val session = maxOf(learned ?: 0, lane)
         val asked = turn?.asked ?: model
+        val bound = (request as? ClientWindow.Bound)?.tokens ?: ClaudeCodeNativeWindow.of(asked)
+        val launch = launched(call, catalog, model)
         val stated = (request as? ClientWindow.Stated)?.tokens?.takeIf { it > 0 }
-            ?: oneMillion(call, asked) ?: launched(call, catalog, model)
-        val evidence = stated?.let { ClientWindow.Stated(it) } ?: ClientWindow.Hint(hint)
-        // The gateway can know the client without knowing how it interpreted this selector.
-        return WindowUsage(catalog).of(model, evidence, asked.takeUnless { request is ClientWindow.Hint }, learned)
+            ?: oneMillion(call, asked)
+        val evidence = stated?.let { ClientWindow.Stated(it) } ?: inferred(session, bound, launch)
+        return WindowUsage(catalog).of(model, evidence, learned)
     }
+
+    private fun inferred(session: Long, bound: Long?, launch: Long?): ClientWindow = when {
+        bound != null -> ClientWindow.Bound(maxOf(bound, session, launch ?: 0))
+        launch != null -> ClientWindow.Stated(launch)
+        else -> ClientWindow.Hint(session.takeIf { it > 0 })
+    }
+
+    private fun headLaunch(catalog: ModelCatalog, model: String, turn: GatewayTurn?): Long =
+        if (turn == null && catalog.envGoverned(model)) catalog.clientLaunchWindow else 0
 
     // Claude Code strips the 1M suffix before writing the body and can send the opt-in beta instead.
     private fun oneMillion(call: ApplicationCall, asked: String): Long? {

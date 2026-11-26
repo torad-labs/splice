@@ -7,6 +7,7 @@ package splice.head.scripted
 import splice.core.auth.ClientAuthProvider
 import splice.core.config.RequestByteCap
 import splice.core.model.ClientWindows
+import splice.core.model.CompactionReserveDefaults
 import splice.core.server.ServedTurnBoard
 import splice.core.server.ServedTurns
 import splice.core.topology.ForwardHeaders
@@ -37,6 +38,8 @@ public data class HeadlessProvider(
     val clientWindows: ClientWindows,
 )
 
+public data class HeadlessWindows(val capacity: Long, val reserve: CompactionReserveDefaults? = null)
+
 public class HeadlessProviders internal constructor(private val heads: ScriptedHeads, private val tmp: Path) {
     /** What a headless provider is wired with beside its own login: the caller headers its provider's forward_headers
      *  names, the Claude accounts added to splice, the body size limit, and whether it forwards a caller's login. */
@@ -56,18 +59,20 @@ public class HeadlessProviders internal constructor(private val heads: ScriptedH
         maxRequestBytes: Int? = null,
         forwarded: ForwardHeaders = ForwardHeaders(emptyList()),
         served: ServedTurns = ServedTurnBoard(),
-        contextWindow: Long? = null,
+        windows: HeadlessWindows? = null,
     ): HeadlessProvider {
         heads.provider.start()
         val key = "scripted-headless-chat"
         val auth = HeadAccounts().login.auth(key)
         val original = heads.tuning(key, shape, heads.provider.baseUrl, auth, loginCommand = "")
-        val tuned = if (contextWindow == null) {
+        val catalog = original.catalog
+        val tuned = if (windows == null) {
             original
         } else {
             original.copy(
-                catalog = original.catalog.copy(
-                    models = original.catalog.models.map { it.copy(contextWindow = contextWindow) },
+                catalog = catalog.copy(
+                    models = catalog.models.map { it.copy(contextWindow = windows.capacity) },
+                    windows = catalog.windows.copy(compactionReserveDefaults = windows.reserve),
                 ),
             )
         }

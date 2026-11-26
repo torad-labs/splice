@@ -34,10 +34,7 @@ internal class DesktopCaller(
 
     override fun default(lineup: DesktopLineup): String? = records.get().defaultModel
 
-    override fun requestWindowOf(ask: DoorAsk): ClientWindow? = when {
-        !ask.appMode -> null
-        else -> ask.appWindow?.let { ClientWindow.Stated(it) } ?: ClientWindow.Hint()
-    }
+    override fun requestWindowOf(ask: DoorAsk): ClientWindow? = ask.appWindow
 
     override val noHead: String = "no provider is in the door; `splice desktop` says why"
 

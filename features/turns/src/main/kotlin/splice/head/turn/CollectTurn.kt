@@ -62,6 +62,7 @@ internal class CollectTurn(
             built.meta.route.originalModel,
             wiring.usagePayloadBuilder(provider.catalog, built.meta, window, clientWindow.requested(call)),
             voice = inputs.voice,
+            observed = inputs.perf.observed,
         )
         // Inert writer: collect never writes SSE frames. clientGone is flipped by Netty
         // closeFuture (HD-29), not by a failed write.

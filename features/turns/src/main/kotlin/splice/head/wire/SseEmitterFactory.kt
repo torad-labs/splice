@@ -7,6 +7,7 @@ package splice.head.wire
 
 import splice.core.failure.TurnVoice
 import splice.core.failure.WireAnswer
+import splice.core.turn.ObservedTurn
 import splice.core.turn.WireFacts
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -37,7 +38,7 @@ internal class SseEmitterFactory {
         // ends the pinger's notice at its own block boundaries, so the pinger's wire comes first.
         val indexes = AtomicInteger(0)
         val progress = ProgressWire(streaming.progressTo(write), streaming.retryTo(write), start, indexes)
-        val blocks = WireBlockWriter(frames, start, indexes, notice = progress, facts = streaming.facts)
+        val blocks = WireBlockWriter(frames, start, indexes, notice = progress, streaming = streaming)
         return SseEmitter(frames, start, blocks, progress, usagePayload, streaming.contentReached, voice)
     }
 }
@@ -64,6 +65,7 @@ internal class StreamWiring(
     /** The id the emitter's message_start carries: a fresh one per emitter, pinned only by a caller that must know it
      *  before the stream starts. */
     val messageId: String = MessageIds().generateMessageId(),
+    val observed: ObservedTurn? = null,
 ) {
     /** The port the pinger's frames go through for an emitter that writes to [write]. */
     fun progressTo(write: FrameWrite): FrameWrite = progressWrite ?: write

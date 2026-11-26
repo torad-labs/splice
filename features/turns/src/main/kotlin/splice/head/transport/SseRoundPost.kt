@@ -75,7 +75,7 @@ internal class SseRoundPost(
         val selection = drive.account
         val account = selection?.account
         val sender = account?.auth ?: provider.auth
-        val answers = TurnProviderAnswers(usageStore, sender, provider.auth)
+        val answers = TurnProviderAnswers(usageStore, sender, provider.auth, drive.perf.observed)
         val activeQuota = turnQuota.forSession(drive.meta.scope.sessionId, drive.account)
         return upstream.post(
             PostContext(

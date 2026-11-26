@@ -32,6 +32,8 @@ import splice.head.compaction.CompactionRecordings
 import splice.head.compaction.CompactionTail
 import splice.head.compaction.SessionProjectLookup
 import splice.head.live.LiveReplies
+import splice.head.observe.NoTurnObservers
+import splice.head.observe.TurnObservers
 import splice.head.perf.PerfStats
 import splice.head.port.TurnHarness
 import splice.head.turn.LiveTurns
@@ -280,6 +282,7 @@ public data class HeadDeps(
         /** Server mode (F5): where a turn the server listener relayed is told how it went. A head no listener relays
          *  to has a board nobody waits on, which drops what it is told. */
         val served: ServedTurns = ServedTurnBoard(),
+        val observers: TurnObservers = NoTurnObservers,
     )
 
     /** Separate ticking consumers keep the pinger's cadence independent of watchdog progress. */

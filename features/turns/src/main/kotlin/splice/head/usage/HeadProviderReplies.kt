@@ -6,6 +6,7 @@ import splice.core.auth.ClientAuthProvider
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.failure.FailureCause
 import splice.core.failure.Lift
+import splice.core.turn.ObservedTurn
 import splice.core.usage.PlanLimit
 import splice.core.wire.HttpStatus
 import splice.head.HeadDeps
@@ -79,6 +80,7 @@ internal class TurnProviderAnswers(
     private val store: UsageStore,
     private val sender: RefreshableAuthProvider,
     private val head: RefreshableAuthProvider,
+    private val turn: ObservedTurn?,
 ) : ProviderAnswerObserver {
     private var credentialKey: String? = null
 
@@ -91,6 +93,11 @@ internal class TurnProviderAnswers(
         if (status in HttpStatus.OK..HttpStatus.MAX_SUCCESS && sender !== head) {
             (head as? ClientAuthProvider)?.upstreamAnswered(status, true)
         }
+    }
+
+    override fun observed(status: Int, observedAtEpochMs: Long, attempt: Long?) {
+        turn?.let { if (attempt != null) it.responseReceived(status, attempt, observedAtEpochMs) }
+        observed(status, observedAtEpochMs)
     }
 
     override fun quotaRefused(status: Int, observedAtEpochMs: Long) {

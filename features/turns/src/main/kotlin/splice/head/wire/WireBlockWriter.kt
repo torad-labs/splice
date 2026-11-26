@@ -10,6 +10,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.core.index.WireBlockIndex
+import splice.core.turn.ObservedTurn
 import splice.core.turn.Usage
 import splice.core.turn.WireFacts
 import splice.core.util.JsonScalars
@@ -48,10 +49,11 @@ internal class WireBlockWriter(
      *  points every open verb, present or added later, passes through. Null on the pinger's own
      *  writer, which is what ends the notice. */
     notice: ProgressWire? = null,
-    /** The TURN's writer only: what the client has been shown, for the live listing. Null on the pinger's. */
-    facts: WireFacts? = null,
-    private val writes: WireBlockWrites = WireBlockWrites(frames, notice, facts),
-    private val opens: WireBlockOpens = WireBlockOpens(frames, start, nextBlockIndex, notice, writes, facts),
+    /** The turn's own writer reports its blocks and tools; the pinger's reports neither. */
+    streaming: StreamWiring? = null,
+    private val writes: WireBlockWrites = WireBlockWrites(frames, notice, streaming?.facts),
+    private val opens: WireBlockOpens =
+        WireBlockOpens(frames, start, nextBlockIndex, notice, writes, streaming?.facts, streaming?.observed),
 ) : WireSink, BlockOpening by opens, WholeBlocks by opens, BlockDeltas by writes, BlockEnding by writes {
     override fun deferMessageStart() = start.defer()
 
@@ -91,6 +93,7 @@ internal class WireBlockOpens(
     private val notice: ProgressWire?,
     private val writes: WireBlockWrites,
     private val facts: WireFacts? = null,
+    private val observed: ObservedTurn? = null,
 ) : BlockOpening, WholeBlocks {
     private suspend fun openBlock(contentBlock: JsonObject): WireBlockIndex {
         notice?.endNoticeAtBoundary()
@@ -140,7 +143,7 @@ internal class WireBlockOpens(
                 put("name", name)
                 putJsonObject("input") {}
             },
-        )
+        ).also { observed?.toolCall(id, name) }
     }
 
     // DR-119: the content_block payload rides VERBATIM (server_tool_use / web_search_tool_result).

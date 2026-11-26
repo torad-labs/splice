@@ -17,7 +17,7 @@ public class UpstreamAttemptTiming(private val perf: TurnPerf) {
     private var headersDeliveredAt: Long? = null
     private var readCallAt: Long? = null
     private var readReturnedAt: Long? = null
-    private val attempt = perf.upstream.begin(observations)
+    public val attempt: Long = perf.upstream.begin(observations)
 
     public fun finish(outcome: String) {
         perf.upstream.beforeFinish(attempt)

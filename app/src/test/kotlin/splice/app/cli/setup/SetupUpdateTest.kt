@@ -19,6 +19,7 @@ import splice.app.capability.WrapperSettings
 import splice.app.desktop.setup.DesktopMode
 import splice.client.ManagedFile
 import splice.client.ManagedReading
+import splice.client.UnreadPlaces
 import splice.core.config.UserHome
 import splice.core.util.EnvReader
 import splice.terminal.ConfirmPrompt
@@ -85,7 +86,10 @@ class SetupUpdateTest {
         val ok = UserHome.within(home) {
             Files.createDirectories(toml.parent)
             Files.writeString(toml, "[daemon]\ncontrol_port = 3096\nauto_update = false\n")
-            val complete = desktop(cli = true, app = true).copy(mode = DesktopMode.APP, managed = managed(BOTH_RIGHT))
+            val launch = Files.writeString(home.resolve("desktop-launch"), "#!/bin/sh\n")
+            launch.toFile().setExecutable(true)
+            val right = managed("""{"processWrapper": "$launch", "parentSettingsBehavior": "merge"}""", launch = launch)
+            val complete = desktop(cli = true, app = true).copy(mode = DesktopMode.APP, managed = right)
             runBlocking { update(said, facts = complete, onCheckup = { checkups++ }).run() }
         }
         assertTrue(ok)
@@ -105,6 +109,24 @@ class SetupUpdateTest {
         }
         assertTrue("sets processWrapper to \"/usr/bin/other\"" in said, said.toString())
         assertTrue("edit it in place as an administrator so it holds both keys" in said, said.toString())
+    }
+
+    // A place splice did not read changes how the item is said, never whether a known mismatch is one.
+    @Test
+    fun `an unattended update with a mismatch beside an unread drop-in lists it and never says nothing is new`(
+        @TempDir home: Path,
+    ) {
+        val said = StringBuilder()
+        val dropIn = "/etc/claude-code/managed-settings.d/10-org.json"
+        UserHome.within(home) {
+            seedToml(home, autoUpdate = false)
+            val unread = UnreadPlaces(held = listOf(dropIn))
+            val other = desktop(cli = true, app = true).copy(mode = DesktopMode.APP, managed = managed(OTHER, unread))
+            runBlocking { update(said, facts = other, console = false).run() }
+        }
+        assertFalse("Nothing new to set up" in said, said.toString())
+        assertTrue("sets processWrapper to \"/usr/bin/other\"" in said && dropIn in said, said.toString())
+        assertTrue("check the places splice did not read first" in said, said.toString())
     }
 
     private fun update(
@@ -192,13 +214,15 @@ class SetupUpdateTest {
         app: Boolean = false,
     ) = DesktopFacts(program, DesktopMode.OFF, cli, app)
 
-    private fun managed(text: String): WrapperSettings {
+    private fun managed(
+        text: String,
+        unread: UnreadPlaces = UnreadPlaces(),
+        launch: Path = Path.of("/s/desktop-launch"),
+    ): WrapperSettings {
         val file = Path.of("/etc/claude-code/managed-settings.json")
-        val reading = ManagedReading(file, ManagedFile.Read(Json.parseToJsonElement(text).jsonObject), emptyList())
-        return WrapperSettings(reading, Path.of(LAUNCH))
+        val reading = ManagedReading(file, ManagedFile.Read(Json.parseToJsonElement(text).jsonObject), unread)
+        return WrapperSettings(reading, launch)
     }
 }
 
-private const val LAUNCH = "/s/desktop-launch"
-private const val BOTH_RIGHT = """{"processWrapper": "$LAUNCH", "parentSettingsBehavior": "merge"}"""
 private const val OTHER = """{"processWrapper": "/usr/bin/other", "parentSettingsBehavior": "merge"}"""

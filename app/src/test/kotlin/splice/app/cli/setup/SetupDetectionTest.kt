@@ -15,6 +15,7 @@ import splice.app.capability.WrapperSettings
 import splice.app.desktop.setup.DesktopMode
 import splice.client.ManagedFile
 import splice.client.ManagedReading
+import splice.client.UnreadPlaces
 import splice.configuration.add.AddProfiles
 import splice.configuration.add.DaemonUpProbe
 import splice.core.topology.AuthKind
@@ -84,7 +85,7 @@ class SetupDetectionTest {
     private fun otherWrapper(): WrapperSettings {
         val file = Path.of("/etc/claude-code/managed-settings.json")
         val settings = Json.parseToJsonElement("""{"processWrapper": "/usr/bin/other"}""").jsonObject
-        val reading = ManagedReading(file, ManagedFile.Read(settings), emptyList())
+        val reading = ManagedReading(file, ManagedFile.Read(settings), UnreadPlaces())
         return WrapperSettings(reading, Path.of("/s/desktop-launch"))
     }
 

@@ -28,13 +28,15 @@ class DesktopFactsReadTest(@param:TempDir private val tmp: Path) {
     private val launch = DesktopPrograms(state).launch
 
     @Test
-    fun `splice's desktop-launch is the one program said to start the Code tab through splice`() {
+    fun `splice's laid desktop-launch is the one program that is right, and nothing says what starts the Code tab`() {
+        Files.createDirectories(state)
+        DesktopPrograms(state).lay()
         val row = row("""{"processWrapper": "$launch", "parentSettingsBehavior": "merge"}""")
-        assertEquals(ToolLevel.OK, row.level)
-        assertTrue("the Code tab starts through splice's launcher" in row.said, row.said)
+        assertEquals(ToolLevel.OK, row.level, row.said)
         val other = row("""{"processWrapper": "/usr/bin/not-desktop-launch", "parentSettingsBehavior": "merge"}""")
         assertEquals(ToolLevel.WARN, other.level)
-        assertTrue("the Code tab starts through /usr/bin/not-desktop-launch" in other.said, other.said)
+        assertTrue("sets processWrapper to \"/usr/bin/not-desktop-launch\"" in other.said, other.said)
+        assertTrue("starts through" !in row.said + other.said, other.said)
     }
 
     @Test
@@ -84,7 +86,7 @@ class DesktopFactsReadTest(@param:TempDir private val tmp: Path) {
         Files.writeString(dropIn, """{"parentSettingsBehavior": "merge"}""")
         for (text in listOf("""{"env": {}}""", null)) {
             val row = row(text)
-            assertTrue("Claude Code also reads $dropIn, which splice did not read" in row.said, row.said)
+            assertTrue("Claude Code also reads $dropIn: splice did not read them" in row.said, row.said)
             assertTrue("$file sets parentSettingsBehavior" !in row.said, "only the main file is read: ${row.said}")
             assertEquals(ToolLevel.INFO, row.level, row.said)
         }

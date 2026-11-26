@@ -1,8 +1,8 @@
 // desktop-antigravity: `splice desktop wrapper` says what Claude Code's managed settings need so Desktop's Code tab
 // starts through splice (`processWrapper`) and Desktop's own limits still reach its Code sessions
-// (`parentSettingsBehavior` "merge"). For each of the two keys it says one of three things: already right, absent and
-// to be added, or set to a value and to be changed. `--check` says the same of the file that is there, with its exit
-// code.
+// (`parentSettingsBehavior` "merge"). It says only what splice read: the file read, could not be read, or known to be
+// absent; each key text, not text, or absent; every other place Claude Code reads that splice did not; and what
+// Desktop does plainly only where splice read every place. `--check` says the same, with its exit code.
 package splice.app.cli.desktop
 
 import kotlinx.serialization.json.Json
@@ -10,7 +10,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
@@ -18,6 +17,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.desktop.setup.DesktopPrograms
 import splice.client.ManagedSettings
 import splice.client.PlatformPolicy
+import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import java.nio.file.Files
@@ -26,24 +26,46 @@ import java.nio.file.attribute.PosixFilePermissions
 
 class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
     private val state = tmp.resolve("state")
-    private val managed = tmp.resolve("etc/claude-code/managed-settings.json")
+    private val home = tmp.resolve("home")
+    private val folder = tmp.resolve("etc/claude-code")
+    private val managed = folder.resolve("managed-settings.json")
     private val said = mutableListOf<String>()
     private val errors = mutableListOf<String>()
-    private val env = EnvReader { if (it == "SPLICE_STATE_DIR") state.toString() else null }
+    private val env = EnvReader {
+        when (it) {
+            "SPLICE_STATE_DIR" -> state.toString()
+            "HOME" -> home.toString()
+            else -> null
+        }
+    }
     private val launch = DesktopPrograms(state).launch
-    private val allClear =
-        "splice: Claude Code's processWrapper is $launch and parentSettingsBehavior is \"merge\" in $managed"
+    private val bothRight = """{"processWrapper":"$launch","parentSettingsBehavior":"merge"}"""
+    private val unknown = "splice does not say what Desktop does, because it could not read every place Claude Code " +
+        "reads: wherever managed settings exist, Desktop warns in every Code session unless the source that wins " +
+        "sets parentSettingsBehavior to \"merge\""
+    private val unreadFile = "$managed could not be read (no permission on its path, a link to nothing, or not a " +
+        "JSON object), so splice does not say whether it exists or what it holds"
+
+    // Every claim of what Desktop does, and every step that could be wrong while a source is unread.
+    private val effects = listOf(
+        "Desktop warns in every Code session, and its limits",
+        "Desktop does not warn",
+        "limits apply to the Code sessions",
+        "reads no managed settings here",
+    )
 
     private fun wrapper(vararg args: String, osName: String = "Linux"): Int {
         said.clear()
         errors.clear()
         val out = TerminalOutput { said += it }
-        val settings = ManagedSettings(osName, platformDir = managed.parent, policy = PlatformPolicy("Linux"))
-        return DesktopWrapper(env, out, TerminalOutput { errors += it }, osName, settings).run(args.toList())
+        val settings = ManagedSettings(osName, platformDir = folder, policy = PlatformPolicy("Linux"))
+        return UserHome.within(home) {
+            DesktopWrapper(env, out, TerminalOutput { errors += it }, osName, settings).run(args.toList())
+        }
     }
 
     private fun file(text: String) {
-        Files.createDirectories(managed.parent)
+        Files.createDirectories(folder)
         Files.writeString(managed, text)
     }
 
@@ -52,314 +74,260 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
         DesktopPrograms(state).lay()
     }
 
-    private fun dropIn(): Path {
-        val folder = Files.createDirectories(managed.parent.resolve("managed-settings.d"))
-        return Files.writeString(folder.resolve("10-org.json"), """{"parentSettingsBehavior":"first-wins"}""")
+    private fun dropIn(text: String = """{"parentSettingsBehavior":"merge"}"""): Path {
+        val dropIns = Files.createDirectories(folder.resolve("managed-settings.d"))
+        return Files.writeString(dropIns.resolve("10-org.json"), text)
     }
 
     private fun printed(): String = said.joinToString("\n")
 
-    @Test
-    fun `print with no managed file shows the whole file with both keys and says why the second is there`() {
-        assertEquals(0, wrapper("--print"))
-        assertTrue(said.first().contains("$managed does not exist yet. Create it so it reads:"), printed())
-        val shown = Json.parseToJsonElement(said.first { it.startsWith("{") }).jsonObject
-        assertEquals(setOf("processWrapper", "parentSettingsBehavior"), shown.keys)
-        assertEquals(launch.toString(), shown.getValue("processWrapper").jsonPrimitive.content)
-        assertEquals("merge", shown.getValue("parentSettingsBehavior").jsonPrimitive.content)
-        assertTrue("limits in Claude Desktop's own policy still apply to the Code sessions it starts" in printed())
-        assertTrue("does not warn in each of them." in printed(), printed())
-        val install = "sudo mkdir -p '${managed.parent}' && sudo install -m 0644 managed-settings.json '$managed'"
-        assertTrue(install in printed(), printed())
-        assertFalse("install -D" in printed(), "no GNU-only flag: macOS's install has none")
-        assertTrue(errors.isEmpty(), errors.toString())
+    private fun claimsNoEffect() {
+        for (effect in effects) assertFalse(effect in printed(), "\"$effect\" said while a source is unread: $said")
+        assertTrue(unknown in printed(), printed())
+    }
+
+    private fun withLocked(path: Path, block: () -> Unit) {
+        Files.setPosixFilePermissions(path, emptySet())
+        try {
+            assumeFalse(Files.isReadable(path), "a user that can read anything cannot show this")
+            block()
+        } finally {
+            Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rwxr-xr-x"))
+        }
     }
 
     @Test
-    fun `print for a file holding only other keys says to add both, in place, and offers no copy`() {
+    fun `with nothing at the path, print shows both keys and the commands that create the file`() {
+        layLauncher()
+        assertEquals(0, wrapper("--print"))
+        val shown = Json.parseToJsonElement(said.dropWhile { it != "{" }.takeWhile { it != "}" }.joinToString("") + "}")
+        assertEquals(setOf("processWrapper", "parentSettingsBehavior"), shown.jsonObject.keys)
+        assertEquals(launch.toString(), shown.jsonObject.getValue("processWrapper").jsonPrimitive.content)
+        assertEquals("merge", shown.jsonObject.getValue("parentSettingsBehavior").jsonPrimitive.content)
+        assertTrue("nothing is at $managed." in said, printed())
+        assertTrue("Claude Code reads no managed settings here, so Desktop does not warn in its Code sessions." in said)
+        assertTrue(said.any { it.startsWith("What to do: to start the Code tab through splice") }, printed())
+        val install = "  sudo mkdir -p '${managed.parent}' && sudo install -m 0644 managed-settings.json '$managed'"
+        assertTrue(install in said, printed())
+        assertFalse("install -D" in printed(), "no GNU-only flag: macOS's install has none")
+        assertEquals(1, wrapper("--check"), "nothing names the launcher, so the Code tab does not start through splice")
+        assertTrue("splice: nothing is at $managed." in said, printed())
+    }
+
+    @Test
+    fun `a file holding only other keys is edited in place, never copied, and what it holds is not printed`() {
+        layLauncher()
         file("""{"permissions":{"deny":["Bash(rm:*)"]},"env":{"TOKEN":"s3cret-value"}}""")
         assertEquals(0, wrapper())
-        assertTrue("$managed holds settings already. Do not replace it with a copy" in printed(), printed())
-        assertTrue("  processWrapper: add \"processWrapper\": \"$launch\"" in printed(), printed())
-        assertTrue("  parentSettingsBehavior: add \"parentSettingsBehavior\": \"merge\"" in printed(), printed())
-        assertTrue("Edit it in place, as an administrator (for example `sudoedit '$managed'`)" in printed(), printed())
-        assertFalse("install" in printed(), "a copy would reset the owner and mode: $said")
-        assertFalse("Copy-Item" in printed(), printed())
+        val found = "$managed does not set processWrapper, and does not set parentSettingsBehavior."
+        assertTrue(found in said, printed())
+        assertTrue(said.any { "Desktop warns in every Code session, and its limits for them are not applied" in it })
+        assertTrue(said.any { it.startsWith("What to do: edit it in place as an administrator so it holds both") })
+        assertTrue("  For example: sudoedit '$managed'" in said, printed())
+        assertFalse("install" in printed() || "Copy-Item" in printed(), "a copy would reset the owner and mode")
         assertFalse("s3cret-value" in printed() || "permissions" in printed(), "what the file holds is not printed")
-        assertTrue("Then quit Claude Desktop entirely and reopen it." in printed(), printed())
-        assertTrue(errors.isEmpty(), errors.toString())
+        assertEquals(1, wrapper("--check"))
+        assertTrue("splice: $found" in said, printed())
     }
 
     @Test
-    fun `print for first-wins already in the file says it is changed, not added, and is the administrator's choice`() {
-        file("""{"parentSettingsBehavior":"first-wins"}""")
+    fun `with both keys right and nothing else to read, print and check say so plainly and ask for nothing`() {
+        layLauncher()
+        file(bothRight)
         assertEquals(0, wrapper("--print"))
-        assertTrue("  parentSettingsBehavior: set to \"first-wins\"; change it to \"merge\"" in printed(), printed())
-        assertFalse("add \"parentSettingsBehavior\"" in printed(), printed())
-        assertTrue("It is set to \"first-wins\" there." in printed(), printed())
-        assertTrue("limits under the" in printed() && "That is the" in printed(), printed())
-        assertTrue("administrator's choice." in printed(), printed())
+        assertTrue("$managed sets processWrapper to \"$launch\", and sets parentSettingsBehavior to \"merge\"." in said)
+        val effect = "the Code tab starts through splice's launcher; Claude Desktop's limits apply to the Code " +
+            "sessions it starts, and Desktop does not warn in them."
+        assertTrue(effect in said, printed())
+        assertFalse("What to do" in printed() || "Then quit" in printed(), printed())
+        assertEquals(0, wrapper("--check"))
+        assertTrue("splice: $effect" in said, printed())
+        assertFalse(said.any { "what to do" in it }, printed())
     }
 
     @Test
-    fun `print for another program's wrapper says it is changed, and leaves a merge already there alone`() {
+    fun `first-wins in the file is named as it is and the file is edited to hold both keys`() {
+        layLauncher()
+        file("""{"processWrapper":"$launch","parentSettingsBehavior":"first-wins"}""")
+        assertEquals(0, wrapper("--check"), "the Code tab starts through splice")
+        assertTrue(said.first().contains("sets parentSettingsBehavior to \"first-wins\""), printed())
+        assertTrue(said.any { "Desktop warns in every Code session" in it }, printed())
+        assertTrue(said.any { it.startsWith("splice: what to do: edit it in place") }, printed())
+    }
+
+    @Test
+    fun `another program's wrapper is named, exits 1, and the Code tab is said to start through it`() {
+        layLauncher()
         file("""{"processWrapper":"/usr/local/bin/other","parentSettingsBehavior":"merge"}""")
-        assertEquals(0, wrapper())
-        val changed = "  processWrapper: set to \"/usr/local/bin/other\"; change it to \"$launch\""
-        assertTrue(changed in printed(), printed())
-        assertTrue("  parentSettingsBehavior: already \"merge\"; leave it" in printed(), printed())
-        assertFalse("administrator's choice" in printed(), "nothing to choose where merge is already set")
-    }
-
-    @Test
-    fun `print with both keys already right says so and asks for nothing`() {
-        file("""{"processWrapper":"$launch","parentSettingsBehavior":"merge","env":{"A":"1"}}""")
-        assertEquals(0, wrapper("--print"))
-        assertTrue("$managed already has both keys right" in printed(), printed())
-        assertTrue("There is nothing to add." in printed(), printed())
-        assertFalse("Edit it" in printed() || "add " in printed().replace("There is nothing to add.", ""), printed())
-        assertFalse("Then quit" in printed(), printed())
-        assertTrue("$launch is not laid yet: run `splice desktop on` first." in printed(), printed())
-        layLauncher()
-        assertEquals(0, wrapper("--print"))
-        assertFalse("not laid yet" in printed(), printed())
-    }
-
-    @Test
-    fun `print for a file that is no JSON object says it could not read it, for both keys, and offers no copy`() {
-        file("{ not json")
-        assertEquals(0, wrapper("--print"))
-        val unread = "$managed exists but splice could not read it (no permission, or it is not a JSON object)"
-        assertTrue(unread in printed(), printed())
-        assertTrue("cannot say which of these the file already has." in printed(), printed())
-        assertTrue("\"processWrapper\": \"$launch\"" in printed(), printed())
-        assertTrue("\"parentSettingsBehavior\": \"merge\"" in printed(), printed())
-        assertFalse("install" in printed() || "Copy-Item" in printed(), printed())
-        assertFalse("add or change" in printed() || "already has both" in printed(), printed())
-    }
-
-    @Test
-    fun `a file nobody may read is said the same way in print and check, and not as missing its keys`() {
-        file("""{"processWrapper":"$launch","parentSettingsBehavior":"merge"}""")
-        Files.setPosixFilePermissions(managed, emptySet())
-        assumeFalse(Files.isReadable(managed), "a user that can read any file cannot show this")
-        layLauncher()
-        assertEquals(0, wrapper("--print"))
-        assertTrue("$managed exists but splice could not read it" in printed(), printed())
-        assertFalse("add" in printed().replace("add or change", "") || "change it to" in printed(), printed())
         assertEquals(1, wrapper("--check"))
-        val line = said.first()
-        val unread = "splice: not set up: $managed could not be read (no permission, or it is not a JSON object)"
-        assertTrue(unread in line, line)
-        assertTrue("cannot say what it holds for processWrapper or parentSettingsBehavior" in line, line)
-        assertFalse("names no" in line || "does not set" in line || "does not exist" in line, line)
+        assertTrue("sets processWrapper to \"/usr/local/bin/other\"" in said.first(), printed())
+        assertTrue(said.any { "the Code tab starts through /usr/local/bin/other" in it }, printed())
     }
 
     @Test
-    fun `check of a file that is no JSON object says it could not read it and exits 1`() {
+    fun `null, a number, true, a list or an object for either key is a value that is not text, never shown`() {
         layLauncher()
-        file("[1, 2]")
-        assertEquals(1, wrapper("--check"))
-        assertTrue("could not be read" in said.single(), printed())
-        assertFalse("names no" in said.single(), printed())
+        val secret = "s3cret-sentinel"
+        for (value in listOf("null", "7", "true", """["/bin/sh","-c","$secret"]""", """{"env":{"T":"$secret"}}""")) {
+            for (key in listOf("processWrapper", "parentSettingsBehavior")) {
+                file("""{"$key":$value}""")
+                for (verb in listOf("--print", "--check")) {
+                    wrapper(verb)
+                    assertTrue(said.any { "sets $key to a value that is not text" in it }, "$value: $said")
+                    assertFalse(said.any { "does not set $key" in it }, "$value is not absent: $said")
+                    assertFalse(secret in printed(), printed())
+                }
+            }
+        }
     }
 
     @Test
-    fun `with no main file and a drop-in present, print and check name the drop-in`() {
+    fun `a file that is not a JSON object could not be read, for both keys, and nothing is created or copied`() {
+        layLauncher()
+        for (text in listOf("{ not json", "[1, 2]")) {
+            file(text)
+            assertEquals(0, wrapper("--print"))
+            assertTrue("$unreadFile." in said, printed())
+            assertTrue(said.any { it.startsWith("What to do: look at it as an administrator") }, printed())
+            assertFalse("install" in printed() || "Create" in printed() || "create" in printed(), printed())
+            claimsNoEffect()
+            assertEquals(1, wrapper("--check"))
+            assertTrue("splice: $unreadFile." in said, printed())
+            claimsNoEffect()
+        }
+    }
+
+    @Test
+    fun `a link to nothing is not absent: it could not be read, and nothing is created at it`() {
+        layLauncher()
+        Files.createDirectories(folder)
+        Files.createSymbolicLink(managed, folder.resolve("gone.json"))
+        assertEquals(0, wrapper("--print"))
+        assertTrue("$unreadFile." in said, printed())
+        assertFalse("nothing is at" in printed() || "sudo install" in printed(), printed())
+        claimsNoEffect()
+        assertEquals(1, wrapper("--check"))
+        assertTrue("splice: $unreadFile." in said, printed())
+    }
+
+    @Test
+    fun `a file nobody may read could not be read, in print and check, and is not called missing its keys`() {
+        layLauncher()
+        file(bothRight)
+        withLocked(managed) {
+            assertEquals(0, wrapper("--print"))
+            assertTrue("$unreadFile." in said, printed())
+            assertFalse("does not set" in printed() || "nothing is at" in printed(), printed())
+            assertEquals(1, wrapper("--check"))
+            assertTrue("splice: $unreadFile." in said, printed())
+        }
+    }
+
+    @Test
+    fun `a folder splice cannot look into tells it nothing: the file could not be read, not absent`() {
+        layLauncher()
+        file(bothRight)
+        withLocked(folder) {
+            assertEquals(0, wrapper("--print"))
+            assertTrue("$unreadFile." in said, printed())
+            assertFalse("nothing is at" in printed() || "sudo install" in printed(), printed())
+            claimsNoEffect()
+            assertEquals(1, wrapper("--check"))
+            assertTrue("splice: $unreadFile." in said, printed())
+        }
+    }
+
+    @Test
+    fun `a drop-in that sets merge over a main file that sets first-wins leaves the effect open in both verbs`() {
+        layLauncher()
+        val dropIn = dropIn()
+        file("""{"processWrapper":"$launch","parentSettingsBehavior":"first-wins"}""")
+        val named = "Claude Code also reads $dropIn, which splice did not read: a value set there may be the one " +
+            "Claude Code takes."
+        for (verb in listOf("--print", "--check")) {
+            assertEquals(0, wrapper(verb))
+            assertTrue(said.any { it.endsWith(named) }, printed())
+            claimsNoEffect()
+            assertFalse("change it to" in printed(), printed())
+            val step = "check the places splice did not read first, then edit it in place"
+            assertTrue(said.any { step in it }, printed())
+        }
+    }
+
+    @Test
+    fun `a drop-in and nothing at the main path: the drop-in is named before any step, and the effect is open`() {
         layLauncher()
         val dropIn = dropIn()
         assertEquals(0, wrapper("--print"))
-        assertTrue("$managed does not exist yet. Create it so it reads:" in printed(), printed())
-        assertTrue("Claude Code also reads $dropIn, which splice did not read: it may set" in printed(), printed())
-        assertTrue("wins over this file." in printed(), printed())
+        val named = said.indexOfFirst { "Claude Code also reads $dropIn" in it }
+        val step = said.indexOfFirst { it.startsWith("What to do: check the places splice did not read first") }
+        assertTrue(named in 0 until step, printed())
+        claimsNoEffect()
         assertEquals(1, wrapper("--check"))
-        assertTrue("splice: not set up: $managed does not exist" in said.first(), printed())
-        val named = "Claude Code reads $dropIn, which splice did not read: it may set these keys"
-        assertTrue(named in printed(), printed())
-        assertTrue("unless one sets parentSettingsBehavior to \"merge\"" in printed(), printed())
+        assertTrue(said.any { "Claude Code also reads $dropIn" in it }, printed())
+        claimsNoEffect()
     }
 
     @Test
-    fun `print names another source Claude Code reads that it did not read`() {
+    fun `a drop-in folder splice cannot list is named as a place that may hold files, in every outcome of check`() {
+        layLauncher()
+        val dropIns = Files.createDirectories(folder.resolve("managed-settings.d"))
+        val named = "Claude Code also reads $dropIns (splice could not list it, so there may be files in it)"
+        for (text in listOf(bothRight, """{"processWrapper":"$launch"}""", "{ not json", null)) {
+            if (text == null) Files.deleteIfExists(managed) else file(text)
+            withLocked(dropIns) {
+                for (verb in listOf("--print", "--check")) {
+                    wrapper(verb)
+                    assertTrue(said.any { named in it }, "$text: $said")
+                    claimsNoEffect()
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `a readable drop-in is named in every outcome of check, and no outcome claims an effect`() {
+        layLauncher()
         val dropIn = dropIn()
-        file("""{"processWrapper":"$launch"}""")
-        assertEquals(0, wrapper())
-        assertTrue("Claude Code also reads $dropIn, which splice did not read:" in printed(), printed())
-        assertTrue("may be set there" in printed(), printed())
+        val files = listOf(bothRight, """{"processWrapper":"/usr/local/bin/other"}""", "{ not json", null)
+        for (text in files) {
+            if (text == null) Files.deleteIfExists(managed) else file(text)
+            wrapper("--check")
+            assertTrue(said.any { "Claude Code also reads $dropIn, which splice did not read" in it }, "$text: $said")
+            claimsNoEffect()
+        }
+    }
+
+    @Test
+    fun `remote settings in Claude Code's own folder are named as a place splice did not read`() {
+        layLauncher()
+        file(bothRight)
+        val remote = Files.createDirectories(home.resolve(".claude")).resolve("remote-settings.json")
+        Files.writeString(remote, "{}")
+        assertEquals(0, wrapper("--check"))
+        assertTrue(said.any { "Claude Code also reads $remote, which splice did not read" in it }, printed())
+        claimsNoEffect()
+    }
+
+    @Test
+    fun `without the launcher laid, check exits 1 and both verbs say to run splice desktop on`() {
+        file(bothRight)
+        assertEquals(1, wrapper("--check"))
+        assertTrue("splice: $launch is not laid yet: run `splice desktop on` first." in said, printed())
+        assertEquals(0, wrapper("--print"))
+        assertTrue(said.any { "not laid yet" in it }, printed())
     }
 
     @Test
     fun `on Windows it says how to put the file in place there, and edits one that exists in place`() {
+        layLauncher()
         assertEquals(0, wrapper(osName = "Windows 11"))
         assertTrue(said.any { "Copy-Item managed-settings.json '$managed'" in it }, said.toString())
         assertFalse(said.any { "sudo" in it }, said.toString())
         file("""{"env":{}}""")
         assertEquals(0, wrapper(osName = "Windows 11"))
-        assertTrue("Edit it in place, in an editor run as administrator" in printed(), printed())
+        assertTrue("  Edit it in an editor run as administrator." in said, printed())
         assertFalse("Copy-Item" in printed() || "sudo" in printed(), printed())
-    }
-
-    @Test
-    fun `check names what is missing and exits 1 only where the wrapper would not start`() {
-        assertEquals(1, wrapper("--check"))
-        assertTrue(said.single().contains("is not laid"), said.toString())
-
-        layLauncher()
-        assertEquals(1, wrapper("--check"))
-        assertTrue(said.single().contains("$managed does not exist"), said.toString())
-
-        file("""{"parentSettingsBehavior":"merge"}""")
-        assertEquals(1, wrapper("--check"))
-        assertTrue(said.single().contains("names no processWrapper"), said.toString())
-
-        file("""{"processWrapper":"/usr/local/bin/other","parentSettingsBehavior":"merge"}""")
-        assertEquals(1, wrapper("--check"))
-        assertTrue(said.single().contains("not $launch"), said.toString())
-    }
-
-    @Test
-    fun `check with both keys right exits 0 and says so in one line`() {
-        layLauncher()
-        file("""{"processWrapper":"$launch","parentSettingsBehavior":"merge"}""")
-        assertEquals(0, wrapper("--check"))
-        assertEquals(allClear, said.single())
-    }
-
-    @Test
-    fun `check with the wrapper in place and no merge exits 0 and its first line says the whole state`() {
-        layLauncher()
-        file("""{"processWrapper":"$launch","permissions":{"deny":[]}}""")
-        assertEquals(0, wrapper("--check"), "the wrapper works, so it is not reported as broken")
-        val first = said.first()
-        assertNotEquals(allClear, first)
-        assertEquals(
-            "splice: Claude Code's processWrapper is $launch, but $managed does not set parentSettingsBehavior: " +
-                "Desktop warns in every Code session and its limits for Code are not applied",
-            first,
-        )
-        assertTrue("add \"parentSettingsBehavior\": \"merge\" to it" in printed(), printed())
-        assertFalse(said.any { "not set up" in it }, printed())
-    }
-
-    @Test
-    fun `check with first-wins in the file exits 0, names the value, and does not ask for an addition`() {
-        layLauncher()
-        file("""{"processWrapper":"$launch","parentSettingsBehavior":"first-wins"}""")
-        assertEquals(0, wrapper("--check"))
-        val first = said.first()
-        assertNotEquals(allClear, first)
-        val sets = "$managed sets parentSettingsBehavior to \"first-wins\": Desktop warns in every Code session"
-        assertTrue(sets in first, first)
-        assertTrue("changing it to \"merge\"" in printed() && "administrator's choice" in printed(), printed())
-        assertFalse("add " in printed(), "the key is there already; adding it would write it twice: $said")
-    }
-
-    @Test
-    fun `check names a source it did not read, in the all-clear case and the missing-key case`() {
-        layLauncher()
-        val dropIn = dropIn()
-        file("""{"processWrapper":"$launch","parentSettingsBehavior":"merge"}""")
-        assertEquals(0, wrapper("--check"))
-        assertEquals(allClear, said.first())
-        assertTrue("Claude Code also reads $dropIn, which splice did not read" in printed(), printed())
-        file("""{"processWrapper":"$launch"}""")
-        assertEquals(0, wrapper("--check"))
-        assertTrue("does not set parentSettingsBehavior" in said.first(), printed())
-        assertTrue("which splice did not read; a setting" in printed(), printed())
-        assertTrue("may win over $managed's" in printed(), printed())
-    }
-
-    @Test
-    fun `a file in a folder splice cannot look into is one it could not read, never one that is not there`() {
-        file("""{"processWrapper":"$launch","parentSettingsBehavior":"merge"}""")
-        layLauncher()
-        Files.setPosixFilePermissions(managed.parent, emptySet())
-        try {
-            assumeFalse(Files.isReadable(managed.parent), "a user that can look into any folder cannot show this")
-            assertEquals(0, wrapper("--print"))
-            assertFalse("does not exist" in printed() || "Create it" in printed(), printed())
-            assertFalse("install" in printed() || "Copy-Item" in printed(), "no copy of a file that may exist: $said")
-            assertTrue("$managed exists but splice could not read it" in printed(), printed())
-            assertEquals(1, wrapper("--check"))
-            assertFalse("does not exist" in printed(), printed())
-            assertTrue("$managed could not be read" in said.first(), printed())
-        } finally {
-            Files.setPosixFilePermissions(managed.parent, PosixFilePermissions.fromString("rwxr-xr-x"))
-        }
-    }
-
-    @Test
-    fun `with a drop-in present, check does not say what Desktop does where the main file does not set the key`() {
-        layLauncher()
-        val dropIn = dropIn()
-        file("""{"processWrapper":"$launch","permissions":{"deny":[]}}""")
-        assertEquals(0, wrapper("--check"))
-        val first = "splice: Claude Code's processWrapper is $launch, but $managed does not set parentSettingsBehavior"
-        assertEquals(first, said.first())
-        assertFalse("Desktop warns in every Code session and its limits for Code are not applied" in said.first())
-        assertTrue("splice: if no source sets \"merge\", Desktop warns in every Code session" in printed(), printed())
-        assertTrue("splice: if none does, add \"parentSettingsBehavior\": \"merge\" to it" in printed(), printed())
-        assertTrue("Claude Code also reads $dropIn, which splice did not read" in printed(), printed())
-        assertTrue("so splice cannot say what Desktop will do" in printed(), printed())
-        assertEquals(0, wrapper("--print"))
-        val line = "  parentSettingsBehavior: not set here; add \"parentSettingsBehavior\": \"merge\" unless "
-        assertTrue(line + "one of the sources named below already sets it" in printed(), printed())
-        assertFalse("  parentSettingsBehavior: add" in printed(), "the key may already be in force: $said")
-    }
-
-    @Test
-    fun `with a drop-in present and the main file right, check does not say merge is in force`() {
-        layLauncher()
-        dropIn()
-        file("""{"processWrapper":"$launch","parentSettingsBehavior":"merge"}""")
-        assertEquals(0, wrapper("--check"))
-        assertEquals(allClear, said.first())
-        assertTrue("so splice cannot say what Desktop will do" in printed(), printed())
-    }
-
-    @Test
-    fun `check names an unread source in every outcome, including another program's wrapper and an unreadable file`() {
-        layLauncher()
-        val dropIn = dropIn()
-        file("""{"processWrapper":"/usr/local/bin/other","parentSettingsBehavior":"merge"}""")
-        assertEquals(1, wrapper("--check"))
-        assertTrue("splice: not set up: $managed names processWrapper /usr/local/bin/other" in said.first(), printed())
-        assertTrue("Claude Code also reads $dropIn, which splice did not read" in printed(), printed())
-        file("{ not json")
-        assertEquals(1, wrapper("--check"))
-        assertTrue("could not be read" in said.first(), printed())
-        assertTrue("Claude Code also reads $dropIn, which splice did not read" in printed(), printed())
-    }
-
-    @Test
-    fun `a parentSettingsBehavior that is not text is never printed back, only said to be a value that is not text`() {
-        layLauncher()
-        val secret = "s3cret-sentinel"
-        file("""{"processWrapper":"$launch","parentSettingsBehavior":{"env":{"TOKEN":"$secret"}}}""")
-        assertEquals(0, wrapper("--print"))
-        assertFalse(secret in printed(), printed())
-        val line = "  parentSettingsBehavior: set to a value that is not text; change it to \"merge\""
-        assertTrue(line in printed(), printed())
-        assertTrue("It is set to a value that is not text there." in printed(), printed())
-        assertEquals(0, wrapper("--check"))
-        assertFalse(secret in printed(), printed())
-        val sets = "$managed sets parentSettingsBehavior to a value that is not text: Desktop warns"
-        assertTrue(sets in said.first(), printed())
-    }
-
-    @Test
-    fun `a processWrapper that is not text is never printed back, in print or in check`() {
-        layLauncher()
-        val secret = "s3cret-sentinel"
-        file("""{"processWrapper":["/bin/sh","-c","$secret"],"parentSettingsBehavior":"merge"}""")
-        assertEquals(0, wrapper("--print"))
-        assertFalse(secret in printed(), printed())
-        val changed = "  processWrapper: set to a value that is not text; change it to \"$launch\""
-        assertTrue(changed in printed(), printed())
-        assertEquals(1, wrapper("--check"))
-        assertFalse(secret in printed(), printed())
-        assertTrue("$managed sets processWrapper to a value that is not text" in said.first(), printed())
-        assertFalse("names no processWrapper" in said.first(), printed())
     }
 
     @Test

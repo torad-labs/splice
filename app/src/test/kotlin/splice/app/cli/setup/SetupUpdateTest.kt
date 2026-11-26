@@ -4,6 +4,8 @@
 package splice.app.cli.setup
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -13,8 +15,10 @@ import splice.app.capability.Capabilities
 import splice.app.capability.DesktopFacts
 import splice.app.capability.HarnessFacts
 import splice.app.capability.HubFacts
-import splice.app.capability.WrapperState
+import splice.app.capability.WrapperSettings
 import splice.app.desktop.setup.DesktopMode
+import splice.client.ManagedFile
+import splice.client.ManagedReading
 import splice.core.config.UserHome
 import splice.core.util.EnvReader
 import splice.terminal.ConfirmPrompt
@@ -81,7 +85,7 @@ class SetupUpdateTest {
         val ok = UserHome.within(home) {
             Files.createDirectories(toml.parent)
             Files.writeString(toml, "[daemon]\ncontrol_port = 3096\nauto_update = false\n")
-            val complete = desktop(cli = true, app = true).copy(mode = DesktopMode.APP, wrapper = WrapperState.SPLICE)
+            val complete = desktop(cli = true, app = true).copy(mode = DesktopMode.APP, managed = managed(BOTH_RIGHT))
             runBlocking { update(said, facts = complete, onCheckup = { checkups++ }).run() }
         }
         assertTrue(ok)
@@ -91,15 +95,16 @@ class SetupUpdateTest {
     }
 
     @Test
-    fun `an update says the managed processWrapper only root can fix`(@TempDir home: Path) {
+    fun `an update says what only root can fix in the managed settings`(@TempDir home: Path) {
         val said = StringBuilder()
         UserHome.within(home) {
             val toml = Files.createDirectories(home.resolve(".config/splice")).resolve("splice.toml")
             Files.writeString(toml, "[daemon]\ncontrol_port = 3096\nauto_update = false\n")
-            val other = desktop(cli = true, app = true).copy(mode = DesktopMode.APP, wrapper = WrapperState.OTHER)
+            val other = desktop(cli = true, app = true).copy(mode = DesktopMode.APP, managed = managed(OTHER))
             runBlocking { update(said, facts = other).run() }
         }
-        assertTrue("processWrapper names another program" in said, said.toString())
+        assertTrue("sets processWrapper to \"/usr/bin/other\"" in said, said.toString())
+        assertTrue("edit it in place as an administrator so it holds both keys" in said, said.toString())
     }
 
     private fun update(
@@ -185,5 +190,15 @@ class SetupUpdateTest {
         program: Path? = Path.of("/usr/bin/claude-desktop"),
         cli: Boolean = false,
         app: Boolean = false,
-    ) = DesktopFacts(program, DesktopMode.OFF, cli, app, WrapperState.NONE)
+    ) = DesktopFacts(program, DesktopMode.OFF, cli, app)
+
+    private fun managed(text: String): WrapperSettings {
+        val file = Path.of("/etc/claude-code/managed-settings.json")
+        val reading = ManagedReading(file, ManagedFile.Read(Json.parseToJsonElement(text).jsonObject), emptyList())
+        return WrapperSettings(reading, Path.of(LAUNCH))
+    }
 }
+
+private const val LAUNCH = "/s/desktop-launch"
+private const val BOTH_RIGHT = """{"processWrapper": "$LAUNCH", "parentSettingsBehavior": "merge"}"""
+private const val OTHER = """{"processWrapper": "/usr/bin/other", "parentSettingsBehavior": "merge"}"""

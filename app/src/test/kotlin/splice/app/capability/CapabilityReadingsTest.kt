@@ -42,7 +42,7 @@ class CapabilityReadingsTest {
     private val managedFile: Path = Path.of("/etc/claude-code/managed-settings.json")
     private val launch = "/s/desktop-launch"
     private val dropIn = "/etc/claude-code/managed-settings.d/10-org.json"
-    private val unknown = "splice does not say what Desktop does"
+    private val unknown = "what Desktop does depends on places splice did not read"
 
     private fun app(state: ManagedFile, unread: List<String> = emptyList(), mode: DesktopMode = DesktopMode.APP) =
         bare().copy(

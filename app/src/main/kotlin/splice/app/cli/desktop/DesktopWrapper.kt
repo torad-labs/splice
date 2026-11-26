@@ -54,11 +54,12 @@ internal class DesktopWrapper(
         out.line(PRETTY.encodeToString(JsonObject.serializer(), settings.wanted()))
         out.line(WHY)
         out.line("")
-        listOfNotNull(settings.found(), settings.unread(), settings.effect()).forEach { out.line("$it.") }
+        listOfNotNull(settings.found(), settings.unread(), settings.effect())
+            .forEach { out.line("${it.replaceFirstChar(Char::uppercase)}.") }
         val step = settings.step()
         if (step != null) {
             out.line("What to do: $step.")
-            commands(settings)
+            if (!settings.right) commands(settings)
             out.line("Then $REOPEN")
             out.line("`splice desktop wrapper --check` says whether it took.")
         }

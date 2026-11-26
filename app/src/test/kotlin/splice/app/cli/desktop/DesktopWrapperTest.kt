@@ -40,9 +40,8 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
     }
     private val launch = DesktopPrograms(state).launch
     private val bothRight = """{"processWrapper":"$launch","parentSettingsBehavior":"merge"}"""
-    private val unknown = "splice does not say what Desktop does, because it did not read every place Claude Code " +
-        "reads: wherever managed settings exist, Desktop warns in every Code session unless the source that wins " +
-        "sets parentSettingsBehavior to \"merge\""
+    private val unknown = "Desktop does depends on places splice did not read: wherever managed settings exist, " +
+        "Desktop warns in every Code session unless the source that wins sets parentSettingsBehavior to \"merge\""
     private val unreadFile = "$managed could not be read (no permission on its path, a link to nothing, or not a " +
         "JSON object), so splice does not say whether it exists or what it holds"
 
@@ -104,7 +103,7 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
         assertEquals(setOf("processWrapper", "parentSettingsBehavior"), shown.jsonObject.keys)
         assertEquals(launch.toString(), shown.jsonObject.getValue("processWrapper").jsonPrimitive.content)
         assertEquals("merge", shown.jsonObject.getValue("parentSettingsBehavior").jsonPrimitive.content)
-        assertTrue("nothing is at $managed." in said, printed())
+        assertTrue("Nothing is at $managed." in said, printed())
         assertTrue("Claude Code reads no managed settings here, so Desktop does not warn in its Code sessions." in said)
         assertTrue(said.any { it.startsWith("What to do: to start the Code tab through splice") }, printed())
         val install = "  sudo mkdir -p '${managed.parent}' && sudo install -m 0644 managed-settings.json '$managed'"
@@ -138,7 +137,7 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
         assertTrue("$managed sets processWrapper to \"$launch\", and sets parentSettingsBehavior to \"merge\"." in said)
         val effect = "the Code tab starts through splice's launcher; Claude Desktop's limits apply to the Code " +
             "sessions it starts, and Desktop does not warn in them."
-        assertTrue(effect in said, printed())
+        assertTrue(effect.replaceFirstChar(Char::uppercase) in said, printed())
         assertFalse("What to do" in printed() || "Then quit" in printed(), printed())
         assertEquals(0, wrapper("--check"))
         assertTrue("splice: $effect" in said, printed())
@@ -307,6 +306,9 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
         assertEquals(0, wrapper("--check"))
         assertTrue(said.any { "Claude Code also reads $remote, which splice did not read" in it }, printed())
         claimsNoEffect()
+        assertEquals(0, wrapper("--print"))
+        assertTrue(said.any { "check that none of the places splice did not read sets either key" in it }, printed())
+        assertFalse("sudoedit" in printed() || "sudo install" in printed(), "the file needs no change: $said")
     }
 
     @Test

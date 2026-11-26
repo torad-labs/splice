@@ -33,6 +33,9 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
     /** Whether the file splice read names splice's launcher as its processWrapper. */
     val starts: Boolean get() = wrapper == ManagedValue.Text(launch.toString())
 
+    /** Whether the file splice read holds both keys as wanted. */
+    val right: Boolean get() = starts && merges
+
     /** Both keys with the values wanted. */
     fun wanted(): JsonObject = JsonObject(
         mapOf(
@@ -73,7 +76,7 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
                     "holds both keys"
             ManagedFile.Unreadable ->
                 "look at it as an administrator and make it hold both keys, editing it in place where it exists"
-            is ManagedFile.Read -> IN_PLACE.takeUnless { starts && merges }
+            is ManagedFile.Read -> IN_PLACE.takeUnless { right }
         }
         return when {
             reading.unread.isEmpty() -> edit
@@ -82,8 +85,8 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
         }
     }
 
-    /** [step] with where the keys are shown. */
-    fun pointed(): String? = step()?.let { "$it (`splice desktop wrapper` shows what to put where)" }
+    /** [step], with where the keys are shown where the file is to change. */
+    fun pointed(): String? = step()?.let { if (right) it else "$it (`splice desktop wrapper` shows what to put where)" }
 
     /** What was found, the places not read, and the effect, as one line. */
     fun said(): String = listOfNotNull(found(), unread(), effect()).joinToString("; ")
@@ -91,7 +94,7 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
     /** How the doctor rates it: a warning only where splice read every place and something is known to be wrong. */
     fun level(): ToolLevel = when {
         !known || read == null -> ToolLevel.INFO
-        starts && merges -> ToolLevel.OK
+        right -> ToolLevel.OK
         merges && wrapper == ManagedValue.Absent -> ToolLevel.INFO
         else -> ToolLevel.WARN
     }
@@ -125,9 +128,9 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
 }
 
 // What Desktop does where splice did not read every place: the condition, always true, and no more.
-private const val UNKNOWN_EFFECT = "splice does not say what Desktop does, because it did not read every place " +
-    "Claude Code reads: wherever managed settings exist, Desktop warns in every Code session unless the source that " +
-    "wins sets $PARENT_SETTINGS_KEY to \"$PARENT_SETTINGS_MERGE\""
+private const val UNKNOWN_EFFECT = "what Desktop does depends on places splice did not read: wherever managed " +
+    "settings exist, Desktop warns in every Code session unless the source that wins sets $PARENT_SETTINGS_KEY to " +
+    "\"$PARENT_SETTINGS_MERGE\""
 
 // What to do with a file splice read that lacks a key: never a copy, which would lose what the file is.
 private const val IN_PLACE = "edit it in place as an administrator so it holds both keys; a copy put in its place " +

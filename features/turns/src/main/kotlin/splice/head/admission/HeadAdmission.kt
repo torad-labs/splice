@@ -9,7 +9,11 @@ package splice.head.admission
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import splice.core.auth.CredentialKey
+import splice.core.failure.CompactionFit
+import splice.core.failure.RequestFacts
 import splice.core.memory.HeapCapacityException
+import splice.core.model.CompactionBudgets
+import splice.core.model.ModelServeWindows
 import splice.core.turn.LiveWatchdogBudget
 import splice.core.util.Cancellables
 import splice.head.GatewayTurns
@@ -256,7 +260,13 @@ internal class HeadAdmission(
         admitted.retainRequest()
         val meta = prepared.built.meta
         val otherLogin = (deps.quotaBundle.activePool?.members?.size ?: 0) > 1
-        val voice = resends.voiceOf(driver.voice, meta.scope, meta.compact, !prepared.hasPriorExchange, otherLogin)
+        val request = RequestFacts(
+            meta.compact,
+            firstExchange = !prepared.hasPriorExchange,
+            otherLogin = otherLogin,
+            compactionFit = compactionFit(prepared),
+        )
+        val voice = resends.voiceOf(driver.voice, meta.scope, request)
         val inputs = TurnInputs(
             prepared.built,
             TurnSlot(
@@ -274,5 +284,17 @@ internal class HeadAdmission(
             voice = voice,
         )
         if (prepared.stream) driver.stream(call, inputs) else driver.collect(call, inputs)
+    }
+
+    private fun compactionFit(prepared: Preparation.Ready): CompactionFit? {
+        val meta = prepared.built.meta
+        val input = meta.compaction.inputEstimateTokens?.takeIf { prepared.hasPriorExchange } ?: return null
+        val route = meta.route
+        val catalog = preparation.provider.catalog
+        val window = ModelServeWindows.forRow(catalog, route.originalModel)
+        val summary = route.clientMaxTokens
+            ?: CompactionBudgets.forRow(catalog, route.originalModel)?.generationTokens
+            ?: 0
+        return CompactionFit(input, window, summary)
     }
 }

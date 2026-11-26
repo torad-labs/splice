@@ -46,8 +46,8 @@ internal class CompactionPreflight(private val catalog: ModelCatalog, private va
         hasPriorExchange: Boolean,
     ): Oversize? {
         // An ordinary continuation may compact early, so use the conservative upper bound.
-        // Compact and first-exchange refusals have no recovery behind them: only measured
-        // input alone beyond W proves overflow. Generation p99 is not a required minimum.
+        // Compact and first-exchange admission still require proof: only measured input alone
+        // beyond W proves overflow. Room for the summary matters to the retry, not to admission.
         val ordinary = hasPriorExchange && !meta.compact
         val allowance = if (ordinary) target.budget.totalTokens else 0L
         val bound = if (ordinary) estimate.upperTokens else estimate.lowerTokens
@@ -55,9 +55,9 @@ internal class CompactionPreflight(private val catalog: ModelCatalog, private va
         val explanation = if (ordinary) {
             explainOrdinary(meta.route.upstreamModel, target, estimate)
         } else {
-            explainFixed(meta.route.upstreamModel, meta.compact, target.window, bound)
+            "at least $bound input tokens exceed the ${target.window}-token window of ${meta.route.upstreamModel}"
         }
-        return Oversize("prompt is too long: $explanation", target.window)
+        return Oversize("prompt is too long: $explanation", target.window, bound, target.budget.generationTokens)
     }
 
     private fun explainOrdinary(
@@ -67,17 +67,15 @@ internal class CompactionPreflight(private val catalog: ModelCatalog, private va
     ): String = "estimated ${estimate.upperTokens} input tokens plus ${target.budget.totalTokens} reserved " +
         "context tokens exceed the ${target.window}-token window of $upstreamModel " +
         "(estimate basis ${estimate.basis}, compaction generation p99 ${target.budget.generationTokens})"
-
-    private fun explainFixed(upstreamModel: String, compact: Boolean, window: Long, bound: Long): String {
-        val request = if (compact) "This compaction" else "This first request"
-        return "at least $bound input tokens exceed the $window-token window of $upstreamModel. " +
-            "$request cannot fit here. Resume on a model with a larger context window, " +
-            "or start a fresh conversation."
-    }
 }
 
 private data class RefusalTarget(val budget: CompactionBudget, val window: Long)
 
 /** A request the preflight refuses: [detail] is the log's account of the bound, and [windowTokens] is the model's
  *  window, which the client's line names (SpliceLines). */
-internal data class Oversize(val detail: String, val windowTokens: Long)
+internal data class Oversize(
+    val detail: String,
+    val windowTokens: Long,
+    val inputTokens: Long,
+    val generationTokens: Long,
+)

@@ -133,6 +133,7 @@ public sealed class FailureCause {
             val limitTokens: Long?,
             val whileAnswering: Boolean,
             override val said: ProviderWords? = null,
+            val inputTokens: Long? = null,
         ) : Provider() {
             override fun saying(words: ProviderWords?): Provider = copy(said = words)
 

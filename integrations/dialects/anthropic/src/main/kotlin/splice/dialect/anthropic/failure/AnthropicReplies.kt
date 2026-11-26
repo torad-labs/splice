@@ -105,7 +105,13 @@ public object AnthropicReplies : ReplyReader {
     /** A 400: an answer that outgrew the window, carrying the limit it named, else a rejected request. */
     private fun badRequest(text: String, said: ProviderWords?): FailureCause.Provider =
         if (ReplyFacts.overflows(text)) {
-            FailureCause.Provider.TooLong(ReplyFacts.contextLimit(text), whileAnswering = false, said)
+            val sizes = CONTEXT_COUNTS.find(text)
+            FailureCause.Provider.TooLong(
+                sizes?.groups?.get(2)?.value?.replace(",", "")?.toLongOrNull(),
+                whileAnswering = false,
+                said,
+                inputTokens = sizes?.groups?.get(1)?.value?.replace(",", "")?.toLongOrNull(),
+            )
         } else {
             FailureCause.Provider.Rejected(staleReasoning = false, said)
         }
@@ -144,6 +150,7 @@ public object AnthropicReplies : ReplyReader {
 }
 
 private const val BILLING_ERROR = "billing_error"
+private val CONTEXT_COUNTS = Regex("""(?i)([\d,]{1,12})\s+tokens?\s*>\s*([\d,]{1,12})(?=\s|[.]|$)""")
 
 private val CLIENT_ERRORS = HttpStatus.BAD_REQUEST until HttpStatus.INTERNAL_SERVER_ERROR
 

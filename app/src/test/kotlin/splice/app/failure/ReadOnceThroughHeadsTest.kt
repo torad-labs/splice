@@ -12,7 +12,9 @@ package splice.app.failure
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -100,7 +102,8 @@ private const val MUSE_NAME = "Muse"
 private const val LLAMA_LOADING = """{"error":{"code":503,"message":"Loading model","type":"unavailable_error"}}"""
 private const val LLAMA_CONTEXT =
     """{"error":{"code":400,"message":"the request exceeds the available context size. try increasing the """ +
-        """context size or enable context shift","type":"exceed_context_size_error","n_ctx":4096}}"""
+        """context size or enable context shift","type":"exceed_context_size_error","n_ctx":4096,""" +
+        """"n_prompt_tokens":4608}}"""
 
 class ReadOnceThroughHeadsTest {
     // Slice 2 finding 21: in 105 of 120 runs of a cut that landed before its text, the client saw no text and the line
@@ -252,6 +255,24 @@ class ReadOnceThroughHeadsTest {
 
             assertLine(answer, "This prompt is too long for")
             assertLine(answer, "holds 4,096 tokens")
+        }
+    }
+
+    @Test
+    fun `a local runtime tells the client its input size and leaves room for a summary`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(reply { status(400); body(LLAMA_CONTEXT) })
+            val extra = buildJsonObject {
+                put("system", "Your task is to create a detailed summary of this conversation.")
+                put("messages", Json.parseToJsonElement(LATER_EXCHANGE).jsonObject.getValue("messages"))
+            }
+            val local = localChat(replies = HeadReplies.localChat)
+
+            val answer = local.client.send(ClientRequest(maxTokens = 256, extra = extra))
+
+            assertEquals(400, answer.status)
+            assertEquals("false", answer.shouldRetry)
+            assertLine(answer, "prompt is too long: 4608 tokens > 3840")
         }
     }
 

@@ -7,8 +7,8 @@ package splice.core.failure
 import splice.core.util.LocalTimeText
 import java.time.Instant
 
-/** What a line knows of the request it answers. A compaction and a first exchange that are too long say so in their
- *  own words, never with the phrase that makes Claude Code compact (final-design.md section 11). [repeated]: the
+/** What a line knows of the request it answers. A first exchange has nothing the client can drop. An oversized
+ *  compaction with a [compactionFit] can instead be shortened and tried again. [repeated]: the
  *  request's identical predecessor already ended in a failure Claude Code re-sends (the ResendLedger), so this one
  *  ends for good. [otherLogin]: the head's pool holds another login, so a limit handed to the client (family L)
  *  names a time 30 s away and says the client checks again then (failure-handling slice 5). */
@@ -17,7 +17,10 @@ public data class RequestFacts(
     val firstExchange: Boolean,
     val repeated: Boolean = false,
     val otherLogin: Boolean = false,
-)
+    val compactionFit: CompactionFit? = null,
+) {
+    internal fun shorterCompaction(): CompactionFit? = compactionFit?.takeIf { compaction && !firstExchange }
+}
 
 /** What a line names besides its failure: [head], the head's launch command and the subject of most lines;
  *  [loginCommand], the command that signs the head in, null where the client signs itself in; [providerName], the

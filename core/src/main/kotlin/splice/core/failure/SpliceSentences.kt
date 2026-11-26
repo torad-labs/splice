@@ -199,15 +199,17 @@ internal class DeclineSentences(private val spoken: Spoken) {
         )
     }
 
-    /** Only a compactable prompt says the words that make Claude Code compact. */
-    private fun preflight(why: Decline.Preflight, head: String): Said = Said(
-        when (why.kind) {
-            PreflightKind.COMPACTABLE -> "This prompt is too long for $head"
-            PreflightKind.COMPACT_OVERFLOW -> "This conversation is too long for $head to summarize"
-            PreflightKind.FIRST_EXCHANGE -> "This first message is too long for $head"
-        },
-        next = Next.Then("Its model holds ${spoken.tokens(why.windowTokens)} tokens."),
-    )
+    private fun preflight(why: Decline.Preflight, head: String): Said {
+        val window = spoken.tokens(why.windowTokens)
+        return why.compactionFit?.refusal("The model on $head holds $window tokens.") ?: Said(
+            when (why.kind) {
+                PreflightKind.COMPACTABLE -> "This prompt is too long for $head"
+                PreflightKind.COMPACT_OVERFLOW -> "This conversation is too long for $head to summarize"
+                PreflightKind.FIRST_EXCHANGE -> "This first message is too long for $head"
+            },
+            next = Next.Then("Its model holds $window tokens."),
+        )
+    }
 
     /** Output contracts and timeline semantics, with all other features delegated explicitly. */
     private fun untranslatable(what: RequestFeature, head: String): String = when (what) {

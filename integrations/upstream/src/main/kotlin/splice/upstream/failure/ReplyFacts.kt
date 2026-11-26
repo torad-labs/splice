@@ -46,14 +46,6 @@ public object ReplyFacts {
      *  the wording the shared classifier keyed on before slice 3). */
     public fun overflows(text: String): Boolean = OVERFLOW.containsMatchIn(text)
 
-    /** The window an overflow [message] names, in tokens: Anthropic's "N tokens > M maximum" or OpenAI's "maximum
-     *  context length is M tokens"; null when it names none. */
-    public fun contextLimit(message: String?): Long? {
-        val text = message ?: return null
-        val match = ANTHROPIC_LIMIT.find(text) ?: OPENAI_LIMIT.find(text) ?: return null
-        return match.groupValues[1].replace(",", "").toLongOrNull()
-    }
-
     /** The model a missing-model [message] names: the first quoted name after the word model (OpenAI writes
      *  "The model `gpt-5.9` does not exist"), else the name after "model:" (Anthropic writes "model: claude-x"), else
      *  empty, which a line says as the model this request asked for. */
@@ -77,7 +69,5 @@ private val OVERFLOW = Regex(
         "exceeds? (?:the )?context",
     RegexOption.IGNORE_CASE,
 )
-private val ANTHROPIC_LIMIT = Regex("""(?i)tokens?\s*>\s*([\d,]{1,12})\s*maximum""")
-private val OPENAI_LIMIT = Regex("""(?i)maximum context length is\s*([\d,]{1,12})""")
 private val QUOTED_MODEL = Regex("""(?i)\bmodel\b[^`'"\n]{0,40}?[`'"]([^`'"\s]{1,120})[`'"]""")
 private val LABELLED_MODEL = Regex("""(?i)\bmodel:\s*([A-Za-z0-9][\w.:/@-]{0,119})""")

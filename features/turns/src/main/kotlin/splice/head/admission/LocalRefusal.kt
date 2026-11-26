@@ -13,6 +13,7 @@ package splice.head.admission
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
 import splice.core.auth.AuthProvider
+import splice.core.failure.CompactionFit
 import splice.core.failure.Decline
 import splice.core.failure.FailureCause
 import splice.core.failure.PreflightKind
@@ -162,7 +163,13 @@ internal class PreDriveRefusals(
             prepared.hasPriorExchange -> OutcomeTag.COMPACTION_PREFLIGHT_COMPACTABLE to PreflightKind.COMPACTABLE
             else -> OutcomeTag.COMPACTION_PREFLIGHT_FIRST_EXCHANGE to PreflightKind.FIRST_EXCHANGE
         }
-        val cause = FailureCause.Splice.Declined(Decline.Preflight(kind, refused.windowTokens))
+        val fit = if (meta.compact && prepared.hasPriorExchange) {
+            val summary = meta.route.clientMaxTokens ?: refused.generationTokens
+            CompactionFit(refused.inputTokens, refused.windowTokens, summary)
+        } else {
+            null
+        }
+        val cause = FailureCause.Splice.Declined(Decline.Preflight(kind, refused.windowTokens, fit))
         // The trace says what the client reads; the log and the perf row keep the bound's own numbers.
         trace?.failureSentence(responses.lineOf(cause).sentence)
         driver.recordLocalRefusal(

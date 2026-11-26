@@ -199,6 +199,7 @@ private fun Random.decline(now: Instant): Decline = pick(
         Decline.HeapBusy,
         Decline.Budget(limit = pick(DOLLARS), resetsAt = now.plusSeconds(nextLong(86_400L))),
         Decline.Preflight(pick(PreflightKind.entries), windowTokens = pick(listOf(131_072L, 262_144L))),
+        Decline.Preflight(PreflightKind.COMPACT_OVERFLOW, 131_072L, CompactionFit(140_000L, 131_072L, 4_096L)),
         Decline.BadBody(readBytes = 12L, declaredBytes = pick(listOf(null, 12L, 40L))),
         Decline.ReadTimeout,
         Decline.UnknownModel(pick(MODELS)),
@@ -254,7 +255,11 @@ private fun Random.facts(now: Instant): LineFacts = LineFacts(
     loginCommand = pick(LOGINS),
     providerName = pick(PROVIDERS),
     local = nextBoolean(),
-    request = RequestFacts(compaction = nextInt(4) == 0, firstExchange = nextInt(4) == 0),
+    request = RequestFacts(
+        compaction = nextInt(4) == 0,
+        firstExchange = nextInt(4) == 0,
+        compactionFit = CompactionFit(268_000L, 262_144L, 4_096L),
+    ),
     now = now,
 )
 
@@ -318,13 +323,13 @@ private fun resendableSplice(cause: FailureCause.Splice): Boolean = when (cause)
     -> true
 }
 
-/** Whether the line must carry the phrase that makes Claude Code compact: a T line that is not a compaction or a first
- *  exchange (section 11, "T's line says prompt is too long"). */
+/** Whether the line lets Claude Code compact a later turn or shorten the compaction it already tried. */
 private fun compacts(cause: FailureCause, request: RequestFacts): Boolean =
     if (cause is FailureCause.Provider.TooLong) {
-        !request.compaction && !request.firstExchange
+        !request.firstExchange
     } else {
-        ((cause as? FailureCause.Splice.Declined)?.why as? Decline.Preflight)?.kind == PreflightKind.COMPACTABLE
+        val preflight = (cause as? FailureCause.Splice.Declined)?.why as? Decline.Preflight
+        preflight?.kind == PreflightKind.COMPACTABLE || preflight?.compactionFit != null
     }
 
 /** The one-line, one-or-two-sentence, nothing-unusable properties every line keeps, whatever wrote it. A sentence's
@@ -559,7 +564,7 @@ class SpliceLinesPropertyTest {
     }
 
     @Test
-    fun `only a T line that is not a compaction or a first exchange says the prompt is too long`() {
+    fun `only a compactable turn or a compaction that can be shortened says the prompt is too long`() {
         val random = Random(7)
         val lines = SpliceLines(LocalTimeText(ZoneId.of("America/Chicago")))
         repeat(RUNS * 2) {

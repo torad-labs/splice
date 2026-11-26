@@ -29,7 +29,11 @@ public sealed class Decline {
 
     /** The compaction preflight's size bound refused the request before sending it, against the model's window of
      *  [windowTokens]. */
-    public data class Preflight(val kind: PreflightKind, val windowTokens: Long) : Decline()
+    public data class Preflight(
+        val kind: PreflightKind,
+        val windowTokens: Long,
+        val compactionFit: CompactionFit? = null,
+    ) : Decline()
 
     /** The body could not be read whole or parsed. */
     public data class BadBody(val readBytes: Long, val declaredBytes: Long?) : Decline()

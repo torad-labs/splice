@@ -86,7 +86,7 @@ class LocalRuntimeRepliesPropertyTest {
     }
 
     @Test
-    fun `a context-size refusal is an overflow, carrying the window the server named`() {
+    fun `a context-size refusal carries the prompt size and window the server named`() {
         val random = Random(372)
         repeat(RUNS) {
             val window = random.nextLong(2_048, 262_144)
@@ -95,7 +95,12 @@ class LocalRuntimeRepliesPropertyTest {
             val body = localBody(400, "exceed_context_size_error", said, promptTokens = prompt, window = window)
 
             assertEquals(
-                FailureCause.Provider.TooLong(window, whileAnswering = false, ProviderWordsFilter.of(said)),
+                FailureCause.Provider.TooLong(
+                    window,
+                    whileAnswering = false,
+                    ProviderWordsFilter.of(said),
+                    inputTokens = prompt,
+                ),
                 LocalRuntimeReplies.http(reply(400, body, answeredAt(random))),
                 body,
             )

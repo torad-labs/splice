@@ -70,7 +70,7 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
         val held = places.held.takeIf { it.isNotEmpty() }?.let { "Claude Code also reads ${it.joinToString(", ")}" }
         val unsure = places.unsure.takeIf { it.isNotEmpty() }
             ?.let { "splice could not look at ${it.joinToString(", ")}, where Claude Code may find more" }
-        return listOfNotNull(held, unsure).joinToString(", and ") + ": $UNREAD"
+        return listOfNotNull(held, unsure).joinToString(", and ") + ": $UNREAD_MAY_WIN"
     }
 
     /** What Desktop does: plainly only where splice read the file and there is no other place, the condition else;
@@ -131,7 +131,7 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
 }
 
 // What a place splice did not read means for what it says.
-private const val UNREAD = "splice did not read them, and a value set there may be the one Claude Code takes"
+private const val UNREAD_MAY_WIN = "splice did not read them, and a value set there may be the one Claude Code takes"
 
 // What Desktop does where splice did not read every place: the condition, always true, and no more.
 private const val CONDITION = "wherever managed settings exist, Desktop warns in every Code session unless the " +

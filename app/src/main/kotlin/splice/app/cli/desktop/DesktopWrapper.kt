@@ -60,7 +60,7 @@ internal class DesktopWrapper(
         if (step != null) {
             out.line("What to do: $step.")
             if (!settings.right) commands(settings)
-            out.line("Then $REOPEN")
+            out.line("Then $QUIT_AND_REOPEN")
             out.line("`splice desktop wrapper --check` says whether it took.")
         }
         laid()
@@ -89,7 +89,7 @@ internal class DesktopWrapper(
     private fun check(settings: WrapperSettings): Int {
         val starts = settings.starts && Files.isExecutable(launch)
         listOfNotNull(settings.found(), settings.unread(), settings.effect()).forEach { out.line("splice: $it.") }
-        settings.pointed()?.let { out.line("splice: what to do: $it, then $REOPEN") }
+        settings.pointed()?.let { out.line("splice: what to do: $it, then $QUIT_AND_REOPEN") }
         laid()
         return if (starts) 0 else 1
     }
@@ -106,7 +106,7 @@ private const val WHY = "$PROCESS_WRAPPER_KEY starts Claude Desktop's Code tab t
     "\"$PARENT_SETTINGS_MERGE\" keeps the limits in Desktop's own policy applied to the Code sessions it starts."
 
 // Desktop reads its configuration at launch, so a change reaches it only after the whole app restarts.
-private const val REOPEN = "quit Claude Desktop entirely and reopen it."
+private const val QUIT_AND_REOPEN = "quit Claude Desktop entirely and reopen it."
 
 private const val WRAPPER_PRINT_FLAG = "--print"
 private const val WRAPPER_CHECK_FLAG = "--check"

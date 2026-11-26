@@ -23,7 +23,6 @@ import splice.modes.api.ModeAnswer
 import splice.modes.api.ModeRequest
 import splice.modes.api.ModeResponse
 import java.time.Clock
-import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 // why: a person's cards on one machine are a few; 64 feeds hold every card of many conversations, and with the value
@@ -31,26 +30,14 @@ import java.time.temporal.ChronoUnit
 private const val MAX_FEEDS = 64
 
 // why: a card draws a few numbers or a short list, and a watching card is handed the whole value on every change, so a
-// value is small; 64 KiB holds a few thousand points and refuses a log.
-private const val MAX_VALUE_KIB = 64
-
-// why: the cap above in bytes, as the value is measured (its compact JSON in UTF-8).
-private const val MAX_VALUE_BYTES = MAX_VALUE_KIB * 1024
+// value is small; 64 KiB holds a few thousand points and refuses a log. Measured as the value's compact JSON in UTF-8,
+// and said to the model as "64 KiB" below.
+private const val MAX_VALUE_BYTES = 64 * 1024
 
 // why: a name is typed into a command and a card's script, so it is short; 40 characters fit `training_loss_run_12`
 // and longer, and the characters are those safe in a path, a shell word and a URL without escaping.
 private const val NAME_MOST_CHARS = 40
 private val FEED_NAME = Regex("[A-Za-z0-9][A-Za-z0-9_-]{0,${NAME_MOST_CHARS - 1}}")
-
-/** One feed as held: its value, when it was written, and the value's size in bytes. */
-internal data class Feed(val name: String, val data: JsonElement, val updated: Instant, val bytes: Int)
-
-/** What writing a feed came to: kept, with the feed dropped to make room when one was, or refused in words. */
-internal sealed class FeedWrite {
-    data class Kept(val feed: Feed, val dropped: String?) : FeedWrite()
-
-    data class Refused(val status: Int, val why: String) : FeedWrite()
-}
 
 internal class VisualFeeds(private val clock: Clock = Clock.systemUTC()) {
     /** The feeds in the order they were written, the oldest first; every use holds its own lock. */
@@ -119,7 +106,7 @@ internal class VisualFeeds(private val clock: Clock = Clock.systemUTC()) {
                 FeedWrite.Refused(HttpStatus.BAD_REQUEST, "a feed holds a value, and null is none: write another")
             bytes > MAX_VALUE_BYTES -> FeedWrite.Refused(
                 HttpStatus.CONTENT_TOO_LARGE,
-                "the value is $bytes bytes as JSON, and a feed holds at most $MAX_VALUE_KIB KiB ($MAX_VALUE_BYTES " +
+                "the value is $bytes bytes as JSON, and a feed holds at most 64 KiB ($MAX_VALUE_BYTES " +
                     "bytes): write only what the card draws, such as the last few hundred points",
             )
             else -> keep(Feed(name, data, clock.instant().truncatedTo(ChronoUnit.MILLIS), bytes))

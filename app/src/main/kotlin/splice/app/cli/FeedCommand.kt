@@ -22,7 +22,7 @@ import java.nio.charset.StandardCharsets
 private const val FEED_TIMEOUT_MS = 10_000
 
 // why: what is said when no daemon answered with a sentence: none running, or one from before feeds (a 404).
-private const val NOT_RUNNING =
+private const val FEED_NOT_ANSWERED =
     "the daemon is not running, or is older than this splice and keeps no feeds, so nothing changed"
 
 /** `splice feed`: [output] takes what the daemon said it kept, [errors] the one line said when nothing was; the value
@@ -53,7 +53,7 @@ internal class FeedCommand(
                 "splice: no management key to ask the daemon with; `splice status` says whether it is running",
             )
             value.isEmpty() -> errors.line("splice: the value is read from standard input as JSON, and none came")
-            else -> errors.line("splice: " + (refused ?: NOT_RUNNING))
+            else -> errors.line("splice: " + (refused ?: FEED_NOT_ANSWERED))
         }
         return said != null
     }

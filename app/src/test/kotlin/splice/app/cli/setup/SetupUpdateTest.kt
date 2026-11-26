@@ -19,7 +19,6 @@ import splice.app.capability.WrapperSettings
 import splice.app.desktop.setup.DesktopMode
 import splice.client.ManagedFile
 import splice.client.ManagedReading
-import splice.client.UnreadPlaces
 import splice.core.config.UserHome
 import splice.core.util.EnvReader
 import splice.terminal.ConfirmPrompt
@@ -93,7 +92,7 @@ class SetupUpdateTest {
             runBlocking { update(said, facts = complete, onCheckup = { checkups++ }).run() }
         }
         assertTrue(ok)
-        assertTrue("Nothing new to set up" in said, said.toString())
+        assertTrue("Nothing new to set up in what splice checked." in said, said.toString())
         assertEquals(1, checkups, "an update ends on the doctor, as setup does")
         assertEquals("[daemon]\ncontrol_port = 3096\nauto_update = false\n", Files.readString(toml), "nothing written")
     }
@@ -120,13 +119,34 @@ class SetupUpdateTest {
         val dropIn = "/etc/claude-code/managed-settings.d/10-org.json"
         UserHome.within(home) {
             seedToml(home, autoUpdate = false)
-            val unread = UnreadPlaces(held = listOf(dropIn))
+            val unread = listOf(dropIn)
             val other = desktop(cli = true, app = true).copy(mode = DesktopMode.APP, managed = managed(OTHER, unread))
             runBlocking { update(said, facts = other, console = false).run() }
         }
         assertFalse("Nothing new to set up" in said, said.toString())
         assertTrue("sets processWrapper to \"/usr/bin/other\"" in said && dropIn in said, said.toString())
         assertTrue("check the places splice did not read first" in said, said.toString())
+    }
+
+    // The main file needs no edit, so there is no item; an unread place may still win, so the update says it found
+    // nothing new only in what splice checked, never that the install is complete.
+    @Test
+    fun `an unattended update with a right file beside an unread drop-in claims only what splice checked`(
+        @TempDir home: Path,
+    ) {
+        val said = StringBuilder()
+        val dropIn = "/etc/claude-code/managed-settings.d/10-org.json"
+        UserHome.within(home) {
+            seedToml(home, autoUpdate = false)
+            val launch = Files.writeString(home.resolve("desktop-launch"), "#!/bin/sh\n")
+            launch.toFile().setExecutable(true)
+            val text = """{"processWrapper": "$launch", "parentSettingsBehavior": "merge"}"""
+            val right = desktop(cli = true, app = true)
+                .copy(mode = DesktopMode.APP, managed = managed(text, listOf(dropIn), launch))
+            runBlocking { update(said, facts = right, console = false).run() }
+        }
+        assertTrue("Nothing new to set up in what splice checked." in said, said.toString())
+        assertFalse("already has what this release adds" in said, said.toString())
     }
 
     private fun update(
@@ -216,7 +236,7 @@ class SetupUpdateTest {
 
     private fun managed(
         text: String,
-        unread: UnreadPlaces = UnreadPlaces(),
+        unread: List<String> = emptyList(),
         launch: Path = Path.of("/s/desktop-launch"),
     ): WrapperSettings {
         val file = Path.of("/etc/claude-code/managed-settings.json")

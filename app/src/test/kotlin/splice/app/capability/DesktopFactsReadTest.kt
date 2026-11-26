@@ -32,7 +32,8 @@ class DesktopFactsReadTest(@param:TempDir private val tmp: Path) {
         Files.createDirectories(state)
         DesktopPrograms(state).lay()
         val row = row("""{"processWrapper": "$launch", "parentSettingsBehavior": "merge"}""")
-        assertEquals(ToolLevel.OK, row.level, row.said)
+        assertEquals(ToolLevel.INFO, row.level, "which source wins is never known: ${row.said}")
+        assertTrue("does not warn" !in row.said && "limits apply" !in row.said, row.said)
         val other = row("""{"processWrapper": "/usr/bin/not-desktop-launch", "parentSettingsBehavior": "merge"}""")
         assertEquals(ToolLevel.WARN, other.level)
         assertTrue("sets processWrapper to \"/usr/bin/not-desktop-launch\"" in other.said, other.said)
@@ -86,7 +87,7 @@ class DesktopFactsReadTest(@param:TempDir private val tmp: Path) {
         Files.writeString(dropIn, """{"parentSettingsBehavior": "merge"}""")
         for (text in listOf("""{"env": {}}""", null)) {
             val row = row(text)
-            assertTrue("Claude Code also reads $dropIn: splice did not read them" in row.said, row.said)
+            assertTrue("Claude Code may also take managed settings from" in row.said && "$dropIn" in row.said, row.said)
             assertTrue("$file sets parentSettingsBehavior" !in row.said, "only the main file is read: ${row.said}")
             assertEquals(ToolLevel.INFO, row.level, row.said)
         }

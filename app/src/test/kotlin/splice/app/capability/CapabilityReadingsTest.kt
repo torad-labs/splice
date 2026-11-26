@@ -11,7 +11,6 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.desktop.setup.DesktopMode
 import splice.client.ManagedFile
 import splice.client.ManagedReading
-import splice.client.UnreadPlaces
 import splice.core.mcp.McpHarness
 import splice.diagnostics.doctor.ToolLevel
 import java.nio.file.Files
@@ -48,13 +47,14 @@ class CapabilityReadingsTest(@param:TempDir private val tmp: Path) {
     private val wanted = "wanted: processWrapper \"$launch\" and parentSettingsBehavior \"merge\""
     private val condition = "wherever managed settings exist, Desktop warns in every Code session unless the source " +
         "that wins sets parentSettingsBehavior to \"merge\""
+    private val effects = listOf("Desktop does not warn", "limits apply", "its limits for them are not applied")
 
     init {
         Files.writeString(launch, "#!/bin/sh\n")
         launch.toFile().setExecutable(true)
     }
 
-    private fun app(state: ManagedFile, unread: UnreadPlaces = UnreadPlaces(), mode: DesktopMode = DesktopMode.APP) =
+    private fun app(state: ManagedFile, unread: List<String> = emptyList(), mode: DesktopMode = DesktopMode.APP) =
         bare().copy(
             desktop = desktop(mode = mode)
                 .copy(managed = WrapperSettings(ManagedReading(managedFile, state, unread), launch)),
@@ -71,22 +71,30 @@ class CapabilityReadingsTest(@param:TempDir private val tmp: Path) {
     private fun items(facts: Capabilities) =
         CapabilityGaps(facts, false).afterUpgrade().map { it.text }.filter { "$managedFile" in it }
 
+    private val states = listOf(
+        read("""{"processWrapper": "$launch", "parentSettingsBehavior": "first-wins"}"""),
+        read("""{"processWrapper": "/usr/bin/other"}"""),
+        ManagedFile.Unreadable,
+        ManagedFile.Absent,
+    )
+
     @Test
-    fun `every surface says what is wanted`() {
-        for (state in listOf(right(), read("{}"), ManagedFile.Unreadable, ManagedFile.Absent)) {
-            assertTrue(row(app(state))!!.said.startsWith(wanted), "$state")
-            items(app(state)).forEach { assertTrue(it.startsWith(wanted), it) }
+    fun `every surface says what is wanted, then the condition once, and never what Desktop does as a fact`() {
+        val facts = listOf(emptyList(), listOf(dropIn)).flatMap { unread -> (states + right()).map { app(it, unread) } }
+        for (text in facts.flatMap { listOf(row(it)!!.said) + items(it) }) {
+            assertTrue(text.startsWith(wanted), text)
+            assertEquals(1, text.split(condition).size - 1, text)
+            effects.forEach { assertTrue(it !in text, "\"$it\" said as a fact: $text") }
         }
     }
 
     @Test
-    fun `a file that lacks parentSettingsBehavior warns, says the effect plainly, and is an item to edit in place`() {
+    fun `a file that lacks parentSettingsBehavior warns and is an item to edit in place`() {
         for (wrapper in listOf("", """"processWrapper": "$launch"""", """"processWrapper": "/usr/bin/other"""")) {
             val facts = app(read("{$wrapper}"))
             val row = row(facts)!!
             assertEquals(ToolLevel.WARN, row.level)
             assertTrue("does not set parentSettingsBehavior" in row.said, row.said)
-            assertTrue("Desktop warns in every Code session, and its limits for them are not applied" in row.said)
             assertTrue(row.fix.orEmpty().startsWith("edit it in place as an administrator so it holds both keys"))
             val item = items(facts).single()
             assertTrue(row.said in item && "what to do: edit it in place" in item, item)
@@ -113,12 +121,14 @@ class CapabilityReadingsTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `both keys right with the launcher laid is fine and no item, and merge without a wrapper is a note`() {
-        val ok = app(right())
-        assertEquals(ToolLevel.OK, row(ok)!!.level)
-        assertEquals(null, row(ok)!!.fix)
-        assertTrue("Desktop does not warn in them" in row(ok)!!.said, row(ok)!!.said)
-        assertEquals(emptyList<String>(), items(ok))
+    fun `both keys right with the launcher laid is a note and no item, whatever other places are named`() {
+        for (unread in listOf(emptyList(), listOf(dropIn))) {
+            val ok = app(right(), unread)
+            assertEquals(ToolLevel.INFO, row(ok)!!.level, "which source wins is never known")
+            assertEquals(emptyList<String>(), items(ok), "the file needs no edit, so there is no item")
+        }
+        assertEquals(null, row(app(right()))!!.fix)
+        assertTrue("check that none of the places" in row(app(right(), listOf(dropIn)))!!.fix.orEmpty())
         val noWrapper = app(read("""{"parentSettingsBehavior": "merge"}"""))
         assertEquals(ToolLevel.INFO, row(noWrapper)!!.level)
         assertTrue("does not set processWrapper" in items(noWrapper).single(), items(noWrapper).toString())
@@ -130,65 +140,45 @@ class CapabilityReadingsTest(@param:TempDir private val tmp: Path) {
         val facts = app(right())
         assertEquals(ToolLevel.WARN, row(facts)!!.level)
         assertTrue("$launch is not laid yet: run `splice desktop on` first" in items(facts).single())
-        assertTrue("starts through" !in row(facts)!!.said, row(facts)!!.said)
     }
 
     @Test
-    fun `nothing at the path is said as nothing there, with the condition and the step to create it, as an item`() {
+    fun `nothing at the path is said as nothing there, with the step to create it, as an item`() {
         val facts = app(ManagedFile.Absent)
         val row = row(facts)!!
         assertEquals(ToolLevel.INFO, row.level)
-        assertTrue("nothing is at $managedFile" in row.said && condition in row.said, row.said)
+        assertTrue("nothing is at $managedFile" in row.said, row.said)
         assertTrue(row.fix.orEmpty().startsWith("create it so it holds both keys"), row.fix)
         assertTrue("create it so it holds both keys" in items(facts).single())
     }
 
     @Test
-    fun `a file splice could not read is said so for both keys, with no effect and no missing key, as an item`() {
+    fun `a file splice could not read is said so for both keys, with no missing key, as an item`() {
         val facts = app(ManagedFile.Unreadable)
         val row = row(facts)!!
         assertEquals(ToolLevel.INFO, row.level)
         assertTrue("$managedFile could not be read" in row.said, row.said)
-        assertTrue("splice does not say whether it exists or what it holds" in row.said && condition in row.said)
-        for (untrue in listOf("does not set", "nothing is at", "Desktop warns in every Code session, and")) {
+        assertTrue("splice does not say whether it exists or what it holds" in row.said, row.said)
+        for (untrue in listOf("does not set", "nothing is at")) {
             assertTrue(untrue !in row.said, "${row.said} says \"$untrue\" of a file nobody read")
         }
         assertTrue("look at it as an administrator" in items(facts).single())
     }
 
-    // An unread place may hold the value that wins: it changes how the effect and step are said, never whether a known
-    // mismatch in the file splice read is an item.
+    // A place splice did not read changes how the step is said, never whether a file that needs an edit is an item.
     @Test
-    fun `an unread place is named in every file state, no effect is claimed, and every mismatch is still an item`() {
-        val states = listOf(
-            read("""{"processWrapper": "$launch", "parentSettingsBehavior": "first-wins"}"""),
-            read("""{"processWrapper": "/usr/bin/other"}"""),
-            ManagedFile.Unreadable,
-            ManagedFile.Absent,
-        )
-        for (unread in listOf(UnreadPlaces(held = listOf(dropIn)), UnreadPlaces(unsure = listOf(dropIn)))) {
-            for (state in states + right()) {
-                val facts = app(state, unread)
-                val row = row(facts)!!
-                assertEquals(ToolLevel.INFO, row.level, "$state")
-                assertTrue(dropIn in row.said && condition in row.said, row.said)
-                for (effect in listOf("Desktop warns in every Code session, and", "does not warn", "limits apply")) {
-                    assertTrue(effect !in row.said, "${row.said} claims \"$effect\" while $dropIn is unread")
-                }
-                assertTrue(row.fix.orEmpty().startsWith("check "), row.fix)
-            }
-            for (state in states) {
-                val item = items(app(state, unread)).single()
-                assertTrue(dropIn in item && "check the places splice did not read first" in item, item)
-            }
-            assertEquals(emptyList<String>(), items(app(right(), unread)), "a file that holds both keys is no item")
+    fun `places splice did not read are named in one wording, and every file that needs an edit is an item`() {
+        for (state in states) {
+            val facts = app(state, listOf(dropIn))
+            val row = row(facts)!!
+            assertEquals(ToolLevel.INFO, row.level, "$state")
+            val named = "Claude Code may also take managed settings from $dropIn, which splice did not read: a value " +
+                "set there may be the one Claude Code takes"
+            assertTrue(named in row.said, row.said)
+            assertTrue(row.fix.orEmpty().startsWith("check the places splice did not read first"), row.fix)
+            val item = items(facts).single()
+            assertTrue(named in item && "check the places splice did not read first" in item, item)
         }
-    }
-
-    @Test
-    fun `an install whose only gap is a mismatch beside an unread place is not told nothing is new`() {
-        val facts = app(read("""{"processWrapper": "/usr/bin/other"}"""), UnreadPlaces(held = listOf(dropIn)))
-        assertTrue(CapabilityGaps(facts, false).afterUpgrade().isNotEmpty())
     }
 
     @Test

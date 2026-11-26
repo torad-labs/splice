@@ -1,6 +1,6 @@
-// What ManagedSettings.reading says of a real managed folder, config folder and stand-in registry: the file is absent
-// only where splice established that nothing is at its path, and every other place Claude Code may take managed
-// settings from is named, as holding something or as one splice could not check, never dropped.
+// What ManagedSettings.reading gives the text that speaks of Claude Code's managed settings, from a real managed
+// folder: the file is absent only where splice established that nothing is at its path, and the places Claude Code may
+// also take managed settings from are named on every run, without splice querying the stores or reading them.
 package splice.client
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -22,75 +22,49 @@ class ManagedReadingTest(@param:TempDir private val tmp: Path) {
         UserHome.within(home) { ManagedSettings(os, platformDir = platform, policy = policy).reading(env) }
 
     @Test
-    fun `nothing at the path, with its folder listed, is absent and leaves no place unread`() {
+    fun `nothing at the path is absent, and a link to nothing in place of the file or its folder is not`() {
         Files.createDirectories(platform)
-        val read = reading()
-        assertEquals(ManagedFile.Absent, read.state)
-        assertTrue(read.unread.none, read.unread.toString())
-        Files.delete(platform)
-        assertEquals(ManagedFile.Absent, reading().state, "a missing folder under a listed one is absent too")
-    }
-
-    @Test
-    fun `a link to nothing in place of the managed folder is not absent, and its drop-ins are unknown`() {
-        Files.createSymbolicLink(platform, tmp.resolve("gone"))
-        val read = reading()
-        assertEquals(ManagedFile.Unreadable, read.state)
-        assertEquals(listOf(platform.resolve("managed-settings.d").toString()), read.unread.unsure)
-    }
-
-    @Test
-    fun `a link to nothing at the file is not absent`() {
-        Files.createDirectories(platform)
+        assertEquals(ManagedFile.Absent, reading().state)
         Files.createSymbolicLink(file, platform.resolve("gone.json"))
         assertEquals(ManagedFile.Unreadable, reading().state)
+        Files.delete(file)
+        Files.delete(platform)
+        Files.createSymbolicLink(platform, tmp.resolve("gone"))
+        assertEquals(ManagedFile.Unreadable, reading().state)
+        assertTrue("${platform.resolve("managed-settings.d")}" in reading().unread, "its drop-ins are not known")
     }
 
     @Test
-    fun `remote settings are looked for in CLAUDE_CONFIG_DIR when it is set, and in the home's folder otherwise`() {
+    fun `the remote settings are named in the config folder this process sees, whether or not anything is there`() {
         Files.createDirectories(platform)
-        val tree = Files.createDirectories(tmp.resolve("desktop-tree"))
-        val remote = Files.writeString(tree.resolve("remote-settings.json"), "{}")
+        val tree = tmp.resolve("desktop-tree")
         val moved = EnvReader { if (it == "CLAUDE_CONFIG_DIR") tree.toString() else env(it) }
-        assertEquals(listOf(remote.toString()), reading(env = moved).unread.held)
-        assertTrue(reading().unread.none, "nothing is in the home's own folder")
+        val named = "remote-settings.json in Claude Code's config folder"
+        assertTrue(reading().unread.single { named in it }.contains("(${home.resolve(".claude")}, unless"))
+        assertTrue(reading(env = moved).unread.single { named in it }.contains("($tree, unless"))
     }
 
     @Test
-    fun `the per-user registry policy is named as a place, and a registry splice cannot query is unknown`() {
+    fun `the system's policy stores are named without being queried`() {
         Files.createDirectories(platform)
-        val reg = standInReg()
-        val value = "\r\nHKEY_CURRENT_USER\\x\r\n    Settings    REG_SZ    {}\r\n"
-        Files.writeString(reg.resolveSibling("hkcu.out"), value)
-        Files.writeString(reg.resolveSibling("parent.out"), "\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Other\r\n")
-        val read = reading("Windows 11", PlatformPolicy("Windows 11", reg = reg, env = env))
-        assertEquals(listOf("the registry value HKCU\\SOFTWARE\\Policies\\ClaudeCode\\Settings"), read.unread.held)
-        assertTrue(read.unread.unsure.isEmpty(), "HKLM's parent lists no ClaudeCode key: ${read.unread}")
-        val broken = PlatformPolicy("Windows 11", reg = tmp.resolve("no-reg.exe"), env = env)
-        assertEquals(2, reading("Windows 11", broken).unread.unsure.size, "neither registry value could be checked")
+        val ran = tmp.resolve("ran")
+        val reg = Files.writeString(tmp.resolve("reg"), "#!/bin/sh\ntouch '$ran'\nexit 1\n")
+        reg.toFile().setExecutable(true)
+        val windows = reading("Windows 11", PlatformPolicy("Windows 11", reg = reg, env = env)).unread
+        for (hive in listOf("HKLM", "HKCU")) {
+            assertTrue("the registry value $hive\\SOFTWARE\\Policies\\ClaudeCode\\Settings" in windows, "$windows")
+        }
+        assertTrue(Files.notExists(ran), "reg.exe was not run")
+        val mac = reading("Mac OS X", PlatformPolicy("Mac OS X", preferences = tmp.resolve("prefs"), user = "alex"))
+        assertTrue("${tmp.resolve("prefs/alex/com.anthropic.claudecode.plist")}" in mac.unread, "${mac.unread}")
+        assertTrue("${tmp.resolve("prefs/com.anthropic.claudecode.plist")}" in mac.unread, "${mac.unread}")
     }
 
-    /** A stand-in for reg.exe: `query <key> /v Settings` prints `hklm.out` or `hkcu.out` and exits 0 where the file is
-     *  there, and exits 1 as reg.exe does for a value it can't find otherwise; `query <key>` with no value prints
-     *  `parent.out` the same way, for any key. */
-    private fun standInReg(): Path {
-        val dir = Files.createDirectories(tmp.resolve("reg"))
-        val script = dir.resolve("reg")
-        Files.writeString(
-            script,
-            """
-            #!/bin/sh
-            here=${'$'}(dirname "${'$'}0")
-            if [ "${'$'}3" = "/v" ]; then
-              case "${'$'}2" in HKLM*) out=hklm.out ;; *) out=hkcu.out ;; esac
-            else
-              case "${'$'}2" in *ClaudeCode) exit 1 ;; *) out=parent.out ;; esac
-            fi
-            [ -f "${'$'}here/${'$'}out" ] || exit 1
-            cat "${'$'}here/${'$'}out"
-            """.trimIndent() + "\n",
-        )
-        script.toFile().setExecutable(true)
-        return script
+    @Test
+    fun `each drop-in listed is named, and a folder splice cannot list is named in their place`() {
+        val dropIns = Files.createDirectories(platform.resolve("managed-settings.d"))
+        val dropIn = Files.writeString(dropIns.resolve("10-org.json"), "{}")
+        Files.writeString(dropIns.resolve(".hidden.json"), "{}")
+        assertTrue("$dropIn" in reading().unread && reading().unread.none { "hidden" in it }, "${reading().unread}")
     }
 }

@@ -106,7 +106,10 @@ class HeadlessDoorLaunchDaemonTest {
         assertTrue(wall > 7.days.inWholeMilliseconds, "the client outlives the longest hold: $wall")
         assertEquals("0", env["API_FORCE_IDLE_TIMEOUT"])
         assertEquals(wall.toString(), env["CLAUDE_STREAM_IDLE_TIMEOUT_MS"])
-        assertEquals(listOf("x-splice-client-wall-ms: $wall"), env.getValue("ANTHROPIC_CUSTOM_HEADERS").lines())
+        val headers = env.getValue("ANTHROPIC_CUSTOM_HEADERS").lines()
+        val wallHeader = headers.filterNot { it.startsWith("x-splice-launch-owner: ") }
+        assertEquals(listOf("x-splice-client-wall-ms: $wall"), wallHeader)
+        assertEquals(1, headers.count { it.startsWith("x-splice-launch-owner: ") })
         assertEquals("corp.example,127.0.0.1,localhost", env["NO_PROXY"])
         val argv = recipe.getValue("argv").jsonArray.map { it.jsonPrimitive.content }
         val overlay = json.parseToJsonElement(argv[argv.indexOf("--settings") + 1]).jsonObject

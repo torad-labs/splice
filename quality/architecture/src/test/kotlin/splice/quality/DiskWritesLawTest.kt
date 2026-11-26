@@ -463,6 +463,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // The Antigravity shim install.sh lays, laid again by `splice install --all` and an upgrade's aftercare (Nov 23).
     "features/launch/src/main/kotlin/splice/launch/install/GeminiShim.kt" to mapOf("writeAtomic(" to 1),
     "features/launch/src/main/kotlin/splice/launch/install/InstallLinker.kt" to mapOf("Files.createSymbolicLink(" to 1),
+    "features/launch/src/main/kotlin/splice/launch/recipe/LaunchLabelRoster.kt" to mapOf("writeAtomic0600(" to 1),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt" to mapOf("a shell redirect" to 2),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/restart/DaemonSuccessor.kt" to mapOf(
         "Redirect.appendTo(" to 1,
@@ -511,6 +512,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "features/sessions/src/main/kotlin/splice/sessions/teams/TeamStore.kt" to mapOf("writeAtomic0600(" to 2),
     "features/sessions/src/main/kotlin/splice/sessions/registry/RememberedPanes.kt" to mapOf("writeAtomic0600(" to 1),
     "features/sessions/src/main/kotlin/splice/sessions/registry/SeenSessions.kt" to mapOf("writeAtomic0600(" to 1),
+    "features/sessions/src/main/kotlin/splice/sessions/registry/ServedSessions.kt" to mapOf("writeAtomic0600(" to 1),
     // The latest manager session, head and consent, in the manager.json disk page row.
     "features/sessions/src/main/kotlin/splice/sessions/manager/ManagerPointer.kt" to mapOf("writeAtomic0600(" to 1),
     // A peer helper's helper.json, helper.log and helper.lock (package B), in the disk page's state/peers row. The lock is

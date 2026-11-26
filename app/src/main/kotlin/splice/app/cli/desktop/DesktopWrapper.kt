@@ -2,32 +2,25 @@
 // from outside splice. Desktop starts a Code tab session through a process wrapper only when Claude Code's managed
 // settings name one (`processWrapper`); splice's Desktop configuration already turns the wrapper on
 // (`claudeCodeProcessWrapperEnabled`, written by `splice desktop on`), but the managed file is the administrator's,
-// root-owned, and splice never writes it. Once that file exists Claude Code takes it as the only policy source and
-// drops the policy Desktop hands each Code session, unless it sets `parentSettingsBehavior` to `"merge"`: Desktop
-// warns in every Code session without it. For each of the two keys every line says which of three things is true:
-// already right, absent and to be added, or set to a value and to be changed. `--print` (the default) says so for the
-// file that is there, and prints the whole file only where there is none; it never offers a copy of a file that
-// exists, whose owner, mode and other keys a copy would lose, and never prints what such a file holds. `--check` says
-// whether it reads so now (exit 0), what is missing (exit 1) or, where the wrapper works but the file does not say
-// "merge" (exit 0, since the Code tab does start through splice), what Desktop will do. A file that is there and could
-// not be read (no permission, or no JSON object) is neither right nor wrong: both say so for both keys, and `--check`
-// exits 1 because it cannot confirm. Only the one file is read: a drop-in or system policy that Claude Code also reads
-// is said to be unread, never called missing, and a machine with no main file but such a source says so too.
+// root-owned, and splice never writes it. It also needs `parentSettingsBehavior` "merge", so Desktop's own limits still
+// apply to the Code sessions it starts and Desktop does not warn in each. Both verbs say the same things, from
+// WrapperSettings, which the doctor and the upgrade item say too: what is wanted, what splice read, what it did not,
+// what Desktop does (plainly only where it read every place), and what to do. `--print` (the default) also shows the
+// whole file, and the commands that put it in place only where nothing is at its path. `--check` exits 0 where the
+// launcher is laid and the file splice read names it, since the Code tab then starts through splice, and 1 otherwise.
 package splice.app.cli.desktop
 
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
+import splice.app.capability.WrapperSettings
 import splice.app.desktop.setup.DesktopPrograms
+import splice.client.ManagedFile
 import splice.client.ManagedSettings
 import splice.client.PARENT_SETTINGS_KEY
 import splice.client.PARENT_SETTINGS_MERGE
 import splice.client.PROCESS_WRAPPER_KEY
-import splice.client.ParentSetting
-import splice.client.PolicyDocument
 import splice.core.config.StatePaths
+import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import java.nio.file.Files
@@ -43,223 +36,76 @@ internal class DesktopWrapper(
     private val managed: ManagedSettings = ManagedSettings(osName),
 ) {
     private val windows = osName.lowercase().startsWith("windows")
-    private val file: Path = managed.file
-
     private val launch: Path get() = DesktopPrograms(StatePaths(envReader = env).stateDir).launch
-    private val launchJson: JsonElement get() = JsonPrimitive(launch.toString())
-    private val mergeJson: JsonElement = JsonPrimitive(PARENT_SETTINGS_MERGE)
 
     fun run(args: List<String>): Int = when (args) {
-        emptyList<String>(), listOf(WRAPPER_PRINT_FLAG) -> print()
-        listOf(WRAPPER_CHECK_FLAG) -> check()
+        emptyList<String>(), listOf(WRAPPER_PRINT_FLAG) -> print(settings())
+        listOf(WRAPPER_CHECK_FLAG) -> check(settings())
         else -> {
             err.line("usage: splice desktop wrapper [$WRAPPER_PRINT_FLAG | $WRAPPER_CHECK_FLAG]")
             LAUNCH_USAGE_EXIT
         }
     }
 
-    private fun print(): Int {
-        val document = managed.fileDocument()
-        val settings = document?.settings
-        val todo = when {
-            document == null -> true.also { printNew() }
-            settings == null -> true.also { printByHand() }
-            else -> printExisting(document, settings)
-        }
-        if (todo) {
-            out.line("Then quit Claude Desktop entirely and reopen it.")
+    private fun settings() = WrapperSettings(managed.reading(UserHome.claudeDir(env)), launch)
+
+    private fun print(settings: WrapperSettings): Int {
+        out.line("Claude Code's managed settings need both of these keys:")
+        out.line(PRETTY.encodeToString(JsonObject.serializer(), settings.wanted()))
+        out.line(WHY)
+        out.line("")
+        listOfNotNull(settings.found(), settings.unread(), settings.effect()).forEach { out.line("$it.") }
+        val step = settings.step()
+        if (step != null) {
+            out.line("What to do: $step.")
+            commands(settings)
+            out.line("Then $REOPEN")
             out.line("`splice desktop wrapper --check` says whether it took.")
         }
-        if (!Files.isExecutable(launch)) out.line("$launch is not laid yet: run `splice desktop on` first.")
+        laid()
         return 0
     }
 
-    /** No file: the whole file, and the commands that put it in place. */
-    private fun printNew() {
-        val wanted = JsonObject(mapOf(WRAPPER_KEY to launchJson, PARENT_KEY to mergeJson))
-        out.line("$file does not exist yet. Create it so it reads:")
-        out.line(PRETTY.encodeToString(JsonObject.serializer(), wanted))
-        out.line("")
-        why()
-        out.line("")
-        out.line("It is the administrator's, and splice never writes it. To put it in place, save the text above as")
-        if (windows) {
-            out.line("managed-settings.json and, in a terminal run as administrator, run:")
-            out.line("  New-Item -ItemType Directory -Force '${file.parent}'")
-            out.line("  Copy-Item managed-settings.json '$file'")
-        } else {
-            out.line("managed-settings.json and run:")
-            out.line("  sudo mkdir -p '${file.parent}' && sudo install -m 0644 managed-settings.json '$file'")
-        }
-        unread(missing = true)
-    }
-
-    /** A file that is there but is no JSON object: its keys are unknown, so the person is told what it needs. */
-    private fun printByHand() {
-        out.line("$file exists but splice could not read it (no permission, or it is not a JSON object), so it")
-        out.line("cannot say which of these the file already has.")
-        out.line("Edit it in place, ${editor()}; make sure it has both keys:")
-        out.line("  \"$WRAPPER_KEY\": $launchJson")
-        out.line("  \"$PARENT_KEY\": $mergeJson")
-        out.line("")
-        why()
-        unread()
-    }
-
-    /** A file that is there and is a JSON object: for each key, already right, to be added, or to be changed. False
-     *  where both are right and there is nothing to do. */
-    private fun printExisting(document: PolicyDocument, settings: JsonObject): Boolean {
-        val parent = document.parentSetting()
-        val wrapperRight = settings[WRAPPER_KEY] == launchJson
-        if (wrapperRight && parent.merges) {
-            out.line("$file already has both keys right: $WRAPPER_KEY is $launchJson and $PARENT_KEY is $mergeJson.")
-            out.line("There is nothing to add. `splice desktop wrapper --check` confirms it.")
-            unread()
-            return false
-        }
-        out.line("$file holds settings already. Do not replace it with a copy: that would lose its")
-        out.line("owner, its mode and its other keys. Edit it in place, ${editor()}, and add or change only these:")
-        out.line("  $WRAPPER_KEY: ${change(WRAPPER_KEY, settings[WRAPPER_KEY], launchJson)}")
-        out.line("  $PARENT_KEY: ${changeParent(parent)}")
-        out.line("")
-        if (!parent.merges) why()
-        if (!parent.absent && !parent.merges) {
-            out.line("It is set to ${parent.quoted} there. Changing it puts Claude Desktop's limits under the")
-            out.line("administrator's own for the Code sessions Desktop starts; leaving it keeps the administrator's")
-            out.line("settings the only policy, and Desktop then warns in every Code session. That is the")
-            out.line("administrator's choice.")
-        }
-        unread()
-        return true
-    }
-
-    /** What one key needs: already [wanted], to be added, or set to another value and to be changed. */
-    private fun change(key: String, found: JsonElement?, wanted: JsonElement): String = when {
-        found == null || found is JsonNull -> "add \"$key\": $wanted"
-        found == wanted -> "already $wanted; leave it"
-        found is JsonPrimitive && found.isString -> "set to $found; change it to $wanted"
-        else -> "set to a value that is not text; change it to $wanted"
-    }
-
-    /** What the file needs for `parentSettingsBehavior`. Where a source splice did not read exists, that source may
-     *  already set it, so an absent key is to be added only if none does. */
-    private fun changeParent(parent: ParentSetting): String = when {
-        parent.merges -> "already $mergeJson; leave it"
-        parent.absent && managed.otherSources().isNotEmpty() ->
-            "not set here; add \"$PARENT_KEY\": $mergeJson unless one of the sources named below already sets it"
-        parent.absent -> "add \"$PARENT_KEY\": $mergeJson"
-        else -> "set to ${parent.quoted}; change it to $mergeJson"
-    }
-
-    private fun why() {
-        out.line("$WRAPPER_KEY starts Claude Desktop's Code tab through splice. $PARENT_KEY \"$PARENT_MERGE\" is there")
-        out.line("so the limits in Claude Desktop's own policy still apply to the Code sessions it starts, and Desktop")
-        out.line("does not warn in each of them.")
-    }
-
-    private fun editor(): String =
-        if (windows) "in an editor run as administrator" else "as an administrator (for example `sudoedit '$file'`)"
-
-    /** The places Claude Code also reads that hold something, said where splice read only [file]. */
-    private fun unread(missing: Boolean = false) {
-        val others = managed.otherSources()
-        if (others.isEmpty()) return
-        if (missing) {
-            out.line("Claude Code also reads ${others.joinToString(", ")}, which splice did not read: it may set")
-            out.line("these keys already, and the highest source that sets $PARENT_KEY wins over this file.")
-        } else {
-            out.line("Claude Code also reads ${others.joinToString(", ")}, which splice did not read:")
-            out.line("$PARENT_KEY may be set there, and the highest source that sets it wins over")
-            out.line("$file.")
-        }
-    }
-
-    private fun check(): Int {
-        val document = managed.fileDocument()
-        val problem = problem(document)
-        if (problem != null) {
-            out.line("splice: not set up: $problem")
-            unreadCheck(overrides = document != null)
-            return 1
-        }
-        // The Code tab starts through splice in every case below, so none is a failure: all exit 0, and each first line
-        // says the whole state of the file.
-        said(document?.parentSetting() ?: ParentSetting(), managed.otherSources().isNotEmpty())
-        unreadCheck(overrides = true)
-        return 0
-    }
-
-    /** What keeps the wrapper from starting through splice by the file [document], or null where nothing does. */
-    private fun problem(document: PolicyDocument?): String? {
-        val settings = document?.settings
-        val element = settings?.get(WRAPPER_KEY)?.takeUnless { it is JsonNull }
-        val named = (element as? JsonPrimitive)?.takeIf { it.isString }?.content
-        return when {
-            !Files.isExecutable(launch) -> "$launch is not laid: run `splice desktop on`"
-            document == null -> "$file does not exist: `splice desktop wrapper` shows what it needs"
-            settings == null ->
-                "$file could not be read (no permission, or it is not a JSON object), so splice cannot say what " +
-                    "it holds for $WRAPPER_KEY or $PARENT_KEY: read it as an administrator, and `splice desktop " +
-                    "wrapper` says what it needs"
-            named == null && element != null ->
-                "$file sets $WRAPPER_KEY to a value that is not text, so splice cannot say it starts the wrapper: " +
-                    "`splice desktop wrapper` shows what it needs"
-            named == null -> "$file names no $WRAPPER_KEY: `splice desktop wrapper` shows what it needs"
-            named != launch.toString() -> "$file names $WRAPPER_KEY $named, not $launch"
-            else -> null
-        }
-    }
-
-    /** The places Claude Code also reads that hold something, said where splice read only [file]: that the file is
-     *  missing, or that they may win over it. */
-    private fun unreadCheck(overrides: Boolean = false) {
-        val others = managed.otherSources()
-        if (others.isEmpty()) return
-        val list = others.joinToString(", ")
-        if (overrides) {
-            out.line("splice: Claude Code also reads $list, which splice did not read; a setting")
-            out.line("splice: there may win over $file's, so splice cannot say what Desktop will do.")
-        } else {
-            out.line("splice: Claude Code reads $list, which splice did not read: it may set these keys, and Desktop")
-            out.line("splice: warns in every Code session unless one sets $PARENT_KEY to $mergeJson.")
-        }
-    }
-
-    /** What the file says of `parentSettingsBehavior` where the wrapper works: the whole state in the first line.
-     *  Where a source splice did not read exists ([unread]), what Desktop does is not said as fact: it is said of the
-     *  case that no source sets "merge". */
-    private fun said(parent: ParentSetting, unread: Boolean) {
-        val state = "splice: Claude Code's $WRAPPER_KEY is $launch"
-        val dropped = "Desktop warns in every Code session and its limits for Code are not applied"
-        // Where a source splice did not read exists, what the file's value does is said only of the case that no source
-        // sets "merge".
-        val effect = if (unread) "" else ": $dropped"
-        val conditional = if (unread) "splice: if no source sets $mergeJson, $dropped." else null
+    /** How to put the file in place where nothing is at its path, or how to edit it where something may be. */
+    private fun commands(settings: WrapperSettings) {
+        val file = settings.file
         when {
-            parent.merges -> out.line("$state and $PARENT_KEY is $mergeJson in $file")
-            parent.absent -> {
-                out.line("$state, but $file does not set $PARENT_KEY$effect")
-                conditional?.let(out::line)
-                val add = if (unread) "if none does, add" else "add"
-                out.line("splice: $add \"$PARENT_KEY\": $mergeJson to it (`splice desktop wrapper` shows what to put")
-                out.line("splice: where), then quit Claude Desktop entirely and reopen it.")
+            settings.state != ManagedFile.Absent && windows -> out.line("  Edit it in an editor run as administrator.")
+            settings.state != ManagedFile.Absent -> out.line("  For example: sudoedit '$file'")
+            windows -> {
+                out.line("  Save the text above as managed-settings.json and, in a terminal run as administrator:")
+                out.line("  New-Item -ItemType Directory -Force '${file.parent}'")
+                out.line("  Copy-Item managed-settings.json '$file'")
             }
             else -> {
-                out.line("$state, but $file sets $PARENT_KEY to ${parent.quoted}$effect")
-                conditional?.let(out::line)
-                out.line("splice: changing it to $mergeJson puts Claude Desktop's limits under the administrator's own")
-                out.line("splice: for the Code sessions Desktop starts, and stops the warning; that is the")
-                out.line("splice: administrator's choice.")
+                out.line("  Save the text above as managed-settings.json and run:")
+                out.line("  sudo mkdir -p '${file.parent}' && sudo install -m 0644 managed-settings.json '$file'")
             }
         }
+    }
+
+    /** The same things as [print], each line marked; 0 where the launcher is laid and the file splice read names it. */
+    private fun check(settings: WrapperSettings): Int {
+        val starts = settings.starts && Files.isExecutable(launch)
+        listOfNotNull(settings.found(), settings.unread(), settings.effect()).forEach { out.line("splice: $it.") }
+        settings.pointed()?.let { out.line("splice: what to do: $it, then $REOPEN") }
+        laid()
+        return if (starts) 0 else 1
+    }
+
+    private fun laid() {
+        if (!Files.isExecutable(launch)) out.line("splice: $launch is not laid yet: run `splice desktop on` first.")
     }
 }
 
 private val PRETTY = Json { prettyPrint = true }
 
-// The managed settings this verb sets (Claude Code's own names, kept with its managed settings), and its two flags.
-private const val WRAPPER_KEY = PROCESS_WRAPPER_KEY
-private const val PARENT_KEY = PARENT_SETTINGS_KEY
-private const val PARENT_MERGE = PARENT_SETTINGS_MERGE
+// Why each key is there, said once beside them.
+private const val WHY = "$PROCESS_WRAPPER_KEY starts Claude Desktop's Code tab through splice. $PARENT_SETTINGS_KEY " +
+    "\"$PARENT_SETTINGS_MERGE\" keeps the limits in Desktop's own policy applied to the Code sessions it starts."
+
+// Desktop reads its configuration at launch, so a change reaches it only after the whole app restarts.
+private const val REOPEN = "quit Claude Desktop entirely and reopen it."
+
 private const val WRAPPER_PRINT_FLAG = "--print"
 private const val WRAPPER_CHECK_FLAG = "--check"

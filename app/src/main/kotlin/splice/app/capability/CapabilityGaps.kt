@@ -6,12 +6,12 @@ package splice.app.capability
 
 import splice.app.desktop.setup.DesktopMode
 import splice.core.mcp.McpHarness
+import splice.diagnostics.doctor.ToolLevel
 
 /** What a gap is about, so `splice setup --update` can offer the step that closes it. */
 internal enum class GapKind {
     DESKTOP_STANDARD,
-    PROCESS_WRAPPER,
-    PARENT_SETTINGS,
+    MANAGED_SETTINGS,
     SIDE_BY_SIDE,
     MCP_SYNC,
     CODEX_HOOKS,
@@ -27,7 +27,7 @@ internal data class Gap(val kind: GapKind, val text: String)
 internal class CapabilityGaps(private val facts: Capabilities, private val claudeWrapped: Boolean) {
     /** Every gap, `[daemon] auto_update` included. */
     fun all(): List<Gap> =
-        listOfNotNull(desktop(), wrapper(), parent(), sideBySide(), codexHooks(), shim(), hub()) + sync() + autoUpdate()
+        listOfNotNull(desktop(), managed(), sideBySide(), codexHooks(), shim(), hub()) + sync() + autoUpdate()
 
     /** The gaps an upgrade says: all but auto_update, which is a choice, not something the release left undone. */
     fun afterUpgrade(): List<Gap> = all().filterNot { it.kind == GapKind.AUTO_UPDATE }
@@ -37,26 +37,13 @@ internal class CapabilityGaps(private val facts: Capabilities, private val claud
         "Claude Desktop is on the older Code-tab-only door; `splice desktop on` puts all of Desktop on splice",
     ).takeIf { facts.desktop.mode == DesktopMode.STANDARD }
 
-    private fun wrapper(): Gap? = Gap(
-        GapKind.PROCESS_WRAPPER,
-        "Claude Code's managed processWrapper names another program, so Desktop's Code tab gets no splice key; " +
-            "$WRAPPER_FIX (a root-owned file)",
-    ).takeIf { facts.desktop.mode == DesktopMode.APP && facts.desktop.wrapper == WrapperState.OTHER }
-
-    /** The managed settings file that splice read and that does not say `parentSettingsBehavior` "merge", with or
-     *  without a processWrapper: Desktop's limits for the Code tab are then not applied. Where the file sets another
-     *  value it is put as the administrator's choice. A file splice could not read is no item: nothing is known to be
-     *  missing from it, and the doctor says what it could not read. The same where another source splice did not read
-     *  exists: it may already set the key, so no item asks for it. */
-    private fun parent(): Gap? {
-        val managed = facts.desktop.managedFile?.takeIf(::certainlyWithoutMerge) ?: return null
-        if (facts.desktop.mode != DesktopMode.APP) return null
-        val text = ParentSettingsText(managed)
-        return Gap(GapKind.PARENT_SETTINGS, "${text.said()}; ${text.fix()} (a root-owned file)")
+    /** Claude Code's managed settings, an item exactly where the doctor warns: splice read every place Claude Code
+     *  reads and something there is known to be wrong. Only root writes that file, so the item says what to do. */
+    private fun managed(): Gap? {
+        val managed = facts.desktop.managed?.takeIf { facts.desktop.mode == DesktopMode.APP } ?: return null
+        if (managed.level() != ToolLevel.WARN) return null
+        return Gap(GapKind.MANAGED_SETTINGS, "${managed.said()}; ${managed.pointed()} (a root-owned file)")
     }
-
-    private fun certainlyWithoutMerge(managed: ManagedFileFacts): Boolean =
-        managed.state == ManagedFileState.READ && !managed.parent.merges && managed.elsewhere.isEmpty()
 
     /** Side-by-side launchers, where nothing runs Claude Desktop or Claude Code beside the person's own yet. */
     private fun sideBySide(): Gap? {

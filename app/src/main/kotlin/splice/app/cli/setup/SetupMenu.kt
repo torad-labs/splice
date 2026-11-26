@@ -4,7 +4,6 @@ package splice.app.cli.setup
 
 import splice.app.capability.Capabilities
 import splice.app.capability.DesktopFacts
-import splice.app.capability.WrapperState
 import splice.app.desktop.setup.DesktopMode
 import splice.configuration.add.AddProfiles
 import splice.core.topology.AuthKindRegistry
@@ -30,18 +29,13 @@ internal class SetupMenu(private val frame: WizardFrame, private val profiles: A
     }
 
     /** The optional programs found, each in a few words: Claude Desktop with the mode splice has it in, agy and codex,
-     *  and a managed processWrapper where Claude Code's managed settings name one. */
+     *  and what Claude Code's managed settings say for the Code tab where there is something to name. */
     private fun tools(facts: Capabilities): List<String> = buildList {
         val desktop = facts.desktop
         if (desktop.program != null) add("Claude Desktop (${mode(desktop)})")
         if (facts.harness.agy != null) add("agy")
         if (facts.harness.codex != null) add("codex")
-        when (desktop.wrapper) {
-            WrapperState.SPLICE -> add("a managed processWrapper on splice's desktop-launch")
-            WrapperState.OTHER -> add("a managed processWrapper naming another program")
-            WrapperState.UNREADABLE -> add("a managed settings file splice could not read")
-            WrapperState.NONE -> Unit
-        }
+        desktop.managed?.detected()?.let(::add)
     }
 
     /** Claude Desktop's mode in the words the rest of the wizard uses. */

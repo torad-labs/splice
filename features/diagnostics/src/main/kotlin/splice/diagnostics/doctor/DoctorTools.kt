@@ -1,5 +1,5 @@
 // NEW: the doctor's "tools" section — the optional programs splice works beside (Claude Desktop, Antigravity's agy,
-// Codex, systemd for the MCP hub) and what splice laid for them (the Antigravity shim, the managed processWrapper).
+// Codex, systemd for the MCP hub) and what splice laid for them (the Antigravity shim, Claude Code's managed settings).
 // The executable reads them (it holds Desktop's mode and the MCP hub's state) and hands the doctor the readings, as it
 // does the lane (ClaudeLaneRead). Every row is OK, INFO or WARN, never FAIL: a machine that does not use a tool is not
 // a broken install, so nothing here can turn the exit status red.

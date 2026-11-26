@@ -2,7 +2,7 @@
 // upgraded (`splice upgrade` points here from its "What's new / action needed" list). It asks nothing about the plans
 // and heads already configured, and offers only what this release can do that the install does not do yet: the
 // side-by-side launchers not installed, all of Claude Desktop on splice, MCP import and harness sync, the Modes that
-// are off, and automatic updates. What only root can change (Claude Code's managed processWrapper) and what needs a
+// are off, and automatic updates. What only root can change (Claude Code's managed settings) and what needs a
 // program splice does not install (systemd for the MCP hub) is said with what to do. It lays the Antigravity shim
 // where it is missing, as install.sh would, and ends on `splice doctor`, as setup does.
 package splice.app.cli.setup
@@ -181,4 +181,4 @@ private enum class Offer { NOTHING, DECLINED, DONE }
 
 // The gaps `setup --update` can only say: root writes Claude Code's managed settings, and systemd is not splice's to
 // install. Every other gap has its offer above.
-private val SAID_ONLY = setOf(GapKind.PROCESS_WRAPPER, GapKind.PARENT_SETTINGS, GapKind.HUB_SYSTEMD)
+private val SAID_ONLY = setOf(GapKind.MANAGED_SETTINGS, GapKind.HUB_SYSTEMD)

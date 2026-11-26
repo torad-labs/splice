@@ -4,15 +4,13 @@
 package splice.app.capability
 
 import splice.app.desktop.setup.DesktopMode
-import splice.client.PARENT_SETTINGS_KEY
-import splice.client.PROCESS_WRAPPER_KEY
 import splice.core.mcp.McpHarness
 import splice.diagnostics.doctor.ToolLevel
 import splice.diagnostics.doctor.ToolReading
 
 internal class CapabilityTools(private val facts: Capabilities) {
     fun readings(): List<ToolReading> =
-        listOfNotNull(desktop(), wrapper(), parent(), agy(), shim(), codex(), codexHooks(), hub())
+        listOfNotNull(desktop(), managed(), agy(), shim(), codex(), codexHooks(), hub())
 
     /** Claude Desktop, said when splice has it on, or its Claude (Splice) app launcher is installed, or when it is
      *  installed at all. `claude-splice` runs Claude Code in a terminal, not Desktop, so it is no use of Desktop. */
@@ -40,53 +38,11 @@ internal class CapabilityTools(private val facts: Capabilities) {
         }
     }
 
-    /** The managed processWrapper, said while Desktop runs on splice in app mode: Desktop then passes the Code tab no
-     *  key, so a wrapper other than splice's `desktop-launch` starts it with none (docs/specs/desktop-full.md). */
-    private fun wrapper(): ToolReading? {
-        if (facts.desktop.mode != DesktopMode.APP) return null
-        return when (facts.desktop.wrapper) {
-            WrapperState.SPLICE -> ToolReading(
-                WRAPPER_ROW,
-                ToolLevel.OK,
-                "Claude Code's managed processWrapper runs splice's desktop-launch",
-            )
-            WrapperState.NONE -> ToolReading(
-                WRAPPER_ROW,
-                ToolLevel.INFO,
-                "Claude Code's managed settings name no processWrapper; Desktop gives the Code tab splice's key itself",
-            )
-            WrapperState.OTHER -> ToolReading(
-                WRAPPER_ROW,
-                ToolLevel.WARN,
-                "Claude Code's managed processWrapper names another program, so the Code tab starts with no key " +
-                    "for splice",
-                WRAPPER_FIX,
-            )
-            WrapperState.UNREADABLE -> facts.desktop.managedFile?.let {
-                val text = ParentSettingsText(it)
-                ToolReading(WRAPPER_ROW, ToolLevel.INFO, text.unreadable(PROCESS_WRAPPER_KEY), text.fix())
-            }
-        }
-    }
-
-    /** The managed settings' `parentSettingsBehavior`, said while Desktop runs on splice in app mode and a managed
-     *  file or another source exists, with or without a processWrapper: without "merge" in them Desktop's limits for
-     *  the Code tab are not applied and Desktop warns in every Code session. Where the file sets another value that is
-     *  the administrator's choice, and where splice could not read the file, or reads none and another source may set
-     *  it, nothing is known to be wrong: said, not warned. No file and no other source is fine: the key has no effect
-     *  then. */
-    private fun parent(): ToolReading? {
-        val managed = facts.desktop.managedFile
-        if (facts.desktop.mode != DesktopMode.APP || managed == null) return null
-        val text = ParentSettingsText(managed)
-        val level = when {
-            managed.state != ManagedFileState.READ -> ToolLevel.INFO
-            managed.elsewhere.isNotEmpty() -> ToolLevel.INFO
-            managed.parent.merges -> ToolLevel.OK
-            managed.parent.absent -> ToolLevel.WARN
-            else -> ToolLevel.INFO
-        }
-        return ToolReading(PARENT_ROW, level, text.said(), text.fix())
+    /** Claude Code's managed settings for the Code tab, said while Desktop runs on splice in app mode: what splice
+     *  read, what it did not, and what Desktop does only where it read every place (WrapperSettings). */
+    private fun managed(): ToolReading? {
+        val managed = facts.desktop.managed?.takeIf { facts.desktop.mode == DesktopMode.APP } ?: return null
+        return ToolReading(MANAGED_ROW, managed.level(), managed.said(), managed.pointed())
     }
 
     private fun agy(): ToolReading? {
@@ -173,8 +129,7 @@ internal class CapabilityTools(private val facts: Capabilities) {
 }
 
 private const val DESKTOP_ROW = "claude-desktop"
-private const val WRAPPER_ROW = PROCESS_WRAPPER_KEY
-private const val PARENT_ROW = PARENT_SETTINGS_KEY
+private const val MANAGED_ROW = "managed settings"
 private const val AGY_ROW = "agy"
 private const val SHIM_ROW = "antigravity shim"
 private const val CODEX_ROW = "codex"
@@ -183,7 +138,3 @@ private const val SYSTEMD_ROW = "systemd"
 
 internal const val SETUP_UPDATE = "splice setup --update"
 internal const val INSTALL_ALL = "splice install --all"
-
-// What a person whose managed processWrapper names another program does: only root writes that file.
-internal const val WRAPPER_FIX =
-    "point processWrapper in Claude Code's managed settings at splice's desktop-launch in its state folder"

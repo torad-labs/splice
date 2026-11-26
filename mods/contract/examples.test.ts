@@ -8,6 +8,7 @@ import ts from "typescript";
 
 const here = import.meta.dir;
 const contract = join(here, "index.ts");
+const mod = join(here, "..", "example");
 
 /** Each JSON file and the declaration it must satisfy. */
 const cases: ReadonlyArray<readonly [file: string, type: string]> = [
@@ -18,6 +19,11 @@ const cases: ReadonlyArray<readonly [file: string, type: string]> = [
   [join(here, "examples/ui-render-request.json"), "UiRenderRequest"],
   [join(here, "examples/ui-render-answer.json"), "UiRenderAnswer"],
   [join(here, "examples/tool-definition.json"), "ToolDefinition"],
+  [join(mod, ".splice-mod/mod.json"), "ModManifest"],
+  [join(mod, "hooks/hooks.json"), "HooksFile"],
+  [join(mod, "tools/resolve.json"), "ToolInputSchema"],
+  [join(mod, "tools/resolve.meta.json"), "ToolMeta"],
+  [join(mod, "tools/board.json"), "ToolInputSchema"],
 ];
 
 /** Type errors of `const x: <type> = <json>;` compiled beside the contract. */
@@ -63,5 +69,32 @@ describe("a wrong field in an example is a type error", () => {
   test("a view uri that is not ui://", () => {
     const manifest = readFileSync(join(here, "examples/mod.json"), "utf8");
     expect(errors("ModManifest", manifest.replace("ui://standup/board", "https://standup/board")).length).toBeGreaterThan(0);
+  });
+});
+
+describe("the example mod", () => {
+  test("hooks/register.ts compiles against the contract", () => {
+    const options: ts.CompilerOptions = {
+      strict: true,
+      noEmit: true,
+      target: ts.ScriptTarget.ESNext,
+      module: ts.ModuleKind.Preserve,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+      allowImportingTsExtensions: true,
+      types: [],
+      lib: ["lib.esnext.d.ts"],
+      skipLibCheck: true,
+    };
+    const program = ts.createProgram([join(mod, "hooks/register.ts")], options);
+    const found = ts.getPreEmitDiagnostics(program).map((d) => ts.flattenDiagnosticMessageText(d.messageText, "\n"));
+    expect(found).toEqual([]);
+  });
+
+  test("every tool it declares has its schema and description beside the manifest", () => {
+    const manifest = JSON.parse(readFileSync(join(mod, ".splice-mod/mod.json"), "utf8")) as { tools: string[] };
+    for (const tool of manifest.tools) {
+      expect(readFileSync(join(mod, `tools/${tool}.json`), "utf8").length).toBeGreaterThan(0);
+      expect(readFileSync(join(mod, `tools/${tool}.md`), "utf8").trim().length).toBeGreaterThan(0);
+    }
   });
 });

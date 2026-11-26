@@ -20,6 +20,7 @@ holds, and something else writes the feed.
   done
   ```
 
+  Each call starts a program of its own, about half a second of work, so write every few seconds and not faster.
   Tell the person what the loop is, where it runs and how to stop it.
 - **Watch it in the card.** The view gives the card two functions:
   - `watchFeed(name, onData, everyMs)` asks for the feed every `everyMs` (default 5000, never less than 1000) and calls

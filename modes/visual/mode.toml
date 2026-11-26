@@ -9,6 +9,9 @@ handler = "splice.modes.visual.VisualMode"
 tools = ["read_me", "show_widget", "html_render", "feed"]
 kind = "mcp"
 on = false
+# On for Claude Desktop's own sessions, which draw MCP Apps, and not offered to a terminal's, which draw nothing and
+# would only be told the model can draw. splice.toml's [modes.visual] on = true or false decides for every session.
+on_for = ["desktop"]
 
 [heads]
 only = []

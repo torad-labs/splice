@@ -19,7 +19,6 @@ import splice.modes.api.ModeAnswer
 import splice.modes.api.ModeCall
 import splice.modes.api.ModeCaller
 import splice.modes.api.ModeKind
-import splice.modes.api.ModeRule
 import splice.modes.api.ModeSession
 import splice.modes.api.ModeStore
 
@@ -38,7 +37,7 @@ internal class ModeMcp(private val modes: ModesNow) : InProcessMcp, OwnMcpServer
         val held = modes.held() ?: return emptyList()
         val asking = ModeCaller.entries.firstOrNull { it.wire == caller } ?: return emptyList()
         return held.catalog.modes.filter { mode ->
-            mode.manifest.kind == ModeKind.MCP && ModeRule.offeredTo(mode.manifest, asking) && held.state(mode, head).on
+            mode.manifest.kind == ModeKind.MCP && held.state(mode, head, asking).on
         }.filterNot(held::taken)
     }
 
@@ -46,17 +45,21 @@ internal class ModeMcp(private val modes: ModesNow) : InProcessMcp, OwnMcpServer
     override fun names(head: String, caller: String): List<String> = on(head, caller).map { it.manifest.server }
 
     /** The mode serving [name] for a client on [head]. A request that names a caller (OwnMcpLaunch's entries, the
-     *  bridge for Claude Desktop) is held to the manifest's `[callers] off`; one that names none, or a word no manifest
-     *  uses, is from a caller that is not known (a host reading a page, an operator's tool), is answered as before,
-     *  and the mode is told no caller. A mode whose server name is one of the person's own servers is not served: the
-     *  address is theirs (DaemonModes.taken). */
+     *  bridge for Claude Desktop) is served where the mode is on for that caller, `[callers] off` and `on_for`
+     *  included; one that names none, or a word no manifest uses, is from a caller that is not known (a host reading a
+     *  page, an operator's tool), is answered while the mode is on for any caller, and the mode is told no caller. A
+     *  mode whose server name is one of the person's own servers is not served: the address is theirs
+     *  (DaemonModes.taken). */
     override fun server(name: String, head: String?, caller: String?): InProcessMcpServer? {
         val held = modes.held() ?: return null
         val mode = held.catalog.modes.firstOrNull { it.manifest.kind == ModeKind.MCP && it.manifest.server == name }
             ?: return null
         val asking = ModeCaller.entries.firstOrNull { it.wire == caller }
-        val on = if (head == null) held.everyHead(mode).on else held.state(mode, head).on
-        val offered = on && (asking == null || ModeRule.offeredTo(mode.manifest, asking))
+        // a caller not known is answered for whichever caller the mode is on for: the name grants nothing either way
+        val callers = asking?.let(::listOf) ?: (listOf(null) + mode.manifest.offer.onFor)
+        val offered = callers.any { by ->
+            if (head == null) held.everyHead(mode, by).on else held.state(mode, head, by).on
+        }
         return if (offered && !held.taken(mode)) ModeMcpServer(mode, held.store(mode.name), head, asking) else null
     }
 }

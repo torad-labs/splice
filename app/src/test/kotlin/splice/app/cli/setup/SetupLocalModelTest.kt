@@ -160,7 +160,8 @@ class SetupLocalModelTest {
         // The offer after the tick-list, both answers before anything runs, and rig only after the
         // ticked heads landed and the daemon restarted for them. Nov 23, 2026: the wizard also asks about the Modes
         // that are off (the two copy-me templates never) and automatic updates, and restarts once more after a mode
-        // is turned on, so the doctor and the next session see it.
+        // is turned on, so the doctor and the next session see it. visual is on for Claude Desktop by default, so it is
+        // not off and not asked about.
         val expected = listOf(
             "pick heads",
             "ask Keep these context windows for codex?",
@@ -168,7 +169,6 @@ class SetupLocalModelTest {
             "ask local",
             "ask Share MCP servers between sessions? It uses less memory.",
             "ask mode tableapp",
-            "ask mode visual",
             "ask Install new splice releases automatically? The daemon installs each one itself.",
             "ask Install now?",
             "add codex",

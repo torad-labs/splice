@@ -3,8 +3,9 @@ package splice.modes.api
 
 import kotlinx.serialization.json.JsonObject
 
-private val TOP_KEYS =
-    setOf("name", "summary", "server", "handler", "tools", "kind", "on", "heads", "callers", "resources", "hooks")
+private val TOP_KEYS = setOf(
+    "name", "summary", "server", "handler", "tools", "kind", "on", "on_for", "heads", "callers", "resources", "hooks",
+)
 private const val NAME_RULE = "[a-z][a-z0-9]*"
 private const val TOOL_RULE = "[a-z][a-z0-9_]*, with no __"
 
@@ -61,11 +62,32 @@ internal class ManifestRead(
         val on = keys.boolean("on")
         val heads = keys.table("heads", setOf("only", "off"))
         val callers = keys.table("callers", setOf("off"))
-        val words = callers?.strings("off", required = false).orEmpty()
-        val callersOff = words.mapNotNull { word -> ModeCaller.entries.firstOrNull { it.wire == word } }
-        if (callersOff.size < words.size) fault.report("callers.off names a caller that is not door, head or desktop")
+        val callersOff = callersNamed("callers.off", callers?.strings("off", required = false).orEmpty())
+        val onFor = callersNamed("on_for", keys.strings("on_for", required = false).orEmpty())
         val only = heads?.strings("only", required = false).orEmpty()
         val off = heads?.strings("off", required = false).orEmpty()
-        return ModeOffer(on ?: false, only, off, callersOff)
+        checkOnFor(onFor, callersOff, on == true, only.isNotEmpty())
+        return ModeOffer(on ?: false, only, off, callersOff, onFor)
+    }
+
+    /** `on_for` is said only where every place that shows a mode can show it truthfully: for Claude Desktop alone,
+     *  which runs no head, so beside an empty `[heads] only`, a false `on` and no `[callers] off` naming it. */
+    private fun checkOnFor(onFor: List<ModeCaller>, callersOff: List<ModeCaller>, on: Boolean, only: Boolean) {
+        if (onFor.isEmpty()) return
+        for (unserved in onFor.filter { it != ModeCaller.DESKTOP }) {
+            fault.report("on_for names ${unserved.wire}, which splice does not serve yet: on_for takes desktop alone")
+        }
+        for (both in onFor.filter { it in callersOff }) {
+            fault.report("on_for names ${both.wire}, which callers.off leaves out")
+        }
+        if (on) fault.report("on_for does nothing while on is true: the mode is on for every caller already")
+        if (only) fault.report("on_for needs an empty heads.only: Claude Desktop runs no head, so never gets the mode")
+    }
+
+    /** The callers [words] name, a finding under [key] when one is not a caller's word. */
+    private fun callersNamed(key: String, words: List<String>): List<ModeCaller> {
+        val named = words.mapNotNull { word -> ModeCaller.entries.firstOrNull { it.wire == word } }
+        if (named.size < words.size) fault.report("$key names a caller that is not door, head or desktop")
+        return named
     }
 }

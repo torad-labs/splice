@@ -1,5 +1,6 @@
 // NEW: a mode as `GET /api/modes` and `PUT /api/modes/<name>` answer it (modes/README.md): what its folder says, and
-// whether it is on, for every head and per head, with where that value came from. An mcp mode says whether its server
+// whether it is on, for every head, per head and per caller, with where that value came from: a mode whose manifest's
+// `on_for` names a caller is on for that caller while its every-head value is off. An mcp mode says whether its server
 // name is taken by one of the person's own MCP servers, which keeps it: the mode is then not served or listed.
 package splice.app.modes
 
@@ -12,6 +13,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.modes.api.FoundMode
+import splice.modes.api.ModeCaller
 import splice.modes.api.ModeHookWorker
 import splice.modes.api.ModeKind
 import splice.modes.api.ModeState
@@ -34,7 +36,9 @@ internal class ModeRows(private val modes: DaemonModes) {
         put("resources", resources(mode))
         put("hooks", hooks(mode))
         put("callers_off", buildJsonArray { manifest.offer.callersOff.forEach { add(it.wire) } })
+        put("on_for", buildJsonArray { manifest.offer.onFor.forEach { add(it.wire) } })
         put("on", state(modes.everyHead(mode), "value"))
+        putJsonObject("callers") { ModeCaller.entries.forEach { put(it.wire, state(modes.everyHead(mode, it), "on")) } }
         putJsonObject("heads") { modes.heads.forEach { put(it, state(modes.state(mode, it), "on")) } }
     }
 

@@ -127,7 +127,7 @@ class McpModeDoorLaunchTest {
     @Test
     fun `claude on the door is handed the server of an mcp mode switched on while the daemon runs`(@TempDir tmp: Path) {
         daemon(tmp, "") {
-            assertEquals(emptyList<String>(), ownServers(launch()), "the mode ships off")
+            assertEquals(emptyList<String>(), ownServers(launch()), "not on for the door by default")
             switch(on = true)
             assertEquals(listOf("visual"), ownServers(launch()))
         }

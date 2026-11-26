@@ -3,10 +3,10 @@
   "properties": {
     "name": {
       "type": "string",
-      "description": "1 to 40 letters, digits, - or _."
+      "description": "Letters, digits, - or _; at most 40."
     },
     "data": {
-      "description": "The JSON value to keep, at most 64 KiB. Leave it out to read the feed."
+      "description": "The value to write, at most 64 KiB."
     }
   },
   "required": ["name"]

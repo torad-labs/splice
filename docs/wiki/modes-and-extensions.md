@@ -2,7 +2,8 @@
 
 # Splice Modes & Extensions
 
-Extend what every session can do without touching the client: **modes** give the model tools splice answers and hook the door's moments, **capabilities** run your own work before a turn goes upstream, and **code mode** lets a ChatGPT model run a script of tool calls inside splice. Most of it is off until you switch it on; `ccd_session` and code mode are the exceptions.
+Extend what every session can do without touching the client: **modes** give the model tools splice answers and hook the door's moments, **capabilities** run your own work before a turn goes upstream, and **code mode** lets a ChatGPT model run a script of tool calls inside splice. Most of it is| `visual` | `visual` | mcp | **on** for `desktop` | none | `read_me`, `show_widget`, `html_render`, `feed` (page `ui://visual/reply.html`) |
+until you switch it on; `ccd_session` and code mode are the exceptions.
 
 [Modes](#modes) · [Install an external mode](#install-an-external-mode) · [Turning a mode on and off](#turning-a-mode-on-and-off) · [Door hooks](#door-hooks) · [Modes that ship](#modes-that-ship) · [Capabilities](#capabilities) · [Code mode for ChatGPT](#code-mode-for-chatgpt)
 
@@ -45,11 +46,11 @@ The manifest's keys, the handler contract (`splice.modes.api.Mode`, `ModeAnswer.
 ### An mcp mode
 
 - **Where it is served:** the daemon answers `initialize`, `tools/list`, `tools/call`, `resources/list` and `resources/read` at `/mcp/<server>`.
-- **How a client finds it:** every launch on a head where the mode is on gets one more `--mcp-config` file (for `claude` on the door, which runs no head, where the mode is on for every head), `~/.splice/state/own-mcp-<command>-<caller>.json`, or `own-mcp-door.json` for `claude` on the door (owner-only, with an MCP-scoped key). A caller on `[callers] off` gets none, and neither does a launch that passes `--strict-mcp-config`, which asked for its own servers alone.
+- **How a client finds it:** every launch on a head where the mode is on for its caller gets one more `--mcp-config` file (for `claude` on the door, which runs no head, where the mode is on for every head for `door`), `~/.splice/state/own-mcp-<command>-<caller>.json`, or `own-mcp-door.json` for `claude` on the door (owner-only, with an MCP-scoped key). A caller on `[callers] off` gets none, nor does a caller the mode is not on for (a terminal's launch of `visual` while `splice.toml` says nothing), nor a launch that passes `--strict-mcp-config`, which asked for its own servers alone.
 - **Timing:** a session already running when the mode is turned on sees it only on its next launch; turned off, the server stops answering at once.
-- **Claude Desktop:** with Desktop on the gateway, a mode on for every head (no `[heads] only`, and no `"desktop"` on `[callers] off`) is listed in Desktop's `claude_desktop_config.json` as an entry naming splice's `desktop-mcp` bridge and the server, with no address or key; the bridge reaches the daemon with the MCP access key from the state folder. Splice updates that file at daemon start, at `splice desktop on` and when the mode is switched in the console or with `PUT /api/modes/<name>`, with no daemon restart, but Desktop reads it only when it starts: quit the whole app and reopen it.
+- **Claude Desktop:** with Desktop on the gateway, a mode on for every head for `desktop` (by `splice.toml`'s `on`, else the manifest's `on` or `on_for`; no `[heads] only`, and no `"desktop"` on `[callers] off`) is listed in Desktop's `claude_desktop_config.json` as an entry naming splice's `desktop-mcp` bridge and the server, with no address or key; the bridge reaches the daemon with the MCP access key from the state folder. Splice updates that file at daemon start, at `splice desktop on` and when the mode is switched in the console or with `PUT /api/modes/<name>`, with no daemon restart, but Desktop reads it only when it starts: quit the whole app and reopen it.
 - **Same name as one of yours:** a server of yours (imported, in `~/.claude.json`, the Temple's, in your usual Desktop's `claude_desktop_config.json`, or one you added to a gateway profile's, where every entry but splice's `desktop-mcp` bridge entry is yours) with the mode's server name keeps it everywhere: splice's `/mcp/<server>` answers yours, and no launch or Desktop configuration lists the mode. `splice status` and `GET /api/modes` (`server_taken`) say so. Rename yours to have the mode.
-- **Who calls:** the mode is told the caller a request names: `door` for `claude` (on the door, or wrapped on the Claude head, whose entry also names that head), `head` for a head's own command, `desktop` for Claude Desktop, and a named caller is held to `[callers] off`. A request that names none, such as a host reading a page with the management key, is answered while the mode is on, and the mode is told no caller. The caller is the `X-Splice-Caller` header the client sends: any holder of the MCP access key can write any caller in it, so it grants nothing, and a mode must not decide anything that matters on it. `[callers] off` only chooses where the mode is offered.
+- **Who calls:** the mode is told the caller a request names: `door` for `claude` (on the door, or wrapped on the Claude head, whose entry also names that head), `head` for a head's own command, `desktop` for Claude Desktop, and a named caller is answered where the mode is on for it (`[callers] off` and `on_for` included). A request that names none, such as a host reading a page with the management key, is answered while the mode is on for any caller, and the mode is told no caller. The caller is the `X-Splice-Caller` header the client sends: any holder of the MCP access key can write any caller in it, so it grants nothing, and a mode must not decide anything that matters on it. `[callers] off` only chooses where the mode is offered.
 - **Pages:** a tool whose `tools/<tool>.meta.json` says `{ "ui": { "resourceUri": "ui://<server>/<page>" } }` shows that page in clients that draw MCP Apps. Others show the tool's answer as any tool's result.
 
 ## Install an external mode
@@ -69,19 +70,21 @@ At boot, a verified URL JAR is [cached by hash](disk-and-privacy.md#settings-and
 
 ## Turning a mode on and off
 
-The manifest's `on` is the default; `splice.toml` overrides it per mode:
+The manifest's `on` and `on_for` are the default; `splice.toml` overrides them per mode:
 
 ```toml
 [modes.tableapp]
-on = true                  # every head
+on = true                  # every head and caller; false: none, Desktop included. heads wins for a head it names
 heads = { kimi = false }   # per head; each must be a head splice.toml declares
 ```
 
-For a mode and a head, in this order:
+For a mode, a head and a caller, in this order:
 
-1. A head outside the manifest's non-empty `[heads] only`, or on its `[heads] off`, is never offered the mode; `splice.toml` cannot turn it on.
-2. Otherwise `heads.<head>` decides, then `on`, then the manifest's `on`.
-3. A caller on the manifest's `[callers] off` (`door`, `head` or `desktop`) is never offered the mode.
+1. A head outside the manifest's non-empty `[heads] only`, or on its `[heads] off`, and a caller on the manifest's `[callers] off` (`door`, `head` or `desktop`), are never offered the mode; `splice.toml` cannot turn it on.
+2. Otherwise `heads.<head>` decides, then `on`.
+3. Otherwise the manifest's `on` decides, or, for a caller its `on_for` names, the mode is on.
+
+So with nothing in `splice.toml`, `visual` (whose manifest says `on_for = ["desktop"]`) is on for Claude Desktop's own sessions and for no terminal's; `[modes.visual] on = true` turns it on for every session and `on = false` off for every one, except on a head that `heads` names, which keeps its own setting.
 
 | Key in `[modes.<name>]` | Type | Rule |
 | --- | --- | --- |
@@ -92,11 +95,11 @@ Use `server_routes` and `server_admin_only` to [expose a mode on the team listen
 
 | Where | What you can do |
 | --- | --- |
-| `splice setup` | Lists every mode with its state, then asks "Turn on <mode>? <summary>" for each one that is off; a yes writes `on = true` |
+| `splice setup` | Lists every mode with its state (`on`, `off`, or `on for Claude Desktop`), then asks "Turn on <mode>? <summary>" for each one that is off; a yes writes `on = true`. A mode on for Claude Desktop alone is not asked about; setup says where to have it in every session |
 | `splice setup --update` | Offers the modes that are off and restarts a running daemon onto any you turn on |
-| Console → Settings → **Modes** | One group per mode: its summary, how it is answered ("Answered inside Splice" or "MCP server"), the tools it adds, the callers it leaves out, its hooks, and an On/Off switch per command |
-| `splice status` | One plain line per mode, read from the running daemon |
-| `GET /api/modes` | Each mode's `name`, `summary`, `kind`, `server`, `prompt`, `tools`, `resources`, `hooks`, `callers_off`, `on` `{value, from}` and `heads` `{<head>: {on, from}}`; `from` is `manifest`, `splice.toml`, `head` or `never` |
+| Console → Settings → **Modes** | One group per mode: its summary, how it is answered ("Answered inside Splice" or "MCP server"), the tools it adds, the callers it leaves out, its hooks, and an On/Off switch per command. A mode on for Claude Desktop alone (`visual`) also has an **Every session** switch: Default (on in Claude Desktop only), On (every session) or Off (none, Desktop included; a command switched On below keeps it), with a line saying what Claude Desktop and `claude` in a terminal get now; its per-command switches are the terminal's |
+| `splice status` | One plain line per mode, read from the running daemon: the heads it is on for, and `for desktop` when it is on for Desktop while off for every head |
+| `GET /api/modes` | Each mode's `name`, `summary`, `kind`, `server`, `prompt`, `tools`, `resources`, `hooks`, `callers_off`, `on_for`, `on` `{value, from}`, `heads` `{<head>: {on, from}}` and `callers` `{door, head, desktop: {on, from}}`, each caller's every-head value; `from` is `manifest`, `splice.toml`, `head` or `never` |
 | `PUT /api/modes/{name}` | Body `{on?, heads?: {<head>: true \| false \| null}}`; `null` clears a key. The next request follows, no restart. 404 unknown mode, 400 bad body, 409 write refused, 503 when `splice.toml` can't be written |
 
 Both routes take the management key and answer 503 before the daemon has loaded its modes.
@@ -167,7 +170,7 @@ sequenceDiagram
 | `tableapp` | `tableapp` | mcp | off | none | `render_table` (page `ui://tableapp/table`) |
 | `template` | `template` | door | off | `desktop` | `say_back` |
 | `templateapp` | `templateapp` | mcp | off | none | `show_note` (page `ui://templateapp/note`) |
-| `visual` | `visual` | mcp | off | none | `read_me`, `show_widget`, `html_render`, `feed` (page `ui://visual/reply.html`) |
+| `visual` | `visual` | mcp | **on** for `desktop` | none | `read_me`, `show_widget`, `html_render`, `feed` (page `ui://visual/reply.html`) |
 
 `template` and `templateapp` are working examples to copy, not features; `splice setup` does not offer them.
 
@@ -201,13 +204,13 @@ An mcp mode, off by default. `render_table` turns a Markdown pipe table into a s
 
 ### `visual`
 
-An mcp mode, off by default, that lets the model of any head draw in the conversation, as its reply or in the middle of it. Turn it on with `[modes.visual] on = true`.
+An mcp mode that lets the model draw in the conversation, as its reply or in the middle of it. On by default for Claude Desktop's own sessions, which draw MCP Apps; not offered to a terminal's, which draw nothing. `[modes.visual] on = true` turns it on for every session (for a machine whose app draws from a session's transcript), and `on = false` turns it off everywhere, Desktop included.
 
 - `read_me` gives the guidance on call, so it costs nothing until the model asks: when a visual beats text and when it does not, the rules every visual keeps (the host's theme variables, no network, a fluid width), and one module per kind of visual: `chart`, `comparison`, `diagram`, `diff`, `explainer`, `tool`, `page`. `modules` picks some; without it, every one comes back. The mode's `prompt.md` is one line that names the tools and says to call `read_me` first.
 - `show_widget` takes `title`, optional `loading_messages`, and `widget_code`, an HTML or SVG fragment of at most 256 KiB.
 - `html_render` takes `title`, `html`, a whole document of at most 256 KiB, and optional `height` (1 to 10000 CSS pixels). The mode keeps the page, and its answer names it as `vp_` and twelve hex digits. It takes the page as `html` only: a call naming `path` is refused, because the daemon may serve other machines and an mcp mode's call carries neither the session's folder nor who is calling, so a file read on the model's word could not be held to what that caller may read.
-- `feed` writes or reads a feed: a small named JSON value that a card the model drew keeps itself up to date from, with no model turn and no network. `name` is 1 to 40 letters, digits, `-` or `_`; `data`, any JSON value but `null` and at most 64 KiB, writes it, and leaving `data` out reads it, answering `{ name, found, updated, data }` with the time it was written (`found: false` for a feed nobody wrote, never an error). A refused write says why. At most 64 feeds are held, and a 65th drops the one written longest ago. A script writes a feed from a shell with `splice feed <name>`, which reads the JSON value from standard input and asks the daemon with the management key itself, so the script never holds a key. A card reads its feed with `watchFeed(name, onData, everyMs)` (every `everyMs`, never under a second; `onData(data, updated)` runs when the value changes) and `readFeed(name)`, which the view gives it and which ask the app that frames the card to call `feed` on this server. An app that does not pass a card's calls on leaves the card as drawn, so the model is told to draw a card's first state from data inside it (`read_me` module `live`). `feed` carries no `visibility` mark: the card has to call it, and Claude Desktop passes a card's call on even for a tool marked for the model only. Feeds live in the daemon's memory, so a restart empties them, and every caller of the mode on this machine shares one set. A team server gives its key holders no route to them: the mode serves nothing under `/server/mod/visual/...` (`server_routes` reaches only a mode's own `serve`).
 - Both drawing tools name one view, `ui://visual/reply.html`, so every host that draws MCP Apps draws them the same way. The view loads nothing from any origin and its `_meta.ui.csp` allows none, so a visual's own code reaches no network either. Both declare `_meta.ui.visibility = ["model"]`, so a host that follows MCP Apps refuses a drawn visual's own call of them; the mode cannot tell such a call from the model's when a host passes it on. A client that does not draw MCP Apps shows the tool's answer, which says what was drawn and asks the model to say it in words.
+- `feed` writes or reads a feed: a small named JSON value that a card the model drew keeps itself up to date from, with no model turn and no network. `name` is 1 to 40 letters, digits, `-` or `_`; `data`, any JSON value but `null` and at most 64 KiB, writes it, and leaving `data` out reads it, answering `{ name, found, updated, data }` with the time it was written (`found: false` for a feed nobody wrote, never an error). A refused write says why. At most 64 feeds are held, and a 65th drops the one written longest ago. A script writes a feed from a shell with `splice feed <name>`, which reads the JSON value from standard input and asks the daemon with the management key itself, so the script never holds a key. A card reads its feed with `watchFeed(name, onData, everyMs)` (every `everyMs`, never under a second; `onData(data, updated)` runs when the value changes) and `readFeed(name)`, which the view gives it and which ask the app that frames the card to call `feed` on this server. An app that does not pass a card's calls on leaves the card as drawn, so the model is told to draw a card's first state from data inside it (`read_me` module `live`). `feed` carries no `visibility` mark: the card has to call it, and Claude Desktop passes a card's call on even for a tool marked for the model only. Feeds live in the daemon's memory, so a restart empties them, and every caller of the mode on this machine shares one set. A team server gives its key holders no route to them: the mode serves nothing under `/server/mod/visual/...` (`server_routes` reaches only a mode's own `serve`).
 - Kept pages survive a restart and have no expiry by age: at most 200 pages, the 201st taking the oldest's place. See [Disk and privacy](disk-and-privacy.md).
 
 | Route (management key) | What it answers |

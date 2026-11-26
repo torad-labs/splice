@@ -1,0 +1,15 @@
+{
+  "name": "standup",
+  "version": "0.1.0",
+  "description": "Keeps a short list of what each session is waiting on, and a page that shows it.",
+  "author": "A mod author",
+  "surfaces": ["console", "desktop"],
+  "capabilities": ["watch-sessions", "add-rows", "draw-ui", "answer-tools"],
+  "tools": ["note", "resolve"],
+  "pages": [{ "name": "board", "title": "Stand-up board" }],
+  "commands": [{ "name": "standup", "description": "Show what every session is waiting on." }],
+  "views": [
+    { "uri": "ui://standup/note.html", "name": "note", "mimeType": "text/html;profile=mcp-app", "file": "views/note.html" },
+    { "uri": "ui://standup/board", "name": "board" }
+  ]
+}

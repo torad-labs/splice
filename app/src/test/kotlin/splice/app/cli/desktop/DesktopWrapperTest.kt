@@ -53,7 +53,7 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
         "Desktop warns in every Code session, and its limits",
         "Desktop does not warn",
         "limits apply to the Code sessions",
-        "starts through",
+        "the Code tab starts through",
     )
 
     private fun wrapper(vararg args: String, osName: String = "Linux", env: EnvReader = this.env): Int {
@@ -108,7 +108,7 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
         assertEquals("merge", shown.jsonObject.getValue("parentSettingsBehavior").jsonPrimitive.content)
         assertTrue("Nothing is at $managed." in said, printed())
         assertTrue("What to do: create it so it holds both keys." in said, printed())
-        assertFalse(said.any { "starts through" in it || "does not warn" in it }, "no promise and no effect: $said")
+        assertFalse(said.any { "Code tab starts through" in it || "does not warn" in it }, "no promise: $said")
         val install = "  sudo mkdir -p '${managed.parent}' && sudo install -m 0644 managed-settings.json '$managed'"
         assertTrue(install in said, printed())
         assertFalse("install -D" in printed(), "no GNU-only flag: macOS's install has none")
@@ -127,7 +127,7 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
             assertTrue(said.any { it.endsWith("$unreadFile.") }, printed())
             val wrong = listOf("othing is at", "sudo install", "create it").filter { it in printed() }
             assertTrue(wrong.isEmpty(), printed())
-            assertTrue(said.any { "splice could not look at" in it && "managed-settings.d" in it }, printed())
+            assertTrue(said.any { "plice could not look at" in it && "managed-settings.d" in it }, printed())
             claimsNoEffect()
         }
     }
@@ -180,7 +180,7 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
         assertEquals(1, wrapper("--check"))
         assertEquals("splice: $wanted.", said.first(), printed())
         assertTrue("sets processWrapper to \"/usr/local/bin/other\"" in said[1], printed())
-        assertFalse(said.any { "starts through" in it }, "what starts the Code tab is not splice's to say: $said")
+        assertFalse(said.any { "Code tab starts through" in it }, "not splice's to say: $said")
     }
 
     @Test
@@ -291,7 +291,7 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
     fun `a drop-in folder splice cannot list is named as a place that may hold files, in every outcome of check`() {
         layLauncher()
         val dropIns = Files.createDirectories(folder.resolve("managed-settings.d"))
-        val named = "splice could not look at $dropIns, where Claude Code may find more"
+        val named = "plice could not look at $dropIns, where Claude Code may find more"
         for (text in listOf(bothRight, """{"processWrapper":"$launch"}""", "{ not json", null)) {
             if (text == null) Files.deleteIfExists(managed) else file(text)
             withLocked(dropIns) {
@@ -344,7 +344,7 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
         Files.delete(remote)
         withLocked(tree) {
             wrapper("--check", env = moved)
-            assertTrue(said.any { "splice could not look at $remote" in it }, printed())
+            assertTrue(said.any { "plice could not look at $remote" in it }, printed())
             claimsNoEffect()
         }
     }

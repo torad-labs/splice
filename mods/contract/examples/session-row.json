@@ -1,0 +1,8 @@
+{
+  "id": "6f1c2a7e-3b0d-4c55-9a41-2d8e0f7b9c13",
+  "kind": "session",
+  "title": "Fix the flaky login test",
+  "status": "working",
+  "progress": { "done": 3, "total": 7 },
+  "labels": { "ticket": "ENG-412", "lane": "auth" }
+}

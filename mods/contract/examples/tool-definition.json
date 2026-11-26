@@ -1,0 +1,19 @@
+{
+  "name": "resolve",
+  "description": "Resolve a row this mod added: approve it, or ask for changes with a reason.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "row": { "type": "string", "description": "The row's id without the mod's prefix." },
+      "verdict": { "type": "string", "enum": ["approved", "changes"] },
+      "reason": { "type": "string" }
+    },
+    "required": ["row", "verdict"],
+    "oneOf": [
+      { "properties": { "verdict": { "const": "approved" } } },
+      { "properties": { "verdict": { "const": "changes" } }, "required": ["reason"] }
+    ],
+    "additionalProperties": false
+  },
+  "_meta": { "ui": { "visibility": ["app"] } }
+}

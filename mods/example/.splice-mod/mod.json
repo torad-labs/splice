@@ -1,0 +1,10 @@
+{
+  "name": "reviews",
+  "version": "0.1.0",
+  "description": "Adds a row under each session that asks for a review, with buttons to approve it or ask for changes, and a page listing every open review.",
+  "surfaces": ["console"],
+  "capabilities": ["watch-sessions", "add-rows", "draw-ui", "answer-tools"],
+  "tools": ["resolve", "board"],
+  "pages": [{ "name": "queue", "title": "Review queue" }],
+  "views": [{ "uri": "ui://reviews/board", "name": "board" }]
+}

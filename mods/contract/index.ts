@@ -208,12 +208,17 @@ export type RowStatus =
   | "failed";
 
 export interface SessionRow {
-  /** A session's id is the harness's own session id, the `session_id` its row already carries. A mod's own rows are `<mod>:<id>`, which
-   *  cannot collide with a session id. */
+  /** For a session, `id` IS the harness's own session id: the value `GET /api/sessions` has always
+   *  answered as `session_id`. A row has no separate `session_id` field, so key every lookup of a
+   *  session (a `parent`, a join) on `id`. A mod's own rows are `<mod>:<id>`; a session id never
+   *  contains `:`, so the two cannot collide. */
   readonly id: string;
   /** "session" for a session; a mod names its own kinds, e.g. "task". */
   readonly kind: string;
-  /** The row this one sits under: a session's id or another row's id. */
+  /** The row this one sits under: a session's `id` or another row's `id`. When no row in the same
+   *  answer carries that id, Splice keeps the row (at the top level) and reports that its parent was
+   *  not found, naming the mod, the row and the missing id, where the person sees a mod's state. A
+   *  hierarchy that silently collapses would look the same as a mod with no hierarchy. */
   readonly parent?: string;
   readonly title: string;
   readonly status: RowStatus;

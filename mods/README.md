@@ -148,10 +148,16 @@ on, and `all` leaves room for a future `?kind=<a mod's kind>`.
 
 A row (`SessionRow`) has:
 
-- `id`: a mod's own rows are `<mod>:<id>`. A session id never contains `:`, so the two cannot
-  collide.
+- `id`: for a session, `id` **is** the harness's own session id, the value `GET /api/sessions` has
+  always answered as `session_id`. A row has no separate `session_id` field: key every lookup of a
+  session on `id`. A mod's own rows are `<mod>:<id>`. A session id never contains `:`, so the two
+  cannot collide.
 - `kind`: `session`, or a kind the mod names.
-- `parent`, `title`.
+- `parent`: the `id` of the row this one sits under. When no row in the same answer carries that
+  id, Splice keeps the row and reports that its parent was not found, naming the mod, the row and the
+  missing id, where the person sees a mod's state. A hierarchy that silently collapsed would look the
+  same as a mod with no hierarchy, so it is said instead.
+- `title`.
 - `status`, from one set every row shares: `working`, `waiting` (waiting on the person), `paused`,
   `done` or `failed`.
 - `progress`: `{ done, total }`.

@@ -50,10 +50,11 @@ class CapabilityReadingsTest {
         parent: ParentSetting?,
         wrapper: WrapperState = WrapperState.NONE,
         elsewhere: List<String> = emptyList(),
+        state: ManagedFileState = ManagedFileState.READ,
     ) =
         bare().copy(
             desktop = desktop(mode = DesktopMode.APP, wrapper = wrapper)
-                .copy(managedFile = parent?.let { ManagedFileFacts(managedFile, it, elsewhere) }),
+                .copy(managedFile = parent?.let { ManagedFileFacts(managedFile, state, it, elsewhere) }),
         )
 
     private fun parentRow(facts: Capabilities) =
@@ -112,6 +113,36 @@ class CapabilityReadingsTest {
         assertTrue("did not read /etc/claude-code/managed-settings.d/10-org.json" in said, said)
         assertTrue("may win over the file's" in said, said)
         assertTrue("did not read" in parentGap(facts)!!.text)
+    }
+
+    @Test
+    fun `a file splice could not read is said to be unread for both keys, as a note and never as an item`() {
+        val facts = appWith(ParentSetting(), WrapperState.UNREADABLE, state = ManagedFileState.UNREADABLE)
+        val parent = parentRow(facts)!!
+        val wrapper = CapabilityTools(facts).readings().single { it.name == "processWrapper" }
+        for ((row, key) in listOf(parent to "parentSettingsBehavior", wrapper to "processWrapper")) {
+            assertEquals(ToolLevel.INFO, row.level, row.said)
+            assertTrue("$managedFile could not be read" in row.said, row.said)
+            assertTrue("splice cannot say what it holds for $key" in row.said, row.said)
+            for (untrue in listOf("does not set", "names no", "sets parentSettingsBehavior", "warns in every")) {
+                assertTrue(untrue !in row.said, "${row.said} says \"$untrue\" of a file nobody read")
+            }
+            assertTrue("read it as an administrator" in row.fix.orEmpty() && "add" !in row.fix.orEmpty(), row.fix)
+        }
+        assertEquals(null, parentGap(facts), "nothing is known to be missing from it, so there is nothing to do")
+        assertTrue(CapabilityGaps(facts, false).afterUpgrade().none { it.kind == GapKind.PROCESS_WRAPPER })
+    }
+
+    @Test
+    fun `no main file with another source present is named, as a note, with no item`() {
+        val dropIn = "/etc/claude-code/managed-settings.d/10-org.json"
+        val facts = appWith(ParentSetting(), elsewhere = listOf(dropIn), state = ManagedFileState.MISSING)
+        val row = parentRow(facts)!!
+        assertEquals(ToolLevel.INFO, row.level)
+        assertTrue("there is no $managedFile" in row.said, row.said)
+        assertTrue("splice did not read $dropIn" in row.said, row.said)
+        assertTrue("check that one of them sets parentSettingsBehavior to \"merge\"" in row.fix.orEmpty(), row.fix)
+        assertEquals(null, parentGap(facts))
     }
 
     @Test

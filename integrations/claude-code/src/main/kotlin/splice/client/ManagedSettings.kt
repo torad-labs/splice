@@ -51,10 +51,14 @@ public class ManagedSettings(
      *  of `managed-settings.d` in filename order. A folder that is absent or can't be listed adds no drop-in. */
     public fun sources(): List<Path> = listOf(file) + dropIns()
 
-    /** What [settings], a managed settings file read as an object (null where there is none), say of
-     *  [PARENT_SETTINGS_KEY]. */
-    public fun parentSetting(settings: JsonObject?): ParentSetting =
-        ParentSetting(settings?.get(PARENT_SETTINGS_KEY)?.takeUnless { it is JsonNull }?.toString())
+    /** The main managed settings file as Claude Code reads it: null where there is none; otherwise its settings, or
+     *  `unreadable` where it is there and can't be read (no permission) or is no JSON object. Whoever speaks of what
+     *  the file holds asks here, so a file that could not be read is never taken for one that says nothing. */
+    public fun fileDocument(): PolicyDocument? {
+        if (!Files.isRegularFile(file)) return null
+        val settings = read(file)
+        return PolicyDocument(settings, unreadable = settings == null)
+    }
 
     /** The other places Claude Code reads managed settings that hold something on this machine, as words: each drop-in
      *  of `managed-settings.d` and the system's own policy (macOS's managed preferences, Windows' registry). They are

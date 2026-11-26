@@ -5,6 +5,7 @@ package splice.app.capability
 
 import splice.app.desktop.setup.DesktopMode
 import splice.client.PARENT_SETTINGS_KEY
+import splice.client.PROCESS_WRAPPER_KEY
 import splice.core.mcp.McpHarness
 import splice.diagnostics.doctor.ToolLevel
 import splice.diagnostics.doctor.ToolReading
@@ -61,18 +62,25 @@ internal class CapabilityTools(private val facts: Capabilities) {
                     "for splice",
                 WRAPPER_FIX,
             )
+            WrapperState.UNREADABLE -> facts.desktop.managedFile?.let {
+                val text = ParentSettingsText(it)
+                ToolReading(WRAPPER_ROW, ToolLevel.INFO, text.unreadable(PROCESS_WRAPPER_KEY), text.fix())
+            }
         }
     }
 
-    /** The managed settings file's `parentSettingsBehavior`, said while Desktop runs on splice in app mode and the
-     *  file exists, with or without a processWrapper: without "merge" in it Desktop's limits for the Code tab are
-     *  not applied and Desktop warns in every Code session. Where the file sets another value, that is the
-     *  administrator's choice: said, not warned. No file at all is fine: the key has no effect then. */
+    /** The managed settings' `parentSettingsBehavior`, said while Desktop runs on splice in app mode and a managed
+     *  file or another source exists, with or without a processWrapper: without "merge" in them Desktop's limits for
+     *  the Code tab are not applied and Desktop warns in every Code session. Where the file sets another value that is
+     *  the administrator's choice, and where splice could not read the file, or reads none and another source may set
+     *  it, nothing is known to be wrong: said, not warned. No file and no other source is fine: the key has no effect
+     *  then. */
     private fun parent(): ToolReading? {
         val managed = facts.desktop.managedFile
         if (facts.desktop.mode != DesktopMode.APP || managed == null) return null
         val text = ParentSettingsText(managed)
         val level = when {
+            managed.state != ManagedFileState.READ -> ToolLevel.INFO
             managed.parent.merges -> ToolLevel.OK
             managed.parent.absent -> ToolLevel.WARN
             else -> ToolLevel.INFO
@@ -164,7 +172,7 @@ internal class CapabilityTools(private val facts: Capabilities) {
 }
 
 private const val DESKTOP_ROW = "claude-desktop"
-private const val WRAPPER_ROW = "processWrapper"
+private const val WRAPPER_ROW = PROCESS_WRAPPER_KEY
 private const val PARENT_ROW = PARENT_SETTINGS_KEY
 private const val AGY_ROW = "agy"
 private const val SHIM_ROW = "antigravity shim"

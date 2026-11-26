@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ManagedSettings
@@ -44,6 +45,7 @@ class DesktopFactsReadTest {
         assertNull(facts(home, null).managedFile)
         val only = facts(home, """{"permissions": {"deny": ["Bash(rm:*)"]}}""").managedFile!!
         assertEquals(home.resolve("managed-settings.json"), only.file)
+        assertEquals(ManagedFileState.READ, only.state)
         assertTrue(only.parent.absent)
         assertTrue(only.elsewhere.isEmpty())
     }
@@ -62,8 +64,36 @@ class DesktopFactsReadTest {
     }
 
     @Test
-    fun `a file that is no JSON object is a file that says nothing of the key`(@TempDir home: Path) {
-        assertTrue(facts(home, "{ not json").managedFile!!.parent.absent)
+    fun `a file that is no JSON object is a file splice could not read, not a file that says nothing`(
+        @TempDir home: Path,
+    ) {
+        val read = facts(home, "{ not json")
+        assertEquals(ManagedFileState.UNREADABLE, read.managedFile!!.state)
+        assertEquals(WrapperState.UNREADABLE, read.wrapper)
+    }
+
+    @Test
+    fun `a file splice has no permission to read is unreadable, not a file without the keys`(@TempDir home: Path) {
+        val file = home.resolve("managed-settings.json")
+        Files.writeString(file, """{"processWrapper": "/s/desktop-launch", "parentSettingsBehavior": "merge"}""")
+        Files.setPosixFilePermissions(file, emptySet())
+        assumeFalse(Files.isReadable(file), "a user that can read any file cannot show this")
+        val read = facts(home, null, keep = true)
+        assertEquals(ManagedFileState.UNREADABLE, read.managedFile!!.state)
+        assertEquals(WrapperState.UNREADABLE, read.wrapper)
+    }
+
+    @Test
+    fun `no main file with a drop-in beside it is facts that name the drop-in, and none at all is no facts`(
+        @TempDir home: Path,
+    ) {
+        assertNull(facts(home, null).managedFile)
+        val dropIn = home.resolve("managed-settings.d/10-org.json")
+        Files.createDirectories(dropIn.parent)
+        Files.writeString(dropIn, """{"parentSettingsBehavior": "first-wins"}""")
+        val read = facts(home, null).managedFile!!
+        assertEquals(ManagedFileState.MISSING, read.state)
+        assertEquals(listOf(dropIn.toString()), read.elsewhere)
     }
 
     @Test
@@ -78,10 +108,12 @@ class DesktopFactsReadTest {
 
     private fun wrapper(home: Path, settings: String?): WrapperState = facts(home, settings).wrapper
 
-    private fun facts(home: Path, settings: String?): DesktopFacts {
+    private fun facts(home: Path, settings: String?, keep: Boolean = false): DesktopFacts {
         val file = home.resolve("managed-settings.json")
-        Files.deleteIfExists(file)
-        settings?.let { Files.writeString(file, it) }
+        if (!keep) {
+            Files.deleteIfExists(file)
+            settings?.let { Files.writeString(file, it) }
+        }
         val managed = ManagedSettings("Linux", platformDir = home, policy = PlatformPolicy("Linux"))
         return UserHome.within(home) {
             DesktopFactsRead(EnvReader { null }, osName = "Linux", managed = managed).read(null)

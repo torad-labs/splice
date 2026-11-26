@@ -39,6 +39,7 @@ internal class SetupMenu(private val frame: WizardFrame, private val profiles: A
         when (desktop.wrapper) {
             WrapperState.SPLICE -> add("a managed processWrapper on splice's desktop-launch")
             WrapperState.OTHER -> add("a managed processWrapper naming another program")
+            WrapperState.UNREADABLE -> add("a managed settings file splice could not read")
             WrapperState.NONE -> Unit
         }
     }

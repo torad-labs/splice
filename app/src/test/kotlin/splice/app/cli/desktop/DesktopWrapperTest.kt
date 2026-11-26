@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.desktop.setup.DesktopPrograms
@@ -117,17 +118,64 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
         assertTrue("There is nothing to add." in printed(), printed())
         assertFalse("Edit it" in printed() || "add " in printed().replace("There is nothing to add.", ""), printed())
         assertFalse("Then quit" in printed(), printed())
+        assertTrue("$launch is not laid yet: run `splice desktop on` first." in printed(), printed())
+        layLauncher()
+        assertEquals(0, wrapper("--print"))
+        assertFalse("not laid yet" in printed(), printed())
     }
 
     @Test
-    fun `print for a file it cannot read says what to make sure it has, and offers no copy`() {
+    fun `print for a file that is no JSON object says it could not read it, for both keys, and offers no copy`() {
         file("{ not json")
         assertEquals(0, wrapper("--print"))
-        assertTrue(errors.single().contains("is not a JSON object"), errors.toString())
-        assertTrue("splice can't read it" in printed(), printed())
+        val unread = "$managed exists but splice could not read it (no permission, or it is not a JSON object)"
+        assertTrue(unread in printed(), printed())
+        assertTrue("cannot say which of these the file already has." in printed(), printed())
         assertTrue("\"processWrapper\": \"$launch\"" in printed(), printed())
         assertTrue("\"parentSettingsBehavior\": \"merge\"" in printed(), printed())
         assertFalse("install" in printed() || "Copy-Item" in printed(), printed())
+        assertFalse("add or change" in printed() || "already has both" in printed(), printed())
+    }
+
+    @Test
+    fun `a file nobody may read is said the same way in print and check, and not as missing its keys`() {
+        file("""{"processWrapper":"$launch","parentSettingsBehavior":"merge"}""")
+        Files.setPosixFilePermissions(managed, emptySet())
+        assumeFalse(Files.isReadable(managed), "a user that can read any file cannot show this")
+        layLauncher()
+        assertEquals(0, wrapper("--print"))
+        assertTrue("$managed exists but splice could not read it" in printed(), printed())
+        assertFalse("add" in printed().replace("add or change", "") || "change it to" in printed(), printed())
+        assertEquals(1, wrapper("--check"))
+        val line = said.first()
+        val unread = "splice: not set up: $managed could not be read (no permission, or it is not a JSON object)"
+        assertTrue(unread in line, line)
+        assertTrue("cannot say what it holds for processWrapper or parentSettingsBehavior" in line, line)
+        assertFalse("names no" in line || "does not set" in line || "does not exist" in line, line)
+    }
+
+    @Test
+    fun `check of a file that is no JSON object says it could not read it and exits 1`() {
+        layLauncher()
+        file("[1, 2]")
+        assertEquals(1, wrapper("--check"))
+        assertTrue("could not be read" in said.single(), printed())
+        assertFalse("names no" in said.single(), printed())
+    }
+
+    @Test
+    fun `with no main file and a drop-in present, print and check name the drop-in`() {
+        layLauncher()
+        val dropIn = dropIn()
+        assertEquals(0, wrapper("--print"))
+        assertTrue("$managed does not exist yet. Create it so it reads:" in printed(), printed())
+        assertTrue("Claude Code also reads $dropIn, which splice did not read: it may set" in printed(), printed())
+        assertTrue("wins over this file." in printed(), printed())
+        assertEquals(1, wrapper("--check"))
+        assertTrue("splice: not set up: $managed does not exist" in said.first(), printed())
+        val named = "Claude Code reads $dropIn, which splice did not read: it may set these keys"
+        assertTrue(named in printed(), printed())
+        assertTrue("unless one sets parentSettingsBehavior to \"merge\"" in printed(), printed())
     }
 
     @Test

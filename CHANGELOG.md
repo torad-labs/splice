@@ -167,7 +167,9 @@
   `"first-wins"` already there is the administrator's choice and is said so. `--check` exits 0 where the wrapper works
   and its first line says when `parentSettingsBehavior` is not `"merge"`. `splice doctor` and `splice upgrade` say the
   same for any managed file that exists with Desktop on splice, with or without a `processWrapper`, and name a
-  drop-in or system policy they did not read.
+  drop-in or system policy they did not read. A file splice could not read (for example one only root may read) is
+  said to be unread for both keys, never to lack them: `--check` exits 1, and `splice doctor` notes it without an
+  action item.
 - **A command-auth provider signs in from the terminal or the console**, and `splice doctor` reports on it.
 - **A provider's declared effort vocabulary names its models' reasoning levels.** An openai-chat provider whose
   endpoint lists nothing about reasoning (a team gateway, a llama.cpp server) had no effort control in Claude Desktop's

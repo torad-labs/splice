@@ -11,6 +11,7 @@
 package splice.client
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
@@ -21,7 +22,11 @@ import java.util.concurrent.TimeUnit
 
 /** One managed settings document as the system holds it: its [settings] when it could be read as a JSON object, and
  *  whether it exists but could not be read ([unreadable]), which Claude Code counts as a document that is present. */
-public data class PolicyDocument(public val settings: JsonObject?, public val unreadable: Boolean)
+public data class PolicyDocument(public val settings: JsonObject?, public val unreadable: Boolean) {
+    /** What the document says of [PARENT_SETTINGS_KEY]: nothing where it is absent, `null` or unreadable. */
+    public fun parentSetting(): ParentSetting =
+        ParentSetting(settings?.get(PARENT_SETTINGS_KEY)?.takeUnless { it is JsonNull }?.toString())
+}
 
 /** The operating-system policy of a machine on [osName]. [preferences] is macOS's managed preferences folder and
  *  [plutil] the converter that reads it; [reg] is Windows' `reg.exe`, `%SystemRoot%\System32\reg.exe` unless given

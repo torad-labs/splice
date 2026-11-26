@@ -9,23 +9,30 @@ import splice.core.mcp.McpHarness
 import java.nio.file.Path
 
 /** Whether Claude Code's managed settings name a `processWrapper`, and whose: splice's `desktop-launch`, another
- *  program, or none (no managed file, or one without the key). */
-internal enum class WrapperState { SPLICE, OTHER, NONE }
+ *  program, none (no managed file, or one without the key), or [UNREADABLE]: the file is there and splice could not
+ *  read it, so it cannot say. */
+internal enum class WrapperState { SPLICE, OTHER, NONE, UNREADABLE }
 
-/** The managed settings file Claude Code reads on this machine, where it exists: its [file], what it says of
- *  `parentSettingsBehavior` ([parent]), and the other places Claude Code reads that hold something and that splice did
- *  not read ([elsewhere]): a value set there outranks the file's. */
+/** Whether Claude Code's managed settings file is there ([MISSING] when it is not), and whether splice could read it
+ *  ([UNREADABLE]: no permission, or it is no JSON object) or did ([READ]). */
+internal enum class ManagedFileState { MISSING, UNREADABLE, READ }
+
+/** What splice found of Claude Code's managed settings where there is a file or another source: the [file] and its
+ *  [state]; what it says of `parentSettingsBehavior` ([parent], meaningful only when [state] is [ManagedFileState.READ]);
+ *  and the other places Claude Code reads that hold something and that splice did not read ([elsewhere]): a value set
+ *  there outranks the file's. */
 internal data class ManagedFileFacts(
     val file: Path,
-    val parent: ParentSetting,
+    val state: ManagedFileState,
+    val parent: ParentSetting = ParentSetting(),
     val elsewhere: List<String> = emptyList(),
 )
 
 /** Claude Desktop: its [program] (null when not installed), the [mode] splice has it in, whether `claude-splice`
  *  ([sideBySideCli]) and the `Claude (Splice)` app launcher ([sideBySideApp]) are installed, the managed [wrapper],
- *  and the managed settings file ([managedFile], null where there is none): without `parentSettingsBehavior`
- *  "merge" in it Claude Code drops the policy Desktop hands each Code session, and Desktop warns in every one,
- *  whatever else the file holds. */
+ *  and the managed settings ([managedFile], null where there is no file and no other source): without
+ *  `parentSettingsBehavior` "merge" in them Claude Code drops the policy Desktop hands each Code session, and Desktop
+ *  warns in every one, whatever else the file holds. */
 internal data class DesktopFacts(
     val program: Path?,
     val mode: DesktopMode,

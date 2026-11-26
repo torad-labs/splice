@@ -3,9 +3,7 @@
 // Claude Code's managed settings name. Split from CapabilityLook.kt (Nov 23, 2026, concentration). It only reads.
 package splice.app.capability
 
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
 import splice.app.desktop.record.DesktopRecords
 import splice.app.desktop.setup.DesktopAppLibrary
 import splice.app.desktop.setup.DesktopAppMode
@@ -15,6 +13,8 @@ import splice.app.desktop.setup.SideBySideDesktop
 import splice.app.desktop.setup.SideBySideLaunchers
 import splice.client.ManagedSettings
 import splice.client.PROCESS_WRAPPER_KEY
+import splice.client.ParentSetting
+import splice.client.PolicyDocument
 import splice.client.desktop.DesktopAppConfig
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.CLAUDE_SPLICE_COMMAND
@@ -45,8 +45,8 @@ internal class DesktopFactsRead(
             InstallCommand(quiet, quiet).runsShim(CLAUDE_SPLICE_COMMAND, env)
         }.getOrDefault(false)
         val app = Files.exists(SideBySideLaunchers(env, osName).desktopLauncherPath())
-        val settings = managedSettings()
-        return DesktopFacts(program, mode(topology), cli, app, wrapper(settings), managedFile(settings))
+        val document = Cancellables.runCatchingBestEffort { managed?.fileDocument() }.getOrNull()
+        return DesktopFacts(program, mode(topology), cli, app, wrapper(document), managedFile(document))
     }
 
     /** Desktop's mode as `splice doctor` reads it (DesktopLook): splice's record, in [topology]'s state folder, against
@@ -60,17 +60,13 @@ internal class DesktopFactsRead(
         ).mode()
     }.getOrDefault(DesktopMode.OFF)
 
-    /** The managed settings file ([managed]) as an object: null where there is none or it is no JSON object. */
-    private fun managedSettings(): JsonObject? = Cancellables.runCatchingBestEffort {
-        val file = managed?.file?.takeIf { Files.isRegularFile(it) }
-        file?.let { JsonScalars.objectOrNull(Json, Files.readString(it)) }
-    }.getOrNull()
-
-    /** The `processWrapper` the managed [settings] name: a program path,
+    /** The `processWrapper` the managed [document] names: a program path,
      *  or a command line as a list whose first word is the program. Splice's when that program is `desktop-launch`
-     *  (DesktopPrograms); none when the key is absent or names no program. */
-    private fun wrapper(settings: JsonObject?): WrapperState {
-        val named = settings?.get(PROCESS_WRAPPER_KEY)
+     *  (DesktopPrograms); none when the key is absent or names no program, and unreadable where the file is there and
+     *  could not be read. */
+    private fun wrapper(document: PolicyDocument?): WrapperState {
+        if (document?.unreadable == true) return WrapperState.UNREADABLE
+        val named = document?.settings?.get(PROCESS_WRAPPER_KEY)
         val program = Cancellables.runCatchingBestEffort {
             (named as? JsonArray)?.firstOrNull()?.let(JsonScalars::str) ?: JsonScalars.str(named)
         }.getOrNull()
@@ -79,12 +75,18 @@ internal class DesktopFactsRead(
         return if (name == DESKTOP_LAUNCH) WrapperState.SPLICE else WrapperState.OTHER
     }
 
-    /** The managed settings file as [settings] read it, where it exists (a file that is no JSON object says nothing of
-     *  the key), with the other places Claude Code reads that hold something and that are not read here. */
-    private fun managedFile(settings: JsonObject?): ManagedFileFacts? {
-        val file = managed?.file?.takeIf { Files.isRegularFile(it) } ?: return null
-        val elsewhere = Cancellables.runCatchingBestEffort { managed.otherSources() }.getOrDefault(emptyList())
-        return ManagedFileFacts(file, managed.parentSetting(settings), elsewhere)
+    /** The managed settings as [document] read the file, with the other places Claude Code reads that hold something
+     *  and that are not read here; null where there is no file and no other source. */
+    private fun managedFile(document: PolicyDocument?): ManagedFileFacts? {
+        val settings = managed ?: return null
+        val elsewhere = Cancellables.runCatchingBestEffort { settings.otherSources() }.getOrDefault(emptyList())
+        val state = when {
+            document == null -> ManagedFileState.MISSING
+            document.unreadable -> ManagedFileState.UNREADABLE
+            else -> ManagedFileState.READ
+        }
+        if (state == ManagedFileState.MISSING && elsewhere.isEmpty()) return null
+        return ManagedFileFacts(settings.file, state, document?.parentSetting() ?: ParentSetting(), elsewhere)
     }
 }
 

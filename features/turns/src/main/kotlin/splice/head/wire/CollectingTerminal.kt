@@ -15,6 +15,7 @@ import splice.core.failure.SpliceLine
 import splice.core.failure.TurnVoice
 import splice.core.failure.WireAnswer
 import splice.core.index.WireBlockIndex
+import splice.core.turn.ObservedTurn
 import splice.core.turn.Usage
 import splice.core.util.JsonScalars
 import splice.core.wire.ErrorEnvelope
@@ -39,7 +40,8 @@ internal class CollectingTerminal(
     /** Failure-handling slice 2: the voice this collect's error ending speaks in. Every error body it builds carries
      *  the line this voice composes from the same cause, position and answer as the body's status and type. */
     private val voice: TurnVoice,
-) : TurnTerminal, ContentBlockSink by CollectedContent(content) {
+    observed: ObservedTurn? = null,
+) : TurnTerminal, ContentBlockSink by CollectedContent(content, observed) {
     private val ended = AtomicBoolean(false)
 
     // The L3 verdict DetachedCompaction keeps a collected compaction by: set only where emitTerminal
@@ -189,12 +191,16 @@ internal class CollectingTerminal(
 
 /** The content verbs of the non-stream sink: each lands in [content], and closing a block only records its stop,
  *  because the whole body is assembled at the terminal. Split out of [CollectingTerminal]. */
-private class CollectedContent(private val content: CollectingBlocks) : ContentBlockSink {
+private class CollectedContent(
+    private val content: CollectingBlocks,
+    private val observed: ObservedTurn?,
+) : ContentBlockSink {
     override suspend fun openText(): WireBlockIndex = content.openText()
 
     override suspend fun openThinking(): WireBlockIndex = content.openThinking()
 
-    override suspend fun openTool(id: String, name: String): WireBlockIndex = content.openTool(id, name)
+    override suspend fun openTool(id: String, name: String): WireBlockIndex =
+        content.openTool(id, name).also { observed?.toolCall(id, name) }
 
     override suspend fun openRawBlock(contentBlock: JsonObject): WireBlockIndex = content.openRawBlock(contentBlock)
 

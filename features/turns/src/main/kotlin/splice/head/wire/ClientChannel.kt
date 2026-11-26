@@ -40,6 +40,7 @@ import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.head.live.LiveReply
+import splice.head.observe.TurnObserverFrames
 import splice.head.wire.observation.ClientDeliveryObservation
 import splice.upstream.Ticker
 import java.util.concurrent.atomic.AtomicBoolean
@@ -191,6 +192,7 @@ internal class ClientChannel(
         recording?.append(frame)
         trace?.clientFrame(frame)
         live?.frame(frame)
+        perf.observed?.let { TurnObserverFrames.frame(it, frame) }
         if (detached.get()) return
         // Read once, from the writer's own [shape] when it handed one over: burst accounting and the pacer's hold
         // used to decode the same frame twice, under the write mutex, for every delta.

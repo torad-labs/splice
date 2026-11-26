@@ -28,6 +28,7 @@ import splice.head.HeadEvents
 import splice.head.NoHeadEvents
 import splice.head.admission.LocalRefusal
 import splice.head.hold.resources.HeldCauseTimes
+import splice.head.observe.TurnObserverRows
 import splice.head.perf.HeldRows
 import splice.head.perf.LocalAnswerRows
 import splice.head.perf.PerfAccount
@@ -211,6 +212,7 @@ internal class TurnTelemetry(
         // key, so the stream never names a row /api/perf/turns has not been handed.
         val way = ServedWay(drive.route?.served(), drive.speed, drive.watchdog.timedOut)
         served?.ended(drive.meta, outcomeTag, snap, way)
+        TurnObserverRows.complete(drive.perf, outcomeTag, snap)
         events.turnEnded(rowTs.toString(), outcomeTag, drive.meta.scope.sessionId)
         toolsOpened(drive)
         spend.spend(rowTs, drive.upstreamModel, snap.counters, accountLabel, outcomeTag)
@@ -287,6 +289,7 @@ internal class TurnTelemetry(
         val rowTs = perfStats.record(rowMeta, snap)
         served?.ended(meta, tag, snap)
         // V4-134: a local refusal is a turn that ended too — it has a perf row, so it has a turn.end.
+        TurnObserverRows.complete(perf, tag, snap)
         events.turnEnded(rowTs.toString(), tag, meta.scope.sessionId)
         // The tag is printed VERBATIM, the same spelling the perf row carries
         // (kt-outcome-tag-single-source, V4-99). It used to be `substringAfter("error:")`, which

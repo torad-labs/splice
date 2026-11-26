@@ -73,9 +73,11 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
         return listOfNotNull(held, unsure).joinToString(", and ") + ": $UNREAD"
     }
 
-    /** What Desktop does: plainly only where splice read the file and there is no other place, the condition else. */
-    fun effect(): String = when {
+    /** What Desktop does: plainly only where splice read the file and there is no other place, the condition else;
+     *  nothing where the file names splice's launcher and it is not laid, since no session starts through it then. */
+    fun effect(): String? = when {
         !known -> CONDITION
+        starts && !laid -> null
         merges -> "Claude Desktop's limits apply to the Code sessions it starts, and Desktop does not warn in them"
         else -> "Desktop warns in every Code session, and its limits for them are not applied"
     }

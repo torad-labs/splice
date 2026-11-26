@@ -371,12 +371,13 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `without the launcher laid, check exits 1 and both verbs say to run splice desktop on`() {
+    fun `without the launcher laid, check exits 1, both verbs say to run splice desktop on, and no effect is said`() {
         file(bothRight)
-        assertEquals(1, wrapper("--check"))
-        assertTrue("splice: $launch is not laid yet: run `splice desktop on` first." in said, printed())
-        assertEquals(0, wrapper("--print"))
-        assertTrue(said.any { "not laid yet" in it }, printed())
+        for ((verb, exit) in listOf("--check" to 1, "--print" to 0)) {
+            assertEquals(exit, wrapper(verb))
+            assertTrue(said.any { it.endsWith("$launch is not laid yet: run `splice desktop on` first.") }, printed())
+            for (effect in effects) assertFalse(effect in printed(), "\"$effect\" beside a launcher not laid: $said")
+        }
     }
 
     @Test

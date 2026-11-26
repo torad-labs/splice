@@ -224,7 +224,9 @@ export interface SessionRow {
   readonly actions?: readonly RowAction[];
   /** The session's labels, or the labels a mod gives its row. */
   readonly labels?: Labels;
-  /** Which mod added the row. Absent for a session Splice serves. */
+  /** Which mod added the row. Absent for a session Splice serves. When the reader did not ask for
+   *  every row (`?kind=all`), Splice drops every row whose `mod` is set, or whose `kind` is not
+   *  `session`, after the `sessions.list` onion has run and before the answer goes out. */
   readonly mod?: string;
 }
 
@@ -329,6 +331,13 @@ export interface LaunchPrepare {
   readonly mcp: JsonObject;
 }
 
+/**
+ * When `allRows` is false, Splice drops from the answer every row a mod added (any row whose `mod` is
+ * set, or whose `kind` is not `session`) after the onion has run and before the answer goes out, so a
+ * reader asking plain `GET /api/sessions` is never handed a mod's row whatever a handler returned.
+ * `allRows` is still worth reading: a mod that reads it skips building rows nobody will see, and can
+ * shape its rows for the reader that asked.
+ */
 export interface SessionsList {
   /** The surface asking. */
   readonly surface?: string;

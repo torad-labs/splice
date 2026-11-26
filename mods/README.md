@@ -118,7 +118,7 @@ answer by itself without calling `next`, or change what `next` returned.
 | `session.start` | | A process began serving a session: `session` (the harness's own session id, the `session_id` of `GET /api/sessions`), `cwd`, `labels`, and `seenBefore`, true when that id was seen earlier. |
 | `session.end` | | The process serving that session is gone. One id is one session, a single row however many processes serve it. |
 | `launch.prepare` | | Per process, before it starts: `env`, `args`, `mcp`. To change the launch, pass a changed `e` to `next`. |
-| `sessions.list` | | `GET /api/sessions` is being answered. Wrap `await next(e)` to add rows or change them. |
+| `sessions.list` | | `GET /api/sessions` is being answered. Wrap `await next(e)` to add rows or change them. When the reader did not ask for every row (`allRows` false), Splice drops every row a mod added (any row whose `mod` is set, or whose `kind` is not `session`) after the onion has run and before the answer goes out. Reading `allRows` is still worth it: a mod that reads it does less work and can shape its rows for the reader that asked. |
 | `turn.start` | | A turn began. |
 | `request.send` | | A request is about to go to the model. Change `body` and pass it on. |
 | `stream.event` | | One event of the model's stream. Return `null` to drop it. |

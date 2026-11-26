@@ -9,12 +9,12 @@ package splice.head.admission
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import splice.core.auth.CredentialKey
-import splice.core.config.LAUNCH_OWNER_HEADER
 import splice.core.memory.HeapCapacityException
 import splice.core.turn.LiveWatchdogBudget
 import splice.core.util.Cancellables
 import splice.head.GatewayTurns
 import splice.head.HeadDeps
+import splice.head.LAUNCH_OWNER_HEADER
 import splice.head.hold.ClientWallHeader
 import splice.head.hold.ResendLedger
 import splice.head.turn.ClientPace

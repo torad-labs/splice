@@ -89,7 +89,3 @@ private const val TURN_AUTH_HEADER_FILE = "turn-auth-header"
  * requests it sends Anthropic itself (its auto-mode checks, read in the 2.1.312 binary), and the turn key must not go.
  */
 public const val LAUNCH_PROOF_HEADER: String = "x-splice-launch-proof"
-
-/** The launch that sent a turn, planted in the session's custom headers and never forwarded upstream. A name with no
- *  credential word, so Claude Code does not copy it onto a request it sends a provider itself. */
-public const val LAUNCH_OWNER_HEADER: String = "x-splice-launch-owner"

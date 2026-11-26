@@ -8,7 +8,6 @@ package splice.launch.recipe
 import splice.client.desktop.GATEWAY_HEADERS
 import splice.core.client.CLIENT_WALL_HEADER
 import splice.core.client.SPLICE_CLIENT_HEADER
-import splice.core.config.LAUNCH_OWNER_HEADER
 import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.model.CLIENT_WINDOW_HEADER
 import splice.core.util.EnvReader

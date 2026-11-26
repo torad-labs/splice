@@ -91,9 +91,9 @@ internal class DesktopWrapper(
 private val PRETTY = Json { prettyPrint = true }
 
 // Why each key is there, said once beside them.
-private const val WHY = "$PROCESS_WRAPPER_KEY names the program Claude Desktop's Code tab starts through. " +
-    "$PARENT_SETTINGS_KEY \"$PARENT_SETTINGS_MERGE\" keeps the limits in Desktop's own policy applied to the Code " +
-    "sessions it starts."
+private const val WHY = "$PROCESS_WRAPPER_KEY names the launcher for Claude Desktop's Code sessions, which gives " +
+    "them splice's key. $PARENT_SETTINGS_KEY \"$PARENT_SETTINGS_MERGE\" keeps the limits in Desktop's own policy " +
+    "applied to them."
 
 // Desktop reads its configuration at launch, so a change reaches it only after the whole app restarts.
 private const val QUIT_AND_REOPEN = "quit Claude Desktop entirely and reopen it."

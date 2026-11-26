@@ -42,8 +42,8 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
     }
     private val launch = DesktopPrograms(state).launch
     private val bothRight = """{"processWrapper":"$launch","parentSettingsBehavior":"merge"}"""
-    private val unknown = "wherever managed settings exist, Desktop warns in every Code session unless the source " +
-        "that wins sets parentSettingsBehavior to \"merge\""
+    private val unknown = "managed settings exist, Desktop warns in every Code session unless the source that wins " +
+        "sets parentSettingsBehavior to \"merge\""
     private val wanted = "wanted: processWrapper \"$launch\" and parentSettingsBehavior \"merge\""
     private val unreadFile = "$managed could not be read (no permission on its path, a link to nothing, or not a " +
         "JSON object), so splice does not say whether it exists or what it holds"

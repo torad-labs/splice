@@ -16,6 +16,8 @@
 package splice.sessions.http
 
 import kotlinx.serialization.json.JsonObjectBuilder
+import splice.sessions.registry.NoSessionLabels
+import splice.sessions.registry.SessionLabelsOf
 import splice.sessions.registry.SessionRecord
 
 /** The daemon-supplied per-session facts a row carries. Every member defaults to "nothing wired", so a

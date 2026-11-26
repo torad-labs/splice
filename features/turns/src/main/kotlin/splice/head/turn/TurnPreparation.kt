@@ -39,6 +39,7 @@ import io.ktor.server.request.uri
 import kotlinx.coroutines.CompletableDeferred
 import splice.core.client.AGENT_HEADER
 import splice.core.client.SESSION_HEADER
+import splice.core.config.LAUNCH_OWNER_HEADER
 import splice.core.failure.Decline
 import splice.core.failure.FailureCause
 import splice.core.failure.StoppedBy
@@ -54,7 +55,6 @@ import splice.head.AnthropicBodyParse
 import splice.head.BodyRead
 import splice.head.GatewayBody
 import splice.head.HeadDeps
-import splice.head.LAUNCH_OWNER_HEADER
 import splice.head.MessageEdges
 import splice.head.OtherAnswer
 import splice.head.OtherAsk

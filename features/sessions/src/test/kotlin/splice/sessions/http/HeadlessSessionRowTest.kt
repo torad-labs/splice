@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.sessions.registry.ServedLabels
 import splice.sessions.registry.ServedLaunch
 import splice.sessions.registry.ServedLaunches
 import splice.sessions.registry.ServedSessionSource

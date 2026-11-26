@@ -6,6 +6,7 @@ package splice.launch.recipe
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import splice.client.desktop.GATEWAY_HEADERS
+import splice.core.config.LAUNCH_OWNER_HEADER
 import splice.core.util.SecureFile
 import java.io.IOException
 import java.nio.charset.CharacterCodingException
@@ -17,10 +18,12 @@ import java.util.concurrent.ConcurrentHashMap
 
 private val OWNER_ID = Regex("[0-9a-fA-F-]{36}")
 
-/** Planted on the launch and read back on its turns. Not a credential name, so Claude Code does not copy it upstream. */
-internal const val LAUNCH_OWNER_HEADER: String = "x-splice-launch-owner"
+// why: a label is a short name a person typed, not a document.
 private const val LABEL_BYTES = 256
+
+// why: a launch carries a handful of labels; more than this is a mistake, not a session.
 private const val MAX_LABELS = 16
+
 private val LABEL_KEY = Regex("[A-Z][A-Z0-9_]{0,31}")
 
 /** SPLICE_LABEL_* from a launch process's environment, or none when it cannot be read. */

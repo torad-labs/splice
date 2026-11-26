@@ -52,9 +52,6 @@ import splice.upstream.credentials.AccountPool
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
 
-/** The launch that sent a turn, planted in its custom headers and never forwarded. Same spelling as the launch roster. */
-public const val LAUNCH_OWNER_HEADER: String = "x-splice-launch-owner"
-
 /** Was `HeadDeps.DEFAULT_MAX_REQUEST_BYTES` / `HeadDeps.DEFAULT_REQUEST_READ_TIMEOUT_MS`
  *  (companion consts), then file-scope consts of those names; V4-210 renamed them for what they now
  *  are, values read off the Knob.

@@ -21,7 +21,7 @@ import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
-private const val STALE_AFTER_MS = 30L * 60L * 1000L
+internal const val STALE_AFTER_MS = 30L * 60L * 1000L
 
 /** Claude Code's word, in a registration's status, for a session at rest. */
 private const val IDLE_STATUS = "idle"

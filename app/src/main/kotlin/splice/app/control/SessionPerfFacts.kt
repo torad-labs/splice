@@ -8,7 +8,6 @@ import splice.client.resume.ModelMoves
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
 import splice.core.util.WallClock
-import splice.sessions.http.ServedLabels
 import splice.sessions.http.SessionAccountOf
 import splice.sessions.http.SessionEnding
 import splice.sessions.http.SessionEndingOf
@@ -18,6 +17,7 @@ import splice.sessions.http.SessionServedOf
 import splice.sessions.http.SessionTurnCount
 import splice.sessions.http.SessionTurnsOf
 import splice.sessions.http.SessionWindowOf
+import splice.sessions.registry.ServedLabels
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 

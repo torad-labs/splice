@@ -1,10 +1,8 @@
-package splice.sessions.http
+package splice.sessions.registry
 
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
-import splice.sessions.registry.ServedSessionIndex
-import splice.sessions.registry.SessionRecord
 
 /** The labels a session was launched with (`SPLICE_LABEL_*`), or none. A listing asks [forRecords] once, so one
  *  snapshot serves every row. */

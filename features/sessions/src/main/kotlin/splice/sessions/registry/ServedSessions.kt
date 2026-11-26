@@ -37,10 +37,15 @@ public fun interface ServedLaunches {
     public fun of(owner: String): ServedLaunch?
 }
 
-private const val STALE_AFTER_MS = 30L * 60L * 1000L
+// why: the listing already sends only the newest hundred gone rows; keeping more here would never be shown.
 private const val GONE_KEPT = 100
+
+// why: a session is served by a handful of processes, not a history of every pid it ever had.
 private const val PIDS_KEPT = 8
+
+// why: pruning walks process births, so it waits until the index is past the gone rows it keeps.
 private const val PRUNE_AFTER = GONE_KEPT + 32
+
 private val SESSION_ID = Regex("[A-Za-z0-9_-]{1,128}")
 
 @Serializable

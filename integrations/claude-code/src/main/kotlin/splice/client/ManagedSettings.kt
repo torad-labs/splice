@@ -6,8 +6,9 @@
 // `com.anthropic.claudecode` managed preferences, and Windows' `Settings` value under HKLM and, as a fallback, HKCU.
 // `splice claude check`, `splice desktop wrapper` and the doctor's managed settings row (which read the file and only
 // find the other places), the MCP plan and a launch's telemetry decision all read those places from here. Claude Code
-// ranks the sources remote settings, then the system's admin policy (the plist or HKLM), then the files merged as it merges them (a later drop-in's value replacing or, with `null`, clearing an earlier
-// one's), and reads HKCU only when none of those holds a document. Most keys come from the first source that sets a
+// ranks the sources remote settings, then the system's admin policy (the plist or HKLM), then the files merged as it
+// merges them (a later drop-in's value replacing or, with `null`, clearing an earlier one's), and reads HKCU only
+// when none of those holds a document. Most keys come from the first source that sets a
 // policy key, but `env` merges per variable across the three admin sources, the highest that defines a variable giving
 // its value. Where the settings that reach a session set telemetry of their own (a `null` or blank value sets nothing),
 // a launch adds none of splice's: the organisation's collector stays the one the session reports to. A document that is
@@ -21,10 +22,11 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.core.config.UserHome
+import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import java.io.IOException
 import java.nio.file.Files
-import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import kotlin.io.path.name
 
@@ -52,18 +54,16 @@ public class ManagedSettings(
      *  of `managed-settings.d` in filename order. A folder that is absent or can't be listed adds no drop-in. */
     public fun sources(): List<Path> = listOf(file) + dropIns()
 
-    /** What splice can say of the main file, and the other places a session whose config tree is [configDir] reads
-     *  managed settings from, which are only found, never read for their keys: [ManagedReading]. */
-    public fun reading(configDir: Path): ManagedReading {
-        val state = if (Files.notExists(file, NOFOLLOW_LINKS)) {
-            ManagedFile.Absent
-        } else {
-            read(file)?.let(ManagedFile::Read) ?: ManagedFile.Unreadable
-        }
-        val remote = configDir.resolve(REMOTE_SETTINGS).takeUnless { Files.notExists(it, NOFOLLOW_LINKS) }
-        val system = policy.admin()?.let { SYSTEM_POLICY }
-        val dropIns = listedDropIns()?.map(Path::toString) ?: listOf("$dropInFolder ($UNLISTED)")
-        return ManagedReading(file, state, listOfNotNull(remote?.toString(), system) + dropIns)
+    /** What splice can say of the main file, and the other places Claude Code can take managed settings from for a
+     *  session under [env], which are only found, never read for their keys: the remote settings in its config folder
+     *  (`CLAUDE_CONFIG_DIR`, or `~/.claude`), the system's policy stores and the drop-ins ([ManagedReading]). */
+    public fun reading(env: EnvReader): ManagedReading {
+        val state = if (PathAbsence.known(file)) ManagedFile.Absent else read(file)?.let(ManagedFile::Read)
+        val tree = env(CONFIG_TREE_ENV)?.takeIf(String::isNotBlank)?.let(Path::of) ?: UserHome.claudeDir(env)
+        val dropIns = listedDropIns()?.let { found -> UnreadPlaces(held = found.map(Path::toString)) }
+            ?: UnreadPlaces(unsure = listOf(dropInFolder.toString()))
+        val unread = PathAbsence.place(tree.resolve(REMOTE_SETTINGS)) + policy.places() + dropIns
+        return ManagedReading(file, state ?: ManagedFile.Unreadable, unread)
     }
 
     /** Whether the managed settings that reach a session of the tree at [configDir] set telemetry: the switch or any
@@ -129,18 +129,13 @@ public class ManagedSettings(
 
     private fun dropIns(): List<Path> = listedDropIns().orEmpty()
 
-    /** The drop-ins in filename order: none where nothing is at the folder's path, and null where something is there
-     *  that can't be listed. */
+    /** The drop-ins in filename order: none where nothing is known to be at the folder's path, and null where splice
+     *  can't tell what is there. */
     private fun listedDropIns(): List<Path>? {
-        if (Files.notExists(dropInFolder, NOFOLLOW_LINKS)) return emptyList()
-        return try {
-            Files.list(dropInFolder).use { listed ->
-                listed.toList().filter { it.name.endsWith(DROP_IN_SUFFIX) && !it.name.startsWith(".") }
-                    .sortedBy { it.name }
-            }
-        } catch (_: IOException) {
-            null
-        }
+        if (PathAbsence.known(dropInFolder)) return emptyList()
+        return PathAbsence.listed(dropInFolder)
+            ?.filter { it.name.endsWith(DROP_IN_SUFFIX) && !it.name.startsWith(".") }
+            ?.sortedBy { it.name }
     }
 
     /** Whether [env] or [selected]'s headers helper sets telemetry; a key whose value is blank sets nothing, as an
@@ -169,10 +164,9 @@ private const val WINDOWS_MANAGED_DIR = "C:\\Program Files\\ClaudeCode"
 private const val MANAGED_SETTINGS_FILE = "managed-settings.json"
 private const val MANAGED_DROP_IN_DIR = "managed-settings.d"
 private const val DROP_IN_SUFFIX = ".json"
-private const val SYSTEM_POLICY = "the system's managed policy"
 
-// A drop-in folder splice could not list, said in words: it may hold drop-ins.
-private const val UNLISTED = "splice could not list it, so there may be files in it"
+// The variable that moves Claude Code's config folder, where it keeps the remote settings an organisation sends it.
+private const val CONFIG_TREE_ENV = "CLAUDE_CONFIG_DIR"
 
 /** The file Claude Code keeps an organisation's remotely managed settings in, inside a config tree. */
 private const val REMOTE_SETTINGS = "remote-settings.json"

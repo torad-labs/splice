@@ -1166,7 +1166,8 @@ discovery_prefix = "claude--"
 #                           set by Claude Desktop, never by an operator, on the `claude` it starts: `splice desktop
 #                           acp`, which runs a session on agy in place of `claude`, reads them as Claude Code does,
 #                           for the folder its transcript and session record go in (~/.claude when unset), what
-#                           started it, and Desktop's id for the session.
+#                           started it, and Desktop's id for the session. `splice desktop wrapper` and the doctor look
+#                           in CLAUDE_CONFIG_DIR (~/.claude when unset) for the remote settings Claude Code keeps.
 #   SPLICE_DESKTOP_ESCAPED  set by `splice desktop launch` itself, never by an operator: marks the launch it reruns as a
 #                           user service outside Linux's no-new-privileges bit, so that launch never escapes again
 #   DBUS_SESSION_BUS_ADDRESS read by `splice desktop launch`, never set by splice: with XDG_RUNTIME_DIR's bus or

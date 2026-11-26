@@ -2,12 +2,12 @@
 // from outside splice. Desktop starts a Code tab session through a process wrapper only when Claude Code's managed
 // settings name one (`processWrapper`); splice's Desktop configuration already turns the wrapper on
 // (`claudeCodeProcessWrapperEnabled`, written by `splice desktop on`), but the managed file is the administrator's,
-// root-owned, and splice never writes it. It also needs `parentSettingsBehavior` "merge", so Desktop's own limits still
-// apply to the Code sessions it starts and Desktop does not warn in each. Both verbs say the same things, from
-// WrapperSettings, which the doctor and the upgrade item say too: what is wanted, what splice read, what it did not,
-// what Desktop does (plainly only where it read every place), and what to do. `--print` (the default) also shows the
-// whole file, and the commands that put it in place only where nothing is at its path. `--check` exits 0 where the
-// launcher is laid and the file splice read names it, and 1 otherwise: it confirms no more than that.
+// root-owned, and splice never writes it. It also needs `parentSettingsBehavior` "merge" in the source that wins. Both
+// verbs say the same things, from WrapperSettings, which the doctor and the upgrade item say too: what is wanted, what
+// splice read, the places it did not, what Desktop does (only as the condition), and what to do. `--print` (the
+// default) also shows the wanted keys as a file, and the commands that put it in place only where nothing is at its
+// path. `--check` exits 0 where the launcher is laid and the file splice read names it, and 1 otherwise: it confirms no
+// more than that.
 package splice.app.cli.desktop
 
 import kotlinx.serialization.json.Json
@@ -16,9 +16,6 @@ import splice.app.capability.WrapperSettings
 import splice.app.desktop.setup.DesktopPrograms
 import splice.client.ManagedFile
 import splice.client.ManagedSettings
-import splice.client.PARENT_SETTINGS_KEY
-import splice.client.PARENT_SETTINGS_MERGE
-import splice.client.PROCESS_WRAPPER_KEY
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.topology.TopologyStatePaths
@@ -50,7 +47,6 @@ internal class DesktopWrapper(
     private fun print(settings: WrapperSettings): Int {
         out.line("Claude Code's managed settings need both of these keys:")
         out.line(PRETTY.encodeToString(JsonObject.serializer(), settings.wanted()))
-        out.line(WHY)
         out.line("")
         settings.facts().forEach { out.line("${it.replaceFirstChar(Char::uppercase)}.") }
         settings.step()?.let { out.line("What to do: $it.") }
@@ -89,11 +85,6 @@ internal class DesktopWrapper(
 }
 
 private val PRETTY = Json { prettyPrint = true }
-
-// Why each key is there, said once beside them.
-private const val WHY = "$PROCESS_WRAPPER_KEY names the launcher for Claude Desktop's Code sessions, which gives " +
-    "them splice's key. $PARENT_SETTINGS_KEY \"$PARENT_SETTINGS_MERGE\" keeps the limits in Desktop's own policy " +
-    "applied to them."
 
 // Desktop reads its configuration at launch, so a change reaches it only after the whole app restarts.
 private const val QUIT_AND_REOPEN = "quit Claude Desktop entirely and reopen it."

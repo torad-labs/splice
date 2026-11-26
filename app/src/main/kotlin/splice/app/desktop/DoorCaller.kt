@@ -23,11 +23,8 @@ internal abstract class DoorCaller(
     /** The selector a session of this caller's runs when it has named none, in [lineup]; null when there is none. */
     abstract fun default(lineup: DesktopLineup): String?
 
-    /** The window this caller's sessions hold, which every count the door reports is a share of; null for none. */
-    abstract fun window(): Long?
-
-    /** The window [ask]'s session holds: the caller's own ([window]) unless the request says otherwise. */
-    open fun windowOf(ask: DoorAsk): Long? = window()
+    /** A window the caller's launch configuration suggests, not a reading from this request. */
+    open fun window(): Long? = null
 
     /** The window read off [ask]'s own request, which outranks what its beta alone would say where the turn is
      *  scaled; none by default, since a caller's window is its sessions', read from no one request. */

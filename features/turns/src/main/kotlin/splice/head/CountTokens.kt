@@ -31,6 +31,8 @@ internal class CountTokens(
     private val bodyParse: AnthropicBodyParse,
     private val responses: AdmissionResponses,
 ) {
+    private val clientWindow = ClientWindowWitness(deps.stores.clientWindows)
+
     suspend fun handleCountTokens(call: ApplicationCall) {
         // NO turn-gate slot here: count_tokens is a purely LOCAL estimate (no upstream stream),
         // and queueing it on maxInflight let a saturated head stall or 529 Claude Code's
@@ -48,8 +50,9 @@ internal class CountTokens(
                     readBytes = read.body.bytes.toLong()
                     Materialized.Done(
                         bodyParse.parse(read.body.text).map { body ->
-                            other = deps.traffic.others.claim(counted(call, body))
-                            scaled(call, body.typed.model, PromptTokenEstimate.forRequest(readBytes, body.typed))
+                            val ask = counted(call, body)
+                            other = deps.traffic.others.claim(ask)
+                            scaled(call, ask, PromptTokenEstimate.forRequest(readBytes, body.typed))
                         },
                     )
                 }
@@ -72,14 +75,8 @@ internal class CountTokens(
         )
     }
 
-    /** [estimate] as the same share of the declared window that it is of the model's own, when the gateway handed this
-     *  count over with the window its session's client holds, by the factor that scales a turn's usage; a head's own
-     *  count carries none and stays raw. The window the gateway read off this request rides with the handed one, so
-     *  a row with a selector-owned window (a `[1m]` row) counts against the configured window too. */
-    private fun scaled(call: ApplicationCall, model: String, estimate: Long): Long {
-        val turn = GatewayTurns.of(call) ?: return estimate
-        val window = turn.clientWindow?.takeIf { it > 0L } ?: return estimate
-        return (estimate * provider.catalog.usageScale(model, window, turn.requestWindow)).toLong()
+    private fun scaled(call: ApplicationCall, ask: OtherAsk, estimate: Long): Long {
+        return clientWindow.sizing(call, provider.catalog, ask.model, ask.session).scale(estimate)
     }
 
     /** [body], a `count_tokens` of [call]'s, as another head is asked to count it. */

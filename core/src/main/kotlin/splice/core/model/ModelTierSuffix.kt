@@ -5,6 +5,9 @@ package splice.core.model
 public object ModelTierSuffix {
     private val hint = Regex("\\[\\d+[km]]$", RegexOption.IGNORE_CASE)
 
+    /** Claude Code recognizes the literal hint anywhere in the id, unlike the trailing routing suffix. */
+    public fun isOneMillion(id: String): Boolean = id.contains("[1m]", ignoreCase = true)
+
     /** [id] with a trailing tier hint removed; every other id is returned unchanged. */
     public fun strip(id: String): String = id.replace(hint, "")
 

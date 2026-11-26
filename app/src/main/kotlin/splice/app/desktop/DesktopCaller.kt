@@ -33,12 +33,6 @@ internal class DesktopCaller(
 
     override fun default(lineup: DesktopLineup): String? = records.get().defaultModel
 
-    /** The window an older splice's `on` told Desktop's environment store, for a request of that door. */
-    override fun window(): Long? = records.get().window
-
-    /** In app mode, the window Desktop gave the Code tab for the request's model (DesktopAppWindow); else [window]. */
-    override fun windowOf(ask: DoorAsk): Long? = ask.appWindow ?: window()
-
     /** An app-mode window is read off the request itself, beta and model weighed at the door, so it stands where
      *  the beta would when the turn's counts are scaled. */
     override fun requestWindowOf(ask: DoorAsk): Long? = ask.appWindow

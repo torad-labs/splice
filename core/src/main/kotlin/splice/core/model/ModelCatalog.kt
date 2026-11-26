@@ -17,18 +17,10 @@ import kotlinx.serialization.Transient
  *  source that can drift. */
 public const val CLAUDE_CODE_ONE_MILLION: Long = 1_000_000L
 
-/** Claude Code's own id-keyed window hook, matched anywhere in the client id. */
-// UNANCHORED on purpose, unlike the strip rule (DR-27): this predicate exists to predict what the
-// CLIENT will do, and Claude Code's own detection is a containsMatch — `/\[1m\]/i` (cli 2.1.233
-// `G4u`) — anywhere in the id. The anchored version disagreed with the client for a mid-string
-// spelling ("k3[1m]-preview"): the client used 1e6 while usageScale corrected against the pinned
-// window, a silently wrong factor. Mirror the client, never improve on it.
-private val oneMillionHint = Regex("\\[1m]", RegexOption.IGNORE_CASE)
-
 /** Claude Code honors CLAUDE_CODE_MAX_CONTEXT_TOKENS only for an active id NOT starting with this
  *  (cli 2.1.257 `kL`: `!id.startsWith("claude-") && !knownAlias(id)`); any other id resolves to
  *  the client's built-in table or its 200k default, and nothing we launch with can move it. */
-private const val CLIENT_OWN_ID_PREFIX = "claude-"
+internal const val CLIENT_OWN_ID_PREFIX = "claude-"
 
 /** V4-232: the window Claude Code gives a Claude model it knows when the base URL is not Anthropic's,
  *  which is every head's (ANTHROPIC_BASE_URL is the head's own 127.0.0.1 port): its own table, never
@@ -272,25 +264,11 @@ public data class ModelCatalog(
      *  session's status-line post reveals (ClientWindows). False for a "[1m]" id (always 1e6) and
      *  a "claude-" id (Claude Code's own table): their posts say nothing about the env. */
     public fun envGoverned(id: String): Boolean = !client.open &&
-        !oneMillionHint.containsMatchIn(unwrap(id)) && !id.startsWith(CLIENT_OWN_ID_PREFIX) && !presented.covers(id)
+        !ModelTierSuffix.isOneMillion(unwrap(id)) && !id.startsWith(CLIENT_OWN_ID_PREFIX) && !presented.covers(id)
 
-    public fun usageScale(id: String, sessionWindow: Long? = null, requestWindow: Long? = null): Double {
-        val declared = contextWindowFor(id)
-        // An undeclared [1m] tier still resolves its real window through stripSuffixes. An
-        // explicit reserve overrides the provider's default, never the client's selector window.
-        // An open head keeps raw counts except for a Claude session with a learned divisor.
-        val learnedClaude = id.startsWith(CLIENT_OWN_ID_PREFIX) && !presented.selectorSized(id)
-        val client = when {
-            !client.open -> clientContextWindowFor(id, sessionWindow, requestWindow)
-            sessionWindow?.takeIf { it > 0 } != null && learnedClaude ->
-                clientContextWindowFor(id, sessionWindow, requestWindow)
-            else -> 0L
-        }
-        if (declared <= 0 || client <= 0) return 1.0
-        val budget = CompactionBudgets.forRow(this, id) ?: return client.toDouble() / declared
-        val realInputTarget = (declared - budget.totalTokens).coerceAtLeast(1)
-        return ClaudeCodeCompactThreshold.tokens(client).toDouble() / realInputTarget
-    }
+    /** The ratio for a known client window, also used to translate counts back out of client units. */
+    public fun usageScale(id: String, sessionWindow: Long? = null, requestWindow: Long? = null): Double =
+        WindowUsage(this).known(id, sessionWindow, requestWindow).factor
 
     /** The immutable catalog snapshot in force now: live windows and refreshed discovery (V4-440).
      *  Field readers resolve this once per operation; roster and window methods already delegate. */
@@ -372,7 +350,7 @@ public data class CatalogWindows(
  *  ([ModelCatalog.clientContextWindowFor] puts a request's own reading ahead of it). */
 private class SelectorWindow(private val catalog: ModelCatalog) {
     fun of(id: String, sessionWindow: Long?): Long = when {
-        oneMillionHint.containsMatchIn(catalog.unwrap(id)) -> CLAUDE_CODE_ONE_MILLION
+        ModelTierSuffix.isOneMillion(catalog.unwrap(id)) -> CLAUDE_CODE_ONE_MILLION
         // V4-232: a presented row is one the client knows, so its window is the client's table, and
         // unlike a "claude-" id below we know that number, so the factor is honest rather than 1.0.
         catalog.presented.covers(id) -> CLIENT_TABLE_WINDOW
@@ -431,7 +409,7 @@ public class PresentedRows internal constructor(models: List<ModelEntry>, privat
     public fun covers(id: String): Boolean = (byId[raw(id)] ?: byId[upstream(id)]) == true
 
     /** Selector-owned windows cannot teach a session's otherwise unknown process divisor. */
-    public fun selectorSized(id: String): Boolean = oneMillionHint.containsMatchIn(raw(id)) || covers(id)
+    public fun selectorSized(id: String): Boolean = ModelTierSuffix.isOneMillion(raw(id)) || covers(id)
 
     private fun raw(id: String): String = id.removePrefix(discoveryPrefix)
 

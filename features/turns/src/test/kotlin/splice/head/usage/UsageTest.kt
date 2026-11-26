@@ -19,17 +19,14 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.head.ProviderAnswer
 import splice.core.model.CatalogWindows
+import splice.core.model.ClientWindow
 import splice.core.model.CompactionReserve
 import splice.core.model.CompactionReserveDefaults
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.model.WindowUsage
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.CacheWrite
-import splice.core.turn.ReasoningDisplay
-import splice.core.turn.TurnMeta
-import splice.core.turn.TurnReasoning
-import splice.core.turn.TurnRoute
-import splice.core.turn.TurnScope
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
 import splice.core.usage.RateLimitState
@@ -506,24 +503,10 @@ class UsageScalingTest {
         pinnedModel = "grok-4.6",
     )
 
-    private fun meta(model: String) = TurnMeta(
-        compact = false,
-        reasoning = TurnReasoning(
-            showReasoning = ReasoningDisplay.TEXT,
-            effort = "high",
-            summary = null,
-            budgetTokens = null,
-        ),
-        route = TurnRoute(
-            stream = true,
-            originalModel = model,
-            upstreamModel = xai.stripSuffixes(model),
-            clientMaxTokens = null,
-        ),
-    )
-
     private fun payload(model: String, input: Long, cached: Long) =
-        wiring.usagePayloadBuilder(xai, meta(model))(Usage(input, 7, cached))
+        wiring.usagePayloadBuilder(model, WindowUsage(xai).of(model, ClientWindow.Stated(256_000)))(
+            Usage(input, 7, cached),
+        )
 
     @Test
     fun `codex reserve scales every input bucket while output stays raw`() {
@@ -541,7 +524,8 @@ class UsageScalingTest {
         // C=200k gives T=153k. W=272k minus luna's clean growth p99 7830 and generation
         // p99 31791 leaves 232379: 20000*T/232379 truncates to 13168, not the old 13192.
         val factor = 153_000.0 / (272_000 - 39_621)
-        val p = wiring.usagePayloadBuilder(codex, meta("gpt-5.6-luna"), sessionWindow = 200_000)(
+        val model = "gpt-5.6-luna"
+        val p = wiring.usagePayloadBuilder(model, WindowUsage(codex).of(model, ClientWindow.Stated(200_000)))(
             Usage(inputTokens = 100_000, outputTokens = 7, cachedTokens = 60_000, cacheWrite = CacheWrite(20_000)),
         )
         assertEquals((20_000 * factor).toLong(), p["input_tokens"]?.jsonPrimitive?.content?.toLong())
@@ -555,7 +539,8 @@ class UsageScalingTest {
         val logged = mutableListOf<String>()
         val wiring = TurnWiring(LogSink { logged += it })
         repeat(2) {
-            val builder = wiring.usagePayloadBuilder(xai, meta("grok-4.6[500k]"))
+            val model = "grok-4.6[500k]"
+            val builder = wiring.usagePayloadBuilder(model, WindowUsage(xai).of(model, ClientWindow.Stated(256_000)))
             builder(Usage(1_000, 7, 200))
             builder(Usage(2_000, 7, 200))
         }
@@ -563,7 +548,9 @@ class UsageScalingTest {
         assertTrue(logged.single().contains("grok-4.6[500k]"), "the line names the row: $logged")
 
         val exact = mutableListOf<String>()
-        TurnWiring(LogSink { exact += it }).usagePayloadBuilder(xai, meta("grok-4.3[1m]"))(Usage(1_000, 7, 200))
+        val model = "grok-4.3[1m]"
+        val usage = WindowUsage(xai).of(model, ClientWindow.Stated(1_000_000))
+        TurnWiring(LogSink { exact += it }).usagePayloadBuilder(model, usage)(Usage(1_000, 7, 200))
         assertTrue(exact.isEmpty(), "an exact row (declared 1e6 = the client's 1e6) must not log, got $exact")
     }
 
@@ -613,7 +600,10 @@ class UsageScalingTest {
 
     @Test
     fun `a 1m row rides Claude Code's own hook and is reported exactly`() {
-        val p = payload("grok-4.3[1m]", input = 400_000, cached = 0)
+        val model = "grok-4.3[1m]"
+        val p = wiring.usagePayloadBuilder(model, WindowUsage(xai).of(model, ClientWindow.Stated(1_000_000)))(
+            Usage(400_000, 7, 0),
+        )
         assertEquals(400_000, p["input_tokens"]?.jsonPrimitive?.content?.toLong())
         assertEquals(1_000_000, p["context_window"]?.jsonPrimitive?.content?.toLong())
     }
@@ -734,25 +724,10 @@ class SessionWindowUsageTest {
         pinnedModel = "grok-4.6",
     )
 
-    private fun meta(model: String) = TurnMeta(
-        compact = false,
-        reasoning = TurnReasoning(
-            showReasoning = ReasoningDisplay.TEXT,
-            effort = "high",
-            summary = null,
-            budgetTokens = null,
-        ),
-        route = TurnRoute(
-            stream = true,
-            originalModel = model,
-            upstreamModel = xai.stripSuffixes(model),
-            clientMaxTokens = null,
-        ),
-        scope = TurnScope(sessionId = "s-old"),
-    )
-
     private fun payload(model: String, input: Long, cached: Long, sessionWindow: Long?) =
-        TurnWiring().usagePayloadBuilder(xai, meta(model), sessionWindow)(Usage(input, 7, cached))
+        TurnWiring().usagePayloadBuilder(model, WindowUsage(xai).of(model, ClientWindow.Hint(sessionWindow)))(
+            Usage(input, 7, cached),
+        )
 
     @Test
     fun `a session's own window drives its scale and is what the payload declares`() {
@@ -809,24 +784,11 @@ class ClientCacheWriteTest {
         pinnedModel = "grok-4.6",
     )
 
-    private fun meta(catalog: ModelCatalog, model: String) = TurnMeta(
-        compact = false,
-        reasoning = TurnReasoning(
-            showReasoning = ReasoningDisplay.TEXT,
-            effort = "high",
-            summary = null,
-            budgetTokens = null,
-        ),
-        route = TurnRoute(
-            stream = true,
-            originalModel = model,
-            upstreamModel = catalog.stripSuffixes(model),
-            clientMaxTokens = null,
-        ),
-    )
-
     private fun payload(catalog: ModelCatalog, model: String, usage: Usage) =
-        TurnWiring().usagePayloadBuilder(catalog, meta(catalog, model))(usage)
+        TurnWiring().usagePayloadBuilder(
+            model,
+            WindowUsage(catalog).of(model, ClientWindow.Stated(catalog.clientLaunchWindow)),
+        )(usage)
 
     private fun kotlinx.serialization.json.JsonObject.long(key: String) = this[key]?.jsonPrimitive?.content?.toLong()
 

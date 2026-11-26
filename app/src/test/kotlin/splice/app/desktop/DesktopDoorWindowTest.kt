@@ -46,18 +46,13 @@ import splice.head.scripted.reply
 import splice.head.scripted.withScriptedHeads
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
+import java.nio.file.Files
 import java.nio.file.Path
 
 class DesktopDoorWindowTest {
     /** The scripted provider's one row, spelled with the 1M hint; it declares a 200,000 window. */
     private val row = "muse-spark[1m]"
     private val prefix = "claude-scripted-headless-chat--"
-
-    /** What Claude Desktop's Code tab asks for that row: the selector without the hint, which its Claude Code strips,
-     *  and not streamed, so the counts come back in one body. */
-    private val codeTabAsk =
-        """{"model":"${prefix}muse-spark","max_tokens":64,"stream":false,""" +
-            """"messages":[{"role":"user","content":"hello"}]}"""
 
     @Test
     fun `a 1M row's Code-tab counts scale to the configured big window, not the client's million`(
@@ -81,17 +76,78 @@ class DesktopDoorWindowTest {
         }
     }
 
-    /** The answer [codeTabAsk] gets at [path] of a door whose `[desktop]` is [desktop], as Claude Desktop's app mode
-     *  asks it: its key, its app-mode header and the 1M beta its Claude Code adds for a model picked as its 1M
-     *  variant. */
-    private fun asked(state: Path, runtime: ProviderRuntime, desktop: DesktopConfig, path: String): String =
+    @Test
+    fun `a legacy Desktop record cannot make a turn or count underreport its input`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(reply { chatAnswer("answered") })
+            val model = "claude-opus-5-5"
+            val runtime = headless.chat(HeadShape(model = model)).runtime
+            val request = Ask(model, headers = emptyList())
+            val state = tmp.resolve("upgrade")
+            val file = StatePaths(baseOverride = state.resolve("state")).desktopFile
+            Files.createDirectories(file.parent)
+            Files.writeString(file, """{"on":true,"window":80000}""")
+            assertEquals(12L, reportedInput(asked(state, runtime, DesktopConfig(), TURN, request)))
+            val stream = asked(state, runtime, DesktopConfig(), TURN, request.copy(stream = true))
+            val terminal = stream.lineSequence().filter { it.startsWith("data: ") }
+                .map { it.removePrefix("data: ") }
+                .first { Json.parseToJsonElement(it).jsonObject["type"]?.jsonPrimitive?.content == "message_delta" }
+            assertEquals(12L, reportedInput(terminal))
+            val raw = countOf(asked(tmp.resolve("fresh"), runtime, DesktopConfig(), COUNT, request))
+            assertEquals(raw, countOf(asked(state, runtime, DesktopConfig(), COUNT, request)))
+        }
+    }
+
+    @Test
+    fun `a 1M suffix in the request sizes counts even when routing to a bare provider id`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(reply { chatAnswer("answered") })
+            val runtime = headless.chat(HeadShape(model = "muse-spark")).runtime
+            val bare = Ask("muse-spark", headers = emptyList(), model = "${prefix}muse-spark")
+            val million = bare.copy(model = "${bare.model}[1m]")
+            assertEquals(60L, reportedInput(asked(tmp, runtime, DesktopConfig(), TURN, million)))
+            val raw = countOf(asked(tmp, runtime, DesktopConfig(), COUNT, bare))
+            assertEquals(raw * 5, countOf(asked(tmp, runtime, DesktopConfig(), COUNT, million)))
+            val beta = bare.copy(headers = listOf("anthropic-beta" to "context-1m-2025-08-07"))
+            assertEquals(raw * 5, countOf(asked(tmp, runtime, DesktopConfig(), COUNT, beta)))
+            // The launch header does not govern the requested Claude-prefixed ID, even though its provider ID is bare.
+            val launch = bare.copy(headers = listOf("x-splice-client-window" to "80000"))
+            assertEquals(12L, reportedInput(asked(tmp, runtime, DesktopConfig(), TURN, launch)))
+            assertEquals(raw, countOf(asked(tmp, runtime, DesktopConfig(), COUNT, launch)))
+        }
+    }
+
+    private data class Ask(
+        val row: String,
+        val headers: List<Pair<String, String>>,
+        val model: String = row,
+        val stream: Boolean = false,
+    ) {
+        val body: String
+            get() = """{"model":"$model","max_tokens":64,"stream":$stream,""" +
+                """"messages":[{"role":"user","content":"hello"}]}"""
+    }
+
+    private fun asked(
+        state: Path,
+        runtime: ProviderRuntime,
+        desktop: DesktopConfig,
+        path: String,
+        ask: Ask = Ask(
+            row,
+            listOf("x-splice-desktop" to "app", "anthropic-beta" to "context-1m-2025-08-07"),
+            model = "${prefix}muse-spark",
+        ),
+    ): String =
         UserHome.within(state.resolve("home")) {
             val log = LogSink {}
             val paths = StatePaths(baseOverride = state.resolve("state"))
             val key = DesktopKey(paths.desktopKeyFile, log)
             val records = DesktopRecords(paths.desktopFile, log).also { r -> r.update { it.copy(on = true) } }
             val providers = DesktopProviders(
-                serving = ServingProviders { listOf(Served(runtime)) },
+                serving = ServingProviders { listOf(Served(runtime, ask.row)) },
                 desktopOnly = ServingProviders { emptyList() },
                 aliases = SelectorAliases(emptyList()),
                 published = PublishedCatalog(CatalogBuild(), CatalogFile(paths.modelCatalogFile, log), Dispatchers.IO),
@@ -106,10 +162,9 @@ class DesktopDoorWindowTest {
                 val response = client.post(path) {
                     contentType(ContentType.Application.Json)
                     header("Authorization", "Bearer ${key.get()}")
-                    header("x-splice-desktop", "app")
                     header("anthropic-beta", "claude-code-20250219")
-                    header("anthropic-beta", "context-1m-2025-08-07")
-                    setBody(codeTabAsk)
+                    ask.headers.forEach { (name, value) -> header(name, value) }
+                    setBody(ask.body)
                 }
                 text = response.bodyAsText()
                 assertEquals(200, response.status.value, text)
@@ -125,7 +180,7 @@ class DesktopDoorWindowTest {
         Json.parseToJsonElement(answer).jsonObject.getValue("input_tokens").jsonPrimitive.content.toLong()
 
     /** The scripted provider as the door reads it: its `[1m]` row under its selector, its turns run by [runtime]. */
-    private inner class Served(private val runtime: ProviderRuntime) : ServedProvider {
+    private inner class Served(private val runtime: ProviderRuntime, private val row: String) : ServedProvider {
         override val key: String = "scripted-headless-chat"
         override val catalog: ModelCatalog = ModelCatalog(
             discoveryPrefix = prefix,

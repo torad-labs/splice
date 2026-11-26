@@ -8,6 +8,7 @@
 // ones this install's Desktop gives, so scaling follows the window Desktop actually sets here.
 package splice.client.desktop
 
+import splice.core.model.ModelTierSuffix
 import splice.core.topology.desktop.DesktopConfig
 
 public class DesktopAppWindow(private val desktop: DesktopConfig = DesktopConfig()) {
@@ -18,7 +19,7 @@ public class DesktopAppWindow(private val desktop: DesktopConfig = DesktopConfig
      *  [beta]; null for a request that is not app mode's. */
     public fun of(header: String?, beta: String?, model: String): Long? {
         if (!app(header)) return null
-        val million = model.endsWith(ONE_MILLION_HINT, ignoreCase = true) ||
+        val million = ModelTierSuffix.isOneMillion(model) ||
             beta.orEmpty().split(',').any { it.trim().startsWith(MILLION_WINDOW_BETA) }
         return if (million) desktop.codeWindow1m else desktop.codeWindow
     }
@@ -27,6 +28,5 @@ public class DesktopAppWindow(private val desktop: DesktopConfig = DesktopConfig
 /** The request header Claude Code names its betas in. */
 public const val ANTHROPIC_BETA_HEADER: String = "anthropic-beta"
 
-// How a model's 1M variant is named, and the beta Claude Code asks for it with.
-private const val ONE_MILLION_HINT = "[1m]"
+// The beta Claude Code asks for the 1M variant with.
 private const val MILLION_WINDOW_BETA = "context-1m-"

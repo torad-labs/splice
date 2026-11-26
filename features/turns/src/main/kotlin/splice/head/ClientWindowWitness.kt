@@ -1,57 +1,56 @@
-// NEW: V4-358. What a request says about the window its client holds.
-//
-// A row spelled with the 1M hint reaches the head WITHOUT it: Claude Code 2.1.283 strips /\[1m\]/i from
-// the id before it writes the body's `model` (its `i0(Mn(id))`), and instead adds the 1M-context beta to
-// `anthropic-beta`, for exactly the ids /\[1m\]/i matches (its `Kd`, the same test that lifts the image
-// cap and fixes the window at 1e6). Measured Sep 28 against a local stub with the real client: model
-// `gpt-6-sol[1m]` sent body model `gpt-6-sol` and `context-1m-2025-08-07`; `gpt-6-sol` sent no such beta.
-// So the beta is the one place the head can read which window the client divides by on THIS request, and
-// scaling the counts by client/declared needs it.
-//
-// #706 (2026-11-20): any other env-governed id is divided by the CLAUDE_CODE_MAX_CONTEXT_TOKENS of the
-// process that sent it, and a session id does not name a process: a resumed id kept the window an earlier
-// process posted, and a session whose main thread runs `[1m]` never posts a new one. A launch names its window
-// in [CLIENT_WINDOW_HEADER], so the request says it, the way it says the 1M beta.
 package splice.head
 
 import io.ktor.server.application.ApplicationCall
 import splice.core.model.CLAUDE_CODE_ONE_MILLION
 import splice.core.model.CLIENT_WINDOW_HEADER
+import splice.core.model.ClientWindow
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
-import splice.core.turn.TurnMeta
+import splice.core.model.ModelTierSuffix
+import splice.core.model.UsageSizing
+import splice.core.model.WindowUsage
 
-/** The window a turn's counts are scaled against: what its own request says the client holds, else what
- *  the session's status-line posts taught ([ClientWindows]), else null (the launch env's). Per request
- *  first, because a session can move between a row spelled 1M and one that is not with /model, and only
- *  the request knows which it is on; and because a session id moves between processes, and only the request
- *  knows which process sent it. */
-internal class ClientWindowWitness(private val posted: ClientWindows) {
-    /** The window a gateway read off [call]'s own request (Desktop's app mode, weighed against splice.toml's
-     *  `[desktop]` windows at the door), or null where none was: every other door. It goes to the catalog as its
-     *  own argument beside [of], because as a session window alone it would still lose to a row's selector-owned
-     *  window (a `[1m]` row's fixed million) inside the scale. */
-    fun requested(call: ApplicationCall): Long? = GatewayTurns.of(call)?.requestWindow?.takeIf { it > 0L }
+/** A request speaks for its own divisor; neither a gateway's launch record nor a session's post can do that. */
+internal class ClientWindowWitness(private val posted: ClientWindows? = null) {
+    fun sizing(
+        call: ApplicationCall,
+        catalog: ModelCatalog,
+        model: String,
+        sessionId: String?,
+        turn: GatewayTurn? = GatewayTurns.of(call),
+    ): UsageSizing = WindowUsage(catalog).of(model, of(call, catalog, turn?.asked ?: model, sessionId, turn))
 
-    fun of(call: ApplicationCall, catalog: ModelCatalog, meta: TurnMeta): Long? {
-        val headers = call.request.headers
-        val betas = headers.getAll(BETA_HEADER).orEmpty().flatMap { it.split(',') }
-        val said = CLAUDE_CODE_ONE_MILLION.takeIf { betas.any { it.trim().startsWith(ONE_MILLION_BETA) } }
-        // A gateway that read the window off this request itself has already weighed the beta, so its reading
-        // stands in the beta's place: the beta alone would put back the client's own million over a configured one.
-        val requested = requested(call)
-        // The launch's window describes only an id the client sizes from the launch env; a `claude-` id is
-        // sized from the client's own table, which only its status-line post reveals.
-        val launched = headers[CLIENT_WINDOW_HEADER]?.trim()?.toLongOrNull()?.takeIf { it > 0L }
-            ?.takeIf { catalog.envGoverned(meta.route.originalModel) }
-        // A gateway turn carries the window its gateway holds for the session, which is what a session's own posts
-        // taught it: so it sits where [posted] does, below what the request itself says (#706), never above it.
-        val handed = GatewayTurns.of(call)?.clientWindow?.takeIf { it > 0L }
-        return requested ?: said ?: launched ?: handed ?: posted.windowFor(meta.scope.sessionId)
+    private fun of(
+        call: ApplicationCall,
+        catalog: ModelCatalog,
+        asked: String,
+        sessionId: String?,
+        turn: GatewayTurn?,
+    ): ClientWindow {
+        val stated = turn?.requestWindow?.takeIf { it > 0 }
+            ?: oneMillion(call, asked)
+            ?: launched(call, catalog, asked)
+        return if (stated != null) {
+            ClientWindow.Stated(stated)
+        } else {
+            ClientWindow.Hint(turn?.clientWindow?.takeIf { it > 0 } ?: posted?.windowFor(sessionId))
+        }
     }
+
+    // Claude Code can strip [1m] before writing the body and carry it in the beta instead.
+    private fun oneMillion(call: ApplicationCall, asked: String): Long? {
+        if (ModelTierSuffix.isOneMillion(asked)) return CLAUDE_CODE_ONE_MILLION
+        val betas = call.request.headers.getAll(BETA_HEADER).orEmpty()
+        return CLAUDE_CODE_ONE_MILLION.takeIf {
+            betas.any { line -> line.split(',').any { it.trim().startsWith(ONE_MILLION_BETA) } }
+        }
+    }
+
+    // The launch only describes the divisor of a row the client sizes from its environment.
+    private fun launched(call: ApplicationCall, catalog: ModelCatalog, model: String): Long? =
+        call.request.headers[CLIENT_WINDOW_HEADER]?.trim()?.toLongOrNull()
+            ?.takeIf { it > 0L && catalog.envGoverned(model) }
 }
 
 private const val BETA_HEADER = "anthropic-beta"
-
-// why: the client's 1M-context beta is dated ("context-1m-2025-08-07"); a later date is the same claim
 private const val ONE_MILLION_BETA = "context-1m-"

@@ -32,7 +32,7 @@ internal class DoorRelay(
         val turn = GatewayTurn(
             ask.asking(route.upstream),
             caller.named,
-            caller.windowOf(ask),
+            caller.window(),
             asked = ask.model,
             requestWindow = caller.requestWindowOf(ask),
         )

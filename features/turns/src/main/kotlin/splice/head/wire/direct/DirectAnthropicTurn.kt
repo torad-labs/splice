@@ -10,9 +10,11 @@ import io.ktor.server.response.respond
 import splice.core.failure.FailureCause
 import splice.core.failure.HeadVoice
 import splice.core.model.ModelCatalog
+import splice.core.model.UsageSizing
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
 import splice.core.util.JsonWire
+import splice.head.ClientWindowWitness
 import splice.head.GatewayTurn
 import splice.head.wire.CollectingTerminal
 import splice.head.wire.FrameWrite
@@ -45,6 +47,7 @@ public class DirectAnthropicTurn(
 ) {
     private val emitters = SseEmitterFactory()
     private val wiring = TurnWiring()
+    private val clientWindow = ClientWindowWitness()
 
     /** [model]'s turn served on [call], its counts scaled to [turn]'s windows: the one its session holds and the one
      *  its gateway read off the request. */
@@ -55,13 +58,20 @@ public class DirectAnthropicTurn(
         turn: GatewayTurn,
         drive: DirectTurnDrive,
     ) {
-        val usagePayload = wiring.usagePayloadBuilderFor(catalog, model, turn.clientWindow, turn.requestWindow)
+        val usagePayload = wiring.usagePayloadBuilder(model, sizing(call, model, turn))
         if (stream) {
             serveStream(call, model, usagePayload, drive)
         } else {
             serveCollected(call, model, usagePayload, drive)
         }
     }
+
+    /** A local count in the same input units as a Messages response. */
+    public fun countInput(call: ApplicationCall, model: String, turn: GatewayTurn, estimate: Long): Long =
+        sizing(call, model, turn).scale(estimate)
+
+    private fun sizing(call: ApplicationCall, model: String, turn: GatewayTurn): UsageSizing =
+        clientWindow.sizing(call, catalog, model, sessionId = null, turn = turn)
 
     private suspend fun serveStream(
         call: ApplicationCall,

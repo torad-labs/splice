@@ -161,7 +161,6 @@ internal class TurnDriver(
         sealedDrive,
         deps.turnQuota,
         detachOwner,
-        deps.stores.clientWindows,
         deps.traffic.upstream.retryWall,
     )
 

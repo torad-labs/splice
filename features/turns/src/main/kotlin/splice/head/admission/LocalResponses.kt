@@ -11,9 +11,11 @@ import io.ktor.server.response.respond
 import splice.core.failure.FailureCause
 import splice.core.failure.HeadVoice
 import splice.core.failure.RequestFacts
+import splice.core.model.UsageSizing
 import splice.core.perf.TurnPerf
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
+import splice.head.ClientWindowWitness
 import splice.head.HeadDeps
 import splice.head.compaction.CompactionReplay
 import splice.head.compaction.RecordedAnswer
@@ -41,16 +43,14 @@ internal class LocalResponses(
 ) {
     private val emitters = SseEmitterFactory()
     private val wiring = TurnWiring()
+    private val clientWindow = ClientWindowWitness(deps.stores.clientWindows)
     private val compactionVoice = voice.turn(RequestFacts(compaction = true, firstExchange = false))
 
     /** One text block, an end_turn terminal, zero usage: the side query is not a context read. */
     suspend fun answer(call: ApplicationCall, local: Preparation.Local, perf: TurnPerf) {
         RequestObservation.local(perf, local.model, local.sessionId, local.stream)
-        val usage = wiring.usagePayloadBuilderFor(
-            provider.catalog,
-            local.model,
-            deps.stores.clientWindows.windowFor(local.sessionId),
-        )
+        val sizing = clientWindow.sizing(call, provider.catalog, local.model, local.sessionId)
+        val usage = wiring.usagePayloadBuilder(local.model, sizing)
         quotaHeaders(call, local.sessionId)
         if (local.stream) {
             val stream = SseResponse { out ->
@@ -114,7 +114,7 @@ internal class LocalResponses(
         val reply = collected.hold.await()
         if (reply == null) {
             quotaHeaders(call, collected.sessionId)
-            respondUnfinished(call, collected.model, collected.sessionId, collected.compaction)
+            respondUnfinished(call, collected.model, collected.compaction)
             deps.log(
                 "[${provider.key}] collect retry followed a $what that did not finish ($who; " +
                     "sealed with an error, the next retry runs upstream)\n",
@@ -147,7 +147,7 @@ internal class LocalResponses(
         val whole = recorded.recording.follow { frame -> answer.accept(frame) }
         val body = answer.message()?.takeIf { whole }
         if (body == null) {
-            respondUnfinished(call, recorded.model, recorded.sessionId)
+            respondUnfinished(call, recorded.model)
             deps.log(
                 "[${provider.key}] collect compaction retry followed a streamed compaction that did not finish " +
                     "($who; sealed with an error, the next retry runs upstream)\n",
@@ -167,12 +167,11 @@ internal class LocalResponses(
     private suspend fun respondUnfinished(
         call: ApplicationCall,
         model: String,
-        sessionId: String?,
         compaction: Boolean = true,
     ) {
         val terminal = CollectingTerminal(
             model,
-            wiring.usagePayloadBuilderFor(provider.catalog, model, deps.stores.clientWindows.windowFor(sessionId)),
+            wiring.usagePayloadBuilder(model, UsageSizing()),
             voice = if (compaction) compactionVoice else voice.anyTurn,
         )
         terminal.emitError(FailureCause.Splice.CompactionUnfinished)
@@ -185,11 +184,7 @@ internal class LocalResponses(
         val emitter = emitters.create(
             write = write,
             model = replayed.model,
-            usagePayload = wiring.usagePayloadBuilderFor(
-                provider.catalog,
-                replayed.model,
-                deps.stores.clientWindows.windowFor(replayed.sessionId),
-            ),
+            usagePayload = wiring.usagePayloadBuilder(replayed.model, UsageSizing()),
             voice = compactionVoice,
         )
         emitter.emitError(FailureCause.Splice.CompactionUnfinished)

@@ -1,6 +1,6 @@
 // NEW: gateway-no-heads. What the gateway has already decided about a turn when it hands it to a ProviderRuntime: it
-// read the body to route (and set `model` to the provider's own id), admitted the caller at its own door, and knows the
-// window this session's Claude Code holds. A Ktor call's body can be read once, so the turn travels with it; the call
+// read the body to route (and set `model` to the provider's own id) and admitted the caller at its own door.
+// A Ktor call's body can be read once, so the turn travels with it; the call
 // itself still carries every header (anthropic-beta, session and agent ids) the pipeline reads as it does for a head.
 package splice.head
 
@@ -11,8 +11,7 @@ import splice.head.wire.NATIVE_CLIENT_PING_MS
 
 /** One turn as the gateway hands it to a [ProviderRuntime]: [body] is the client's body with `model` already set to
  *  the provider's own id, [door] is what the perf row's `door` says (`desktop`, `claude` or `network`), and
- *  [clientWindow] is the window this session's client holds, which counts are scaled to; null when the gateway does
- *  not know it, which leaves the window to what the request and the session's own posts say.
+ *  [clientWindow] is a hint from the gateway's launch configuration, not the divisor of any one request.
  *
  *  [listener] is what an authenticated listener in front of the gateway (the team server) says of a turn it relays. It is
  *  typed values the gateway fills, never read from the call's headers: a header on a gateway call is the caller's, and a

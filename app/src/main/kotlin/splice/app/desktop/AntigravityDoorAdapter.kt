@@ -69,7 +69,8 @@ internal class AntigravityDoorAdapter(
 
     suspend fun countTokens(call: ApplicationCall, turn: GatewayTurn) {
         val estimate = (turn.body.size / CHARS_PER_TOKEN).coerceAtLeast(1)
-        val payload = buildJsonObject { put("input_tokens", estimate) }
+        val count = directTurn.countInput(call, turn.asked.orEmpty(), turn, estimate.toLong())
+        val payload = buildJsonObject { put("input_tokens", count) }
         JsonReply(HttpStatusCode.OK, JsonWire.string(payload)).send(call)
     }
 

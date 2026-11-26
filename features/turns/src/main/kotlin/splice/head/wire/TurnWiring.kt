@@ -46,4 +46,5 @@ internal class TurnWiring(
     }
 }
 
+// why: bound the remembered factors; even a catalog with many rows need not keep every old window edit.
 private const val MAX_SAID_SCALES = 256

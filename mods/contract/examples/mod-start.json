@@ -1,0 +1,11 @@
+{
+  "mod": "reviews",
+  "version": "1.0.0",
+  "served": [
+    "session.start",
+    "mod.stop"
+  ],
+  "refused": [
+    "sessions.list is not served yet."
+  ]
+}

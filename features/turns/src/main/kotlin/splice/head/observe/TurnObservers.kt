@@ -4,7 +4,14 @@ import splice.core.turn.TurnObservation
 
 /** Admission-time offer port. Return null if no turn events are wanted; never wait, run a mod, or do I/O here. */
 public interface TurnObservers {
+    public val observingTurns: Boolean get() = true
+
+    /** Remember first sight without allocating a turn observation when no mod wants turns. */
+    public fun sessionSeen(sessionId: String, launchOwner: String?) {}
+
     public fun begin(facts: ObservedTurnFacts): TurnObservation?
+
+    public fun begin(facts: ObservedTurnFacts, credentials: ObservedCredentials): TurnObservation? = begin(facts)
 }
 
 public object NoTurnObservers : TurnObservers {

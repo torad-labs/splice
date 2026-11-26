@@ -14,7 +14,11 @@ export function hookTypes(on: On, name: "ui.render" | "tool.call"): void {
     return next(e);
   });
   on("tool.call", async (_, e, next) => {
-    if (e.caller === "model") e.session.toUpperCase();
+    if (e.caller === "model") {
+      e.session?.toUpperCase();
+      // @ts-expect-error A model observation never exposes tool arguments.
+      e.arguments;
+    }
     // @ts-expect-error A tool call has no render slot.
     e.slot;
     return next(e);

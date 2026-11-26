@@ -15,6 +15,8 @@ internal data class StoredModLaunch(
     val processStart: String?,
     val goneAt: Long? = null,
 ) {
+    fun newest(other: StoredModLaunch): StoredModLaunch = if (other.recordedAt > recordedAt) other else this
+
     fun isAlive(): Boolean = processStart != null && processStart == launch.pid?.let(ModLaunchProcess::birth)
 }
 

@@ -7,15 +7,22 @@ import splice.app.control.ControlServer
 import splice.app.daemon.BootedTopology
 import splice.app.head.SESSION_FALLBACKS_FILE
 import splice.app.head.SessionFallbackStore
+import splice.app.mods.events.ModEventText
+import splice.app.mods.events.ModTurns
 import splice.app.mods.run.ModRunner
 import splice.app.mods.sessions.ModLaunches
+import splice.app.mods.sessions.ModSessionLedger
+import splice.app.mods.sessions.ModSessionTracker
 import splice.app.probe.PlaygroundProviders
 import splice.app.probe.UpstreamPlaygroundProbe
 import splice.app.sources.PerfSourceFiles
 import splice.core.perf.KeptHistory
+import splice.core.topology.ProviderConfig
+import splice.oauth.StoredCredential
 import splice.sessions.prompt.SlotInstructions
 import splice.sessions.registry.ForegroundTools
 import splice.upstream.LifecycleScope
+import splice.upstream.transport.HeaderRedaction
 import splice.usage.alerts.AlertCommand
 import splice.usage.alerts.AlertDelivery
 
@@ -36,8 +43,28 @@ internal class ControlStores(
     val perfRows = PerfSourceFiles(daemon.statePaths, KeptHistory { daemon.config.getConfig().historyWindow })
     val foregroundTools = ForegroundTools()
     val mods = splice.app.mods.install.InstalledMods(daemon.statePaths)
-    val modLaunches = ModLaunches(daemon.statePaths.modsDir, daemon.log, installed = mods)
     val modRunner = ModRunner(daemon.statePaths, mods, daemon.log)
+    val modText = ModEventText(emptyMap())
+    private val modLedger = ModSessionLedger(
+        daemon.statePaths.modsDir,
+        daemon.statePaths.stateDir,
+        daemon.log,
+        KeptHistory { daemon.config.getConfig().historyWindow },
+    )
+    val modSessions = ModSessionTracker(modRunner.events, modLedger, modText)
+    val modLaunches = ModLaunches(daemon.statePaths.modsDir, daemon.log, installed = mods, sessionEvents = modSessions)
+    val modTurns = ModTurns(modRunner.events, modLaunches, modSessions, modText)
+
+    fun rememberModCredentials(providers: Map<String, ProviderConfig>) {
+        val env = daemon.statePaths.envReader
+        val stored = StoredCredential()
+        val supplied = listOf("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN").mapNotNull { env(it) }
+        val providerKeys = providers.flatMap { (key, provider) ->
+            provider.extraHeaders.filterKeys(HeaderRedaction::isSecret).values +
+                listOfNotNull(stored.apiKey(provider, key, env), stored.presentedToken(provider))
+        }
+        modText.remember(supplied + providerKeys)
+    }
 
     /** Nov 13, 2026: the model each session named to fall back to while the one it asks for is held on every login: the
      *  Sessions routes set it, and every head's turns read it. */

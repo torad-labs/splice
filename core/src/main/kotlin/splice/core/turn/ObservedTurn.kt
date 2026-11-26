@@ -5,8 +5,8 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /** Per-turn sequence numbers and delivery isolation. The port itself receives only value types. */
 public class ObservedTurn(private val observer: TurnObservation, private val clock: WallClock) {
-    public val wantsFrames: Boolean = observer.wantsFrames
-    public val wantsRequests: Boolean = observer.wantsRequests
+    public val wantsFrames: Boolean get() = observer.wantsFrames
+    public val wantsRequests: Boolean get() = observer.wantsRequests
     private val round = AtomicInteger()
 
     // ClientChannel already serializes every frame at its tap.

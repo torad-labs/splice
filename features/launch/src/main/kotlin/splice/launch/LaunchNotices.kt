@@ -28,7 +28,7 @@ public data class LaunchNotice(
 public interface LaunchNotices {
     public fun launched(launch: LaunchNotice)
 
-    public fun sessionStarted(owner: String, sessionId: String, cwd: String)
+    public fun sessionStarted(owner: String?, sessionId: String, cwd: String)
 
     /** Names on the off list that are not installed now. They still stay on the off list. */
     public fun unknownMods(names: Set<String>): Set<String>

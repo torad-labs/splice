@@ -3,7 +3,7 @@ import { chmodSync, closeSync, mkdirSync, openSync, writeSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
-  EventName, Filter, Handle, HooksFile, HostSessionRow, Json, ModError, ModLifecycle, ModManifest, On, Register,
+  EventName, Filter, Handle, HooksFile, HostSessionRow, Json, ModError, ModLifecycle, ModManifest, ModStart, ModStop, On, Register,
 } from "../contract/index.ts";
 
 const LINE_BYTES = 256 * 1024;
@@ -177,7 +177,7 @@ class Store implements StoreHandle {
 }
 
 class Hooks {
-  readonly #byEvent = new Map<string, Binding[]>();
+  readonly #byEvent = new Map<EventName, Binding[]>();
   readonly #warned = new Set<string>();
   readonly refused = new Set<string>();
   readonly on: On = ((event: EventName, filterOrHandler: unknown, handler?: Handler) => {
@@ -197,10 +197,10 @@ class Hooks {
 
   constructor(private readonly name: string, private readonly pipe: Pipe, private readonly handle: Handle) {}
 
-  get events(): string[] { return Array.from(this.#byEvent.keys()); }
+  get events(): EventName[] { return Array.from(this.#byEvent.keys()); }
 
   async dispatch(name: string, payload: Payload, maxMs: number, abort?: AbortSignal) {
-    const handlers = (this.#byEvent.get(name) ?? []).filter(binding => this.#matches(name, payload, binding.filter));
+    const handlers = (this.#byEvent.get(name as EventName) ?? []).filter(binding => this.#matches(name, payload, binding.filter));
     if (handlers.length === 0 || abort?.aborted) return;
     const event = frozen(payload);
     const finished = Promise.withResolvers<void>();
@@ -301,10 +301,10 @@ class Host {
         type: "ready", events: hooks.events, notice, refused, declared_not_served: declared, version: Bun.version,
       });
       const lifecycle = { mod: this.name, version: manifest.version } satisfies ModLifecycle;
-      await hooks.dispatch("mod.start", { ...lifecycle, served: hooks.events, refused }, EVENT_MS, this.#abort.signal);
+      await hooks.dispatch("mod.start", { ...lifecycle, served: hooks.events, refused } satisfies ModStart, EVENT_MS, this.#abort.signal);
       this.#started.resolve();
       const reason = await this.#stop.promise;
-      await hooks.dispatch("mod.stop", { ...lifecycle, reason }, STOP_MS);
+      await hooks.dispatch("mod.stop", { ...lifecycle, reason } satisfies ModStop, STOP_MS);
       return 0;
     } catch (error) {
       this.#pipe.send({ type: "load-failed", why: diagnostic(error).message });

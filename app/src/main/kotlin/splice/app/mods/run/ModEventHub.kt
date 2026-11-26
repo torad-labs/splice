@@ -10,6 +10,11 @@ internal class ModEventHub {
 
     fun listening(name: String): Boolean = name in byEvent
 
+    fun listening(name: String, modsOff: ModsOff?): Boolean {
+        if (modsOff == null) return listening(name)
+        return !modsOff.all && byEvent[name].orEmpty().any { !modsOff.suppresses(it.mod) }
+    }
+
     /** Use the settings of the Event's own launch, not the latest launch seen for the session. */
     fun offer(event: ModEvent, modsOff: ModsOff? = null) {
         if (modsOff?.all == true) return

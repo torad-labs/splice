@@ -2,7 +2,7 @@ package splice.core.turn
 
 /** An offer-only port for one turn. Implementations must not wait or do I/O; only offer to a bounded queue. */
 public interface TurnObservation {
-    /** Capture interest at admission so unrequested frames and rounds do not count bytes. */
+    /** Check interest before counting bytes; a subscriber can leave while a turn is streaming. */
     public val wantsFrames: Boolean get() = true
     public val wantsRequests: Boolean get() = true
 

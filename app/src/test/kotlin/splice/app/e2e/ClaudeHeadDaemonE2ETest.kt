@@ -46,7 +46,7 @@ import java.util.concurrent.Executors
 private const val CALLER = "callers-own-credential"
 private const val MODEL = "claude-splice--claude-haiku-4-5"
 
-private data class Captured(
+internal data class Captured(
     val path: String,
     val headers: Map<String, List<String>>,
     val body: String,
@@ -54,7 +54,7 @@ private data class Captured(
 
 /** Anthropic Messages stand-in: records headers AND bodies, serves scripted `data:` frames.
  *  The translator keys on JSON `type`, not the `event:` prefix, so this matches the live vendor. */
-private class RecordingAnthropic {
+internal class RecordingAnthropic {
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
     private val pool = Executors.newCachedThreadPool()
     private val scripts = ConcurrentLinkedQueue<List<String>>()
@@ -94,7 +94,7 @@ private class RecordingAnthropic {
     }
 }
 
-private object AnthropicFrames {
+internal object AnthropicFrames {
     fun text(text: String): List<String> = listOf(
         """{"type":"message_start","message":{"usage":{"input_tokens":2}}}""",
         """{"type":"content_block_start","index":0,"content_block":{"type":"text"}}""",

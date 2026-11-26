@@ -151,24 +151,26 @@ the types of `e`, `next(e)` and the handler's answer, including in `.catch`.
 
 | event | filter | what it is |
 |---|---|---|
-| `mod.start`, `mod.stop` | | The mod loaded or is about to unload: `mod`, `version`. |
+| `mod.start` | | The mod loaded: `mod`, `version`, `served` (registered events this host supports), `refused` (why other requests are not served). |
+| `mod.stop` | | The mod is about to unload: `mod`, `version`, `reason`. |
 | `session.start` | | A process began serving a session: `session` (the harness's own session id, the `session_id` of `GET /api/sessions`), `cwd`, `labels`, and `seenBefore`, true when that id was seen earlier. |
 | `session.end` | | The process serving that session is gone: `session`, `cwd` and `labels`. One id is one session, however many processes serve it. |
 | `launch.prepare` | | Per process, before it starts: `session` when known, `cwd`, `labels`, `env`, `args`, `mcp`. To change the launch, pass a changed `e` to `next`. |
 | `sessions.list` | | Splice is assembling normalized rows: `surface`, `allRows`. Wrap `await next(e)` to add rows or change them; `allRows` says whether the reader asked for mod rows. The legacy HTTP response does not use this chain's output. |
-| `turn.start` | | A turn began: `session`, `turn`, `labels`, `model`. |
-| `request.send` | | A request is about to go to the model: `session`, `turn`, `model`, `body`. Change `body` and pass it on. |
-| `stream.event` | | One event of the model's stream: `session`, `turn`, `event`. Return `null` to drop it. |
-| `tool.call` | `{ server?, tool? }` | `caller`, `session`, `turn?`, `server`, `tool`, `arguments`. A `model` call always carries `session`; an `app` call can be sessionless. Answer a `ToolResult`: `content`, `structuredContent?`, `isError?`, `_meta?`. |
-| `response.receive` | | The whole response, assembled from the stream: `session`, `turn`, `model`, `status`, `body`. |
-| `turn.complete` | | The turn ended: `session`, `turn`, `model`, `stopReason`, `usage` (`input`, `output`, `cacheRead`, `cacheWrite`). |
+| `turn.start` | | A turn began: `head`, requested `model`, `compact`, and `agent` (null when absent). |
+| `request.send` | | One logical request round: upstream `model`, `round`, request `bytes`. |
+| `stream.event` | | One client SSE frame: `seq`, `type`, `bytes`. |
+| `tool.call` | `{ server?, tool? }` | A model opened a tool block: `caller: "model"`, tool call `id`, `server` (null for native tools), `tool`. It does not say that the tool ran. |
+| `response.receive` | | One HTTP response: requested `model`, `status`, transport `attempt`. |
+| `turn.complete` | | The turn ended: `model`, `outcome`, `durationMs`, `usage` (`input`, `output`, `cacheRead`, `cacheWrite`). |
 | `ui.render` | `{ surface?, slot? }`; add `page` only with `slot: "page"` | An app asks the mod to draw a page, a row or a view. |
 | `command.run` | `{ command }` | A person ran one of the mod's commands: `command`, `args`, `session?`. Answer `{ text }`. |
 | `http.request` | `{ path?, method? }` | A request under the mod's own path, `/mods/<name>/…`: `method`, `path` (the part after it), `query`, `headers`, `body?`. Answer `{ status, headers?, body? }`. |
 
-For `tool.call`, the host binds the session from trusted launch or session provenance. A tool
-argument or untrusted request metadata cannot supply that identity. An app call tied to a session
-gets its identity from host context too.
+Each turn notification also carries `session` (null when not attributed), `turn`, `labels`, and
+`at` (Unix milliseconds). These hooks observe; they cannot change a turn. They never carry
+request or response bodies, stream data, or model tool arguments. App calls to a mod's own tool
+are a separate, not-yet-served arm of `tool.call` with host-bound session context and arguments.
 
 ### The handle `$`
 

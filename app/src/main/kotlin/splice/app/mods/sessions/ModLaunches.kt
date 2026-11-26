@@ -30,6 +30,7 @@ internal class ModLaunches(
     private val log: LogSink,
     private val installed: InstalledModNames,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
+    private val sessionEvents: ModSessionTracker? = null,
 ) : LaunchNotices, ModLaunchLookup {
     private val files = ModLaunchFiles(modsDir)
     private val launches = ConcurrentHashMap<String, StoredModLaunch>()
@@ -62,9 +63,12 @@ internal class ModLaunches(
     override fun unknownMods(names: Set<String>): Set<String> =
         if (names.isEmpty()) names else names - installed.names()
 
-    override fun sessionStarted(owner: String, sessionId: String, cwd: String) {
-        forTurn(sessionId, owner)
+    override fun sessionStarted(owner: String?, sessionId: String, cwd: String) {
+        val launch = forTurn(sessionId, owner)
+        sessionEvents?.see(sessionId, launch?.owner?.let(::stored), clock(), cwd)
     }
+
+    fun stored(owner: String): StoredModLaunch? = launches[owner]
 
     override fun forLaunch(owner: String): LaunchNotice? = launches[owner]?.launch
 
@@ -74,7 +78,7 @@ internal class ModLaunches(
     override fun forTurn(sessionId: String?, owner: String?): LaunchNotice? {
         val record = owner?.let(launches::get) ?: return null
         if (sessionId != null && record.recordedAt > (sessions[sessionId]?.recordedAt ?: Long.MIN_VALUE)) {
-            sessions.merge(sessionId, record, ::newest)
+            sessions.merge(sessionId, record, StoredModLaunch::newest)
         }
         return record.launch
     }
@@ -90,11 +94,8 @@ internal class ModLaunches(
 
     private fun remember(record: StoredModLaunch) {
         launches[record.launch.owner] = record
-        record.launch.pid?.let { pids.merge(it, record, ::newest) }
+        record.launch.pid?.let { pids.merge(it, record, StoredModLaunch::newest) }
     }
-
-    private fun newest(old: StoredModLaunch, new: StoredModLaunch): StoredModLaunch =
-        if (new.recordedAt > old.recordedAt) new else old
 
     private fun queuePrune() {
         val now = clock()

@@ -168,6 +168,14 @@ internal class ControlPlane(
     internal val foregroundTools = stores.foregroundTools
     internal val modLaunches = stores.modLaunches
     internal val modRunner = stores.modRunner
+    internal val modSessions = stores.modSessions
+    internal val modTurns = stores.modTurns
+
+    internal fun restoreModSessions(providers: Map<String, splice.core.topology.ProviderConfig>) {
+        stores.rememberModCredentials(providers)
+        modLaunches.restore()
+        modSessions.restore(modLaunches)
+    }
     internal val sessionFallbacks = stores.sessionFallbacks
     internal val playgroundProviders = stores.playgroundProviders
     internal val playground = stores.playground
@@ -234,7 +242,6 @@ internal class ControlPlane(
         // when it is on, the daemon marks its own log so the extra verbosity can be told apart. This
         // is the one production read of the knob — the accessor had no consumer before V4-110.
         if (config.getConfig().debug) log("[daemon] debug logging enabled\n")
-        modLaunches.restore()
         val home = statePaths.rootDir.parent ?: statePaths.rootDir
         val sharing = mcp.planner(controlPort)
         val mcpHost = mcp.host(home, sharing, heads.values.mapNotNull { it.launchSpec })
@@ -244,7 +251,8 @@ internal class ControlPlane(
         // door (this machine's, on this control port, or a `[remote.*]` one) is placed on it (door-sessions).
         val doors = LaunchDoors(topology.launches.remote, controlPort)
         val sessions = sessionWiring.source(home, heads, doors, console, foregroundTools)
-        modRunner.start(ModCallRows(sessions, modLaunches))
+        modRunner.start(ModCallRows(sessions, modLaunches, stores.modText, modSessions))
+        modSessions.start(probeScope)
         val signals = health.signals(heads, sessions, probes, home)
         val guard = parts.guard()
         val listen = adopted.control(controlPort)

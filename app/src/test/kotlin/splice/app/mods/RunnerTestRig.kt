@@ -61,8 +61,8 @@ internal class RunnerTestRig(
         return source
     }
 
-    suspend fun install(client: HttpClient, source: Path, linked: Boolean = false): JsonObject {
-        val response = client.post("/api/mods") {
+    suspend fun install(client: HttpClient, source: Path, linked: Boolean = false, base: String = ""): JsonObject {
+        val response = client.post("$base/api/mods") {
             bearerAuth(key.get())
             setBody(
                 buildJsonObject {

@@ -344,6 +344,18 @@ export interface ModLifecycle {
   readonly version: string;
 }
 
+export interface ModStart extends ModLifecycle {
+  /** Events the mod registered that this host serves. */
+  readonly served: readonly EventName[];
+  /** Why other requested events or handle members are not served. */
+  readonly refused: readonly string[];
+}
+
+export interface ModStop extends ModLifecycle {
+  /** Why this host is stopping, e.g. "disabled" or "handover". */
+  readonly reason: string;
+}
+
 export interface SessionStart {
   /** The harness's own session id, the `session_id` of `GET /api/sessions`. The id is the session:
    *  it stays one row however many processes serve it. */
@@ -380,62 +392,66 @@ export interface SessionsList {
   readonly allRows: boolean;
 }
 
-export interface TurnStart {
-  readonly session: string;
+/** The observation host only sends metadata; bodies and credentials never reach these hooks. */
+export interface TurnEvent {
+  /** The session the daemon attributed the turn to, or null if none is known. */
+  readonly session: string | null;
   readonly turn: string;
+  /** Unix time in milliseconds. */
+  readonly at: number;
   readonly labels: Labels;
+}
+
+export interface TurnStart extends TurnEvent {
+  readonly head: string;
+  /** The requested model. */
   readonly model: string;
+  readonly compact: boolean;
+  readonly agent: string | null;
 }
 
-/** A request on its way to the model. A handler changes it by passing a changed `e` to `next`. */
-export interface RequestSend {
-  readonly session: string;
-  readonly turn: string;
+/** One outgoing logical round, not one notification per retry. */
+export interface RequestSend extends TurnEvent {
+  /** The upstream model. */
   readonly model: string;
-  /** The request body as the backend will receive it. */
-  readonly body: JsonObject;
+  readonly round: number;
+  readonly bytes: number;
 }
 
-/** One event of the model's stream. Return what the client receives; return `null` to drop it. */
-export interface StreamEvent {
-  readonly session: string;
-  readonly turn: string;
-  readonly event: JsonObject;
+/** One frame sent to the client, with no frame data. */
+export interface StreamEvent extends TurnEvent {
+  readonly seq: number;
+  readonly type: string;
+  readonly bytes: number;
 }
 
-/**
- * For a model call, the host binds `session` from trusted launch/session provenance. It must not
- * infer an identity from tool arguments or untrusted request metadata. App calls from views or
- * actions can be sessionless; when an app call has a session, it too comes from host context.
- */
-export type ToolCall = ToolCallFields & (
-  | { readonly caller: "model"; readonly session: string }
-  | { readonly caller: "app"; readonly session?: string }
-);
+/** A model call observes the tool block, not its input or execution. App calls are not served by
+ * the observation host; when implemented their session comes from trusted host context. */
+export type ToolCall =
+  | (TurnEvent & { readonly caller: "model"; readonly id: string; readonly server: string | null; readonly tool: string })
+  | {
+      readonly caller: "app";
+      readonly session?: string;
+      readonly turn?: string;
+      readonly server: string;
+      readonly tool: string;
+      readonly arguments: JsonObject;
+    };
 
-interface ToolCallFields {
-  readonly turn?: string;
-  /** The MCP server the tool is on. A mod's own server is named after the mod. */
-  readonly server: string;
-  readonly tool: string;
-  readonly arguments: JsonObject;
-}
-
-export interface ResponseReceive {
-  readonly session: string;
-  readonly turn: string;
+/** The HTTP status of one transport attempt. */
+export interface ResponseReceive extends TurnEvent {
+  /** The requested model. */
   readonly model: string;
   readonly status: number;
-  /** The whole response, assembled from the stream. */
-  readonly body: JsonObject;
+  readonly attempt: number;
 }
 
-export interface TurnComplete {
-  readonly session: string;
-  readonly turn: string;
+export interface TurnComplete extends TurnEvent {
   readonly model: string;
-  readonly stopReason: string;
-  readonly usage?: { readonly input: number; readonly output: number; readonly cacheRead: number; readonly cacheWrite: number };
+  /** The daemon's turn outcome, not a model stop reason. */
+  readonly outcome: string;
+  readonly durationMs: number;
+  readonly usage: { readonly input: number; readonly output: number; readonly cacheRead: number; readonly cacheWrite: number };
 }
 
 export interface CommandRun {
@@ -466,17 +482,17 @@ export interface HttpAnswer {
 
 /** Every event: its payload `e`, its filter, and what `next(e)` and the handler return. */
 export interface Events {
-  "mod.start": { payload: ModLifecycle; filter: never; result: void };
-  "mod.stop": { payload: ModLifecycle; filter: never; result: void };
+  "mod.start": { payload: ModStart; filter: never; result: void };
+  "mod.stop": { payload: ModStop; filter: never; result: void };
   "session.start": { payload: SessionStart; filter: never; result: void };
   "session.end": { payload: SessionEnd; filter: never; result: void };
   "launch.prepare": { payload: LaunchPrepare; filter: never; result: LaunchPrepare };
   "sessions.list": { payload: SessionsList; filter: never; result: readonly SessionRow[] };
   "turn.start": { payload: TurnStart; filter: never; result: void };
-  "request.send": { payload: RequestSend; filter: never; result: RequestSend };
-  "stream.event": { payload: StreamEvent; filter: never; result: StreamEvent | null };
+  "request.send": { payload: RequestSend; filter: never; result: void };
+  "stream.event": { payload: StreamEvent; filter: never; result: void };
   "tool.call": { payload: ToolCall; filter: { readonly server?: string; readonly tool?: string }; result: ToolResult };
-  "response.receive": { payload: ResponseReceive; filter: never; result: ResponseReceive };
+  "response.receive": { payload: ResponseReceive; filter: never; result: void };
   "turn.complete": { payload: TurnComplete; filter: never; result: void };
   "ui.render": {
     payload: UiRenderRequest;

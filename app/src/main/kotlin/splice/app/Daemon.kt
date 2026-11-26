@@ -261,6 +261,7 @@ public class Daemon(
             // V4-134: the control plane's publisher, so every head reports to the stores the console reads.
             console = controlPlane.console,
         ).also {
+            it.turnObservers = controlPlane.modTurns
             it.credentialAccountNames = controlPlane.credentialAccountNames
             it.sentCredentials = controlPlane.sentCredentials
             it.performance = performance
@@ -359,6 +360,7 @@ public class Daemon(
         controlPlane.adopted = adopted
         controlPlane.handOver = handOver
         headServerFactory.adopted = adopted
+        controlPlane.restoreModSessions(topology.providers)
         // door-default, decision 9: the head keyed `claude` hands the door's models to their heads once the door opens.
         headServerFactory.others = HeadOthers(desktop.headLane::forHead)
         val cfg = config.getConfig()
@@ -486,6 +488,7 @@ public class Daemon(
         // them, that wait was part of the stretch in which no daemon serves (2.4 to 2.5 s of it in eight of the
         // thirteen hand-overs of Nov 12, 2026).
         controlPlane.ownership.quiet()
+        controlPlane.modSessions.stop()
         controlPlane.modRunner.beginStop("handover")
         headProbes.fenceStarts()
         controlPlane.ownership.fence()
@@ -538,6 +541,7 @@ public class Daemon(
             val routes = heads.values.map { it.head } + providers.running()
             val headBudgetMs = (HEAD_STOP_BUDGET_MS - listenersMs).coerceAtLeast(0L)
             headShutdown.stopHeads(routes, headBudgetMs, log) { controlPlane.ownership.close() }
+            controlPlane.modSessions.stop()
             controlPlane.modRunner.stop()
 
             // A daemon that handed over closed these then, before the next daemon opened its own.

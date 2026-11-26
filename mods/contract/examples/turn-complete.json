@@ -1,0 +1,17 @@
+{
+  "session": "d2080d4f-0992-421b-86dd-7d80c45c12bc",
+  "turn": "turn-42",
+  "at": 1785156300000,
+  "labels": {
+    "TICKET": "42"
+  },
+  "model": "requested-model",
+  "outcome": "ok",
+  "durationMs": 1250,
+  "usage": {
+    "input": 12,
+    "output": 5,
+    "cacheRead": 0,
+    "cacheWrite": 0
+  }
+}

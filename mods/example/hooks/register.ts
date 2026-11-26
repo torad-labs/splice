@@ -80,7 +80,8 @@ export const register: Register = (on) => {
   });
 
   // The tool behind the row's buttons. It is marked for the app alone, so the model never sees it.
-  on("tool.call", { server: MOD, tool: "resolve" }, async ($, e) => {
+  on("tool.call", { server: MOD, tool: "resolve" }, async ($, e, next) => {
+    if (e.caller !== "app") return next(e);
     const review = String(e.arguments["review"]);
     const verdict = String(e.arguments["verdict"]);
     await $.store.delete(`review/${review}`);

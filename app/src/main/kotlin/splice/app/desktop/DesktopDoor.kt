@@ -21,13 +21,8 @@ import splice.app.desktop.catalog.DesktopLineup
 import splice.app.desktop.catalog.DesktopProviders
 import splice.app.desktop.catalog.DoorCatalog
 import splice.app.desktop.catalog.ModelDiscovery
-import splice.client.desktop.ANTHROPIC_BETA_HEADER
-import splice.client.desktop.APP_MODE_HEADER
-import splice.client.desktop.DesktopAppWindow
 import splice.client.desktop.GatewayDiscovery
 import splice.core.client.SESSION_HEADER
-import splice.core.model.ModelServeWindows
-import splice.core.model.ModelTierSuffix
 import splice.core.speed.SessionSpeeds
 import splice.core.topology.desktop.DesktopConfig
 import splice.core.util.JsonScalars
@@ -40,7 +35,7 @@ import splice.share.CappedBodies
 import splice.share.RefusalVoice
 
 /** What a door turn asks: its body, the model it names, the session it is a turn of, and, for a request of Claude
- *  Desktop's app mode, the window Desktop gave its Code tab for that model ([appWindow], null for any other request). */
+ *  Desktop's app mode, the Code tab's window when the request identifies it ([appWindow]). */
 internal data class DoorAsk(
     val request: JsonObject,
     val model: String,
@@ -73,7 +68,7 @@ internal class DesktopDoor(
     private val json = Json { ignoreUnknownKeys = true }
     private val routing = DoorRouting()
     private val toProvider = DoorRelay(clock, sessionSpeeds)
-    private val windows = DesktopAppWindow(desktop)
+    private val windows = DoorAppWindows(desktop)
     private val discovery = GatewayDiscovery()
     private val gatewayModels = GatewayModels()
 
@@ -138,25 +133,12 @@ internal class DesktopDoor(
         val request = read(call, caller, lineup) ?: return
         val model = JsonScalars.str(request, REQUEST_MODEL).orEmpty()
         val headers = call.request.headers
-        val marker = headers[APP_MODE_HEADER]
-        val ask = DoorAsk(request, model, headers[SESSION_HEADER], appMode = windows.app(marker))
+        val ask = DoorAsk(request, model, headers[SESSION_HEADER], appMode = windows.app(headers))
         caller.asked(ask)
         val route = routing.of(lineup, ask, caller.default(lineup), caller.runsNamedModels)
             ?: desktopOnlyRoute(call, caller, lineup, ask)
             ?: return
-        val window = if (ask.appMode) {
-            val beta = headers.getAll(ANTHROPIC_BETA_HEADER).orEmpty().joinToString(",")
-            windows.of(marker, beta, model, publishedWindow(lineup, route))
-        } else {
-            null
-        }
-        toProvider.send(call, caller, route, ask.copy(appWindow = window), counting)
-    }
-
-    private fun publishedWindow(lineup: DesktopLineup, route: DoorRoute): Long {
-        val id = ModelTierSuffix.strip(route.upstream)
-        val published = lineup.catalog.models.firstOrNull { it.provider == route.provider.key && it.id == id }
-        return published?.contextWindow ?: ModelServeWindows.forRow(route.provider.catalog, route.upstream)
+        toProvider.send(call, caller, route, windows.resolve(headers, ask, lineup, route), counting)
     }
 
     /** Routes a `desktopOnly` (Antigravity) model for Claude Desktop Chat turns, while refusing Claude Code CLI

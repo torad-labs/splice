@@ -37,7 +37,6 @@ internal class DoorRouting {
      *  old provider. */
     fun of(lineup: DesktopLineup, ask: DoorAsk, default: String?, named: Boolean): DoorRoute? {
         val (provider, model) = lineup.find(ask.model)
-            ?: ModelTierSuffix.strip(ask.model).takeIf { it != ask.model }?.let(lineup::find)
             ?: return tiered(lineup, ask, default, named)
         return onProvider(ask, provider, model.upstream)
     }

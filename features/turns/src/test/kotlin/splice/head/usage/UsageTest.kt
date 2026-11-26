@@ -19,6 +19,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.head.ProviderAnswer
 import splice.core.model.CatalogWindows
+import splice.core.model.ClientModelPolicy
 import splice.core.model.ClientWindow
 import splice.core.model.CompactionReserve
 import splice.core.model.CompactionReserveDefaults
@@ -524,14 +525,39 @@ class UsageScalingTest {
         // C=200k gives T=153k. W=272k minus luna's clean growth p99 7830 and generation
         // p99 31791 leaves 232379: 20000*T/232379 truncates to 13168, not the old 13192.
         val factor = 153_000.0 / (272_000 - 39_621)
-        val model = "gpt-5.6-luna"
-        val p = wiring.usagePayloadBuilder(model, WindowUsage(codex).of(model, ClientWindow.Stated(200_000)))(
+        val model = codex.wrap("gpt-5.6-luna")
+        val p = wiring.usagePayloadBuilder(model, WindowUsage(codex).of(model, ClientWindow.Hint()))(
             Usage(inputTokens = 100_000, outputTokens = 7, cachedTokens = 60_000, cacheWrite = CacheWrite(20_000)),
         )
         assertEquals((20_000 * factor).toLong(), p["input_tokens"]?.jsonPrimitive?.content?.toLong())
         assertEquals((20_000 * factor).toLong(), p["cache_creation_input_tokens"]?.jsonPrimitive?.content?.toLong())
         assertEquals((60_000 * factor).toLong(), p["cache_read_input_tokens"]?.jsonPrimitive?.content?.toLong())
         assertEquals(7, p["output_tokens"]?.jsonPrimitive?.content?.toLong())
+    }
+
+    @Test
+    fun `a presented row sizes counts from the client model table without a recorded window`() {
+        val model = "presented"
+        val catalog = xai.copy(
+            models = listOf(ModelEntry(model, contextWindow = 500_000, clientModel = "claude-opus-5-5")),
+        )
+        val sizing = WindowUsage(catalog).of(model, ClientWindow.Hint())
+        val payload = wiring.usagePayloadBuilder(model, sizing)(Usage(100_000, 7, 0))
+        assertEquals(40_000L, payload["input_tokens"]?.jsonPrimitive?.content?.toLong())
+    }
+
+    @Test
+    fun `an open catalog reports raw usage before a session window is learned`() {
+        val model = "claude-opus-5-5"
+        val catalog = ModelCatalog(
+            discoveryPrefix = "claude-open--",
+            models = emptyList(),
+            defaultContextWindow = 1_000_000,
+            client = ClientModelPolicy(open = true),
+        )
+        val sizing = WindowUsage(catalog).of(model, ClientWindow.Stated(200_000))
+        val payload = wiring.usagePayloadBuilder(model, sizing)(Usage(100_000, 7, 0))
+        assertEquals(100_000L, payload["input_tokens"]?.jsonPrimitive?.content?.toLong())
     }
 
     @Test
@@ -546,6 +572,7 @@ class UsageScalingTest {
         }
         assertEquals(1, logged.count { it.contains("client-scaled") }, "one line per factor, got $logged")
         assertTrue(logged.single().contains("grok-4.6[500k]"), "the line names the row: $logged")
+        assertTrue(logged.single().contains("stated by the request"), "the line names its source: $logged")
 
         val exact = mutableListOf<String>()
         val model = "grok-4.3[1m]"

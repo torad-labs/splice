@@ -121,7 +121,6 @@ internal class TeamDoor : TeamGateway {
                     meta.streamIdleMs,
                 ),
                 withheldHeaders = meta.withheldHeaders,
-                asked = ask.model,
             )
             if (counting) route.provider.countTokens(call, turn) else route.provider.serve(call, turn)
         }

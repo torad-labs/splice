@@ -59,10 +59,11 @@ public class DirectAnthropicTurn(
         drive: DirectTurnDrive,
     ) {
         val usagePayload = wiring.usagePayloadBuilder(model, sizing(call, model, turn))
+        val replyModel = turn.asked ?: model
         if (stream) {
-            serveStream(call, model, usagePayload, drive)
+            serveStream(call, replyModel, usagePayload, drive)
         } else {
-            serveCollected(call, model, usagePayload, drive)
+            serveCollected(call, replyModel, usagePayload, drive)
         }
     }
 

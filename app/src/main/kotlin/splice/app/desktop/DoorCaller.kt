@@ -6,6 +6,7 @@ package splice.app.desktop
 import splice.app.desktop.catalog.DesktopLineup
 import splice.app.desktop.record.DesktopLastTurn
 import splice.app.desktop.record.DesktopPickerRow
+import splice.core.model.ClientWindow
 import splice.share.RefusalVoice
 
 internal abstract class DoorCaller(
@@ -28,7 +29,7 @@ internal abstract class DoorCaller(
 
     /** The window read off [ask]'s own request, which outranks what its beta alone would say where the turn is
      *  scaled; none by default, since a caller's window is its sessions', read from no one request. */
-    open fun requestWindowOf(ask: DoorAsk): Long? = null
+    open fun requestWindowOf(ask: DoorAsk): ClientWindow? = null
 
     /** What a turn is refused with while no provider is in the door. */
     abstract val noHead: String

@@ -348,16 +348,20 @@ public data class CatalogWindows(
 
 /** The window the client holds for a row of [catalog] with no reading off the request, in the order terminal turns keep
  *  ([ModelCatalog.clientContextWindowFor] puts a request's own reading ahead of it). */
-private class SelectorWindow(private val catalog: ModelCatalog) {
-    fun of(id: String, sessionWindow: Long?): Long = when {
-        ModelTierSuffix.isOneMillion(catalog.unwrap(id)) -> CLAUDE_CODE_ONE_MILLION
+internal class SelectorWindow(private val catalog: ModelCatalog) {
+    fun fixed(id: String, selector: String): Long? = when {
+        ModelTierSuffix.isOneMillion(catalog.unwrap(selector)) -> CLAUDE_CODE_ONE_MILLION
         // V4-232: a presented row is one the client knows, so its window is the client's table, and
         // unlike a "claude-" id below we know that number, so the factor is honest rather than 1.0.
         catalog.presented.covers(id) -> CLIENT_TABLE_WINDOW
         // A Codex discovery wrapper starts with claude- but is not a Claude model from the
         // client's own table. It gets the client's unknown-model 200k fallback, not this row's W.
-        catalog.windows.compactionReserveDefaults != null && id.startsWith(catalog.discoveryPrefix) ->
+        catalog.windows.compactionReserveDefaults != null && selector.startsWith(catalog.discoveryPrefix) ->
             CLIENT_TABLE_WINDOW
+        else -> null
+    }
+
+    fun of(id: String, sessionWindow: Long?): Long = fixed(id, id) ?: when {
         id.startsWith(CLIENT_OWN_ID_PREFIX) -> sessionWindow?.takeIf { it > 0 } ?: catalog.contextWindowFor(id)
         // An env-governed id: the window is whatever THIS session's process was launched with.
         // [sessionWindow] is that value when the session has told us (ClientWindows, fed by its

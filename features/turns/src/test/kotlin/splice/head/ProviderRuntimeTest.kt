@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.model.ClientWindow
 import splice.core.server.ServedTurn
 import splice.core.server.ServedTurns
 import splice.core.topology.ForwardHeaders
@@ -116,7 +117,7 @@ class ProviderRuntimeTest {
                 body("claude-scripted-headless-chat--scripted-model").toByteArray(),
                 "desktop",
                 100_000,
-                requestWindow = 100_000,
+                requestWindow = ClientWindow.Stated(100_000),
             )
             assertEquals(6L, reportedInput(post(runtime, configured, beta)))
             // A window handed over as a session's alone still yields to the beta, as a terminal turn's does.

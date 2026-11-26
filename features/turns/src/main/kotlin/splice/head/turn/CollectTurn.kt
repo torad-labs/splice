@@ -44,9 +44,8 @@ internal class CollectTurn(
     private val detachOwner: DetachOwner,
     /** The wall clock a handed-over limit's reset is told against: the head's retry wall. */
     private val wall: WallClock = WallClock(System::currentTimeMillis),
+    private val wiring: TurnWiring = TurnWiring(),
 ) {
-    private val wiring = TurnWiring()
-
     /** Non-stream sibling of TurnDriver.stream: Claude Code sends stream:false on some internal
      *  calls (the Node predecessor served them by collecting the terminal object). Drives the SAME
      *  fold/translator/honesty machinery into a [CollectingTerminal], then writes ONE Anthropic
@@ -55,7 +54,11 @@ internal class CollectTurn(
         val built = inputs.built
         val terminal = CollectingTerminal(
             built.meta.route.originalModel,
-            wiring.usagePayloadBuilder(built.meta.route.originalModel, inputs.slot.reply.usage),
+            wiring.usagePayloadBuilder(
+                built.meta.route.originalModel,
+                inputs.slot.reply.usage,
+                built.meta.scope.sessionId,
+            ),
             voice = inputs.voice,
         )
         // Inert writer: collect never writes SSE frames. clientGone is flipped by Netty

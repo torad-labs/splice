@@ -7,6 +7,7 @@ package splice.head
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
 import io.ktor.util.AttributeKey
+import splice.core.model.ClientWindow
 import splice.head.wire.NATIVE_CLIENT_PING_MS
 
 /** One turn as the gateway hands it to a [ProviderRuntime]: [body] is the client's body with `model` already set to
@@ -27,7 +28,8 @@ import splice.head.wire.NATIVE_CLIENT_PING_MS
  *  [requestWindow] is the window the gateway read off THIS request — Claude Desktop's app mode, where the door has
  *  already weighed the request's beta and model against the windows splice.toml's `[desktop]` states. It outranks
  *  what the request's beta alone would say (ClientWindowWitness), which is the client's own million, not this
- *  install's; null where the gateway read none, which is every other door. */
+ *  install's. A hint means the gateway recognized the client but could not identify its selected window; null
+ *  means the gateway did not interpret the request's window. */
 public class GatewayTurn(
     public val body: ByteArray,
     public val door: String,
@@ -35,7 +37,7 @@ public class GatewayTurn(
     public val listener: ListenerSays = ListenerSays(),
     public val withheldHeaders: Set<String> = emptySet(),
     public val asked: String? = null,
-    public val requestWindow: Long? = null,
+    public val requestWindow: ClientWindow? = null,
 ) {
     /** [body] as a bounded read of it, the same answer a head's own read of a call's body gives: the body, or the cap
      *  it exceeded. */

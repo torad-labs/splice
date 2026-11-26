@@ -10,7 +10,7 @@ import splice.core.model.ModelTierSuffix
 import splice.core.model.UsageSizing
 import splice.core.model.WindowUsage
 
-/** A request speaks for its own divisor; neither a gateway's launch record nor a session's post can do that. */
+/** A request speaks for its divisor; a launch record or a session's older post can only suggest it. */
 internal class ClientWindowWitness(private val posted: ClientWindows? = null) {
     fun sizing(
         call: ApplicationCall,
@@ -18,26 +18,19 @@ internal class ClientWindowWitness(private val posted: ClientWindows? = null) {
         model: String,
         sessionId: String?,
         turn: GatewayTurn? = GatewayTurns.of(call),
-    ): UsageSizing = WindowUsage(catalog).of(model, of(call, catalog, turn?.asked ?: model, sessionId, turn))
-
-    private fun of(
-        call: ApplicationCall,
-        catalog: ModelCatalog,
-        asked: String,
-        sessionId: String?,
-        turn: GatewayTurn?,
-    ): ClientWindow {
-        val stated = turn?.requestWindow?.takeIf { it > 0 }
-            ?: oneMillion(call, asked)
-            ?: launched(call, catalog, asked)
-        return if (stated != null) {
-            ClientWindow.Stated(stated)
-        } else {
-            ClientWindow.Hint(turn?.clientWindow?.takeIf { it > 0 } ?: posted?.windowFor(sessionId))
-        }
+    ): UsageSizing {
+        val learned = posted?.windowFor(sessionId)
+        val hint = learned ?: turn?.clientWindow?.takeIf { it > 0 }
+        val request = turn?.requestWindow
+        val asked = turn?.asked ?: model
+        val stated = (request as? ClientWindow.Stated)?.tokens?.takeIf { it > 0 }
+            ?: oneMillion(call, asked) ?: launched(call, catalog, model)
+        val evidence = stated?.let { ClientWindow.Stated(it) } ?: ClientWindow.Hint(hint)
+        // The gateway can know the client without knowing how it interpreted this selector.
+        return WindowUsage(catalog).of(model, evidence, asked.takeUnless { request is ClientWindow.Hint }, learned)
     }
 
-    // Claude Code can strip [1m] before writing the body and carry it in the beta instead.
+    // Claude Code strips the 1M suffix before writing the body and can send the opt-in beta instead.
     private fun oneMillion(call: ApplicationCall, asked: String): Long? {
         if (ModelTierSuffix.isOneMillion(asked)) return CLAUDE_CODE_ONE_MILLION
         val betas = call.request.headers.getAll(BETA_HEADER).orEmpty()
@@ -46,7 +39,7 @@ internal class ClientWindowWitness(private val posted: ClientWindows? = null) {
         }
     }
 
-    // The launch only describes the divisor of a row the client sizes from its environment.
+    // The provider row distinguishes a real Claude ID from the door's Claude-prefixed wrapper.
     private fun launched(call: ApplicationCall, catalog: ModelCatalog, model: String): Long? =
         call.request.headers[CLIENT_WINDOW_HEADER]?.trim()?.toLongOrNull()
             ?.takeIf { it > 0L && catalog.envGoverned(model) }

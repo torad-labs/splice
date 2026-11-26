@@ -69,7 +69,7 @@ internal class TurnStreamer(
     },
 ) {
     private val emitters = SseEmitterFactory()
-    private val wiring = TurnWiring()
+    private val wiring = TurnWiring(replies = deps.stores.clientWindows.replies)
     private val driveDispatcher = ProcessDispatchers().io()
 
     // The drive handles every turn failure itself; anything that still escapes a detached
@@ -100,7 +100,11 @@ internal class TurnStreamer(
                 ending = pending::ending,
             ),
             model = meta.route.originalModel,
-            usagePayload = wiring.usagePayloadBuilder(meta.route.originalModel, inputs.slot.reply.usage),
+            usagePayload = wiring.usagePayloadBuilder(
+                meta.route.originalModel,
+                inputs.slot.reply.usage,
+                meta.scope.sessionId,
+            ),
             voice = inputs.voice,
         )
     }

@@ -13,7 +13,8 @@ class DesktopAppWindowTest {
     @Test
     fun `an app-mode request holds Desktop's shipped windows by default`() {
         val windows = DesktopAppWindow()
-        assertEquals(200_000L, windows.of(app, null, "claude-opus-5-5"))
+        assertEquals(200_000L, windows.of(app, null, "gateway-row"))
+        assertNull(windows.of(app, null, "claude-fable-5-2", publishedWindow = 1_000_000))
         assertEquals(1_000_000L, windows.of(app, "context-1m-2025-08-07", "claude-opus-5-5"))
         assertEquals(1_000_000L, windows.of(app, null, "gpt-6-sol[1m]"))
     }
@@ -21,7 +22,7 @@ class DesktopAppWindowTest {
     @Test
     fun `a configured pair is the window an app-mode request holds`() {
         val windows = DesktopAppWindow(DesktopConfig(codeWindow = 320_000, codeWindow1m = 640_000))
-        assertEquals(320_000L, windows.of(app, "claude-code-20250219", "claude-opus-5-5"))
+        assertEquals(320_000L, windows.of(app, "claude-code-20250219", "gateway-row"))
         assertEquals(640_000L, windows.of(app, "claude-code-20250219,context-1m-2025-08-07", "claude-opus-5-5"))
         assertEquals(640_000L, windows.of(app, null, "gpt-6-sol[1M]"))
     }

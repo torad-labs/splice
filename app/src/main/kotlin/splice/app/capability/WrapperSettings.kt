@@ -1,11 +1,11 @@
 // NEW: what splice says of Claude Code's managed settings for Claude Desktop's Code tab, in one shape for every place
 // that says it: `splice desktop wrapper --print` and `--check`, the doctor's managed settings row and the upgrade item.
 // It says what is wanted (both keys), what splice read (the file read, could not be read, or known to be absent, and
-// each key in it text, not text, or absent), every other place Claude Code reads that splice did not read or could not
-// look at, and whether splice's launcher is laid. What Desktop does is said once: plainly only where splice read the
-// file and there is no other place, and as a condition otherwise. What to do is to make the file hold both keys, in
-// place wherever one may exist, after the places splice did not read; only a file known to be absent is to be created.
-// The places differ in form, never in what they claim.
+// each key in it text, not text, or absent), the other places Claude Code may take managed settings from, which splice
+// names and does not read, and whether splice's launcher is laid. What Desktop does is said once, always as the
+// condition: splice never reads every source, so it never says the effect plainly. What to do is to make the file hold
+// both keys, in place wherever one may exist, after those places; only a file known to be absent is to be created. The
+// places differ in form, never in what they claim.
 package splice.app.capability
 
 import kotlinx.serialization.json.JsonObject
@@ -29,9 +29,6 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
     private val merges: Boolean
         get() = read?.value(PARENT_SETTINGS_KEY) == ManagedValue.Text(PARENT_SETTINGS_MERGE)
 
-    /** Whether splice read the file and there is no other place Claude Code may take managed settings from. */
-    private val known: Boolean get() = read != null && reading.unread.none
-
     /** Whether splice's launcher is laid: a regular file splice may run. */
     val laid: Boolean = Files.isRegularFile(launch) && Files.isExecutable(launch)
 
@@ -52,8 +49,8 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
     /** Both keys with the values wanted, in words. */
     fun wantedLine(): String = wanted().entries.joinToString(" and ", prefix = "wanted: ") { "${it.key} ${it.value}" }
 
-    /** What splice found, each a sentence: the file, the places it did not read, the effect, and the launcher. */
-    fun facts(): List<String> = listOfNotNull(found(), unread(), effect(), notLaid())
+    /** What splice found, each a sentence: the file, the places it did not read, the condition, and the launcher. */
+    fun facts(): List<String> = listOfNotNull(found(), unread(), CONDITION, notLaid())
 
     /** What splice found at the file. */
     fun found(): String = when (state) {
@@ -64,25 +61,13 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
         ManagedFile.Absent -> "nothing is at $file"
     }
 
-    /** The places Claude Code also reads that splice did not read, or could not look at; null where there are none. */
-    fun unread(): String? {
-        val places = reading.unread.takeUnless { it.none } ?: return null
-        val held = places.held.takeIf { it.isNotEmpty() }?.let { "Claude Code also reads ${it.joinToString(", ")}" }
-        val unsure = places.unsure.takeIf { it.isNotEmpty() }
-            ?.let { "splice could not look at ${it.joinToString(", ")}, where Claude Code may find more" }
-        return listOfNotNull(held, unsure).joinToString(", and ") + ": $UNREAD_MAY_WIN"
+    /** The other places Claude Code may take managed settings from, which splice did not read; null where none. */
+    fun unread(): String? = reading.unread.takeIf { it.isNotEmpty() }?.let { places ->
+        "Claude Code may also take managed settings from ${places.joinToString(", ")}, which splice did not read: " +
+            "a value set there may be the one Claude Code takes"
     }
 
-    /** What Desktop does: plainly only where splice read the file and there is no other place, the condition else;
-     *  nothing where the file names splice's launcher and it is not laid, since no session starts through it then. */
-    fun effect(): String? = when {
-        !known -> CONDITION
-        starts && !laid -> null
-        merges -> "Claude Desktop's limits apply to the Code sessions it starts, and Desktop does not warn in them"
-        else -> "Desktop warns in every Code session, and its limits for them are not applied"
-    }
-
-    /** What to do, null where the file splice read holds both keys as wanted and there is no other place. */
+    /** What to do, null where the file splice read holds both keys as wanted and splice names no other place. */
     fun step(): String? {
         val edit = when (state) {
             ManagedFile.Absent -> "create it so it holds both keys"
@@ -91,8 +76,8 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
             is ManagedFile.Read -> IN_PLACE.takeUnless { right }
         }
         return when {
-            reading.unread.none -> edit
-            edit == null -> "check that none of the places splice did not read sets either key to another value"
+            reading.unread.isEmpty() -> edit
+            edit == null -> CHECK_ONLY
             else -> "check the places splice did not read first; then $edit"
         }
     }
@@ -103,11 +88,11 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
     /** What is wanted and what was found, as one line. */
     fun said(): String = (listOf(wantedLine()) + facts()).joinToString("; ")
 
-    /** How the doctor rates it: a warning only where splice read every place and something is known to be wrong. */
+    /** How the doctor rates it: a warning where the file splice read does not say "merge" or names a wrapper that is
+     *  not splice's laid launcher; a note otherwise, since which source wins is never known. */
     fun level(): ToolLevel = when {
-        !known -> ToolLevel.INFO
-        right && laid -> ToolLevel.OK
-        !right && merges && wrapper == ManagedValue.Absent -> ToolLevel.INFO
+        read == null || right && laid -> ToolLevel.INFO
+        merges && wrapper == ManagedValue.Absent -> ToolLevel.INFO
         else -> ToolLevel.WARN
     }
 
@@ -130,13 +115,13 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
     }
 }
 
-// What a place splice did not read means for what it says.
-private const val UNREAD_MAY_WIN = "splice did not read them, and a value set there may be the one Claude Code takes"
-
-// What Desktop does where splice did not read every place: the condition, always true, and no more.
+// What Desktop does: the condition, always true, and no more.
 private const val CONDITION = "wherever managed settings exist, Desktop warns in every Code session unless the " +
     "source that wins sets $PARENT_SETTINGS_KEY to \"$PARENT_SETTINGS_MERGE\""
 
 // What to do with a file splice read that lacks a key: never a copy, which would lose what the file is.
 private const val IN_PLACE = "edit it in place as an administrator so it holds both keys; a copy put in its place " +
     "would lose its owner, its mode and its other keys"
+
+// What to do with a file that holds both keys where splice names places it did not read.
+private const val CHECK_ONLY = "check that none of the places splice did not read sets either key to another value"

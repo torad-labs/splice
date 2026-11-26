@@ -244,7 +244,7 @@ Quit Desktop completely and reopen it after `on`, `off` or an upgrade, because D
 
 Other parts of the Desktop setup:
 
-- **Managed `processWrapper`.** Antigravity in the Code tab and live model switches need Claude Code's managed settings to name splice's launcher (`processWrapper`) and to set `parentSettingsBehavior` to `"merge"`, so the limits in Claude Desktop's own policy still apply to the Code sessions it starts and Desktop does not warn in each. splice never writes that administrator-owned file. It shows both keys, says what it read of the file and which other places Claude Code reads it did not, gives the commands that create the file only where nothing is at its path, and otherwise says to edit it in place:
+- **Managed `processWrapper`.** Antigravity in the Code tab and live model switches need Claude Code's managed settings to name splice's launcher (`processWrapper`), and the source that wins to set `parentSettingsBehavior` to `"merge"`; wherever managed settings exist, Desktop warns in every Code session unless it does. splice never writes that administrator-owned file. It shows both keys, says what it read of the file and names the places Claude Code may take managed settings from, which it did not read. It gives the commands that create the file only where nothing is at its path, says to edit the file in place only where it does not hold both keys, and otherwise asks only that those places be checked:
 
   ```bash
   splice desktop wrapper --print    # bare "splice desktop wrapper" is the same
@@ -403,7 +403,7 @@ None of these needs any action. See [Architecture and troubleshooting](architect
 - [ ] Each head you still use prints its replacement selector, and `splice claude check` reports what still starts past the gateway.
 - [ ] `splice setup --update` has offered what you want: launchers, Desktop, MCP, Codex hooks, modes, auto-update.
 - [ ] Claude Desktop, if you use it: after `splice desktop on`, Desktop was quit fully and reopened, and `splice desktop` shows mode `app`.
-- [ ] Gemini in the Code tab, if you want it: `splice desktop wrapper --check` exits 0, and the places it names that it did not read set neither key to another value.
+- [ ] Gemini in the Code tab, if you want it: `splice desktop wrapper --check` exits 0 (the launcher is laid and the main file names it), its line for the file says it sets both keys to the values on the `wanted:` line, `parentSettingsBehavior` to `"merge"` included, and the places it names that it did not read set neither key to another value.
 - [ ] Other machines using your LAN share have re-run `splice remote add http://<box>:<port>`.
 - [ ] Scripts that ran bare `splice login`, or relied on restart waiting for every compaction, are updated.
 - [ ] Team servers: `splice server audit` answers, and any new `[server]` tables pass `splice check-config`.

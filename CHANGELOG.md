@@ -172,8 +172,8 @@
   exists), or nothing at its path, which a link to nothing, here or in a folder above, is not; the other places Claude
   Code may take managed settings from (its remote settings, the macOS plists, the Windows HKLM and HKCU values, each
   drop-in), named without being read; whether the launcher is laid; and what Desktop does, always as the condition,
-  since splice never reads every source. What to do is to make the file hold both keys, in place wherever one may
-  exist, after checking those places. `--check` exits 0 when the launcher, found where the daemon lays it, is laid and
+  since splice never reads every source. What to do is to check those places, and to edit the file in place only
+  where it does not hold both keys. `--check` exits 0 when the launcher, found where the daemon lays it, is laid and
   the file names it, and nothing more. The upgrade lists an item whenever the file splice read does not hold both
   keys, could not be read or is not there, or the launcher is not laid; `setup --update` says it found nothing new only
   in what splice checked.

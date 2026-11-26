@@ -280,10 +280,12 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `a drop-in and nothing at the main path, the drop-in named before any step`() {
+    fun `a drop-in and nothing at the main path, the drop-in named before any step, and a hidden one left out`() {
         layLauncher()
         val dropIn = dropIn()
+        Files.writeString(dropIn.resolveSibling(".hidden.json"), "{}")
         assertEquals(0, wrapper("--print"))
+        assertFalse(".hidden.json" in printed(), "Claude Code skips hidden drop-ins, and so does what splice names")
         val named = said.indexOfFirst { places in it && "$dropIn" in it }
         val step = said.indexOfFirst { it.startsWith("What to do: check the places splice did not read first") }
         assertTrue(named in 0 until step, printed())
@@ -368,7 +370,7 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `on Windows it names both registry policy values and the commands for that system, without querying them`() {
+    fun `on Windows it names both registry policy values and gives the commands for that system`() {
         layLauncher()
         assertEquals(0, wrapper(osName = "Windows 11"))
         for (hive in listOf("HKLM", "HKCU")) {
@@ -380,6 +382,16 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
         assertEquals(0, wrapper(osName = "Windows 11"))
         assertTrue("  Edit it in an editor run as administrator." in said, printed())
         assertFalse("Copy-Item" in printed() || "sudo" in printed(), printed())
+    }
+
+    @Test
+    fun `on macOS it names the person's and the device's policy plists`() {
+        layLauncher()
+        assertEquals(0, wrapper(osName = "Mac OS X"))
+        val user = System.getProperty("user.name")
+        for (plist in listOf("$user/com.anthropic.claudecode.plist", "com.anthropic.claudecode.plist")) {
+            assertTrue("/Library/Managed Preferences/$plist" in placesLine(), printed())
+        }
     }
 
     @Test

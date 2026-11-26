@@ -79,11 +79,17 @@ A tool meant only for views and row buttons is marked:
 { "ui": { "visibility": ["app"] } }
 ```
 
-Splice enforces this mark itself. It leaves the tool out of the `tools/list` it writes for the
-session, so the model never sees the tool. A call from a row's action or a view is still answered.
-The protection is that Splice leaves the tool off the list. It does not count on the host honoring
-the mark: one host was measured forwarding a view's call to a tool marked for the model alone, so
-whether a host honors the mark is not something to rely on.
+A tool not marked for the model is left out of the `tools/list` Splice writes for that session, so
+it is not in the list the model is offered. A call to it from a row's action or a view is still
+answered. That is all the mark does, and it has two limits:
+
+- **It walls only the path Splice serves**, the mod's server at `/mcp/<name>`. If the same action
+  can be reached another way, through a command on the PATH, a file or a route, the mark does
+  nothing about it. A session with a shell can still do whatever that shell can do. Do not treat an
+  app-only mark as keeping a destructive action away from a session; guard the action where it
+  actually lives.
+- **It is Splice's list, not the host's doing.** Do not count on the host to honor the mark: one
+  host was measured forwarding a view's call to a tool marked for the model alone.
 
 ## `on`, the one primitive
 

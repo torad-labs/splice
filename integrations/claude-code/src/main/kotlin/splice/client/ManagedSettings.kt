@@ -54,16 +54,18 @@ public class ManagedSettings(
      *  of `managed-settings.d` in filename order. A folder that is absent or can't be listed adds no drop-in. */
     public fun sources(): List<Path> = listOf(file) + dropIns()
 
-    /** What splice can say of the main file, and the other places Claude Code can take managed settings from for a
-     *  session under [env], which are only found, never read for their keys: the remote settings in its config folder
-     *  (`CLAUDE_CONFIG_DIR`, or `~/.claude`), the system's policy stores and the drop-ins ([ManagedReading]). */
+    /** What splice can say of the main file, and the other places Claude Code may take managed settings from, named
+     *  without being read: the remote settings in the config folder [env] gives Claude Code (`CLAUDE_CONFIG_DIR`, or
+     *  `~/.claude`), the system's policy stores, and each drop-in splice lists, or the drop-in folder where it can't
+     *  list it ([ManagedReading]). */
     public fun reading(env: EnvReader): ManagedReading {
         val state = if (PathAbsence.known(file)) ManagedFile.Absent else read(file)?.let(ManagedFile::Read)
         val tree = env(CONFIG_TREE_ENV)?.takeIf(String::isNotBlank)?.let(Path::of) ?: UserHome.claudeDir(env)
-        val dropIns = listedDropIns()?.let { found -> UnreadPlaces(held = found.map(Path::toString)) }
-            ?: UnreadPlaces(unsure = listOf(dropInFolder.toString()))
-        val unread = PathAbsence.place(tree.resolve(REMOTE_SETTINGS)) + policy.places() + dropIns
-        return ManagedReading(file, state ?: ManagedFile.Unreadable, unread)
+        val listed = if (PathAbsence.known(dropInFolder)) emptyList() else PathAbsence.listed(dropInFolder)
+        val dropIns = listed?.let(::jsonFiles)?.map(Path::toString) ?: listOf(dropInFolder.toString())
+        val remote = "$REMOTE_SETTINGS in Claude Code's config folder ($tree, unless $CONFIG_TREE_ENV names another " +
+            "for a session)"
+        return ManagedReading(file, state ?: ManagedFile.Unreadable, listOf(remote) + policy.stores() + dropIns)
     }
 
     /** Whether the managed settings that reach a session of the tree at [configDir] set telemetry: the switch or any
@@ -127,16 +129,11 @@ public class ManagedSettings(
 
     private val dropInFolder: Path get() = platform.resolve(MANAGED_DROP_IN_DIR)
 
-    private fun dropIns(): List<Path> = listedDropIns().orEmpty()
+    private fun dropIns(): List<Path> = jsonFiles(PathAbsence.listed(dropInFolder).orEmpty())
 
-    /** The drop-ins in filename order: none where nothing is known to be at the folder's path, and null where splice
-     *  can't tell what is there. */
-    private fun listedDropIns(): List<Path>? {
-        if (PathAbsence.known(dropInFolder)) return emptyList()
-        return PathAbsence.listed(dropInFolder)
-            ?.filter { it.name.endsWith(DROP_IN_SUFFIX) && !it.name.startsWith(".") }
-            ?.sortedBy { it.name }
-    }
+    /** The drop-ins among [listed], in filename order: each `*.json` that is not hidden. */
+    private fun jsonFiles(listed: List<Path>): List<Path> =
+        listed.filter { it.name.endsWith(DROP_IN_SUFFIX) && !it.name.startsWith(".") }.sortedBy { it.name }
 
     /** Whether [env] or [selected]'s headers helper sets telemetry; a key whose value is blank sets nothing, as an
      *  unset one does. */

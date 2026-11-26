@@ -48,12 +48,12 @@ public class PlatformPolicy(
     /** Windows' HKCU value, which Claude Code reads only when no admin document is present; null everywhere else. */
     public fun userFallback(): PolicyDocument? = if (os.startsWith(WINDOWS_FAMILY)) registry(HKCU_KEY) else null
 
-    /** The system's policy stores as places splice does not read: macOS's plists, Windows' HKLM and HKCU values. Each
-     *  is held where something is there, left out only where splice established that nothing is, and unsure else. */
-    internal fun places(): UnreadPlaces = when {
-        os.startsWith(MAC_FAMILY) -> plists().map(PathAbsence::place).fold(UnreadPlaces(), UnreadPlaces::plus)
-        os.startsWith(WINDOWS_FAMILY) -> registryPlace(HKLM_KEY) + registryPlace(HKCU_KEY)
-        else -> UnreadPlaces()
+    /** The system's policy stores Claude Code reads, in words, named without looking at them: macOS's plists, Windows'
+     *  HKLM and HKCU `Settings` values; none on any other system. */
+    internal fun stores(): List<String> = when {
+        os.startsWith(MAC_FAMILY) -> plists().map(Path::toString)
+        os.startsWith(WINDOWS_FAMILY) -> listOf(HKLM_KEY, HKCU_KEY).map { "the registry value $it\\$SETTINGS_VALUE" }
+        else -> emptyList()
     }
 
     /** The person's plist, where macOS names a person, then the device's. */
@@ -61,19 +61,6 @@ public class PlatformPolicy(
         user.takeIf { it.isNotBlank() }?.let { preferences.resolve(it).resolve(PLIST) },
         preferences.resolve(PLIST),
     )
-
-    /** [key]'s `Settings` value as a place: held where `reg.exe` finds it; left out where splice read the key and it
-     *  holds no such value, or read the key's parent and it holds no such key; unsure where those queries fail another
-     *  way (a denial, a timeout, no reg.exe). */
-    private fun registryPlace(key: String): UnreadPlaces {
-        val name = "the registry value $key\\$SETTINGS_VALUE"
-        if (run(listOf(reg.toString(), REG_QUERY, key, "/v", SETTINGS_VALUE)) != null) return UnreadPlaces(listOf(name))
-        if (run(listOf(reg.toString(), REG_QUERY, key)) != null) return UnreadPlaces()
-        val parent = run(listOf(reg.toString(), REG_QUERY, key.substringBeforeLast('\\')))
-        val child = "\\" + key.substringAfterLast('\\')
-        val listed = parent?.lines()?.any { it.trim().endsWith(child, ignoreCase = true) }
-        return if (listed == false) UnreadPlaces() else UnreadPlaces(unsure = listOf(name))
-    }
 
     /** The first of the person's and the device's plists that exists and converts, as Claude Code takes the first
      *  readable one; null when neither exists, and unreadable when none that exists converts to a JSON object. */
@@ -89,7 +76,7 @@ public class PlatformPolicy(
     /** The `Settings` value under [key], or null when `reg.exe` reports no such key or value (any failing exit); a
      *  value that is there and is no string holding a JSON object is unreadable. */
     private fun registry(key: String): PolicyDocument? {
-        val out = run(listOf(reg.toString(), REG_QUERY, key, "/v", SETTINGS_VALUE)) ?: return null
+        val out = run(listOf(reg.toString(), "query", key, "/v", SETTINGS_VALUE)) ?: return null
         val match = REG_LINE.find(out) ?: return PolicyDocument(null, unreadable = true)
         val raw = match.groupValues[2].trim()
         val text = if (match.groupValues[1].isNotEmpty()) expanded(raw) else raw
@@ -140,9 +127,6 @@ private const val WINDOWS_ROOT = "C:\\Windows"
 private const val HKLM_KEY = "HKLM\\SOFTWARE\\Policies\\ClaudeCode"
 private const val HKCU_KEY = "HKCU\\SOFTWARE\\Policies\\ClaudeCode"
 private const val SETTINGS_VALUE = "Settings"
-
-// reg.exe's verb that reads a key or one of its values.
-private const val REG_QUERY = "query"
 
 // why: Claude Code's own bounds on the same commands: five seconds, and 2 MiB of output.
 private const val COMMAND_WAIT_MS = 5_000L

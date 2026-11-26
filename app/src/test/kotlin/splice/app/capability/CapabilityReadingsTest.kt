@@ -92,7 +92,7 @@ class CapabilityReadingsTest {
     }
 
     @Test
-    fun `both keys right is fine and no item; merge without a wrapper is a note and no item`() {
+    fun `both keys right is fine and no item, and merge without a wrapper is a note and no item`() {
         val ok = app(read("""{"processWrapper": "$launch", "parentSettingsBehavior": "merge"}"""))
         assertEquals(ToolLevel.OK, row(ok)!!.level)
         assertEquals(null, row(ok)!!.fix)

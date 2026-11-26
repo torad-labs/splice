@@ -198,7 +198,7 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `a link to nothing is not absent: it could not be read, and nothing is created at it`() {
+    fun `a link to nothing is not absent, it could not be read, and nothing is created at it`() {
         layLauncher()
         Files.createDirectories(folder)
         Files.createSymbolicLink(managed, folder.resolve("gone.json"))
@@ -224,7 +224,7 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `a folder splice cannot look into tells it nothing: the file could not be read, not absent`() {
+    fun `a folder splice cannot look into tells it nothing, so the file could not be read, not absent`() {
         layLauncher()
         file(bothRight)
         withLocked(folder) {
@@ -255,7 +255,7 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `a drop-in and nothing at the main path: the drop-in is named before any step, and the effect is open`() {
+    fun `a drop-in and nothing at the main path, the drop-in named before any step, and the effect is open`() {
         layLauncher()
         val dropIn = dropIn()
         assertEquals(0, wrapper("--print"))

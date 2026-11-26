@@ -69,8 +69,8 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
     fun step(): String? {
         val edit = when (state) {
             ManagedFile.Absent ->
-                "to have the Code tab start through splice (Antigravity there, live model switches), create it so " +
-                    "it holds both keys"
+                "to start the Code tab through splice (Antigravity there, live model switches), create it so it " +
+                    "holds both keys"
             ManagedFile.Unreadable ->
                 "look at it as an administrator and make it hold both keys, editing it in place where it exists"
             is ManagedFile.Read -> IN_PLACE.takeUnless { starts && merges }

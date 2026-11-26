@@ -1156,6 +1156,8 @@ discovery_prefix = "claude--"
 #   SPLICE_HISTORY_RETENTION_DAYS historyRetentionDays
 #
 # Seam reads, no TOML spelling — a path or endpoint the daemon reads directly:
+#   SPLICE_BUN              Bun executable for mods. At install it overrides PATH and is recorded with the mod.
+#                           At start an executable recorded path wins, then SPLICE_BUN, PATH, then ~/.bun/bin/bun.
 #   ANTHROPIC_BASE_URL and ANTHROPIC_BEDROCK_MANTLE_BASE_URL
 #                           Desktop's launcher reads these to recognize this splice's gateway or Mantle door.
 #   SystemRoot              Windows' own folder, where splice finds reg.exe to read Claude Code's registry policy;

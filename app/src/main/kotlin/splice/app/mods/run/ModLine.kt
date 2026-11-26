@@ -10,7 +10,6 @@ import java.io.InputStream
 import java.io.OutputStream
 
 private const val MOD_LINE_BYTES = 256 * 1024 // why: bound memory for a broken or flooding peer
-private const val LINE_FEED = 10 // why: JSON lines use the ASCII LF byte as their delimiter
 
 internal data class ModEvent(val name: String, val sessionId: String?, val payload: JsonObject) {
     fun message(): JsonObject = buildJsonObject {
@@ -33,7 +32,7 @@ internal object ModLine {
         val bytes = value.toString().encodeToByteArray()
         if (bytes.size > MOD_LINE_BYTES) return false
         stream.write(bytes)
-        stream.write(LINE_FEED)
+        stream.write('\n'.code)
         stream.flush()
         return true
     }
@@ -48,7 +47,7 @@ internal class ModLineReader(stream: InputStream) {
         var used = 0
         var byte = input.read()
         while (byte != -1) {
-            if (byte == LINE_FEED) {
+            if (byte == '\n'.code) {
                 line(text(used))
                 used = 0
             } else if (used <= bytes.size) {

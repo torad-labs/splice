@@ -3,6 +3,7 @@ package splice.app.mods.install
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.archivers.tar.TarConstants
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
+import splice.core.util.SafeFailureText
 import java.io.BufferedInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -24,7 +25,10 @@ internal class ModTarball(private val target: Path) {
         } catch (refused: ModRefusal) {
             throw refused
         } catch (unreadable: IOException) {
-            throw ModRefusal("could not read or unpack the tarball: ${unreadable.message}", cause = unreadable)
+            throw ModRefusal(
+                "could not read or unpack the tarball: ${SafeFailureText.render(unreadable)}",
+                cause = unreadable,
+            )
         }
     }
 

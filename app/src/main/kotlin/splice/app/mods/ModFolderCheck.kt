@@ -6,19 +6,29 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.app.mods.install.ModRefusal
 import splice.core.util.JsonScalars
+import splice.core.wire.TOOL_NAME_MAX_LENGTH
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
 
-internal const val MANIFEST = ".splice-mod/mod.json"
-private const val HOOKS = "hooks/hooks.json"
-private const val DESCRIPTION = "description"
+internal const val MOD_MANIFEST_PATH = ".splice-mod/mod.json"
+private const val MOD_HOOKS_PATH = "hooks/hooks.json"
+private const val MOD_DESCRIPTION_FIELD = "description"
 
 // why: bound JSON and tool descriptions independently of the package's total file budget.
 private const val METADATA_LIMIT = 1024 * 1024
 private val topKeys = setOf(
-    "name", "version", DESCRIPTION, "author", "surfaces", "capabilities", "tools", "pages", "commands", "views",
+    "name",
+    "version",
+    MOD_DESCRIPTION_FIELD,
+    "author",
+    "surfaces",
+    "capabilities",
+    "tools",
+    "pages",
+    "commands",
+    "views",
 )
 private const val VERSION_NUMBER = """(?:0|[1-9][0-9]*)"""
 private const val PRE_RELEASE_PART = """(?:$VERSION_NUMBER|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"""
@@ -43,7 +53,7 @@ internal class ModFolderCheck(private val root: Path) {
         val name = keys.string("name")?.also(::checkName)
         val version = keys.string("version")
         if (version != null && !semver.matches(version)) faults.add("mod.json's version is not a semantic version")
-        keys.string(DESCRIPTION)
+        keys.string(MOD_DESCRIPTION_FIELD)
         keys.optionalString("author")
         keys.strings("surfaces")
         keys.strings("capabilities").forEach(::checkCapability)
@@ -53,10 +63,12 @@ internal class ModFolderCheck(private val root: Path) {
     }
 
     private fun manifestObject(): JsonObject? {
-        if (!hasFile(MANIFEST)) {
-            return null.also { faults.add("there is no $MANIFEST in it, so it is not a mod") }
+        if (!hasFile(MOD_MANIFEST_PATH)) {
+            return null.also { faults.add("there is no $MOD_MANIFEST_PATH in it, so it is not a mod") }
         }
-        return json(MANIFEST) as? JsonObject ?: null.also { faults.add("$MANIFEST is not a JSON object") }
+        return json(
+            MOD_MANIFEST_PATH,
+        ) as? JsonObject ?: null.also { faults.add("$MOD_MANIFEST_PATH is not a JSON object") }
     }
 
     fun text(relative: String): String? {
@@ -122,17 +134,17 @@ internal class ModFolderCheck(private val root: Path) {
     }
 
     private fun hooks() {
-        if (!Files.exists(root.resolve(HOOKS))) return
-        val obj = json(HOOKS) as? JsonObject ?: return faults.add("$HOOKS is not a JSON object")
-        val keys = ModKeys(obj, faults, HOOKS)
+        if (!Files.exists(root.resolve(MOD_HOOKS_PATH))) return
+        val obj = json(MOD_HOOKS_PATH) as? JsonObject ?: return faults.add("$MOD_HOOKS_PATH is not a JSON object")
+        val keys = ModKeys(obj, faults, MOD_HOOKS_PATH)
         keys.unknown(setOf("modules"))
-        if ("modules" !in obj) return faults.add("$HOOKS has no modules")
+        if ("modules" !in obj) return faults.add("$MOD_HOOKS_PATH has no modules")
         keys.strings("modules").forEach { module ->
             val path = "hooks/" + module.removePrefix("./")
             when {
                 inside(root.resolve("hooks"), module) == null ->
-                    faults.add("$HOOKS lists module $module, which is outside hooks/")
-                !hasFile(path) -> faults.add("$HOOKS lists module $module, and $path is missing")
+                    faults.add("$MOD_HOOKS_PATH lists module $module, which is outside hooks/")
+                !hasFile(path) -> faults.add("$MOD_HOOKS_PATH lists module $module, and $path is missing")
             }
         }
     }
@@ -147,13 +159,13 @@ private class ModDeclaredRead(
     fun check(mod: String?) {
         keys.strings("tools").forEach { tool(it, mod) }
         keys.objects("pages").forEach { (place, obj) -> word(place, obj, "pages", "title") }
-        keys.objects("commands").forEach { (place, obj) -> word(place, obj, "commands", DESCRIPTION) }
+        keys.objects("commands").forEach { (place, obj) -> word(place, obj, "commands", MOD_DESCRIPTION_FIELD) }
         keys.objects("views").forEach { (place, obj) -> view(place, obj) }
     }
 
     private fun tool(name: String, mod: String?) {
         if (!ModNames.isToolName(name)) {
-            faults.add("tools lists $name, which is not ${ModNames.TOOL_RULE}")
+            faults.add("tools lists $name, which is not ${ModNames.MOD_TOOL_NAME_RULE}")
             return
         }
         schema(name)
@@ -171,8 +183,8 @@ private class ModDeclaredRead(
 
     private fun offered(mod: String, name: String) {
         val offered = ModNames.offered(mod, name)
-        if (offered.length > ModNames.MAX_OFFERED) {
-            faults.add("tool $name is offered as $offered, longer than ${ModNames.MAX_OFFERED} characters")
+        if (offered.length > TOOL_NAME_MAX_LENGTH) {
+            faults.add("tool $name is offered as $offered, longer than ${TOOL_NAME_MAX_LENGTH} characters")
         }
     }
 

@@ -3,11 +3,8 @@
 package splice.app.mods
 
 internal object ModNames {
-    // why: maximum length of the qualified mcp__<mod>__<tool> name offered to clients.
-    const val MAX_OFFERED: Int = 64
-
     const val MOD_RULE: String = "[a-z][a-z0-9]*, at most 40 characters"
-    const val TOOL_RULE: String = "[a-z][a-z0-9_]* with no __"
+    const val MOD_TOOL_NAME_RULE: String = "[a-z][a-z0-9_]* with no __"
     const val WORD_RULE: String = "1 to 40 characters of a-z, 0-9 and -"
 
     private val modName = Regex("[a-z][a-z0-9]{0,39}")

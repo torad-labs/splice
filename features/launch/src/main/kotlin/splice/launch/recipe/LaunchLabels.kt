@@ -58,6 +58,9 @@ internal object LaunchLabels {
             ModsOff(names = raw.orEmpty().split(',').map(String::trim).filter(String::isNotEmpty).toSet())
         }
 
+    // why: labels repeat in mod events and session rows; cap each value's wire size, not its character count.
     private const val MAX_LABEL_BYTES = 256
+
+    // why: cap the whole label map even when a launch supplies many valid, distinct keys.
     private const val MAX_LABELS = 16
 }

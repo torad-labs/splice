@@ -11,6 +11,8 @@ import splice.app.mods.install.BUN_NOT_FOUND
 import splice.app.mods.install.InstalledMod
 import splice.app.mods.install.InstalledMods
 
+internal const val MOD_RUNTIME_STATE_FIELD = "state"
+
 /** The catalog carries the declaration unmodified, alongside current process state. */
 internal class ModRows(private val mods: InstalledMods) {
     fun all(): JsonObject = buildJsonObject {
@@ -29,7 +31,7 @@ internal class ModRows(private val mods: InstalledMods) {
             if (mod.linked) put("linkedPath", mod.root.toString())
             put("source", mod.source)
             put("hashChecked", !mod.linked)
-            put("state", runtime.state.wire)
+            put(MOD_RUNTIME_STATE_FIELD, runtime.state.wire)
             put("failed", runtime.state == ModRuntimeState.FAILED)
             put("dropped", runtime.dropped)
             put("bunPath", bun ?: mod.bunPath)

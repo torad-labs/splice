@@ -55,13 +55,13 @@ internal class InstalledMods(paths: StatePaths) : InstalledModNames {
             val mod = InstalledMod(record, installed)
             // Replacing a copied mod with a link removes only the managed copy.
             if (find(mod.name)?.linked == false) {
-                staging().use { it.publish(mod, payload = null) { save(mod) } }
+                withStage { it.publish(mod, payload = null) { save(mod) } }
             } else {
                 save(mod)
             }
             return mod
         }
-        return staging().use { staged ->
+        return withStage { staged ->
             val root = staged.unpack(source)
             val manifest = ModFolderCheck(root).check().requireManifest()
             val mod = InstalledMod(ModRecord(manifest, source.toString(), bunPath = input.bunPath), installed)
@@ -82,7 +82,7 @@ internal class InstalledMods(paths: StatePaths) : InstalledModNames {
         val updated = if (requested.accept || current.linked) refreshManifest(current) else current.record
         val mod = InstalledMod(updated.copy(enabled = true), installed)
         if (requested.accept && !mod.linked) {
-            staging().use { staged ->
+            withStage { staged ->
                 hashes.record(mod.root, staged.hash, mod.source)
                 staged.accept(mod) { save(mod) }
             }
@@ -98,7 +98,7 @@ internal class InstalledMods(paths: StatePaths) : InstalledModNames {
         if (mod.linked) {
             persist(records - name)
         } else {
-            staging().use { it.publish(mod, payload = null) { persist(records - name) } }
+            withStage { it.publish(mod, payload = null) { persist(records - name) } }
         }
         return mod
     }
@@ -138,10 +138,10 @@ internal class InstalledMods(paths: StatePaths) : InstalledModNames {
         return mod.record.copy(manifest = declaration)
     }
 
-    private fun staging(): ModStage {
+    private inline fun <T> withStage(block: (ModStage) -> T): T {
         ModPrivateDir.create(directory)
         ModPrivateDir.create(installed)
-        return ModStage(installed)
+        return ModStage(installed).use(block)
     }
 
     private fun save(mod: InstalledMod): InstalledMod {

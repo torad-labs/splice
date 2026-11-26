@@ -1,6 +1,6 @@
 package splice.app.mods.install
 
-import splice.app.mods.MANIFEST
+import splice.app.mods.MOD_MANIFEST_PATH
 import splice.core.util.SecureFile
 import java.io.IOException
 import java.nio.file.Files
@@ -28,9 +28,9 @@ internal class ModStage(installed: Path) : AutoCloseable {
     }
 
     private fun packageRoot(): Path {
-        if (Files.exists(payload.resolve(MANIFEST))) return payload
+        if (Files.exists(payload.resolve(MOD_MANIFEST_PATH))) return payload
         val wrapped = Files.list(payload).use { it.limit(2).toList().singleOrNull() }
-        return wrapped?.takeIf { Files.isRegularFile(it.resolve(MANIFEST)) } ?: payload
+        return wrapped?.takeIf { Files.isRegularFile(it.resolve(MOD_MANIFEST_PATH)) } ?: payload
     }
 
     inline fun publish(mod: InstalledMod, payload: Path?, commit: () -> Unit) {

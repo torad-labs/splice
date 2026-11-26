@@ -2,10 +2,10 @@ package splice.app.cli.mod
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import splice.app.mods.MOD_RUNTIME_STATE_FIELD
 import splice.app.mods.install.BUN_NOT_FOUND
 import splice.core.util.JsonScalars
 
-private const val STATE = "state"
 private const val TURN_NOTICE =
     "It will hear turns from now on, including in sessions already running. " +
         "No session.start is replayed; new sessions announce their start."
@@ -76,7 +76,7 @@ internal class ModLines {
     }
 
     private fun runtime(row: JsonObject): String = buildString {
-        val state = value(row, STATE)
+        val state = value(row, MOD_RUNTIME_STATE_FIELD)
         if (state != "disabled") {
             append("; $state")
             value(row, "why").takeIf(String::isNotBlank)?.let { append(": $it") }
@@ -88,9 +88,9 @@ internal class ModLines {
         val message = when {
             why == BUN_NOT_FOUND ->
                 "$BUN_NOT_FOUND. Install Bun from https://bun.sh, then run splice mod enable ${name(row)}."
-            value(row, STATE) == "failed" -> "It is not running: $why"
-            value(row, STATE) == "starting" -> "Still loading. See splice mod list for its state."
-            value(row, STATE) == "restarting" -> why
+            value(row, MOD_RUNTIME_STATE_FIELD) == "failed" -> "It is not running: $why"
+            value(row, MOD_RUNTIME_STATE_FIELD) == "starting" -> "Still loading. See splice mod list for its state."
+            value(row, MOD_RUNTIME_STATE_FIELD) == "restarting" -> why
             else -> TURN_NOTICE
         }
         return (notices(row) + message).joinToString("\n")

@@ -3,6 +3,7 @@ package splice.app.mods.install
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.io.IOException
 import java.io.OutputStream
@@ -42,7 +43,7 @@ internal class ModHashes(private val clock: Clock = Clock.systemUTC()) {
             val expected = Json.decodeFromString<HashRecord>(Files.readString(mod.hashFile)).files
             delta(expected, HashTree(mod.root).read())
         } catch (unreadable: IOException) {
-            "could not check installed files: ${unreadable.message}"
+            "could not check installed files: ${SafeFailureText.render(unreadable)}"
         } catch (_: IllegalArgumentException) {
             "the installed file record is unreadable"
         }

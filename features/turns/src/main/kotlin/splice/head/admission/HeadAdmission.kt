@@ -9,6 +9,7 @@ package splice.head.admission
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import splice.core.auth.CredentialKey
+import splice.core.config.LAUNCH_OWNER_HEADER
 import splice.core.memory.HeapCapacityException
 import splice.core.turn.LiveWatchdogBudget
 import splice.core.util.Cancellables
@@ -157,6 +158,12 @@ internal class HeadAdmission(
         // would leave the console a start with no end; Rejected writes one and announces itself
         // (PreDriveRefusals.refusePrepared).
         deps.seams.events.turnStarted(prepared.built.meta.scope.sessionId)
+        deps.seams.servedTurn.note(
+            prepared.built.meta.scope.sessionId,
+            preparation.provider.key,
+            call.request.headers[LAUNCH_OWNER_HEADER],
+            served = true,
+        )
         // V4-174: the trace begins HERE, before the two local refusals, because a refused turn is a
         // request the head received and answered — a trace that skipped it would show a client
         // retrying for no visible reason. Null for every head whose trace is off.

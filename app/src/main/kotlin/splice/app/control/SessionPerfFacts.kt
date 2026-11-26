@@ -8,6 +8,7 @@ import splice.client.resume.ModelMoves
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
 import splice.core.util.WallClock
+import splice.sessions.http.ServedLabels
 import splice.sessions.http.SessionAccountOf
 import splice.sessions.http.SessionEnding
 import splice.sessions.http.SessionEndingOf
@@ -35,6 +36,7 @@ internal class SessionPerfFacts(
         windowOf = SessionWindowOf { record ->
             record.head?.let(heads::get)?.statusline?.clientWindows?.windowFor(record.sessionId)
         },
+        labelsOf = ServedLabels { ports.servedSessions },
     )
 
     /** Every head's per-session accumulator, summed, because a session that moved heads has rows on

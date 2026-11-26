@@ -43,6 +43,7 @@ import splice.sessions.registry.FeedbackDrafts
 import splice.sessions.registry.RecordedSessions
 import splice.sessions.registry.SEEN_SESSIONS_DIR
 import splice.sessions.registry.SeenSessions
+import splice.sessions.registry.ServedSessionSource
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionSource
 import splice.sessions.transcript.SessionTranscriptViewEnabled
@@ -127,7 +128,9 @@ internal class SessionsWiring(
     val listed = sessions?.let {
         // the daemon's own state root, never the process default: a daemon on another root keeps its record there
         val dir = config.statePaths.stateDir.resolve(SEEN_SESSIONS_DIR)
-        RecordedSessions(it, SeenSessions(dir, KeptHistory { config.getConfig().historyWindow }, heap = JvmHeap.budget))
+        val seen = SeenSessions(dir, KeptHistory { config.getConfig().historyWindow }, heap = JvmHeap.budget)
+        val recorded = RecordedSessions(it, seen)
+        ServedSessionSource(recorded) { ports.servedSessions }
     }
     private val traceSent = TraceSessionSent(TraceDirPort { ports.traceDir })
     val routes: SessionsRoutes? = listed?.let {

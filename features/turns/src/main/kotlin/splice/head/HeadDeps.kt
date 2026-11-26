@@ -42,6 +42,8 @@ import splice.head.usage.UsageStore
 import splice.head.wire.TraceStore
 import splice.head.wire.WireTap
 import splice.sessions.prompt.SlotInstructions
+import splice.sessions.registry.NoServedTurn
+import splice.sessions.registry.ServedTurn
 import splice.upstream.Ticker
 import splice.upstream.Waiter
 import splice.upstream.codemode.ProcessTicker
@@ -271,6 +273,7 @@ public data class HeadDeps(
         public val ticker: Ticker get() = ticks.client
         public val watchdogTicker: Ticker get() = ticks.watchdog
         public val events: HeadEvents get() = reports.events
+        public val servedTurn: ServedTurn get() = reports.servedTurn
     }
 
     /** Who hears how a head's turns go: its console, and the server listener that relayed a turn to it. */
@@ -280,6 +283,8 @@ public data class HeadDeps(
         /** Server mode (F5): where a turn the server listener relayed is told how it went. A head no listener relays
          *  to has a board nobody waits on, which drops what it is told. */
         val served: ServedTurns = ServedTurnBoard(),
+        /** A turn admitted here, so a headless session can become a row. A head without one notes nothing. */
+        val servedTurn: ServedTurn = NoServedTurn,
     )
 
     /** Separate ticking consumers keep the pinger's cadence independent of watchdog progress. */

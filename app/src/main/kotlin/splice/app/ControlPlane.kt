@@ -88,6 +88,10 @@ internal class ControlPlane(
     /** Claude Desktop's door (docs/specs/desktop-door.md), assigned by Daemon before [start]. */
     internal var desktop: splice.app.desktop.DaemonDesktop? = null
 
+    /** Headless sessions that have served a turn, and the launch roster that holds their labels. Set before start. */
+    internal var servedSessions: splice.sessions.registry.ServedSessions? = null
+    internal var launchLabels: splice.launch.recipe.LaunchLabelRoster? = null
+
     /** The heads the Context Getter starts its gatherer on (docs/specs/harness.md, decision 9): handed to every head's
      *  harness before [start], and given the launch service [start] makes. */
     internal val gatherers = splice.app.head.LaunchedGatherers()
@@ -256,6 +260,7 @@ internal class ControlPlane(
                         it.remotes = remoteCommands
                         it.speeds = speeds.of(heads, desktop?.servedProviders)
                         it.door = desktop?.claude
+                        launchLabels?.let { roster -> it.labels = roster }
                         gatherers.attach(it, heads)
                     },
                 shutdownDaemon = shutdownDaemon,
@@ -312,6 +317,7 @@ internal class ControlPlane(
         ConsoleWiring.wire(srv, topology, modelRosters, statePaths.configBackupsDir, log)
         srv.ports.activity = console.stores
         srv.ports.teams = teams
+        srv.ports.servedSessions = servedSessions
         srv.ports.sessionDriver = sessionWiring.driver()
         srv.ports.processes = ProcessReads { sessionWiring.processes() }
         ConsoleWiring.wireV4133(srv, budgets, alerts, playground)

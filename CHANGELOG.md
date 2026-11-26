@@ -3,6 +3,7 @@
 ## Unreleased: a provider is served with no head, Claude Desktop sets itself up, and one model catalog
 
 ### Highlights
+- **A headless session that has served a turn is a row.** `GET /api/sessions` lists a `claude -p` or `claude -p --resume` run that has served at least one turn through Splice, one row per session id however many processes served it, with the `SPLICE_LABEL_*` labels that launch recorded. A launch that has not served a turn is still absent. An interactive session is unchanged.
 - **Restarts and upgrades hand over at once.** `splice restart`, `splice upgrade` and `POST /api/daemon/restart` no
   longer wait by default for turns or compactions on commands that hand over under systemd (`hands_over = true`). Only
   compactions that a restart would cut — on Muse, a local runtime with `slot_affinity`, or a daemon outside the unit —

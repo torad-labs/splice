@@ -33,6 +33,8 @@ import splice.head.compaction.CompactionTail
 import splice.head.compaction.SessionProjectLookup
 import splice.head.turn.LiveTurns
 import splice.head.wire.WireTap
+import splice.sessions.registry.NoServedTurn
+import splice.sessions.registry.ServedTurn
 import splice.upstream.Provider
 import splice.upstream.retry.GateObservation
 import splice.upstream.retry.InflightGate
@@ -66,6 +68,9 @@ internal class HeadServerFactory(
 
     /** Assigned before any head is assembled; the callback reads the login owner at request time. */
     internal var credentialAccountNames: HeadDeps.CredentialAccountNames = HeadDeps.CredentialAccountNames { null }
+
+    /** Assigned before any head is assembled, so a served headless turn becomes a session row. */
+    internal var servedTurn: ServedTurn = NoServedTurn
 
     /** The sockets a manager handed the daemon, assigned by Daemon before it starts (see [AdoptedServing]). Like the
      *  two below it is assigned rather than a constructor parameter, which is at its width ceiling, and nothing reads
@@ -278,7 +283,11 @@ internal class HeadServerFactory(
             compactionTail = compactionTail,
             harness = capabilities.forHead(key, log),
         ),
-        reports = HeadDeps.HeadReports(events = console?.forHead(key) ?: NoHeadEvents, served = served),
+        reports = HeadDeps.HeadReports(
+            events = console?.forHead(key) ?: NoHeadEvents,
+            served = served,
+            servedTurn = servedTurn,
+        ),
     )
 }
 

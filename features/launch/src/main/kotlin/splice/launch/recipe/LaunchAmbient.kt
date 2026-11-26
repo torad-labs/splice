@@ -8,6 +8,7 @@ package splice.launch.recipe
 import splice.client.desktop.GATEWAY_HEADERS
 import splice.core.client.CLIENT_WALL_HEADER
 import splice.core.client.SPLICE_CLIENT_HEADER
+import splice.core.config.LAUNCH_OWNER_HEADER
 import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.model.CLIENT_WINDOW_HEADER
 import splice.core.util.EnvReader
@@ -54,4 +55,4 @@ private const val LOOPBACK_HOSTS = "127.0.0.1,localhost"
 /** The headers a launch plants for its session: its client wall, its window, its launch proof and, from a team
  *  server's command, the word that this is splice. The shim drops the same four from the caller's (caller_headers). */
 private val planted: Set<String> =
-    setOf(CLIENT_WALL_HEADER, CLIENT_WINDOW_HEADER, LAUNCH_PROOF_HEADER, SPLICE_CLIENT_HEADER)
+    setOf(CLIENT_WALL_HEADER, CLIENT_WINDOW_HEADER, LAUNCH_PROOF_HEADER, LAUNCH_OWNER_HEADER, SPLICE_CLIENT_HEADER)

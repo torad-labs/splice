@@ -39,6 +39,7 @@ import io.ktor.server.request.uri
 import kotlinx.coroutines.CompletableDeferred
 import splice.core.client.AGENT_HEADER
 import splice.core.client.SESSION_HEADER
+import splice.core.config.LAUNCH_OWNER_HEADER
 import splice.core.failure.Decline
 import splice.core.failure.FailureCause
 import splice.core.failure.StoppedBy
@@ -211,6 +212,10 @@ internal class TurnPreparation(
         // The request names its session in metadata.user_id; the header carries the same id and stands in when the body
         // does not (verified on Claude Code 2.1.257, spec 7 identification).
         val asked = RefusedRequest(parsed.typed.model, parsed.sessionId ?: headerSession, parsed.typed.stream, inbound)
+        // Before a relay: the client's launch owner is on this request, and the head that admits the turn may be another.
+        call.request.headers[LAUNCH_OWNER_HEADER]?.let { owner ->
+            deps.seams.servedTurn.note(asked.sessionId, null, owner, served = false)
+        }
         // door-default, decision 9: a model of another head is that head's to answer, before this head reads anything
         // else of the request.
         val other = OtherAsk(parsed.typed.model, parsed.raw, asked.sessionId, counting = false)

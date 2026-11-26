@@ -352,7 +352,22 @@ public class Daemon(
     // #523: set once this daemon has handed over to the next one; its stop then closes only its heads.
     private var retired = false
 
+    /** The index a served headless turn becomes a row in, and the launch roster its labels are read from. */
+    private fun wireServedSessions() {
+        val labels = splice.launch.recipe.LaunchLabelRoster(statePaths.stateDir.resolve("launch-labels"))
+        controlPlane.launchLabels = labels
+        val served = splice.sessions.registry.ServedSessions(
+            statePaths.stateDir.resolve("served-sessions"),
+            launches = splice.sessions.registry.ServedLaunches { owner ->
+                labels.held(owner)?.let { splice.sessions.registry.ServedLaunch(it.labels, it.cwd, it.pid) }
+            },
+        )
+        controlPlane.servedSessions = served
+        headServerFactory.servedTurn = served
+    }
+
     public suspend fun start() {
+        wireServedSessions()
         performance.start()
         // Before anything binds: the control plane and every head serve on a handed-over socket where there is one.
         controlPlane.adopted = adopted

@@ -81,6 +81,10 @@ public class LaunchService(
      *  machine; a test assigns one over a folder of its own so it never reads the machine's. */
     internal var managed: ManagedSettings = ManagedSettings()
 
+    /** Labels read at /launch, joined to a turn by the owner header. The daemon replaces the default with the
+     *  roster the session listing reads. */
+    public var labels: LaunchLabelRoster = LaunchLabelRoster()
+
     /** Assigned by the daemon's native login owner before routes serve requests. */
     public var loginGuard: LaunchLoginGuard? = null
 

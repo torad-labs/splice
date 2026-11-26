@@ -36,6 +36,8 @@ private data class LaunchRequest(
     val launch: String? = null,
     /** shim-30 (#791): the caller shell's NO_PROXY and no_proxy, which a launch keeps beside loopback. */
     val noProxy: List<String> = emptyList(),
+    /** `label=KEY=VALUE` fields the shim sent, one per SPLICE_LABEL_*. Empty from a shim that sends none. */
+    val labels: List<String> = emptyList(),
 ) {
     /** Who is launching, as this request says: through [wrapped] when it came through the wrapped `claude`, on
      *  [gateway] for a head's command that starts on the Splice gateway, [command] the one typed. */
@@ -117,13 +119,14 @@ public class LaunchRoutes(
         // head-catalog: every head's command starts on the Splice gateway but one that forwards the person's own Claude
         // login, which the gateway never carries
         val gateway = service.door?.takeIf { launched.startsOnGateway }?.gateway(launched.signIn.headKey)
+        val owner = service.labels.open(request.launch, request.labels, request.cwd)
         val caller = request.caller(resolved.wrapped, gateway, key)
         val outcome = when (val launch = launchFor(target, launched, request, caller, service)) {
             is LaunchOutcome.Ready ->
                 LaunchOutcome.Ready(launchResponse.withAuthWarning(target, launched, launch.recipe))
             is LaunchOutcome.Refused -> launch
         }
-        answer(call, key, outcome, caller)
+        answer(call, key, outcome, caller, owner)
     }
 
     /** `claude` on the door (docs/specs/door-default.md, decision 2): the recipe [plain] carries, over the person's own
@@ -141,12 +144,14 @@ public class LaunchRoutes(
         }
         val door = ready.spec
         val request = received.copy(extraArgs = ready.args)
+        val owner = service.labels.open(request.launch, request.labels, request.cwd)
         val caller = request.caller()
         val headDirs = heads.all().mapNotNull { it.spec?.trees?.own }
         val skip = request.dangerouslySkipPermissions
         val notices = listOfNotNull(door.notice, inHeadFolder(request.inheritedConfigDir, service))
         val told = door.copy(notice = notices.takeIf { it.isNotEmpty() }?.joinToString("\n"))
-        answer(call, key, service.onDoor.outcome(told, request.extraArgs, skip, caller, headDirs), caller)
+        val outcome = service.onDoor.outcome(told, request.extraArgs, skip, caller, headDirs)
+        answer(call, key, outcome, caller, owner)
     }
 
     /** head-catalog: a `claude` started in a head's own Claude folder ([inherited], the CLAUDE_CONFIG_DIR its shell
@@ -188,11 +193,18 @@ public class LaunchRoutes(
     }
 
     /** [outcome] as the shim reads it: a refusal in words, or its recipe, audited. */
-    private suspend fun answer(call: ApplicationCall, key: String, outcome: LaunchOutcome, caller: LaunchCaller) {
+    private suspend fun answer(
+        call: ApplicationCall,
+        key: String,
+        outcome: LaunchOutcome,
+        caller: LaunchCaller,
+        owner: String? = null,
+    ) {
         when (outcome) {
             is LaunchOutcome.Refused -> refuse(call, key, outcome.reason, HttpStatusCode.Conflict)
             is LaunchOutcome.Ready -> {
-                val recipe = launchService?.peerLaunch?.attach(caller, outcome.recipe) ?: outcome.recipe
+                val attached = launchService?.peerLaunch?.attach(caller, outcome.recipe) ?: outcome.recipe
+                val recipe = attached.copy(env = LabelFields.plant(attached.env, owner))
                 audit.launched(key, recipe.argv)
                 recipe.warning?.let(audit::warned)
                 // A shim that names the line form in Accept is answered in it; everything else keeps the JSON body.
@@ -249,6 +261,7 @@ public class LaunchRoutes(
             fields["inheritedConfigDir"],
             fields["launch"],
             fields.getAll(NO_PROXY_FIELD).orEmpty(),
+            fields.getAll("label").orEmpty(),
         )
     }
 
@@ -267,6 +280,7 @@ public class LaunchRoutes(
             JsonScalars.str(body, "inheritedConfigDir"),
             JsonScalars.str(body, "launch"),
             listOfNotNull(JsonScalars.str(body, NO_PROXY_FIELD)),
+            (body?.get("labels") as? JsonArray)?.mapNotNull { JsonScalars.str(it) }.orEmpty(),
         )
     }
 }

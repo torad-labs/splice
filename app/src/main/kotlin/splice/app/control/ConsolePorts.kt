@@ -23,6 +23,7 @@ import splice.models.list.LocalRuntimes
 import splice.models.roster.DeclaredHeads
 import splice.sessions.activity.ActivityStores
 import splice.sessions.http.SessionDriver
+import splice.sessions.registry.ServedSessions
 import splice.sessions.teams.TeamStore
 import splice.usage.alerts.AlertStore
 import splice.usage.budgets.BudgetEnforcement
@@ -72,6 +73,9 @@ public class ConsolePorts {
     /** V4-130: the console's activity stores (message edges, activity labels), assigned by ControlPlane
      *  after construction like [compaction]. Null answers the kept-store and team-day routes with a named 503. */
     public var activity: ActivityStores? = null
+
+    /** Headless sessions that have served a turn, and the labels their launch recorded. Read at call time. */
+    public var servedSessions: ServedSessions? = null
 
     /** V4-131: the daemon's team store, assigned by ControlPlane after construction like [activity].
      *  Null answers every team route with a named 503 and leaves the sessions rows' `team` null. */

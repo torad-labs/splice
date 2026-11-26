@@ -35,7 +35,20 @@ public enum class SessionAvailability { LIVE, STALE, GONE }
 /** Every readable registration, and why the directory could not be enumerated when it could not:
  *  a missing directory is genuinely no sessions, a permission failure or a file in its place is
  *  not, and both callers say which (review 2026-09-14). */
-public data class SessionListing(val sessions: List<SessionRecord>, val error: String? = null)
+public data class SessionListing(val sessions: List<SessionRecord>, val error: String? = null) {
+    /** A session id gets one row: use the newest registration still here, or the newest ended one. */
+    public fun bySession(): List<SessionRecord> {
+        val selected = HashMap<String, SessionRecord>()
+        for (record in sessions) {
+            val id = record.sessionId ?: continue
+            val before = selected.putIfAbsent(id, record)
+            if (before?.availability == SessionAvailability.GONE && record.availability != SessionAvailability.GONE) {
+                selected[id] = record
+            }
+        }
+        return sessions.filter { record -> record.sessionId == null || selected.remove(record.sessionId, record) }
+    }
+}
 
 /** Claude Code's own word for what a session is doing, when that last changed, and what a waiting session waits for:
  *  the status block of its registration, read as written. */

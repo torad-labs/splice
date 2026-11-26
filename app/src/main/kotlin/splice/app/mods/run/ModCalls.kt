@@ -26,7 +26,7 @@ internal class ModCallRows(
         val listing = sessions.list()
         if (listing.error != null) throw java.io.IOException("could not read the session registry")
         val active = tracked?.active().orEmpty()
-        val registered = listing.sessions.distinctBy(SessionRecord::sessionId)
+        val registered = listing.bySession()
         val registeredIds = registered.mapNotNull(SessionRecord::sessionId).toHashSet()
         val headless = active.mapNotNull { (id, row) ->
             if (id in registeredIds || row.off?.suppresses(mod) == true) null else row(id, id, "working", row.labels)

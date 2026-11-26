@@ -47,6 +47,32 @@ class SessionsRoutesTest {
     }
 
     @Test
+    fun `a resumed session has one row from its newest surviving process`(@TempDir dir: Path) {
+        val registrations = listOf(
+            Triple(11, "old process", now - 5_000),
+            Triple(12, "resumed process", now - 1_000),
+            Triple(13, "exited process", now),
+        )
+        registrations.forEach { (pid, name, updatedAt) ->
+            Files.writeString(
+                dir.resolve("$pid.json"),
+                """{"pid":$pid,"sessionId":"resumed","name":"$name","updatedAt":$updatedAt}""",
+            )
+        }
+        val registry = SessionRegistry(
+            sessionsDir = dir,
+            routeOf = { SessionRoute.Head("claudex") },
+            pidAlive = { it != 13L },
+            clock = { now },
+        )
+        val body = Json.parseToJsonElement(SessionsRoutes(registry, TestTranscripts()).sessionsJson()).jsonObject
+        val rows = body.getValue("sessions").jsonArray.map { it.jsonObject }
+        assertEquals(listOf("resumed"), rows.map { it.getValue("session_id").jsonPrimitive.content })
+        assertEquals("resumed process", rows.single().getValue("name").jsonPrimitive.content)
+        assertEquals("live", rows.single().getValue("availability").jsonPrimitive.content)
+    }
+
+    @Test
     fun `sessions json names the listed versions a note is sent to, by peerProtocol 1 and 2-1-282 or later`(
         @TempDir dir: Path,
     ) {

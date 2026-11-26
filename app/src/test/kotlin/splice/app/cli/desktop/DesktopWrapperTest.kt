@@ -40,7 +40,7 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
     }
     private val launch = DesktopPrograms(state).launch
     private val bothRight = """{"processWrapper":"$launch","parentSettingsBehavior":"merge"}"""
-    private val unknown = "splice does not say what Desktop does, because it could not read every place Claude Code " +
+    private val unknown = "splice does not say what Desktop does, because it did not read every place Claude Code " +
         "reads: wherever managed settings exist, Desktop warns in every Code session unless the source that wins " +
         "sets parentSettingsBehavior to \"merge\""
     private val unreadFile = "$managed could not be read (no permission on its path, a link to nothing, or not a " +
@@ -100,7 +100,7 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
     fun `with nothing at the path, print shows both keys and the commands that create the file`() {
         layLauncher()
         assertEquals(0, wrapper("--print"))
-        val shown = Json.parseToJsonElement(said.dropWhile { it != "{" }.takeWhile { it != "}" }.joinToString("") + "}")
+        val shown = Json.parseToJsonElement(said.first { it.startsWith("{") })
         assertEquals(setOf("processWrapper", "parentSettingsBehavior"), shown.jsonObject.keys)
         assertEquals(launch.toString(), shown.jsonObject.getValue("processWrapper").jsonPrimitive.content)
         assertEquals("merge", shown.jsonObject.getValue("parentSettingsBehavior").jsonPrimitive.content)
@@ -249,7 +249,7 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
             assertTrue(said.any { it.endsWith(named) }, printed())
             claimsNoEffect()
             assertFalse("change it to" in printed(), printed())
-            val step = "check the places splice did not read first, then edit it in place"
+            val step = "check the places splice did not read first; then edit it in place"
             assertTrue(said.any { step in it }, printed())
         }
     }

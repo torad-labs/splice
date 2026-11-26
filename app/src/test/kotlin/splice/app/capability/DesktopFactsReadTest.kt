@@ -85,7 +85,7 @@ class DesktopFactsReadTest(@param:TempDir private val tmp: Path) {
         for (text in listOf("""{"env": {}}""", null)) {
             val row = row(text)
             assertTrue("Claude Code also reads $dropIn, which splice did not read" in row.said, row.said)
-            assertTrue("sets parentSettingsBehavior to \"merge\"" !in row.said, "only the main file is read")
+            assertTrue("$file sets parentSettingsBehavior" !in row.said, "only the main file is read: ${row.said}")
             assertEquals(ToolLevel.INFO, row.level, row.said)
         }
     }

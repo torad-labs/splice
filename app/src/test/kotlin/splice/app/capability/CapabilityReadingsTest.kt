@@ -149,7 +149,8 @@ class CapabilityReadingsTest {
             for (effect in listOf("Desktop warns in every Code session, and", "does not warn", "limits apply")) {
                 assertTrue(effect !in row.said, "${row.said} claims \"$effect\" while $dropIn is unread")
             }
-            assertTrue(row.fix.orEmpty().startsWith("check the places splice did not read first"), row.fix)
+            val fix = row.fix.orEmpty()
+            assertTrue(fix.startsWith("check ") && "places splice did not read" in fix, fix)
             assertEquals(null, item(facts), "$state")
         }
     }

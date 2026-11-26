@@ -69,13 +69,17 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
     fun step(): String? {
         val edit = when (state) {
             ManagedFile.Absent ->
-                "to start the Code tab through splice (Antigravity there, live model switches), create it so it " +
-                    "holds both keys"
+                "to have the Code tab start through splice (Antigravity there, live model switches), create it so " +
+                    "it holds both keys"
             ManagedFile.Unreadable ->
                 "look at it as an administrator and make it hold both keys, editing it in place where it exists"
-            is ManagedFile.Read -> IN_PLACE.takeUnless { starts && merges } ?: return null
+            is ManagedFile.Read -> IN_PLACE.takeUnless { starts && merges }
         }
-        return if (reading.unread.isEmpty()) edit else "check the places splice did not read first, then $edit"
+        return when {
+            reading.unread.isEmpty() -> edit
+            edit == null -> "check that none of the places splice did not read sets either key to another value"
+            else -> "check the places splice did not read first; then $edit"
+        }
     }
 
     /** [step] with where the keys are shown. */
@@ -121,7 +125,7 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
 }
 
 // What Desktop does where splice did not read every place: the condition, always true, and no more.
-private const val UNKNOWN_EFFECT = "splice does not say what Desktop does, because it could not read every place " +
+private const val UNKNOWN_EFFECT = "splice does not say what Desktop does, because it did not read every place " +
     "Claude Code reads: wherever managed settings exist, Desktop warns in every Code session unless the source that " +
     "wins sets $PARENT_SETTINGS_KEY to \"$PARENT_SETTINGS_MERGE\""
 

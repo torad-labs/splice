@@ -111,8 +111,8 @@ internal class ProviderSentences(private val spoken: Spoken) {
         return Said(what, next = Next.Resend(SEND_AGAIN))
     }
 
-    /** Only a prompt that is not a compaction or a first exchange says the words that make Claude Code compact. */
     private fun tooLong(cause: FailureCause.Provider.TooLong, facts: LineFacts): Said {
+        facts.request.shorterCompaction()?.refusal(cause, facts.head, spoken)?.let { return it }
         val head = facts.head
         val what = when {
             facts.request.compaction -> "This conversation is too long for $head to summarize"

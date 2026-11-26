@@ -44,6 +44,7 @@ import splice.core.failure.FailureCause
 import splice.core.failure.StoppedBy
 import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.PerfKeys
+import splice.core.perf.PromptTokenEstimate
 import splice.core.perf.TurnPerf
 import splice.core.session.ActivityAction
 import splice.core.util.Cancellables
@@ -343,7 +344,14 @@ internal class TurnPreparation(
         val rebuild = TurnRebuild(providerTurns, parsed, compactProbe.compact, arrival.sessionId, perf, client)
             .takeUnless { provider.sendsMessages }
         return providerTurns.endingOnFailure(fromProvider) {
-            handedOn(call, parsed, arrival, perf, fromProvider)
+            val sized = if (compactProbe.compact) {
+                val estimate = PromptTokenEstimate.forRequest(perf.count(PerfKeys.REQ_BYTES), parsed.typed)
+                val meta = fromProvider.meta
+                fromProvider.copy(meta = meta.copy(compaction = meta.compaction.copy(inputEstimateTokens = estimate)))
+            } else {
+                fromProvider
+            }
+            handedOn(call, parsed, arrival, perf, sized)
         }.let { prepared ->
             val harness = (prepared as? Preparation.Ready)?.harness ?: return@let prepared
             prepared.copy(harness = harness.copy(rebuild = rebuild))

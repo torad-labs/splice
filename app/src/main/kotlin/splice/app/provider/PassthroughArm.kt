@@ -13,8 +13,9 @@ internal class PassthroughArm(
     private val claudeAccounts: ClaudeAccountWiring,
     private val changes: splice.app.auth.claude.ClaudePoolChanges = splice.app.auth.claude.ClaudePoolChanges(),
 ) {
-    // Claude's own logins read Anthropic's answers to them (HeadReplies.claude); an API-key vendor reads the standard.
+    // Unregistered API-key vendors read the standard. Registered providers can name their own refusals.
     private val claudeAssembly = PassthroughAssembly(HeadReplies.claude)
+    private val deepSeekAssembly = PassthroughAssembly(HeadReplies.deepSeek)
 
     // CLIENT uses Anthropic's signature verification and eager custom-tool input streaming.
     // It has no Moonshot deformations, headers, or device identity. Unregistered API-key/custom
@@ -48,8 +49,9 @@ internal class PassthroughArm(
             )
         }
         val auth = KeyAuth().of(ctx)
+        val assembly = if (ctx.head.provider == "deepseek") deepSeekAssembly else passthroughAssembly
         return Wired(
-            passthroughAssembly.passthroughProviderFor(
+            assembly.passthroughProviderFor(
                 ctx = ctx,
                 label = label,
                 auth = auth,

@@ -54,8 +54,9 @@ private const val RESENDS = "Claude Code sends this turn again."
 /** What a limit handed to Claude Code with its reset says (family L, one login). */
 private const val HANDED_OVER = "Claude Code retries at that time."
 
-/** The phrase that makes Claude Code compact, which only a plain prompt-too-long line may carry. */
+/** The phrase and numeric form the client reads to trim an oversized compaction. */
 private const val COMPACT_TRIGGER = "prompt is too long"
+private val TRIM_TOKENS = Regex("""prompt is too long[^0-9]*(\d+)\s*tokens?\s*>\s*(\d+)""", RegexOption.IGNORE_CASE)
 
 /** A rejection naming a masked key in the shape a Codex backend masks one; no token a head here sends. */
 private val MASKED_KEY = "Incorrect API key provided: sk-test0" + "*".repeat(40) + "Zq9x."
@@ -84,6 +85,11 @@ private val LATER_TURN = buildJsonObject {
 
 /** Claude Code's summarizer instruction, which is what makes a request a compaction (compactMarkers). */
 private const val COMPACTION_ASK = "Your task is to create a detailed summary of this conversation."
+
+private val COMPACTION_TURN = buildJsonObject {
+    put("system", COMPACTION_ASK)
+    put("messages", LATER_TURN.getValue("messages"))
+}
 
 private const val BAD_REQUEST = 400
 private const val UNAUTHORIZED = 401
@@ -167,19 +173,71 @@ class LinesThroughHeadsTest {
     }
 
     @Test
-    fun `a compaction that overflows is answered without the phrase that makes a client compact`(
+    fun `a provider refusal tells the client how much of an oversized compaction to drop`(
         @TempDir tmp: Path,
     ) = runTest {
         withScriptedHeads(tmp) {
-            provider.script(overflow())
-            val head = chat()
+            provider.script(
+                reply {
+                    status(BAD_REQUEST)
+                    anthropicErrorBody("invalid_request_error", "prompt is too long: 1005216 tokens > 1000000 maximum")
+                },
+            )
+            val head = anthropic()
 
-            val answer = head.client.send(ClientRequest(text = COMPACTION_ASK))
+            val answer = head.client.send(ClientRequest(maxTokens = 1024, extra = COMPACTION_TURN))
 
-            assertEquals(BAD_REQUEST, answer.status, "a compaction's overflow keeps the status every overflow has")
+            assertEquals(BAD_REQUEST, answer.status)
+            assertEquals("false", answer.shouldRetry)
             val line = lineOf(answer)
-            assertFalse(COMPACT_TRIGGER in line, "a compaction's own overflow never asks for a compaction: $line")
-            assertTrue("too long" in line && "summarize" in line, line)
+            val counts = TRIM_TOKENS.find(line)?.groupValues?.drop(1)
+            assertEquals(listOf("1005216", "998976"), counts, line)
+            assertEquals(
+                "[splice] The summary prompt is too long: 1005216 tokens > 998976 for a shorter retry. " +
+                    "The model on scripted-anthropic holds 1,000,000 tokens.",
+                line,
+            )
+        }
+    }
+
+    @Test
+    fun `a provider refusal without sizes still gives a shorter compaction target`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(overflow())
+
+            val answer = chat().client.send(ClientRequest(stream = false, extra = COMPACTION_TURN))
+
+            // A collected 400 is non-retryable without a header, as before.
+            assertEquals(BAD_REQUEST, answer.status)
+            assertEquals(null, answer.shouldRetry)
+            val line = lineOf(answer)
+            val counts = checkNotNull(TRIM_TOKENS.find(line)) { line }.groupValues
+            assertTrue(counts[1].toLong() > counts[2].toLong(), line)
+            assertTrue("131,072 tokens" in line, line)
+        }
+    }
+
+    @Test
+    fun `a summary that fills the window ends its stream with a shorter target`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(
+                reply {
+                    anthropicStart()
+                    anthropicText("An unfinished summary")
+                    anthropicEnd("model_context_window_exceeded")
+                },
+            )
+
+            val answer = anthropic().client.send(ClientRequest(extra = COMPACTION_TURN))
+
+            assertEquals(200, answer.status)
+            assertTrue(answer.contentBeforeError, answer.describe())
+            assertEquals("invalid_request_error", answer.error?.type)
+            val line = lineOf(answer)
+            val counts = checkNotNull(TRIM_TOKENS.find(line)) { line }.groupValues
+            assertTrue(counts[1].toLong() > counts[2].toLong(), line)
+            assertTrue("The summary filled" in line, line)
+            assertFalse(answer.events.any { it.name == "message_stop" }, answer.describe())
         }
     }
 

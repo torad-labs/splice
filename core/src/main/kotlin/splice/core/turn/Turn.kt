@@ -106,6 +106,8 @@ public data class TurnCompaction(
     /** sha256 of the provider body before any compaction tail: what a compaction retry is matched on
      *  (CompactionReplay), so a tail resolved differently on the retry cannot miss the recording. */
     val requestHash: String? = null,
+    /** A cold estimate for a provider that refuses the compaction without stating its input size. */
+    val inputEstimateTokens: Long? = null,
 )
 
 /** The head's standing system prompt and its provenance (mode, and the file when one backs it)

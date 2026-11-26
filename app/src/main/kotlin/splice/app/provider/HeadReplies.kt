@@ -12,6 +12,7 @@ import splice.provider.codex.failure.CodexReplies
 import splice.provider.grok.GrokReplies
 import splice.provider.kimi.KimiReplies
 import splice.provider.muse.MuseReplies
+import splice.provider.openai.deepseek.DeepSeekReplies
 import splice.provider.openai.local.LocalRuntimeReplies
 import splice.upstream.failure.Replies
 
@@ -25,6 +26,9 @@ internal object HeadReplies {
 
     /** Kimi: its plan-tier answer is a plan rather than a dead login, and its 5-hour limit names that window. */
     val kimi: Replies = Replies(AnthropicReplies, KimiReplies)
+
+    /** DeepSeek on Messages: its context overflow still uses the OpenAI error wording. */
+    val deepSeek: Replies = Replies(AnthropicReplies, DeepSeekReplies)
 
     /** A hosted Chat Completions vendor: the standard alone. */
     val chat: Replies = Replies(ChatReplies)

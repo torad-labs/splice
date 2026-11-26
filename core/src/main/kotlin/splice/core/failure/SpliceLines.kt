@@ -7,8 +7,8 @@ package splice.core.failure
 import splice.core.util.LocalTimeText
 import java.time.Instant
 
-/** What a line knows of the request it answers. A compaction and a first exchange that are too long say so in their
- *  own words, never with the phrase that makes Claude Code compact (final-design.md section 11). [repeated]: the
+/** What a line knows of the request it answers. A first exchange has nothing the client can drop. An oversized
+ *  compaction with a [compactionFit] can instead be shortened and tried again. [repeated]: the
  *  request's identical predecessor already ended in a failure Claude Code re-sends (the ResendLedger), so this one
  *  ends for good. [otherLogin]: the head's pool holds another login, so a limit handed to the client (family L)
  *  names a time 30 s away and says the client checks again then (failure-handling slice 5). */
@@ -17,7 +17,54 @@ public data class RequestFacts(
     val firstExchange: Boolean,
     val repeated: Boolean = false,
     val otherLogin: Boolean = false,
-)
+    val compactionFit: CompactionFit? = null,
+) {
+    internal fun shorterCompaction(): CompactionFit? = compactionFit?.takeIf { compaction && !firstExchange }
+}
+
+/** Raw token facts for another compaction request: the input, model window and reply allowance. */
+public data class CompactionFit(
+    val inputTokens: Long,
+    val windowTokens: Long?,
+    val summaryTokens: Long,
+) {
+    internal fun refusal(cause: FailureCause.Provider.TooLong, head: String, spoken: Spoken): Said? {
+        val explanation = when {
+            cause.whileAnswering -> "The summary filled $head's context window before it finished."
+            cause.limitTokens != null -> "The model on $head holds ${spoken.tokens(cause.limitTokens)} tokens."
+            else -> "This conversation is too long for $head to summarize."
+        }
+        val allowance = maxOf(summaryTokens, cause.outputTokens ?: 0)
+        return refusal(explanation, cause.inputTokens, cause.limitTokens, allowance)
+    }
+
+    internal fun refusal(
+        explanation: String,
+        actual: Long? = null,
+        limit: Long? = null,
+        allowance: Long = summaryTokens,
+    ): Said? {
+        val measured = actual?.takeIf { it > 0 }
+        val input = (measured ?: inputTokens).coerceAtLeast(1)
+        val estimate = if (measured == null) "about " else ""
+        val window = limit?.takeIf { it > 0 } ?: windowTokens
+        val fits = window?.let {
+            // Dropping rounds cannot make the summary itself fit.
+            if (allowance >= it) return null
+            it - allowance
+        }
+        // The provider refused, even when our estimate shows no excess. Ask for a fifth of the estimated input
+        // then, similar to the client's round-based trim when the error names no size.
+        val target = fits?.takeIf { it < input } ?: (input - (input / FALLBACK_TRIM_DIVISOR).coerceAtLeast(1))
+        return Said(
+            "The summary prompt is too long: $estimate$input tokens > $target for a shorter retry",
+            next = Next.Then(explanation),
+        )
+    }
+}
+
+// When the measured sizes do not explain a refusal, target a trim of 20% of the input estimate.
+private const val FALLBACK_TRIM_DIVISOR = 5
 
 /** What a line names besides its failure: [head], the head's launch command and the subject of most lines;
  *  [loginCommand], the command that signs the head in, null where the client signs itself in; [providerName], the

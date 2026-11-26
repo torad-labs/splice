@@ -296,7 +296,15 @@ class HeadServerPreflightTest {
             val history = previous + """{"role":"user","content":"summary"},"""
             val refused = compact(client, server.port, history, "continue")
             assertEquals(400, refused.status.value)
-            assertTooLong(refused.bodyAsText(), "This conversation is too long for claudex to summarize.", "872,000")
+            assertEquals("false", refused.headers["x-should-retry"])
+            val message = refused.bodyAsText()
+            val trim = Regex("""prompt is too long[^0-9]*(\d+)\s*tokens?\s*>\s*(\d+)""", RegexOption.IGNORE_CASE)
+            assertEquals(listOf("900000", "871936"), trim.find(message)?.groupValues?.drop(1), message)
+            assertTrue(
+                "[splice] The summary prompt is too long: about 900000 tokens > 871936 for a shorter retry. " +
+                    "The model on claudex holds 872,000 tokens." in message,
+                message,
+            )
             assertEquals(2, upstream.upstreamBodies.size)
         } finally {
             server.stop()

@@ -13,7 +13,6 @@ import splice.app.desktop.setup.SideBySideDesktop
 import splice.app.desktop.setup.SideBySideLaunchers
 import splice.client.ManagedSettings
 import splice.client.desktop.DesktopAppConfig
-import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.CLAUDE_SPLICE_COMMAND
 import splice.core.topology.Topology
@@ -42,7 +41,7 @@ internal class DesktopFactsRead(
         val app = Files.exists(SideBySideLaunchers(env, osName).desktopLauncherPath())
         val settings = Cancellables.runCatchingBestEffort {
             val launch = DesktopPrograms(TopologyStatePaths(env).of(topology).stateDir).launch
-            managed?.reading(UserHome.claudeDir(env))?.let { WrapperSettings(it, launch) }
+            managed?.reading(env)?.let { WrapperSettings(it, launch) }
         }.getOrNull()
         return DesktopFacts(program, mode(topology), cli, app, settings)
     }

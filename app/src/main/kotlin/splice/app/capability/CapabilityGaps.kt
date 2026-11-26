@@ -6,7 +6,6 @@ package splice.app.capability
 
 import splice.app.desktop.setup.DesktopMode
 import splice.core.mcp.McpHarness
-import splice.diagnostics.doctor.ToolLevel
 
 /** What a gap is about, so `splice setup --update` can offer the step that closes it. */
 internal enum class GapKind {
@@ -37,12 +36,14 @@ internal class CapabilityGaps(private val facts: Capabilities, private val claud
         "Claude Desktop is on the older Code-tab-only door; `splice desktop on` puts all of Desktop on splice",
     ).takeIf { facts.desktop.mode == DesktopMode.STANDARD }
 
-    /** Claude Code's managed settings, an item exactly where the doctor warns: splice read every place Claude Code
-     *  reads and something there is known to be wrong. Only root writes that file, so the item says what to do. */
+    /** Claude Code's managed settings, an item wherever the file splice read does not hold both keys as wanted, could
+     *  not be read or is not there, or the launcher is not laid: what was found, the places it did not read, and the
+     *  step. Only root writes that file, so the item says what to do. */
     private fun managed(): Gap? {
         val managed = facts.desktop.managed?.takeIf { facts.desktop.mode == DesktopMode.APP } ?: return null
-        if (managed.level() != ToolLevel.WARN) return null
-        return Gap(GapKind.MANAGED_SETTINGS, "${managed.said()}; ${managed.pointed()} (a root-owned file)")
+        if (managed.right && managed.laid) return null
+        val step = managed.pointed()?.let { "what to do: $it" }
+        return Gap(GapKind.MANAGED_SETTINGS, listOfNotNull(managed.said(), step).joinToString("; "))
     }
 
     /** Side-by-side launchers, where nothing runs Claude Desktop or Claude Code beside the person's own yet. */

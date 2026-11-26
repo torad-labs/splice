@@ -350,7 +350,7 @@ class DesktopWrapperTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `the launcher is the one under splice.toml's state folder, as the daemon lays it`() {
+    fun `the launcher is the one under the state folder splice's config names, as the daemon lays it`() {
         val declared = tmp.resolve("declared")
         Files.writeString(config, "[daemon]\nstate_dir = \"$declared\"\n")
         Files.createDirectories(declared)

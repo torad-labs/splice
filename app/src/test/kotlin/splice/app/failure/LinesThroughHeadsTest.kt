@@ -84,8 +84,10 @@ private val LATER_TURN = buildJsonObject {
 }
 
 /** Claude Code's summarizer instruction, which is what makes a request a compaction (compactMarkers). */
+private const val COMPACTION_ASK = "Your task is to create a detailed summary of this conversation."
+
 private val COMPACTION_TURN = buildJsonObject {
-    put("system", "Your task is to create a detailed summary of this conversation.")
+    put("system", COMPACTION_ASK)
     put("messages", LATER_TURN.getValue("messages"))
 }
 

@@ -171,7 +171,7 @@ class CapabilityReadingsTest(@param:TempDir private val tmp: Path) {
         for (state in states) {
             val facts = app(state, listOf(dropIn))
             val row = row(facts)!!
-            assertEquals(ToolLevel.INFO, row.level, "$state")
+            assertEquals(row(app(state))!!.level, row.level, "the level is the file's, whatever else is named: $state")
             val named = "Claude Code may also take managed settings from $dropIn, which splice did not read: a value " +
                 "set there may be the one Claude Code takes"
             assertTrue(named in row.said, row.said)

@@ -89,7 +89,6 @@ class DesktopFactsReadTest(@param:TempDir private val tmp: Path) {
             val row = row(text)
             assertTrue("Claude Code may also take managed settings from" in row.said && "$dropIn" in row.said, row.said)
             assertTrue("$file sets parentSettingsBehavior" !in row.said, "only the main file is read: ${row.said}")
-            assertEquals(ToolLevel.INFO, row.level, row.said)
         }
     }
 

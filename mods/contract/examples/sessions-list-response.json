@@ -1,0 +1,35 @@
+{
+  "rows": [
+    {
+      "id": "6f1c2a7e-3b0d-4c55-9a41-2d8e0f7b9c13",
+      "kind": "session",
+      "title": "Fix the flaky login test",
+      "status": "waiting",
+      "needs": {
+        "text": "Review the login fix."
+      },
+      "labels": {
+        "ticket": "ENG-412"
+      }
+    },
+    {
+      "id": "reviews:review-412",
+      "kind": "review",
+      "mod": "reviews",
+      "parent": "6f1c2a7e-3b0d-4c55-9a41-2d8e0f7b9c13",
+      "title": "Review the login fix",
+      "status": "waiting",
+      "actions": [
+        {
+          "label": "Approve",
+          "tool": "resolve",
+          "arguments": {
+            "review": "review-412",
+            "verdict": "approved"
+          },
+          "confirm": true
+        }
+      ]
+    }
+  ]
+}

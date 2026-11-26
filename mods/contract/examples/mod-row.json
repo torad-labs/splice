@@ -1,0 +1,18 @@
+{
+  "id": "standups:review-412",
+  "kind": "task",
+  "parent": "6f1c2a7e-3b0d-4c55-9a41-2d8e0f7b9c13",
+  "title": "Review the login fix",
+  "status": "waiting",
+  "needs": { "text": "Approve the change or say what to redo.", "deadline": "2026-11-26T17:00:00-06:00" },
+  "actions": [
+    { "label": "Approve", "tool": "resolve", "arguments": { "row": "review-412", "verdict": "approved" }, "confirm": true },
+    {
+      "label": "Ask for changes",
+      "tool": "resolve",
+      "arguments": { "row": "review-412", "verdict": "changes" },
+      "input": { "name": "reason", "label": "What should change?", "multiline": true }
+    }
+  ],
+  "mod": "standups"
+}

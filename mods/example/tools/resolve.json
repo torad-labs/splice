@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "properties": {
+    "review": { "type": "string", "description": "The review's id, without the mod's prefix." },
+    "verdict": { "type": "string", "enum": ["approved", "changes"] },
+    "reason": { "type": "string", "description": "What should change, when the verdict is changes." }
+  },
+  "required": ["review", "verdict"],
+  "additionalProperties": false
+}

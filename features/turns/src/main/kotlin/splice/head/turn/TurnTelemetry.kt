@@ -28,7 +28,6 @@ import splice.head.HeadEvents
 import splice.head.NoHeadEvents
 import splice.head.admission.LocalRefusal
 import splice.head.hold.resources.HeldCauseTimes
-import splice.head.observe.TurnObserverRows
 import splice.head.perf.HeldRows
 import splice.head.perf.LocalAnswerRows
 import splice.head.perf.PerfAccount
@@ -36,6 +35,7 @@ import splice.head.perf.PerfFailure
 import splice.head.perf.PerfRowMeta
 import splice.head.perf.PerfStats
 import splice.head.perf.PerfTranscriptIds
+import splice.head.perf.TurnObserverRows
 import splice.head.perf.UsageObservation
 import splice.head.usage.RetiredTurns
 import splice.head.usage.ServedTurnReport

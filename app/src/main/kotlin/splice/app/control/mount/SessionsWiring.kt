@@ -12,7 +12,6 @@ import splice.app.control.SessionPerfFacts
 import splice.app.control.SessionWake
 import splice.app.control.SessionWakeObservers
 import splice.app.control.TranscriptLimitEnding
-import splice.app.mods.sessions.SessionLabels
 import splice.client.resume.ModelMoves
 import splice.client.resume.MovingTrust
 import splice.client.transcript.MovedTranscripts
@@ -140,7 +139,7 @@ internal class SessionsWiring(
             ConfigSessionSettings(config),
             ActivitySource { ports.activity },
             teams = TeamSource { ports.teams },
-            facts = perfFacts.rowFacts(SessionAccountLabels(heads, ports), moves).copy(labelsOf = SessionLabels(ports)),
+            facts = perfFacts.rowFacts(SessionAccountLabels(heads, ports), moves),
         )
     }
 

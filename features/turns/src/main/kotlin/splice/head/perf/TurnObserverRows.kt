@@ -1,4 +1,4 @@
-package splice.head.observe
+package splice.head.perf
 
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot

@@ -3,6 +3,7 @@
 // count and how the newest request ended, for /api/sessions rows.
 package splice.app.control
 
+import splice.app.mods.sessions.SessionLabels
 import splice.app.sources.PerfStatsSource
 import splice.client.resume.ModelMoves
 import splice.core.perf.OutcomeTag
@@ -35,6 +36,7 @@ internal class SessionPerfFacts(
         windowOf = SessionWindowOf { record ->
             record.head?.let(heads::get)?.statusline?.clientWindows?.windowFor(record.sessionId)
         },
+        labelsOf = SessionLabels(ports),
     )
 
     /** Every head's per-session accumulator, summed, because a session that moved heads has rows on

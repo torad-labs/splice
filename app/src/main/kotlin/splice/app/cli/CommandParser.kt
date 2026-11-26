@@ -213,6 +213,11 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
             }
         },
     ),
+    // Nov 25, 2026: the visual mode's feed written from a shell, the value on standard input (FeedCommand).
+    "feed" to CommandRegistration(
+        "<name>   (the JSON value is read from standard input)",
+        CommandFactory { a -> a.getOrNull(1)?.takeIf { a.size == 2 }?.let(Command::Feed) },
+    ),
     "perf" to CommandRegistration("[--window 1h|24h|7d]", CommandFactory { a -> Command.Perf(a.drop(1)) }),
     // Nov 13, 2026: `usage --json` prints every command's logins and their plan windows as one JSON document
     // (UsageJson). The bare verb is refused: only the document exists yet.

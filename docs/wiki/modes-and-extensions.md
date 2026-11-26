@@ -167,7 +167,7 @@ sequenceDiagram
 | `tableapp` | `tableapp` | mcp | off | none | `render_table` (page `ui://tableapp/table`) |
 | `template` | `template` | door | off | `desktop` | `say_back` |
 | `templateapp` | `templateapp` | mcp | off | none | `show_note` (page `ui://templateapp/note`) |
-| `visual` | `visual` | mcp | off | none | `read_me`, `show_widget`, `html_render` (page `ui://visual/reply.html`) |
+| `visual` | `visual` | mcp | off | none | `read_me`, `show_widget`, `html_render`, `feed` (page `ui://visual/reply.html`) |
 
 `template` and `templateapp` are working examples to copy, not features; `splice setup` does not offer them.
 
@@ -206,6 +206,7 @@ An mcp mode, off by default, that lets the model of any head draw in the convers
 - `read_me` gives the guidance on call, so it costs nothing until the model asks: when a visual beats text and when it does not, the rules every visual keeps (the host's theme variables, no network, a fluid width), and one module per kind of visual: `chart`, `comparison`, `diagram`, `diff`, `explainer`, `tool`, `page`. `modules` picks some; without it, every one comes back. The mode's `prompt.md` is one line that names the tools and says to call `read_me` first.
 - `show_widget` takes `title`, optional `loading_messages`, and `widget_code`, an HTML or SVG fragment of at most 256 KiB.
 - `html_render` takes `title`, `html`, a whole document of at most 256 KiB, and optional `height` (1 to 10000 CSS pixels). The mode keeps the page, and its answer names it as `vp_` and twelve hex digits. It takes the page as `html` only: a call naming `path` is refused, because the daemon may serve other machines and an mcp mode's call carries neither the session's folder nor who is calling, so a file read on the model's word could not be held to what that caller may read.
+- `feed` writes or reads a feed: a small named JSON value that a card the model drew keeps itself up to date from, with no model turn and no network. `name` is 1 to 40 letters, digits, `-` or `_`; `data`, any JSON value but `null` and at most 64 KiB, writes it, and leaving `data` out reads it, answering `{ name, found, updated, data }` with the time it was written (`found: false` for a feed nobody wrote, never an error). A refused write says why. At most 64 feeds are held, and a 65th drops the one written longest ago. A script writes a feed from a shell with `splice feed <name>`, which reads the JSON value from standard input and asks the daemon with the management key itself, so the script never holds a key. A card reads its feed with `watchFeed(name, onData, everyMs)` (every `everyMs`, never under a second; `onData(data, updated)` runs when the value changes) and `readFeed(name)`, which the view gives it and which ask the app that frames the card to call `feed` on this server. An app that does not pass a card's calls on leaves the card as drawn, so the model is told to draw a card's first state from data inside it (`read_me` module `live`). `feed` carries no `visibility` mark: the card has to call it, and Claude Desktop passes a card's call on even for a tool marked for the model only. Feeds live in the daemon's memory, so a restart empties them, and every caller of the mode on this machine shares one set. A team server gives its key holders no route to them: the mode serves nothing under `/server/mod/visual/...` (`server_routes` reaches only a mode's own `serve`).
 - Both drawing tools name one view, `ui://visual/reply.html`, so every host that draws MCP Apps draws them the same way. The view loads nothing from any origin and its `_meta.ui.csp` allows none, so a visual's own code reaches no network either. Both declare `_meta.ui.visibility = ["model"]`, so a host that follows MCP Apps refuses a drawn visual's own call of them; the mode cannot tell such a call from the model's when a host passes it on. A client that does not draw MCP Apps shows the tool's answer, which says what was drawn and asks the model to say it in words.
 - Kept pages survive a restart and have no expiry by age: at most 200 pages, the 201st taking the oldest's place. See [Disk and privacy](disk-and-privacy.md).
 
@@ -213,6 +214,8 @@ An mcp mode, off by default, that lets the model of any head draw in the convers
 | --- | --- |
 | `GET /api/visual/view?uri=<ui://…>` | `{ html, meta }`: a view the mode declares, as `resources/read` gives it, `meta` its `_meta`; 404 for a view it does not have |
 | `GET /api/visual/pages/<vp_…>` | `{ html, title, height }`, `height` only when the call gave one; 404 for a page it does not keep |
+| `GET /api/visual/feeds/<name>` | `{ name, found, updated, data }`, as the `feed` tool reads it, for an app that is not an MCP host to serve its own frame; 404 for a feed that is not held, 400 for a name that is not one |
+| `PUT /api/visual/feeds/<name>` | The JSON body is the feed's value; answers `{ said, name, updated, bytes }`. What `splice feed <name>` calls. 400 for a name, an empty body or `null`; 413 past 64 KiB, each with `{ error }` saying why |
 
 ## Capabilities
 

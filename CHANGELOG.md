@@ -147,6 +147,15 @@
   visual. `GET /api/visual/view?uri=` and `GET /api/visual/pages/<id>` give the view and a kept page with the
   management key. `html_render` takes the page as `html` only: it reads no file. Turn it on with
   `[modes.visual] on = true`.
+- **A drawn card can keep itself up to date: the `visual` mode's `feed`.** A feed is a small named JSON value (up to 64
+  KiB, 64 of them) that splice holds in memory with the time it was written. The model writes one with the `feed` tool, or
+  leaves a script running that writes it from a shell with no model turn: `echo '{"loss":0.31}' | splice feed training`,
+  which asks the daemon with the management key itself, so the script never holds a key. A card calls `watchFeed(name,
+  onData, everyMs)` or `readFeed(name)`, which the view gives it and which ask the app that frames the card to read the
+  feed (at most once a second), so the card reaches no network and keeps what it drew wherever the app does not pass the
+  call on. `GET /api/visual/feeds/<name>` gives the same value to an app that is not an MCP host, and `PUT` writes it.
+  `read_me` has a `live` module on drawing such a card, so a session pays nothing for it until it asks. A restart
+  empties the feeds.
 - **The keyed team listener serves the door.** `/door/v1` answers on a team's server from the gateway's providers,
   with each person's allowlist applied to the provider a model resolves to, and a streamed turn's client is pinged
   at `[server] keepalive_seconds` when that is shorter than splice's own probe.

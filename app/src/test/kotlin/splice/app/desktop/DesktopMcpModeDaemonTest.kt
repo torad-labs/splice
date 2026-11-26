@@ -115,7 +115,7 @@ class DesktopMcpModeDaemonTest {
             )
             assertEquals("visual", answers.getValue(1).getValue("serverInfo").jsonObject.str("name"))
             val tools = answers.getValue(2).getValue("tools").jsonArray.map { it.jsonObject }
-            assertEquals(listOf("read_me", "show_widget", "html_render"), tools.map { it.str("name") })
+            assertEquals(listOf("read_me", "show_widget", "html_render", "feed"), tools.map { it.str("name") })
             val meta = """{"ui":{"resourceUri":"ui://visual/reply.html","visibility":["model"]}}"""
             assertEquals(meta, tools.single { it.str("name") == "show_widget" }.getValue("_meta").toString())
             assertEquals(meta, tools.single { it.str("name") == "html_render" }.getValue("_meta").toString())

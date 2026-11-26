@@ -1,0 +1,1 @@
+Write or read a feed: a small named JSON value that a card you drew with `show_widget` or `html_render` watches to keep itself up to date. Pass `data` (any JSON value) to write it; leave `data` out to read it. Read `read_me` module `live` before drawing such a card.

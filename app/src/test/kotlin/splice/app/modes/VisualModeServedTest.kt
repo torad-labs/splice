@@ -32,7 +32,7 @@ class VisualModeServedTest {
 
     private fun route(modes: DaemonModes, path: String, query: Map<String, String> = emptyMap()) =
         checkNotNull(modes.mode("visual")).handler.routes
-            .single { path.startsWith(it.path.substringBefore("{")) }
+            .single { it.method == "GET" && path.startsWith(it.path.substringBefore("{")) }
             .handler.handle(ModeRequest("GET", path, query, null, modes.store("visual")))
 
     @Test
@@ -43,7 +43,7 @@ class VisualModeServedTest {
         assertEquals("visual", row.getValue("server").jsonPrimitive.content)
         val tools = row.getValue("tools").jsonArray.map { it.jsonObject }
         assertEquals(
-            listOf("mcp__visual__read_me", "mcp__visual__show_widget", "mcp__visual__html_render"),
+            listOf("mcp__visual__read_me", "mcp__visual__show_widget", "mcp__visual__html_render", "mcp__visual__feed"),
             tools.map { it.getValue("offered_as").jsonPrimitive.content },
         )
         val views = tools.mapNotNull { it["_meta"]?.jsonObject?.get("ui")?.jsonObject?.get("resourceUri") }
@@ -108,4 +108,27 @@ class VisualModeServedTest {
         assertEquals("Report", page.body.jsonObject.getValue("title").jsonPrimitive.content)
         assertEquals(404, route(restarted, "/api/visual/pages/vp_0123456789ab").status)
     }
+
+    @Test
+    fun `a feed a tool call wrote is read through its route, from another session, and the route says the same`() =
+        runBlocking {
+            val modes = daemon(on = true)
+            val server = checkNotNull(ModeMcp { modes }.server("visual", "acme", "head"))
+            val data = JsonObject(mapOf("step" to JsonPrimitive(40), "loss" to JsonPrimitive(0.31)))
+            val written = server.call(
+                "feed",
+                JsonObject(mapOf("name" to JsonPrimitive("training"), "data" to data)),
+                "mcp-session-1",
+            )
+            assertEquals("false", written.getValue("isError").toString())
+
+            val read = route(modes, "/api/visual/feeds/training")
+            assertEquals(200, read.status)
+            assertEquals(data, read.body.jsonObject.getValue("data"))
+
+            val card = server.call("feed", JsonObject(mapOf("name" to JsonPrimitive("training"))), "mcp-session-2")
+            val text = card.getValue("content").jsonArray.single().jsonObject.getValue("text").jsonPrimitive.content
+            assertEquals(read.body.jsonObject.toString(), text, "the tool and the route say the same")
+            assertEquals(404, route(modes, "/api/visual/feeds/not_written").status)
+        }
 }

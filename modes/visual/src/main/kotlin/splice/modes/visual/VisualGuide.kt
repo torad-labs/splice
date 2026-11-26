@@ -11,7 +11,7 @@ import splice.modes.api.ModeAnswer
 
 private const val GUIDE = "splice/modes/visual/guide"
 private const val CORE = "core"
-private val MODULES = listOf("chart", "comparison", "diagram", "diff", "explainer", "tool", "page")
+private val MODULES = listOf("chart", "comparison", "diagram", "diff", "explainer", "tool", "page", "live")
 
 internal class VisualGuide {
     fun answer(input: JsonObject): ModeAnswer {

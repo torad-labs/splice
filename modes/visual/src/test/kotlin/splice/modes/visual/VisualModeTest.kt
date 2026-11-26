@@ -1,7 +1,9 @@
 package splice.modes.visual
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -19,6 +21,7 @@ import splice.modes.api.ModeRequest
 import splice.modes.api.ModeResponse
 import splice.modes.api.ModeSession
 import splice.modes.api.ModeStore
+import java.time.Instant
 
 /** The visual mode as a caller meets it: the catalog's reading of its folder, each tool's answer, its two routes. */
 class VisualModeTest {
@@ -65,13 +68,15 @@ class VisualModeTest {
         val found = checkNotNull(catalog.mode("visual"))
         assertEquals(ModeKind.MCP to false, found.manifest.kind to found.manifest.offer.on)
         assertEquals(
-            listOf("mcp__visual__read_me", "mcp__visual__show_widget", "mcp__visual__html_render"),
+            listOf("mcp__visual__read_me", "mcp__visual__show_widget", "mcp__visual__html_render", "mcp__visual__feed"),
             found.tools.map { it.offeredAs },
         )
-        val named = found.tools.filter { it.name != "read_me" }.map {
+        val named = found.tools.filter { it.name in setOf("show_widget", "html_render") }.map {
             checkNotNull(it.meta).getValue("ui").jsonObject.getValue("resourceUri").jsonPrimitive.content
         }
         assertEquals(listOf("ui://visual/reply.html", "ui://visual/reply.html"), named)
+        // A card calls feed through its host, so it carries no mark that keeps it to the model.
+        assertEquals(null, found.tools.single { it.name == "feed" }.meta)
         val view = found.resources.single()
         assertEquals("ui://visual/reply.html" to "text/html;profile=mcp-app", view.uri to view.mimeType)
         assertEquals("""{"ui":{"csp":{"connectDomains":[],"resourceDomains":[]}}}""", view.meta.toString())
@@ -83,6 +88,8 @@ class VisualModeTest {
         val html = checkNotNull(checkNotNull(catalog.mode("visual")).resources.single().content)
         assertTrue(html.trimStart().startsWith("<!doctype html>"), html.take(40))
         assertTrue(listOf("ui/initialize", "ui/notifications/tool-input", "widget_code").all { it in html })
+        val helpers = listOf("window.watchFeed", "window.readFeed", "\"tools/call\"")
+        assertTrue(helpers.all { it in html }, "the view gives a card its feed helpers")
         val code = html.replace("https://modelcontextprotocol.io/extensions/apps/overview", "")
             .replace("https://invalid.example/", "")
         assertTrue(listOf("<script src", "<link ", "http://", "https://", "fetch(", "import(").none { it in code })
@@ -92,7 +99,7 @@ class VisualModeTest {
     fun `read_me gives the guidance and the modules asked for`() {
         val every = call("read_me")
         assertTrue(every is ModeAnswer.Text && "When a visual beats text" in every.text, "$every")
-        val modules = listOf("chart", "comparison", "diagram", "diff", "explainer", "tool", "page")
+        val modules = listOf("chart", "comparison", "diagram", "diff", "explainer", "tool", "page", "live")
         assertTrue(modules.all { "## Module: $it" in every.text }, every.text)
         assertTrue("--color-text-primary" in every.text, "it tells the model to use the host's theme")
 
@@ -202,5 +209,115 @@ class VisualModeTest {
         assertEquals(404, get("/api/visual/view", mapOf("uri" to "ui://visual/other.html")).status)
         assertEquals(404, get("/api/visual/view", mapOf("uri" to "ui://tableapp/table")).status)
         assertEquals(404, get("/api/visual/view").status)
+    }
+
+    private fun feed(name: String, data: JsonElement? = null, on: VisualMode = mode): ModeAnswer =
+        call("feed", "name" to JsonPrimitive(name), *listOfNotNull(data?.let { "data" to it }).toTypedArray(), on = on)
+
+    private fun put(path: String, body: JsonElement?, on: VisualMode = mode): ModeResponse =
+        on.routes.single { it.method == "PUT" && path.startsWith(it.path.substringBefore("{")) }
+            .handler.handle(ModeRequest("PUT", path, emptyMap(), body, store))
+
+    private fun readOf(answer: ModeAnswer): JsonObject {
+        assertTrue(answer is ModeAnswer.Text, "$answer")
+        return Json.parseToJsonElement(answer.text).jsonObject
+    }
+
+    @Test
+    fun `a feed written is read back with its value and when it was written, and a rewrite replaces it`() {
+        val before = Instant.now().minusSeconds(1)
+        val loss = JsonObject(mapOf("step" to JsonPrimitive(40), "loss" to JsonPrimitive(0.31)))
+        val written = feed("training", loss)
+        assertTrue(written is ModeAnswer.Text && "training" in written.text, "$written")
+
+        val read = readOf(feed("training"))
+        assertEquals("training", read.getValue("name").jsonPrimitive.content)
+        assertEquals("true", read.getValue("found").jsonPrimitive.content)
+        assertEquals(loss, read.getValue("data"))
+        val at = Instant.parse(read.getValue("updated").jsonPrimitive.content)
+        assertTrue(at >= before && at <= Instant.now().plusSeconds(1), "written $at, between $before and now")
+
+        feed("training", JsonObject(mapOf("step" to JsonPrimitive(41))))
+        assertEquals(JsonPrimitive(41), readOf(feed("training")).getValue("data").jsonObject.getValue("step"))
+    }
+
+    @Test
+    fun `a feed no one wrote is answered plainly as not found, never as an error`() {
+        val read = feed("nobody_wrote_this")
+        assertEquals("false", readOf(read).getValue("found").jsonPrimitive.content)
+        assertFalse("data" in readOf(read) || "updated" in readOf(read))
+        assertTrue(read is ModeAnswer.Text)
+    }
+
+    @Test
+    fun `a feed holds any JSON value but null, and null in data reads`() {
+        val one = JsonArray(listOf(JsonPrimitive(1)))
+        for (value in listOf(JsonPrimitive("ready"), JsonPrimitive(7), JsonPrimitive(true), one)) {
+            feed("shape", value)
+            assertEquals(value, readOf(feed("shape")).getValue("data"))
+        }
+        val nothing = feed("shape", JsonNull)
+        assertEquals(one, readOf(nothing).getValue("data"), "null is a read, not a write")
+        assertEquals(400, put("/api/visual/feeds/shape", JsonNull).status)
+    }
+
+    @Test
+    fun `a name that is not a short safe token is refused in words the model can act on`() {
+        for (name in listOf("", "has space", "../etc", "a/b", "-leading", "x".repeat(41), "ünï", "a.b")) {
+            val refused = feed(name, JsonPrimitive(1))
+            val said = (refused as? ModeAnswer.Error)?.text.orEmpty()
+            assertTrue("1 to 40" in said && "letters, digits" in said, "$name: $refused")
+            assertTrue(feed(name) is ModeAnswer.Error, "reading $name")
+        }
+        assertTrue(feed("x".repeat(40), JsonPrimitive(1)) is ModeAnswer.Text, "40 characters is the most")
+        assertTrue(call("feed", "data" to JsonPrimitive(1)) is ModeAnswer.Error, "no name")
+        assertEquals(400, get("/api/visual/feeds/has%20space").status)
+        assertEquals(400, put("/api/visual/feeds/has%20space", JsonPrimitive(1)).status)
+    }
+
+    @Test
+    fun `a value past 64 KiB is refused with its size, and what it replaced is kept`() {
+        feed("big", JsonPrimitive("kept"))
+        val atMost = "a".repeat(64 * 1024 - 2)
+        assertTrue(feed("big", JsonPrimitive(atMost)) is ModeAnswer.Text, "64 KiB itself is kept")
+        val tooBig = feed("big", JsonPrimitive(atMost + "a"))
+        assertTrue(tooBig is ModeAnswer.Error && "65537 bytes" in tooBig.text && "64 KiB" in tooBig.text, "$tooBig")
+        assertEquals(JsonPrimitive(atMost), readOf(feed("big")).getValue("data"), "a refused write changes nothing")
+        assertEquals(413, put("/api/visual/feeds/big", JsonPrimitive(atMost + "a")).status)
+    }
+
+    @Test
+    fun `a 65th feed drops the one written longest ago, says so, and a rewrite keeps a feed young`() {
+        (1..64).forEach { feed("f$it", JsonPrimitive(it)) }
+        feed("f1", JsonPrimitive("again"))
+        val answer = feed("f65", JsonPrimitive(65))
+        assertTrue(answer is ModeAnswer.Text && "f2" in answer.text && "dropped" in answer.text, "$answer")
+        assertEquals("false", readOf(feed("f2")).getValue("found").jsonPrimitive.content)
+        assertEquals("true", readOf(feed("f1")).getValue("found").jsonPrimitive.content)
+        assertEquals("true", readOf(feed("f65")).getValue("found").jsonPrimitive.content)
+        assertEquals("true", readOf(feed("f3")).getValue("found").jsonPrimitive.content)
+        assertTrue(store.kept.isEmpty(), "feeds are in memory: nothing is written to the store")
+    }
+
+    @Test
+    fun `the feeds route gives the value the tool reads, and 404 for a feed that is not there`() {
+        feed("build", JsonObject(mapOf("done" to JsonPrimitive(12))))
+        val route = get("/api/visual/feeds/build")
+        assertEquals(200, route.status)
+        assertEquals(readOf(feed("build")), route.body.jsonObject)
+        assertEquals(404, get("/api/visual/feeds/nobody_wrote_this").status)
+    }
+
+    @Test
+    fun `a feed written through its route is read by the tool, and a bad write says why`() {
+        val kept = put("/api/visual/feeds/queue", JsonObject(mapOf("depth" to JsonPrimitive(3))))
+        assertEquals(200, kept.status)
+        assertTrue("queue" in field(kept, "said"), field(kept, "said"))
+        assertEquals(JsonPrimitive(3), readOf(feed("queue")).getValue("data").jsonObject.getValue("depth"))
+
+        val none = put("/api/visual/feeds/queue", null)
+        assertEquals(400, none.status)
+        assertTrue("JSON body" in field(none, "error"), field(none, "error"))
+        assertEquals(JsonPrimitive(3), readOf(feed("queue")).getValue("data").jsonObject.getValue("depth"))
     }
 }

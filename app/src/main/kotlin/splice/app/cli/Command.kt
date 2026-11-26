@@ -283,6 +283,14 @@ public sealed class Command {
         }
     }
 
+    /** `splice feed <name>`: the JSON value on standard input becomes the visual mode's feed of that name. */
+    internal data class Feed(val name: String) : Command() {
+        override suspend fun run(): Int {
+            val verb = FeedCommand(TerminalOutput(::println), TerminalOutput(System.err::println))
+            return outcomeExitCode(verb.run(name, EnvReader(System::getenv)))
+        }
+    }
+
     public data class Perf(val args: List<String>) : Command() {
         override suspend fun run(): Int = outcomeExitCode(PerfWiring.run(args, EnvReader(System::getenv)))
     }

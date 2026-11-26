@@ -6,7 +6,7 @@
       "description": "The kinds of visual you are about to draw. Leave it out to read every module.",
       "items": {
         "type": "string",
-        "enum": ["chart", "comparison", "diagram", "diff", "explainer", "tool", "page"]
+        "enum": ["chart", "comparison", "diagram", "diff", "explainer", "tool", "page", "live"]
       }
     }
   },

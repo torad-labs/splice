@@ -171,8 +171,11 @@
 
   // ---- What the view may ask of the host.
   // Each says whether it went: true once the person sent the words (or the link opened), false when not or the host won't.
-  window.sendPrompt = (text) => ask("ui/message", { role: "user", content: { type: "text", text: String(text) } }).then(() => true, () => false);
-  window.openLink = (url) => ask("ui/open-link", { url: String(url) }).then(() => true, () => false);
+  // The words go as a list of content blocks, the form the MCP Apps SDK declares and a host built on it checks: Claude
+  // Desktop refuses a single block. A host that answers but says isError did not deliver, so that is a false too.
+  const went = (result) => !(result && result.isError);
+  window.sendPrompt = (text) => ask("ui/message", { role: "user", content: [{ type: "text", text: String(text) }] }).then(went, () => false);
+  window.openLink = (url) => ask("ui/open-link", { url: String(url) }).then(went, () => false);
   // A link opens outside the app, through the host and only on his tap. (A page could still navigate this frame itself;
   // the host feeds a frame nothing after a load it didn't cause, and points it back.)
   document.addEventListener("click", (event) => {

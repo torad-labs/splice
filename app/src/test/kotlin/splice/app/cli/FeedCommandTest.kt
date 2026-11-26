@@ -67,7 +67,7 @@ class FeedCommandTest {
     private fun key(): String = MgmtKey(statePaths()).get()
 
     /** The command a script runs, its standard input [stdin], against the stand-in daemon (or none on `port`). */
-    private fun feed(name: String, stdin: String, port: Int = daemon.port): Boolean {
+    private fun feed(name: String, stdin: String, port: Int = daemon.port, follow: Boolean = false): Boolean {
         val env = mapOf(
             "SPLICE_STATE_DIR" to tmp.resolve("state").toString(),
             "SPLICE_CONTROL_PORT" to port.toString(),
@@ -78,7 +78,7 @@ class FeedCommandTest {
             TerminalOutput { said.add(it) },
             TerminalOutput { failed.add(it) },
             stdin.byteInputStream(),
-        ).run(name, { variable -> env[variable] })
+        ).run(name, follow, { variable -> env[variable] })
     }
 
     /** What the mode's `feed` tool answers for [name]: the read a card makes through its app. */
@@ -132,6 +132,61 @@ class FeedCommandTest {
     }
 
     @Test
+    fun `with follow, each line is one value written in the order it came, and the last is what a read gives`() {
+        val lines = (1..5).joinToString("\n") { """{"step":$it,"loss":${1.0 / it}}""" } + "\n"
+
+        assertTrue(feed("training", lines, follow = true), "$failed")
+
+        assertEquals((1..5).map { """{"step":$it,"loss":${1.0 / it}}""" }, daemon.written)
+        assertEquals(5, read("training").getValue("data").jsonObject.getValue("step").jsonPrimitive.content.toInt())
+        assertTrue(said.isEmpty() && failed.isEmpty(), "a stream that is kept says nothing: $said $failed")
+    }
+
+    @Test
+    fun `with follow, a bad line is said with its number and does not end the stream`() {
+        val lines = "{\"n\":1}\nnot json\n\n{\"n\":3}\n"
+
+        val every = feed("training", lines, follow = true)
+
+        assertFalse(every, "a line was not kept, so the run says so")
+        assertEquals(listOf("{\"n\":1}", "{\"n\":3}"), daemon.written)
+        assertEquals(1, failed.size, "$failed")
+        assertTrue("line 2" in failed.single() && "JSON" in failed.single(), "$failed")
+        assertEquals(3, read("training").getValue("data").jsonObject.getValue("n").jsonPrimitive.content.toInt())
+    }
+
+    @Test
+    fun `with follow, a line the mode refuses is said and the next is written`() {
+        val every = feed("has space", "1\n2\n", follow = true)
+
+        assertFalse(every)
+        assertEquals(2, failed.size, "each refused line is said: $failed")
+        assertTrue(failed.all { "letters, digits" in it }, "$failed")
+        assertTrue(feed("training", "7\n", follow = true))
+        assertEquals("7", read("training").getValue("data").toString())
+    }
+
+    @Test
+    fun `with follow, standard input ending, even empty or with no last newline, ends cleanly`() {
+        assertTrue(feed("training", "", follow = true), "$failed")
+        assertTrue(feed("training", "\n\n", follow = true), "$failed")
+        assertTrue(feed("training", "{\"last\":true}", follow = true), "$failed")
+
+        assertEquals(listOf("{\"last\":true}"), daemon.written)
+        assertTrue(said.isEmpty() && failed.isEmpty(), "$said $failed")
+    }
+
+    @Test
+    fun `with follow, a daemon that is not there is said once, whatever the lines after it`() {
+        val closed = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).also { it.stop(0) }.address.port
+
+        assertFalse(feed("training", "1\n2\n3\n", port = closed, follow = true))
+
+        assertEquals(1, failed.size, "$failed")
+        assertTrue("line 1" in failed.single() && "not running" in failed.single(), "$failed")
+    }
+
+    @Test
     fun `with no daemon listening it says so and fails`() {
         val closed = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).also { it.stop(0) }.address.port
         assertFalse(feed("training", "1", port = closed))
@@ -143,6 +198,9 @@ class FeedCommandTest {
 private class StandInDaemon(private val key: String, private val mode: FoundMode, private val store: ModeStore) {
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
     val port: Int get() = server.address.port
+
+    /** The bodies of the writes it was handed, in the order they came. */
+    val written = CopyOnWriteArrayList<String>()
 
     init {
         server.createContext("/") { exchange -> answer(exchange) }
@@ -170,6 +228,7 @@ private class StandInDaemon(private val key: String, private val mode: FoundMode
     }
 
     private fun handled(route: ModeRoute, exchange: HttpExchange, body: JsonElement?): Pair<Int, String> {
+        if (exchange.requestMethod == "PUT" && body != null) written.add(body.toString())
         val request = ModeRequest(exchange.requestMethod, exchange.requestURI.path, emptyMap(), body, store)
         return route.handler.handle(request).let { it.status to it.body.toString() }
     }

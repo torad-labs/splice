@@ -11,17 +11,23 @@ holds, and something else writes the feed.
   `null`, at most 64 KiB). It replaces the value and stamps when it was written. Without `data`, `feed` reads it. Send
   only what the card draws, such as the last 200 points and not the whole log. At most 64 feeds are kept, and a new one
   past that drops the one written longest ago. Feeds live in the daemon's memory: a restart empties them.
-- **Keep it fresh without a turn: a script.** Where you have a shell, start a loop that writes the feed itself, and
-  leave it running. `splice feed <name>` reads the value from standard input and needs no key:
+- **Keep it fresh without a turn: a script.** Where you have a shell, leave a process
+  running that writes the feed; it needs no key.
+  - A value written once: `echo '{"done":12}' | splice feed build`.
+  - A value written again and again: keep one process open, `splice feed <name> --follow`. It writes each line of
+    standard input as one JSON value, as it arrives, and ends when the input ends. A bad line is said on stderr and
+    skipped.
 
   ```sh
+  tail -f metrics.jsonl | splice feed training --follow
   while sleep 5; do
-    tail -n 1 train.log | awk '{printf "{\"step\":%s,\"loss\":%s}", $2, $4}' | splice feed training
-  done
+    tail -n 1 train.log | awk '{printf "{\"step\":%s,\"loss\":%s}\n", $2, $4}'
+  done | splice feed training --follow
   ```
 
-  Each call starts a program of its own, about half a second of work, so write every few seconds and not faster.
-  Tell the person what the loop is, where it runs and how to stop it.
+  Never call `splice feed` once per write in a loop: each call starts a program of its own, and on a machine shared
+  with other sessions that is a steady load; the open form pays for one process. Tell the person what the loop is,
+  where it runs and how to stop it.
 - **Watch it in the card.** The view gives the card two functions:
   - `watchFeed(name, onData, everyMs)` asks for the feed every `everyMs` (default 5000, never less than 1000) and calls
     `onData(data, updated)` when the value changes: `data` is the parsed value and `updated` is a `Date`, when it was

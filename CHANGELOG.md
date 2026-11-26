@@ -155,7 +155,9 @@
 - **A drawn card can keep itself up to date: the `visual` mode's `feed`.** A feed is a small named JSON value (up to 64
   KiB, 64 of them) that splice holds in memory with the time it was written. The model writes one with the `feed` tool, or
   leaves a script running that writes it from a shell with no model turn: `echo '{"loss":0.31}' | splice feed training`,
-  which asks the daemon with the management key itself, so the script never holds a key. A card calls `watchFeed(name,
+  or, for a value written again and again, `producer | splice feed training --follow`, which stays open and writes each
+  line it is given, so the script costs one process and not one per write. It asks the daemon with the management key
+  itself, so the script never holds a key. A card calls `watchFeed(name,
   onData, everyMs)` or `readFeed(name)`, which the view gives it and which ask the app that frames the card to read the
   feed (at most once a second), so the card reaches no network and keeps what it drew wherever the app does not pass the
   call on. `GET /api/visual/feeds/<name>` gives the same value to an app that is not an MCP host, and `PUT` writes it.

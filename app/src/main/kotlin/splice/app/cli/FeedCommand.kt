@@ -25,37 +25,68 @@ private const val FEED_TIMEOUT_MS = 10_000
 private const val FEED_NOT_ANSWERED =
     "the daemon is not running, or is older than this splice and keeps no feeds, so nothing changed"
 
-/** `splice feed`: [output] takes what the daemon said it kept, [errors] the one line said when nothing was; the value
+// why: the key is the daemon's own file, written when it first runs.
+private const val FEED_NO_KEY =
+    "no management key to ask the daemon with; `splice status` says whether it is running"
+
+/** `splice feed`: [output] takes what the daemon said it kept, [errors] what was said when something was not; the value
  *  is read from [input]. */
 internal class FeedCommand(
     private val output: TerminalOutput,
     private val errors: TerminalOutput,
     private val input: InputStream = System.`in`,
 ) {
+    /** What one write came to: the daemon's sentence when it kept the value, or why not, and whether it answered. */
+    private data class Sent(val said: String?, val why: String?, val answered: Boolean)
 
-    /** [name] is the feed's name. True when the daemon kept the value from standard input as that feed. */
-    fun run(name: String, envReader: EnvReader): Boolean {
-        val key = (AdminSupport.readMgmtKey(envReader) as? MgmtKeyRead.Present)?.key
-        val value = input.readBytes().decodeToString().trim()
+    /** [name] is the feed's name. Without [follow], the whole of standard input is one JSON value, and this is true
+     *  when the daemon kept it. With it, each line is one value, written as it arrives until standard input ends: a
+     *  line that is not kept is said on [errors] with its number and does not end the stream, the daemon not answering
+     *  is said once until it answers again, and this is true when every line was kept. */
+    fun run(name: String, follow: Boolean, envReader: EnvReader): Boolean {
         val url = "http://127.0.0.1:${AdminSupport.controlPort(envReader)}/api/visual/feeds/${encoded(name)}"
-        val reading = if (key != null && value.isNotEmpty()) {
-            ControlPlaneClient.withBody(url, "PUT", key, value, FEED_TIMEOUT_MS)
-        } else {
-            null
+        return if (follow) stream(url, envReader) else once(url, envReader)
+    }
+
+    private fun once(url: String, envReader: EnvReader): Boolean {
+        val value = input.readBytes().decodeToString().trim()
+        if (value.isEmpty()) {
+            errors.line("splice: the value is read from standard input as JSON, and none came")
+            return false
         }
-        val answered = (reading as? PostReading.Answered)?.reply
+        val sent = send(url, value, envReader)
+        sent.said?.let(output::line) ?: errors.line("splice: ${sent.why}")
+        return sent.said != null
+    }
+
+    private fun stream(url: String, envReader: EnvReader): Boolean {
+        var kept = true
+        var silent = false
+        var number = 0
+        for (line in input.bufferedReader().lineSequence()) {
+            number++
+            if (line.isBlank()) continue
+            val sent = send(url, line.trim(), envReader)
+            // a daemon that does not answer is said once, and again only after it has answered in between
+            if (sent.answered) silent = false
+            if (sent.said == null) {
+                kept = false
+                if (sent.answered || !silent) errors.line("splice: line $number: ${sent.why}")
+                silent = !sent.answered
+            }
+        }
+        return kept
+    }
+
+    private fun send(url: String, value: String, envReader: EnvReader): Sent {
+        val key = (AdminSupport.readMgmtKey(envReader) as? MgmtKeyRead.Present)?.key
+            ?: return Sent(null, FEED_NO_KEY, answered = true)
+        val answered = (ControlPlaneClient.withBody(url, "PUT", key, value, FEED_TIMEOUT_MS) as? PostReading.Answered)
+            ?.reply
         val said = answered?.takeIf { it.status in ControlPlaneClient.OK_RANGE }
             ?.let { JsonScalars.str(parsed(it.body), "said") }
         val refused = JsonScalars.str(parsed(answered?.body.orEmpty()), "error")
-        when {
-            said != null -> output.line(said)
-            key == null -> errors.line(
-                "splice: no management key to ask the daemon with; `splice status` says whether it is running",
-            )
-            value.isEmpty() -> errors.line("splice: the value is read from standard input as JSON, and none came")
-            else -> errors.line("splice: " + (refused ?: FEED_NOT_ANSWERED))
-        }
-        return said != null
+        return Sent(said, refused ?: FEED_NOT_ANSWERED, answered != null)
     }
 
     private fun parsed(body: String): JsonObject? = try {

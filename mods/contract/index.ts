@@ -66,7 +66,8 @@ export type Labels = { readonly [key: string]: string };
  * time (see mods/README.md for why).
  */
 export interface ModManifest {
-  /** The mod's name: 1–40 characters of a–z, 0–9 and `-`, starting with a letter. It prefixes the
+  /** The mod's name: `[a-z][a-z0-9]*`, at most 40 characters, the rule a mode's name follows, since
+   *  it names the mod's MCP server and so sits in the model's `mcp__<server>__<tool>` names. It prefixes the
    *  mod's rows (`<name>:<id>`), names its MCP server, and is what `SPLICE_MODS_OFF` lists. */
   readonly name: string;
   /** Semantic version, e.g. "0.1.0". */
@@ -80,7 +81,8 @@ export interface ModManifest {
   /** What the mod says it does, shown to the person at install. Not a wall: Splice serves a mod the
    *  events it registers for whatever this list says. */
   readonly capabilities?: readonly Capability[];
-  /** Tool names. Each has `tools/<name>.json` (input schema) and `tools/<name>.md` (description),
+  /** Tool names, each `[a-z][a-z0-9_]*` with no `__`, read the way a mode's tools are read: the
+   *  model is offered `mcp__<mod>__<tool>`, at most 64 characters in all. Each has `tools/<name>.json` (input schema) and `tools/<name>.md` (description),
    *  and may have `tools/<name>.meta.json` (its `_meta`). Splice offers them to a session on the
    *  mod's own MCP server. */
   readonly tools?: readonly string[];
@@ -206,7 +208,7 @@ export type RowStatus =
   | "failed";
 
 export interface SessionRow {
-  /** A session's id is the harness's own session id. A mod's own rows are `<mod>:<id>`, which
+  /** A session's id is the harness's own session id, the `session_id` its row already carries. A mod's own rows are `<mod>:<id>`, which
    *  cannot collide with a session id. */
   readonly id: string;
   /** "session" for a session; a mod names its own kinds, e.g. "task". */
@@ -216,7 +218,7 @@ export interface SessionRow {
   readonly title: string;
   readonly status: RowStatus;
   readonly progress?: RowProgress;
-  /** What the row needs from the person. */
+  /** What the row needs from the person. On a session's row this carries what `waiting_for` says. */
   readonly needs?: RowNeeds;
   /** At most 4, drawn as buttons in order. */
   readonly actions?: readonly RowAction[];

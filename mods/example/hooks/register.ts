@@ -9,7 +9,7 @@ interface Review {
   readonly title: string;
 }
 
-const MOD = "review-queue";
+const MOD = "reviews";
 
 function isReview(v: Json | undefined): v is Json & { id: string; session: string; title: string } {
   return typeof v === "object" && v !== null && !Array.isArray(v) &&
@@ -92,11 +92,11 @@ export const register: Register = (on) => {
   // A tool the model calls, answering in words and a declared view.
   on("tool.call", { server: MOD, tool: "board" }, async ($) => {
     const reviews = await open($.store);
-    return $.ui.respond({ text: `${reviews.length} review(s) open.`, ui: "ui://review-queue/board" });
+    return $.ui.respond({ text: `${reviews.length} review(s) open.`, ui: "ui://reviews/board" });
   });
 
   // The page, and the view the board tool names.
   on("ui.render", { slot: "page", page: "queue" }, async ($, e) => page(await open($.store), e.theme));
   on("ui.render", { slot: "view" }, async ($, e, next) =>
-    e.slot.kind === "view" && e.slot.uri === "ui://review-queue/board" ? page(await open($.store), e.theme) : next(e));
+    e.slot.kind === "view" && e.slot.uri === "ui://reviews/board" ? page(await open($.store), e.theme) : next(e));
 };

@@ -68,7 +68,7 @@ describe("a wrong field in an example is a type error", () => {
   });
   test("a view uri that is not ui://", () => {
     const manifest = readFileSync(join(here, "examples/mod.json"), "utf8");
-    expect(errors("ModManifest", manifest.replace("ui://standup/board", "https://standup/board")).length).toBeGreaterThan(0);
+    expect(errors("ModManifest", manifest.replace("ui://standups/board", "https://standup/board")).length).toBeGreaterThan(0);
   });
 });
 

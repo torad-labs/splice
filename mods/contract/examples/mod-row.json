@@ -1,5 +1,5 @@
 {
-  "id": "standup:review-412",
+  "id": "standups:review-412",
   "kind": "task",
   "parent": "6f1c2a7e-3b0d-4c55-9a41-2d8e0f7b9c13",
   "title": "Review the login fix",
@@ -14,5 +14,5 @@
       "input": { "name": "reason", "label": "What should change?", "multiline": true }
     }
   ],
-  "mod": "standup"
+  "mod": "standups"
 }

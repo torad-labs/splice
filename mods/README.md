@@ -43,7 +43,7 @@ import type { Register } from "<splice>/mods/contract/index.ts";
 
 | field | |
 |---|---|
-| `name` | 1–40 characters of `a–z`, `0–9` and `-`, starting with a letter. It names the mod's MCP server and prefixes its rows. |
+| `name` | `[a-z][a-z0-9]*`, at most 40 characters, the same rule a Splice mode's name follows. It names the mod's MCP server and prefixes its rows. |
 | `version`, `description` | Shown to the person at install. |
 | `author`, `surfaces` | Optional. `surfaces` names the apps the mod adds to; absent means every app. |
 | `capabilities` | Optional. What the mod says it does, shown to the person at install. It is a description, not a wall. |
@@ -192,7 +192,7 @@ offered to it.
 
 ## The example
 
-[`example/`](example/) is a complete mod, `review-queue`. A `session.start` hook opens a review for
+[`example/`](example/) is a complete mod, `reviews`. A `session.start` hook opens a review for
 a session launched with `SPLICE_LABEL_REVIEW=<title>`. `sessions.list` adds a row for each open
 review, with Approve and Ask-for-changes buttons. The buttons call `resolve`, a tool marked for the
 app alone. A `queue` page and a `board` view list every open review. `bun test mods` checks every

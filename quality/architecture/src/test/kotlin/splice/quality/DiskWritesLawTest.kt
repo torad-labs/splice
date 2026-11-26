@@ -423,6 +423,10 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // Nov 19, 2026: what a mode keeps per session (modes/README.md), owner-only, in the modes/<mode> disk page row.
     "app/src/main/kotlin/splice/app/modes/FileModeStore.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/modes/ModArtifacts.kt" to mapOf("writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/mods/install/InstalledMods.kt" to mapOf("writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/mods/install/ModFiles.kt" to mapOf("Files.newOutputStream(" to 1),
+    "app/src/main/kotlin/splice/app/mods/install/ModHashes.kt" to mapOf("writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/mods/install/ModStage.kt" to mapOf("Files.move(" to 1),
     // The economics backfill's covered edge kept across restarts, documented in the perf backfill edge disk page row.
     "app/src/main/kotlin/splice/app/sources/EconomicsBackfill.kt" to mapOf("writeAtomic0600(" to 1),
     // The hourly view's judged hours kept across restarts, documented in the probe judgments disk page row.

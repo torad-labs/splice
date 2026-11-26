@@ -8,9 +8,6 @@ internal class ModFaults {
 
     val list: List<String> get() = found.toList()
 
-    /** How many findings there are so far: a reader compares it before and after a part to know the part is whole. */
-    val size: Int get() = found.size
-
     fun any(): Boolean = found.isNotEmpty()
 
     fun add(what: String) {

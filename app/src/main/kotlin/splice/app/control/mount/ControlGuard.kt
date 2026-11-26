@@ -32,7 +32,7 @@ import splice.sessions.peer.store.PeerStore
 
 /** Which scoped bearer a route admits BESIDE the management key, which opens every route but [PEER]'s. One door
  *  per route, so no route can be widened to two scoped keys by a flag pair. */
-internal enum class Door { MANAGEMENT, MCP, SESSION, PEER }
+internal enum class Door { MANAGEMENT, MANAGEMENT_KEY, MCP, SESSION, PEER }
 
 /** The body of one `/api/peers/self` route, run only after the bearer matched a peer's own key. It acts as, and
  *  names as the sender, [PeerPrincipal] and nobody else. */
@@ -162,10 +162,11 @@ internal class ControlGuard(
         Cancellables.runCatchingBestEffort { block() }.onFailure { routeFailure.answer(call, it) }
     }
 
-    /** The management key and the console key open every [door] that reaches here; a scoped key opens only its own. */
+    /** Installing executable code requires the management key itself, never a scoped or browser key. */
     private fun admits(header: String?, door: Door): Boolean = mgmtKey.matchesBearer(header) || when (door) {
-        Door.MANAGEMENT, Door.PEER -> false
-        Door.MCP -> mcpAccessKey.matchesBearer(header)
-        Door.SESSION -> turnKey.matchesBearer(header)
-    } || console.matchesBearer(header)
+        Door.MANAGEMENT_KEY, Door.PEER -> false
+        Door.MANAGEMENT -> console.matchesBearer(header)
+        Door.MCP -> mcpAccessKey.matchesBearer(header) || console.matchesBearer(header)
+        Door.SESSION -> turnKey.matchesBearer(header) || console.matchesBearer(header)
+    }
 }

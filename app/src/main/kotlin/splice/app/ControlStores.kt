@@ -33,6 +33,7 @@ internal class ControlStores(
     // restart: this one reader is what every head's perf, archive and economics store asks.
     val perfRows = PerfSourceFiles(daemon.statePaths, KeptHistory { daemon.config.getConfig().historyWindow })
     val foregroundTools = ForegroundTools()
+    val mods = splice.app.mods.install.InstalledMods(daemon.statePaths)
 
     /** Nov 13, 2026: the model each session named to fall back to while the one it asks for is held on every login: the
      *  Sessions routes set it, and every head's turns read it. */

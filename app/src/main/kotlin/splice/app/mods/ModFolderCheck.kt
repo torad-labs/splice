@@ -1,13 +1,10 @@
-// NEW: one mod folder checked whole (the mods v2 contract, mods/README.md): `.splice-mod/mod.json` key by key, each
-// listed tool's two files, each view's file, each page's and command's name, and `hooks/hooks.json`'s modules, with a
-// finding for every fault at once, as a mode's folder is checked (ManifestCheck).
-// No finding quotes a value except a name.
 package splice.app.mods
 
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import splice.app.mods.install.ModRefusal
 import splice.core.util.JsonScalars
 import java.io.IOException
 import java.nio.file.Files
@@ -17,62 +14,68 @@ import java.nio.file.Path
 internal const val MANIFEST = ".splice-mod/mod.json"
 private const val HOOKS = "hooks/hooks.json"
 private const val DESCRIPTION = "description"
-private val TOP_KEYS = setOf(
+
+// why: bound JSON and tool descriptions independently of the package's total file budget.
+private const val METADATA_LIMIT = 1024 * 1024
+private val topKeys = setOf(
     "name", "version", DESCRIPTION, "author", "surfaces", "capabilities", "tools", "pages", "commands", "views",
 )
+private const val VERSION_NUMBER = """(?:0|[1-9][0-9]*)"""
+private const val PRE_RELEASE_PART = """(?:$VERSION_NUMBER|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"""
+private val semver = Regex(
+    """$VERSION_NUMBER\.$VERSION_NUMBER\.$VERSION_NUMBER(?:-$PRE_RELEASE_PART(?:\.$PRE_RELEASE_PART)*)?""" +
+        """(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?""",
+)
 
-/** What a folder read as: the mod when it is whole, and every finding either way. */
-internal data class ModRead(val manifest: ModManifest?, val faults: List<String>)
+/** Validates the package and retains its own declaration for the catalog, not a second manifest type. */
+internal data class ModRead(val manifest: JsonObject?, val faults: List<String>) {
+    fun requireManifest(): JsonObject = manifest ?: throw ModRefusal(faults.joinToString("\n"))
+}
 
-/** Checks the mod whose root is [root], the folder a person installs. */
+/** Checks the mod whose root is [root], naming every invalid field or missing file in one answer. */
 internal class ModFolderCheck(private val root: Path) {
     private val faults = ModFaults()
 
     fun check(): ModRead {
         val obj = manifestObject() ?: return ModRead(null, faults.list)
         val keys = ModKeys(obj, faults, "mod.json")
-        keys.unknown(TOP_KEYS)
+        keys.unknown(topKeys)
         val name = keys.string("name")?.also(::checkName)
-        val version = keys.string("version")?.also { if (it.isBlank()) faults.add("mod.json's version is empty") }
-        val description = keys.string(DESCRIPTION)
-        val author = keys.optionalString("author")
-        val surfaces = keys.strings("surfaces")
-        val capabilities = keys.strings("capabilities").onEach(::checkCapability)
-        val declared = ModDeclaredRead(this, faults, keys).declared(name)
+        val version = keys.string("version")
+        if (version != null && !semver.matches(version)) faults.add("mod.json's version is not a semantic version")
+        keys.string(DESCRIPTION)
+        keys.optionalString("author")
+        keys.strings("surfaces")
+        keys.strings("capabilities").forEach(::checkCapability)
+        ModDeclaredRead(this, faults, keys).check(name)
         hooks()
-        if (faults.any()) return ModRead(null, faults.list)
-        val manifest = ModManifest(
-            checkNotNull(name),
-            checkNotNull(version),
-            checkNotNull(description),
-            author,
-            surfaces,
-            capabilities,
-            declared,
-        )
-        return ModRead(manifest, faults.list)
+        return ModRead(obj.takeUnless { faults.any() }, faults.list)
     }
 
-    /** mod.json as an object, or null with the finding that says why it is not one. */
     private fun manifestObject(): JsonObject? {
-        if (!Files.isRegularFile(root.resolve(MANIFEST))) {
+        if (!hasFile(MANIFEST)) {
             return null.also { faults.add("there is no $MANIFEST in it, so it is not a mod") }
         }
         return json(MANIFEST) as? JsonObject ?: null.also { faults.add("$MANIFEST is not a JSON object") }
     }
 
-    /** The text of [relative] when it is a regular file inside the folder, else null. */
     fun text(relative: String): String? {
-        val file = inside(relative) ?: return null
-        if (!Files.isRegularFile(file)) return null
+        val file = realFile(relative) ?: return null
         return try {
-            Files.readString(file)
+            Files.newInputStream(file).use { input ->
+                val bytes = input.readNBytes(METADATA_LIMIT + 1)
+                if (bytes.size <= METADATA_LIMIT) {
+                    bytes.decodeToString(throwOnInvalidSequence = true)
+                } else {
+                    faults.add("$relative exceeds the 1 MiB metadata limit")
+                    null
+                }
+            }
         } catch (_: IOException) {
             null
         }
     }
 
-    /** [relative] read as JSON, or null when it is missing or not JSON. */
     fun json(relative: String): JsonElement? = text(relative)?.let { text ->
         try {
             Json.parseToJsonElement(text)
@@ -81,18 +84,28 @@ internal class ModFolderCheck(private val root: Path) {
         }
     }
 
-    /** Whether [relative] names a path under the root, never above it or absolute. */
-    fun stays(relative: String): Boolean = inside(relative) != null
+    fun hasFile(relative: String): Boolean = realFile(relative) != null
 
-    private fun inside(relative: String): Path? {
+    fun stays(relative: String): Boolean = inside(root, relative) != null
+
+    private fun realFile(relative: String): Path? {
+        val resolved = inside(root, relative) ?: return null
+        return try {
+            resolved.toRealPath().takeIf { it.startsWith(root.toRealPath()) && Files.isRegularFile(it) }
+        } catch (_: IOException) {
+            null
+        }
+    }
+
+    private fun inside(root: Path, relative: String): Path? {
         val base = root.normalize()
         val path = try {
             root.fileSystem.getPath(relative)
         } catch (_: InvalidPathException) {
-            null
+            return null
         }
-        val resolved = path?.takeUnless { it.isAbsolute || relative.isEmpty() }?.let { base.resolve(it).normalize() }
-        return resolved?.takeIf { it.startsWith(base) && it != base }
+        if (path.isAbsolute || relative.isEmpty()) return null
+        return base.resolve(path).normalize().takeIf { it.startsWith(base) && it != base }
     }
 
     private fun checkName(name: String) {
@@ -108,7 +121,6 @@ internal class ModFolderCheck(private val root: Path) {
         }
     }
 
-    /** `hooks/hooks.json`, when the mod has one: `{ "modules": [...] }`, each module a file beside it. */
     private fun hooks() {
         if (!Files.exists(root.resolve(HOOKS))) return
         val obj = json(HOOKS) as? JsonObject ?: return faults.add("$HOOKS is not a JSON object")
@@ -118,8 +130,9 @@ internal class ModFolderCheck(private val root: Path) {
         keys.strings("modules").forEach { module ->
             val path = "hooks/" + module.removePrefix("./")
             when {
-                !stays(path) -> faults.add("$HOOKS lists module $module, which is outside the mod's folder")
-                text(path) == null -> faults.add("$HOOKS lists module $module, and $path is missing")
+                inside(root.resolve("hooks"), module) == null ->
+                    faults.add("$HOOKS lists module $module, which is outside hooks/")
+                !hasFile(path) -> faults.add("$HOOKS lists module $module, and $path is missing")
             }
         }
     }
@@ -131,37 +144,29 @@ private class ModDeclaredRead(
     private val faults: ModFaults,
     private val keys: ModKeys,
 ) {
-    fun declared(mod: String?): ModDeclared = ModDeclared(
-        tools = keys.strings("tools").mapNotNull { tool(it, mod) },
-        pages = keys.objects("pages").mapNotNull { (place, obj) -> page(place, obj) },
-        commands = keys.objects("commands").mapNotNull { (place, obj) -> command(place, obj) },
-        views = keys.objects("views").mapNotNull { (place, obj) -> view(place, obj) },
-    )
+    fun check(mod: String?) {
+        keys.strings("tools").forEach { tool(it, mod) }
+        keys.objects("pages").forEach { (place, obj) -> word(place, obj, "pages", "title") }
+        keys.objects("commands").forEach { (place, obj) -> word(place, obj, "commands", DESCRIPTION) }
+        keys.objects("views").forEach { (place, obj) -> view(place, obj) }
+    }
 
-    private fun tool(name: String, mod: String?): DeclaredTool? {
+    private fun tool(name: String, mod: String?) {
         if (!ModNames.isToolName(name)) {
-            return null.also { faults.add("tools lists $name, which is not ${ModNames.TOOL_RULE}") }
+            faults.add("tools lists $name, which is not ${ModNames.TOOL_RULE}")
+            return
         }
-        val before = faults.size
-        val schema = schema(name)
-        val description = description(name)
-        val meta = meta(name)
-        mod?.let { offered(it, name) }
-        if (faults.size > before) return null
-        return DeclaredTool(name, checkNotNull(description), checkNotNull(schema), meta)
+        schema(name)
+        description(name)
+        val meta = "tools/$name.meta.json"
+        if (folder.hasFile(meta) && folder.json(meta) !is JsonObject) faults.add("$meta is not a JSON object")
+        if (mod != null) offered(mod, name)
     }
 
-    private fun description(name: String): String? {
+    private fun description(name: String) {
         val file = "tools/$name.md"
-        val text = folder.text(file)?.trim()
-            ?: return null.also { faults.add("tools lists $name, and $file is missing") }
-        return text.ifEmpty { null.also { faults.add("$file is empty") } }
-    }
-
-    private fun meta(name: String): JsonObject? {
-        val file = "tools/$name.meta.json"
-        folder.text(file) ?: return null
-        return folder.json(file) as? JsonObject ?: null.also { faults.add("$file is not a JSON object") }
+        val text = folder.text(file)?.trim() ?: return faults.add("tools lists $name, and $file is missing")
+        if (text.isEmpty()) faults.add("$file is empty")
     }
 
     private fun offered(mod: String, name: String) {
@@ -171,54 +176,36 @@ private class ModDeclaredRead(
         }
     }
 
-    private fun schema(name: String): JsonObject? {
+    private fun schema(name: String) {
         val file = "tools/$name.json"
-        if (folder.text(file) == null) return null.also { faults.add("tools lists $name, and $file is missing") }
+        if (!folder.hasFile(file)) return faults.add("tools lists $name, and $file is missing")
         val schema = folder.json(file) as? JsonObject
-        val typed = JsonScalars.str(schema, "type") == "object"
-        if (!typed) faults.add("$file is not a JSON Schema object with type object")
-        return schema.takeIf { typed }
+        if (JsonScalars.str(schema, "type") != "object") {
+            faults.add("$file is not a JSON Schema object with type object")
+        }
     }
 
-    private fun page(place: Int, obj: JsonObject): DeclaredPage? {
-        val keys = ModKeys(obj, faults, "pages entry $place")
-        keys.unknown(setOf("name", "title"))
-        val name = word(keys, "pages entry $place")
-        val title = keys.string("title")
-        return if (name != null && title != null) DeclaredPage(name, title) else null
+    private fun word(place: Int, obj: JsonObject, kind: String, needed: String) {
+        val where = "$kind entry $place"
+        val keys = ModKeys(obj, faults, where)
+        keys.unknown(setOf("name", needed))
+        val name = keys.string("name")
+        if (name != null && !ModNames.isWord(name)) faults.add("$where's name $name is not ${ModNames.WORD_RULE}")
+        keys.string(needed)
     }
 
-    private fun command(place: Int, obj: JsonObject): DeclaredCommand? {
-        val keys = ModKeys(obj, faults, "commands entry $place")
-        keys.unknown(setOf("name", DESCRIPTION))
-        val name = word(keys, "commands entry $place")
-        val description = keys.string(DESCRIPTION)
-        return if (name != null && description != null) DeclaredCommand(name, description) else null
-    }
-
-    private fun word(keys: ModKeys, where: String): String? {
-        val name = keys.string("name") ?: return null
-        if (ModNames.isWord(name)) return name
-        return null.also { faults.add("$where's name $name is not ${ModNames.WORD_RULE}") }
-    }
-
-    private fun view(place: Int, obj: JsonObject): DeclaredView? {
+    private fun view(place: Int, obj: JsonObject) {
         val where = "views entry $place"
         val keys = ModKeys(obj, faults, where)
         keys.unknown(setOf("uri", "name", "mimeType", "file"))
-        val before = faults.size
         val uri = keys.string("uri")
         if (uri != null && !uri.startsWith("ui://")) faults.add("$where's uri does not start with ui://")
-        val name = keys.string("name")
-        val mime = keys.optionalString("mimeType")
-        val file = keys.optionalString("file")
-        if (file != null) {
-            when {
-                !folder.stays(file) -> faults.add("$where's file $file is outside the mod's folder")
-                folder.text(file) == null -> faults.add("$where names file $file, which is missing")
-            }
+        keys.string("name")
+        keys.optionalString("mimeType")
+        val file = keys.optionalString("file") ?: return
+        when {
+            !folder.stays(file) -> faults.add("$where's file $file is outside the mod's folder")
+            !folder.hasFile(file) -> faults.add("$where names file $file, which is missing")
         }
-        if (faults.size > before) return null
-        return DeclaredView(checkNotNull(uri), checkNotNull(name), mime, file)
     }
 }

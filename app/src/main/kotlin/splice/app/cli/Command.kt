@@ -52,6 +52,11 @@ public sealed class Command {
         override suspend fun run(): Int = success { println("splice $GATEWAY_VERSION") }
     }
 
+    /** Install, inspect, switch or remove a TypeScript mod on the local daemon. */
+    public data class Mod(val args: List<String>) : Command() {
+        override suspend fun run(): Int = splice.app.cli.mod.ModCommand().run(args)
+    }
+
     public data class Mcp(val args: List<String>) : Command() {
         override suspend fun run(): Int = splice.app.cli.mcp.McpServiceCommand().run(args)
     }

@@ -3,9 +3,8 @@
 package splice.app.mods
 
 internal object ModNames {
-    /** Anthropic's limit on a tool's name, which `mcp__<mod>__<tool>` must keep. */
+    // why: maximum length of the qualified mcp__<mod>__<tool> name offered to clients.
     const val MAX_OFFERED: Int = 64
-    const val MAX_NAME: Int = 40
 
     const val MOD_RULE: String = "[a-z][a-z0-9]*, at most 40 characters"
     const val TOOL_RULE: String = "[a-z][a-z0-9_]* with no __"

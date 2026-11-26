@@ -403,7 +403,7 @@ None of these needs any action. See [Architecture and troubleshooting](architect
 - [ ] Each head you still use prints its replacement selector, and `splice claude check` reports what still starts past the gateway.
 - [ ] `splice setup --update` has offered what you want: launchers, Desktop, MCP, Codex hooks, modes, auto-update.
 - [ ] Claude Desktop, if you use it: after `splice desktop on`, Desktop was quit fully and reopened, and `splice desktop` shows mode `app`.
-- [ ] Gemini in the Code tab, if you want it: `splice desktop wrapper --check` exits 0, names no place it did not read, and says Desktop's limits apply to the Code sessions it starts.
+- [ ] Gemini in the Code tab, if you want it: `splice desktop wrapper --check` exits 0, and the places it names that it did not read set neither key to another value.
 - [ ] Other machines using your LAN share have re-run `splice remote add http://<box>:<port>`.
 - [ ] Scripts that ran bare `splice login`, or relied on restart waiting for every compaction, are updated.
 - [ ] Team servers: `splice server audit` answers, and any new `[server]` tables pass `splice check-config`.

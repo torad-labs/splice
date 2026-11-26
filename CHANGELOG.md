@@ -169,13 +169,14 @@
   Claude Code drops the policy Claude Desktop hands each Code session, and Desktop warns in every one. `--print`,
   `--check`, the doctor's `managed settings` row and the upgrade item say the same things: both keys wanted; the file
   read (each key's string, a value that is not text, or absent), could not be read (splice then does not say whether it
-  exists), or nothing at its path, which a link to nothing, here or in a folder above, is not; every other place
-  Claude Code reads that splice did not or could not check (the remote settings in Claude Code's config folder, the
-  macOS plists, the Windows HKLM and HKCU values, each drop-in); whether the launcher is laid; and what Desktop does,
-  plainly only where splice read the file and there is no other place, and as a condition otherwise. What to do is to
-  make the file hold both keys, in place wherever one may exist. `--check` exits 0 when the launcher, found where the
-  daemon lays it, is laid and the file names it, and says it confirms no more. The upgrade lists an item whenever the
-  file splice read does not hold both keys, could not be read or is not there.
+  exists), or nothing at its path, which a link to nothing, here or in a folder above, is not; the other places Claude
+  Code may take managed settings from (its remote settings, the macOS plists, the Windows HKLM and HKCU values, each
+  drop-in), named without being read; whether the launcher is laid; and what Desktop does, always as the condition,
+  since splice never reads every source. What to do is to make the file hold both keys, in place wherever one may
+  exist, after checking those places. `--check` exits 0 when the launcher, found where the daemon lays it, is laid and
+  the file names it, and nothing more. The upgrade lists an item whenever the file splice read does not hold both
+  keys, could not be read or is not there, or the launcher is not laid; `setup --update` says it found nothing new only
+  in what splice checked.
 - **A command-auth provider signs in from the terminal or the console**, and `splice doctor` reports on it.
 - **A provider's declared effort vocabulary names its models' reasoning levels.** An openai-chat provider whose
   endpoint lists nothing about reasoning (a team gateway, a llama.cpp server) had no effort control in Claude Desktop's

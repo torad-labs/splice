@@ -34,11 +34,11 @@ whether Desktop was reopened since splice changed it, and `splice desktop` lists
 working or why not (DesktopFeatures; what only the live test settles is "unknown"). `on` also lays
 `<state>/desktop-launch`, which runs `splice desktop launch`: a managed processWrapper can name it, and it gives a
 Code-tab launch on the door the desktop key Desktop stripped (Mantle's bearer, or the gateway's variable). The managed
-file also needs `"parentSettingsBehavior": "merge"`: while it is absent or `"first-wins"` Claude Code drops the policy
+settings also need `"parentSettingsBehavior": "merge"` in the source that wins: without it Claude Code drops the policy
 Desktop hands each Code session, and Desktop warns in every one. splice says what is wanted and only what it read (the file read, could
-not be read, or nothing at its path; each key text, not text, or absent), names every other place Claude Code reads that it
-did not or could not check, says what Desktop does plainly only where it read the file and there is no other place, lists
-an upgrade item for any file that does not hold both keys, and still never writes the managed file. Each turn's perf row names its subagent and parent agent (df-turn-headers). The policy
+not be read, or nothing at its path; each key text, not text, or absent), names the other places Claude Code may take managed
+settings from without reading them, says what Desktop does only as that condition, lists an upgrade item for any file that
+does not hold both keys, and still never writes the managed file. Each turn's perf row names its subagent and parent agent (df-turn-headers). The policy
 also raises Desktop's Claude Code import prompt (`bannerBehavior: "show"`, `bannerMaxDismissals: 10`), so gateway mode
 can bring the sessions Claude Code has on the computer into its Code-tab list. Not built: the gateway answer fields of
 df-wire-answers.

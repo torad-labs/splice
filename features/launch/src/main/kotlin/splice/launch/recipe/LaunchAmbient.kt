@@ -7,6 +7,7 @@ package splice.launch.recipe
 
 import splice.client.desktop.GATEWAY_HEADERS
 import splice.core.client.CLIENT_WALL_HEADER
+import splice.core.client.LAUNCH_OWNER_HEADER
 import splice.core.client.SPLICE_CLIENT_HEADER
 import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.model.CLIENT_WINDOW_HEADER
@@ -14,7 +15,7 @@ import splice.core.util.EnvReader
 import java.net.URI
 
 internal class LaunchAmbient(private val envReader: EnvReader) {
-    /** NO_PROXY and no_proxy, both: the caller's lists ([caller], LaunchCaller.noProxy) and the daemon's, with loopback
+    /** NO_PROXY and no_proxy, both: the caller's lists ([caller], LaunchCallerAmbient.noProxy) and the daemon's, with loopback
      *  added, and the host of [address] when it has one (another machine's door or head, LAN share), which a proxy the
      *  shell names can't reach. Claude Code and the statusline's curl both honour it, and curl reads the lowercase
      *  spelling first and ignores NO_PROXY once that is set. Every entry either list already holds is kept. */
@@ -51,7 +52,6 @@ internal class LaunchAmbient(private val envReader: EnvReader) {
 /** What every launch adds to NO_PROXY: the loopback address its own gateway or head listens on. */
 private const val LOOPBACK_HOSTS = "127.0.0.1,localhost"
 
-/** The headers a launch plants for its session: its client wall, its window, its launch proof and, from a team
- *  server's command, the word that this is splice. The shim drops the same four from the caller's (caller_headers). */
+/** A launch's own headers, also dropped from the caller's headers by the shim (caller_headers). */
 private val planted: Set<String> =
-    setOf(CLIENT_WALL_HEADER, CLIENT_WINDOW_HEADER, LAUNCH_PROOF_HEADER, SPLICE_CLIENT_HEADER)
+    setOf(CLIENT_WALL_HEADER, CLIENT_WINDOW_HEADER, LAUNCH_PROOF_HEADER, SPLICE_CLIENT_HEADER, LAUNCH_OWNER_HEADER)

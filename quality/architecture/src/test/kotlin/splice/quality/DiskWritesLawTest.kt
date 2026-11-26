@@ -441,6 +441,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/sources/RepriceKept.kt" to mapOf("writeAtomic0600(" to 1),
     // The non-secret launcher declaration documented in the launch-owners disk page row.
     "core/src/main/kotlin/splice/core/process/LaunchOwners.kt" to mapOf("writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/mods/sessions/ModLaunchFiles.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/cli/ConfigFixOffer.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/cli/ConfigFixSession.kt" to mapOf("writeAtomic0600(" to 1),
     // Failure-handling slice 4: the fix session clears a retired knob saved in config.json, after its backup, in the

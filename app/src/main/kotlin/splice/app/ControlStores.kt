@@ -7,6 +7,7 @@ import splice.app.control.ControlServer
 import splice.app.daemon.BootedTopology
 import splice.app.head.SESSION_FALLBACKS_FILE
 import splice.app.head.SessionFallbackStore
+import splice.app.mods.sessions.ModLaunches
 import splice.app.probe.PlaygroundProviders
 import splice.app.probe.UpstreamPlaygroundProbe
 import splice.app.sources.PerfSourceFiles
@@ -34,6 +35,7 @@ internal class ControlStores(
     val perfRows = PerfSourceFiles(daemon.statePaths, KeptHistory { daemon.config.getConfig().historyWindow })
     val foregroundTools = ForegroundTools()
     val mods = splice.app.mods.install.InstalledMods(daemon.statePaths)
+    val modLaunches = ModLaunches(daemon.statePaths.modsDir, daemon.log, installed = mods)
 
     /** Nov 13, 2026: the model each session named to fall back to while the one it asks for is held on every login: the
      *  Sessions routes set it, and every head's turns read it. */

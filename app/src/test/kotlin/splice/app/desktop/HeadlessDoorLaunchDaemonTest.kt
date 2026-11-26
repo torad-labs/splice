@@ -7,6 +7,7 @@ package splice.app.desktop
 import com.sun.net.httpserver.HttpServer
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -70,15 +71,23 @@ class HeadlessDoorLaunchDaemonTest {
     @Test
     fun `claude on a door with no heads outlives its providers' wall and keeps the caller's NO_PROXY`(
         @TempDir tmp: Path,
-    ) {
+    ) = withDoor(tmp) { mgmt, home -> checkLaunch(launch(mgmt, home)) }
+
+    @Test
+    fun `a resume updates its interactive row's labels without listing a headless launch`(@TempDir tmp: Path) =
+        withDoor(tmp, ::checkSessionLabels)
+
+    private fun withDoor(tmp: Path, test: suspend (String, Path) -> Unit) {
         val xai = HeadlessDoorProvider("grok-4.7")
         val home = Files.createDirectories(tmp.resolve("home"))
         val fixture = mapOf("XDG_CONFIG_HOME" to tmp.resolve("config").toString())
         UserHome.within(home) {
             DesktopManagedPolicy.within(tmp.resolve("etc/managed-settings.json")) {
                 runBlocking {
-                    val statePaths =
-                        StatePaths(baseOverride = tmp.resolve("state"), envReader = EnvReader { fixture[it] })
+                    val statePaths = StatePaths(
+                        baseOverride = home.resolve(".splice").resolve("state"),
+                        envReader = EnvReader { fixture[it] },
+                    )
                     val mgmt = MgmtKey(statePaths).get()
                     val daemon = Daemon(
                         topology = TopologyLoader.parse(toml(tmp, xai.baseUrl)),
@@ -89,7 +98,7 @@ class HeadlessDoorLaunchDaemonTest {
                     daemon.start()
                     try {
                         awaitListening(controlPort)
-                        checkLaunch(launch(mgmt, home))
+                        test(mgmt, home)
                     } finally {
                         daemon.stop()
                     }
@@ -106,7 +115,11 @@ class HeadlessDoorLaunchDaemonTest {
         assertTrue(wall > 7.days.inWholeMilliseconds, "the client outlives the longest hold: $wall")
         assertEquals("0", env["API_FORCE_IDLE_TIMEOUT"])
         assertEquals(wall.toString(), env["CLAUDE_STREAM_IDLE_TIMEOUT_MS"])
-        assertEquals(listOf("x-splice-client-wall-ms: $wall"), env.getValue("ANTHROPIC_CUSTOM_HEADERS").lines())
+        val owner = env.getValue("SPLICE_FOREGROUND_OWNER")
+        assertEquals(
+            listOf("x-splice-client-wall-ms: $wall", "x-splice-launch-owner: $owner"),
+            env.getValue("ANTHROPIC_CUSTOM_HEADERS").lines(),
+        )
         assertEquals("corp.example,127.0.0.1,localhost", env["NO_PROXY"])
         val argv = recipe.getValue("argv").jsonArray.map { it.jsonPrimitive.content }
         val overlay = json.parseToJsonElement(argv[argv.indexOf("--settings") + 1]).jsonObject
@@ -116,9 +129,52 @@ class HeadlessDoorLaunchDaemonTest {
         assertEquals("claude-xai--grok-4.7", overlayEnv["ANTHROPIC_MODEL"])
     }
 
+    private suspend fun checkSessionLabels(mgmt: String, home: Path) {
+        val registry = Files.createDirectories(home.resolve(".claude").resolve("sessions"))
+        val pid = ProcessHandle.current().pid()
+        Files.writeString(registry.resolve("$pid.json"), """{"pid":$pid,"sessionId":"conversation"}""")
+        val first = launchOwner(launch(mgmt, home, "TICKET=ENG-412"))
+        val resumed = launchOwner(launch(mgmt, home, "TICKET=ENG-413"))
+        val headless = launchOwner(launch(mgmt, home, "TICKET=headless"))
+
+        sessionHook(mgmt, first, "conversation", "startup")
+        assertEquals(mapOf("conversation" to """{"ticket":"ENG-412"}"""), sessionLabels(mgmt))
+        sessionHook(mgmt, resumed, "conversation", "resume")
+        sessionHook(mgmt, headless, "no-registration", "resume")
+        sessionHook(mgmt, first, "conversation", "startup")
+        assertEquals(mapOf("conversation" to """{"ticket":"ENG-413"}"""), sessionLabels(mgmt))
+    }
+
+    private fun launchOwner(recipe: JsonObject): String =
+        recipe.getValue("env").jsonObject.getValue("SPLICE_FOREGROUND_OWNER").jsonPrimitive.content
+
+    private suspend fun sessionHook(mgmt: String, owner: String, session: String, source: String) {
+        val response = client.post("http://127.0.0.1:$controlPort/hooks/resume/door") {
+            header("Authorization", "Bearer $mgmt")
+            header("X-Splice-Foreground-Owner", owner)
+            header("Content-Type", "application/json")
+            setBody("""{"session_id":"$session","source":"$source"}""")
+        }
+        assertEquals(200, response.status.value, response.bodyAsText())
+    }
+
+    private suspend fun sessionLabels(mgmt: String): Map<String, String> {
+        val response = client.get("http://127.0.0.1:$controlPort/api/sessions") {
+            header("Authorization", "Bearer $mgmt")
+        }
+        val body = response.bodyAsText()
+        assertEquals(200, response.status.value, body)
+        return json.parseToJsonElement(body).jsonObject.getValue("sessions").jsonArray.map { it.jsonObject }
+            .associate { it.getValue("session_id").jsonPrimitive.content to it.getValue("labels").toString() }
+    }
+
     /** The recipe a launch of `claude` answers, asked as the shim asks: a form with the caller's NO_PROXY. */
-    private suspend fun launch(mgmt: String, home: Path): JsonObject {
-        val fields = listOf("cwd" to home.toString(), "noProxy" to "corp.example", "dangerouslySkipPermissions" to "no")
+    private suspend fun launch(mgmt: String, home: Path, label: String? = null): JsonObject {
+        val fields = listOf(
+            "cwd" to home.toString(),
+            "noProxy" to "corp.example",
+            "dangerouslySkipPermissions" to "no",
+        ) + listOfNotNull(label?.let { "label" to it })
         val form = fields
             .joinToString("&") { (name, value) -> "$name=${URLEncoder.encode(value, Charsets.UTF_8)}" }
         val response = client.post("http://127.0.0.1:$controlPort/launch/claude") {

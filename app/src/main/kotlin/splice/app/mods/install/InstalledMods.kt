@@ -5,6 +5,7 @@ import splice.app.mods.ModFolderCheck
 import splice.app.mods.ModNames
 import splice.app.mods.ModRuntimeStatus
 import splice.app.mods.PendingMods
+import splice.app.mods.sessions.InstalledModNames
 import splice.core.config.StatePaths
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
@@ -17,7 +18,7 @@ import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
 /** The daemon's installed roster. Readers see a snapshot; only management writes stage files and replace it. */
-internal class InstalledMods(paths: StatePaths) {
+internal class InstalledMods(paths: StatePaths) : InstalledModNames {
     private val directory = paths.modsDir.toAbsolutePath().normalize()
     private val installed = directory.resolve("installed")
     private val file = directory.resolve("mods.json")
@@ -38,7 +39,7 @@ internal class InstalledMods(paths: StatePaths) {
 
     fun find(name: String): InstalledMod? = records[name]?.let { InstalledMod(it, installed) }
 
-    fun names(): Set<String> = records.keys.toSet()
+    override fun names(): Set<String> = records.keys.toSet()
 
     @Synchronized
     fun install(input: ModInstall): InstalledMod {

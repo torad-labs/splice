@@ -29,6 +29,7 @@ internal class DoorRecipe(
     envReader: EnvReader,
     /** The MCP servers the daemon answers itself (the mcp modes that are on), read at each launch, so a mode switched
      *  on reaches the next one; null adds none. */
+    private val notices: LaunchNoticesNow = LaunchNoticesNow { null },
     private val ownMcp: OwnMcpNow,
 ) {
     private val ambient = LaunchAmbient(envReader)
@@ -47,7 +48,7 @@ internal class DoorRecipe(
         if (chosen is ClaudeToRun.Refused) return LaunchOutcome.Refused(chosen.reason)
         // custom-provider (cp-overlay): the person's own --settings are merged into the one overlay, never a second one.
         val modelGiven = ClaudeArgv.options(extraArgs).namesModel
-        val held = held(door, modelGiven, caller.noProxy)
+        val held = held(door, modelGiven, caller.ambient.noProxy)
         val merged = when (val m = DoorOverlayMerge(door.overlay, caller.cwd, held).merge(extraArgs)) {
             is DoorOverlayMerge.Merged.Refused -> return LaunchOutcome.Refused(m.reason)
             is DoorOverlayMerge.Merged.Ready -> m
@@ -69,7 +70,8 @@ internal class DoorRecipe(
         val unset = door.unset + config + cleared
         val danger = "dangerouslySkipPermissions engaged: $DANGER".takeIf { dangerouslySkipPermissions }
         val warning = listOfNotNull(danger, door.notice).takeIf { it.isNotEmpty() }?.joinToString("\n")
-        return LaunchOutcome.Ready(LaunchEnvironment(env, (unset - env.keys).distinct()).recipe(argv, warning))
+        val launch = LaunchEnvironment(env, (unset - env.keys).distinct())
+        return LaunchOutcome.Ready(launch.recipe(argv, warning, caller, notices()))
     }
 
     /** What [door]'s launch plants beside what it carries, each in the process environment and in the overlay's `env`:
@@ -94,4 +96,8 @@ internal const val DANGER = "Claude Code runs with --dangerously-skip-permission
 /** The servers the daemon answers itself as the launch service holds them now: assigned after the recipe is built. */
 internal fun interface OwnMcpNow {
     operator fun invoke(): OwnMcpLaunch?
+}
+
+internal fun interface LaunchNoticesNow {
+    operator fun invoke(): splice.launch.LaunchNotices?
 }

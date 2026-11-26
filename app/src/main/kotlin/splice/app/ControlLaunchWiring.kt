@@ -95,7 +95,13 @@ internal class ControlLaunchWiring(
     /** The one LaunchService, over the daemon's home: its wrap (V4-129) writes and reads the SAME
      *  home the materializer's DR-102 guard protects, so the vanilla dir wrap targets is the one
      *  the guard refuses to every other head. */
-    fun service(home: Path, sharing: McpSharing, controlPort: Int, hub: McpHubLive): LaunchService {
+    fun service(
+        home: Path,
+        sharing: McpSharing,
+        controlPort: Int,
+        hub: McpHubLive,
+        notices: splice.launch.LaunchNotices,
+    ): LaunchService {
         val materializer = materializer(home, sharing, controlPort)
         val temple = splice.client.mcp.TempleMcpEntry(home, paths = statePaths)
         val copying = CopyingOriginals { config.getConfig().keepTranscriptCopies }
@@ -128,6 +134,7 @@ internal class ControlLaunchWiring(
         )
         return launch.also {
             it.loginGuard = owner
+            it.launchNotices = notices
             it.hubLaunch = buildHubLaunch(home, sharing, temple, hub)
             // the mcp modes on for the launch's head and caller, read at each launch: a switch reaches the next one
             it.ownMcp = OwnMcpLaunch(

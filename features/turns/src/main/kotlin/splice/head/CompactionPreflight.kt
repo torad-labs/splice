@@ -3,6 +3,8 @@
 package splice.head
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.failure.CompactionFit
+import splice.core.failure.RequestFacts
 import splice.core.model.CompactionBudget
 import splice.core.model.CompactionBudgets
 import splice.core.model.ModelCatalog
@@ -24,6 +26,24 @@ internal class CompactionPreflight(private val catalog: ModelCatalog, private va
             request,
         ) ?: return null
         return oversizeOrNull(meta, target, estimate, hasPriorExchange)
+    }
+
+    /** The provider may refuse a compaction admitted here. Keep the facts its refusal can use to size a retry. */
+    fun requestFacts(meta: TurnMeta, hasPriorExchange: Boolean, otherLogin: Boolean): RequestFacts = RequestFacts(
+        meta.compact,
+        firstExchange = !hasPriorExchange,
+        otherLogin = otherLogin,
+        compactionFit = if (hasPriorExchange) fit(meta) else null,
+    )
+
+    private fun fit(meta: TurnMeta): CompactionFit? {
+        val input = meta.compaction.inputEstimateTokens ?: return null
+        val route = meta.route
+        val window = ModelServeWindows.forRow(catalog, route.originalModel)
+        val summary = route.clientMaxTokens
+            ?: CompactionBudgets.forRow(catalog, route.originalModel)?.generationTokens
+            ?: 0
+        return CompactionFit(input, window, summary)
     }
 
     /** A target can trigger compaction early, but it is not proof that the summarizer cannot fit the input. */

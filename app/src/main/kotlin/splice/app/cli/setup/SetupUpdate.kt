@@ -63,7 +63,8 @@ internal class SetupUpdate(
         return true
     }
 
-    /** Each offer in turn, then what no offer here closes; "nothing new" only when nothing was offered or left. */
+    /** Each offer in turn, then what no offer here closes; "nothing new" (in what splice checked) only when nothing was
+     *  offered or left. */
     private suspend fun asked(
         path: Path,
         desktop: DesktopFacts?,
@@ -83,7 +84,7 @@ internal class SetupUpdate(
         left.forEach { frame.step(it.text) }
         when {
             offers.all { it == Offer.NOTHING } && left.isEmpty() ->
-                frame.step("Nothing new to set up: this install already has what this release adds.")
+                frame.step(NOTHING_NEW)
             offers.none { it == Offer.DONE } ->
                 frame.step("Nothing changed; `splice setup --update` asks again any time.")
         }
@@ -92,7 +93,7 @@ internal class SetupUpdate(
     /** With no terminal nothing can be asked: every gap is said, with where to set it up. */
     private fun unattended(gaps: List<Gap>) {
         if (gaps.isEmpty()) {
-            frame.step("Nothing new to set up: this install already has what this release adds.")
+            frame.step(NOTHING_NEW)
             return
         }
         gaps.forEach { frame.step(it.text) }
@@ -178,6 +179,10 @@ internal class SetupUpdate(
 
 /** What one offer came to: nothing to offer, offered and left as it was, or done. */
 private enum class Offer { NOTHING, DECLINED, DONE }
+
+// What an update says where it found nothing to set up. It speaks only of what splice checked: some places, such as
+// those Claude Code takes managed settings from, splice names without reading, and the checkup after it names them.
+private const val NOTHING_NEW = "Nothing new to set up in what splice checked."
 
 // The gaps `setup --update` can only say: root writes Claude Code's managed settings, and systemd is not splice's to
 // install. Every other gap has its offer above.

@@ -154,3 +154,7 @@
 .lens .dp-list { flex: 1 1 100%; display: grid; gap: var(--sp-2); min-width: 0; }
 .lens .dp-add { display: flex; gap: var(--sp-2); min-width: 0; }
 .lens .dp-list .kvs div { align-items: center; }
+/* A mode's tools: each name as the model sees it over its description, so a long name reads whole in the glass's width
+   instead of wrapping a letter at a time beside the text. */
+.lens .lr-tools div { flex-direction: column-reverse; align-items: flex-start; gap: var(--sp-1); }
+.lens .lr-tools b { text-align: left; }

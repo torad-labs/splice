@@ -33,6 +33,7 @@ ship off.
 | `tools` | list of strings | required | The tools, in the order they are offered; each has `tools/<tool>.json` and `tools/<tool>.md`. |
 | `kind` | `"door"` or `"mcp"` | `"door"` | `"door"`: splice holds and answers each call inside itself, and the client never sees it. `"mcp"`: the mode is a real MCP server the daemon answers under `server`, so the client sees its tools and calls as any MCP tool's (see "An mcp mode"). |
 | `on` | boolean | `false` | Whether the mode is on for every session by default. splice.toml's `[modes.<name>]` overrides it. |
+| `on_for` | list of callers | `[]` | Callers the mode is on for by default while `on` is false. Today it takes `"desktop"` alone: on for Claude Desktop's own sessions and for no terminal's. A default like `on`, so splice.toml's `[modes.<name>] on` overrides it for every caller. `visual` says `["desktop"]`: Desktop draws, and a terminal draws nothing. |
 | `[heads]` `only` | list of heads | `[]` | Empty: every head. Otherwise the only heads the mode is ever offered on. |
 | `[heads]` `off` | list of heads | `[]` | Heads the mode is never offered on. |
 | `[callers]` `off` | list of callers | `[]` | Callers the mode is never offered to: `"door"` (Claude Code on splice's door, plain `claude`), `"head"` (a head's own command, e.g. `claude-astra`) or `"desktop"` (Claude Desktop's own sessions). |
@@ -43,6 +44,11 @@ ship off.
 | `mimeType` | string | required | e.g. `text/html;profile=mcp-app` for an MCP App. |
 | `file` | string | none | Its content, a file under `resources/`; without it, the handler gives the content. |
 | `_meta` | inline table | none | Passed to the client as written, e.g. `{ ui = { csp = { connectDomains = [] } } }`. |
+
+`on_for` is said only where every place that shows a mode can show it truthfully, as a hook moment appears when
+splice serves it, never as a name that does nothing. So these are findings that refuse boot: `"door"` or `"head"`
+(not served yet), a caller `[callers] off` also names, `on_for` beside `on = true` (where it does nothing), and
+`on_for` beside a non-empty `[heads] only` (Claude Desktop runs no head, so it would never get the mode).
 
 Names: a mode's name is a lowercase letter, then lowercase letters and digits (`[a-z][a-z0-9]*`), so one word is the
 folder, the Gradle id `:modes-<name>` and the package `splice.modes.<name>`. A `server` and each tool name are
@@ -71,23 +77,34 @@ folder, the Gradle id `:modes-<name>` and the package `splice.modes.<name>`. A `
 
 ## Turning a mode on and off
 
-The manifest's `on` is the default. splice.toml overrides it per mode:
+The manifest's `on` and `on_for` are the default. splice.toml overrides them per mode:
 
 ```toml
 [modes.<name>]
-on = true                  # every head
+on = true                  # every head and caller; false: none, Desktop included. heads wins for a head it names
 heads = { kimi = false }   # per head
 server_routes = true       # on a team server: key holders reach it at /server/mod/<name>/...
 server_admin_only = true   # and only the server's admins
 ```
 
-For a mode and a head, in this order: a head outside the manifest's non-empty `only`, or on its `off`, is never
-offered the mode, and splice.toml cannot turn it on; otherwise `heads.<head>` decides, then `on`, then the
-manifest's `on`. A caller on `[callers] off` is never offered the mode: the template's `off = ["desktop"]` leaves out
-Claude Desktop's own sessions.
+For a mode, a head and a caller, in this order:
+
+1. A head outside the manifest's non-empty `only`, or on its `off`, is never offered the mode, and a caller on
+   `[callers] off` never is: splice.toml cannot turn it on. The template's `off = ["desktop"]` leaves out Claude
+   Desktop's own sessions.
+2. Otherwise splice.toml's `heads.<head>` decides, then its `on`.
+3. Otherwise the manifest decides: its `on`, or, for a caller its `on_for` names, on.
+
+So with nothing in splice.toml, `visual` (`on_for = ["desktop"]`) is given to Claude Desktop's own sessions and to
+no terminal's; `on = true` gives it to every session, and `on = false` to none, except on a head that `heads` names, which
+keeps its own setting.
 
 What the door adds is listed by `GET /api/modes`, by `splice status`, and on the console's Settings > Modes, where a
-switch per head writes `[modes.<name>]`. `splice check-config` lists a broken mode's findings, and a
+switch per head writes `[modes.<name>]`, and a mode with `on_for` has one more switch, for every session: Default
+clears `on`, On writes `on = true` and Off `on = false`, with what Claude Desktop and the terminal get now. A mode's row in `GET /api/modes` carries `on` (its every-head value),
+`heads` (each head's), `on_for` (the manifest's), and `callers`: each caller's every-head value, `{on, from}`, which
+for `visual` with nothing in splice.toml says `desktop` on and `door` and `head` off. `splice status` says `on for
+desktop` for such a mode, and the console `Now on in Claude Desktop, off in claude in a terminal`. `splice check-config` lists a broken mode's findings, and a
 `[modes.<name>]` table naming no mode, as boot does.
 
 ## An mcp mode
@@ -99,14 +116,17 @@ and a client that draws MCP Apps can show its pages.
 - **Where it is served.** The daemon answers the server itself, at the address it serves hosted MCP servers on
   (`/mcp/<server>`): there is no process to start. `initialize`, `tools/list`, `tools/call`, `resources/list` and
   `resources/read` are answered in the reply to each request.
-- **How a client finds it.** Every launch on a head where the mode is on is handed one more `--mcp-config` file
-  that names the server. `claude` on the door runs no head, so for it the mode's `on` decides, and a mode with a
-  non-empty `[heads] only` is not handed to it. A caller on `[callers] off` gets no such file. A launch that passes
+- **How a client finds it.** Every launch on a head where the mode is on for its caller (`head` for a head's own
+  command, `door` for `claude` wrapped on the Claude head) is handed one more `--mcp-config` file that names the
+  server. `claude` on the door runs no head, so for it the mode's every-head value for `door` decides, and a mode
+  with a non-empty `[heads] only` is not handed to it. A caller on `[callers] off` gets no such file, and neither
+  does one the mode is not on for, as a terminal's launch of `visual` while splice.toml says nothing. A launch that passes
   `--strict-mcp-config` asked for its own servers alone, so it is handed no mode's server, on the door or a head.
   A session already running when the mode is turned on does not see it until its next launch; turned off, the server
   stops answering at once.
-- **Claude Desktop.** Desktop's own sessions run no head either, so a mode on for every head, with an empty
-  `[heads] only` and no `"desktop"` on `[callers] off`, is one of the MCP servers splice writes into the
+- **Claude Desktop.** Desktop's own sessions run no head either, so a mode on for every head for `desktop` (by
+  splice.toml's `on`, else by the manifest's `on` or its `on_for`), with an empty `[heads] only` and no
+  `"desktop"` on `[callers] off`, is one of the MCP servers splice writes into the
   `claude_desktop_config.json` of each Desktop on the gateway: an entry naming splice's stdio bridge
   (`<state>/desktop-mcp`) and the server, with no address, header or key. The bridge reaches the daemon's own
   `/mcp/<server>` with the MCP access key it reads from splice's state folder when Desktop starts it. The daemon
@@ -133,9 +153,10 @@ and a client that draws MCP Apps can show its pages.
   request names in `X-Splice-Head` (empty for `claude` on the door and for Claude Desktop), and its `caller` the one it
   names in `X-Splice-Caller`, which every entry splice gives for a mode carries: `door` for `claude`, on the door or
   wrapped on the Claude head (whose entry also names that head, so the two are told apart), `head` for a head's own
-  command, `desktop` for Claude Desktop. A named caller is held to `[callers] off`, which chooses where the mode is
-  offered, not who may call it. A request that names none (a host reading a page with the management key, an
-  operator's tool) is answered while the mode is on, and its `caller` is null: who it is is not known. The client
+  command, `desktop` for Claude Desktop. A named caller is answered where the mode is on for it (`[callers] off` and
+  `on_for` included), which chooses where the mode is offered, not who may call it. A request that names none (a
+  host reading a page with the management key, an operator's tool) is answered while the mode is on for any caller,
+  and its `caller` is null: who it is is not known. The client
   writes the header itself, and any holder of the MCP access key can name any caller, so the name says who claims to
   be calling and grants nothing: a mode must not decide anything that matters on it.
 

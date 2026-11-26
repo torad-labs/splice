@@ -47,11 +47,10 @@ internal class ModeLines(private val client: HttpClient = HttpClient.newHttpClie
         return parsed(reply.body())?.map(::line) ?: unreadable("the daemon's /api/modes answered something else")
     }
 
-    /** `  mode  <name>  <on heads>  <kind>  <tools>[  not for <callers>][  not served: your MCP server ...]`. */
+    /** `  mode  <name>  <on heads, for callers>  <kind>  <tools>[  not for <callers>][  not served: ...]`. A caller is
+     *  named when the mode is on for it while it is off for every head, as `on_for` makes it. */
     private fun line(mode: JsonObject): String {
-        val heads = (mode["heads"] as? JsonObject).orEmpty()
-            .filter { (_, state) -> ((state as? JsonObject)?.get("on") as? JsonPrimitive)?.booleanOrNull == true }.keys
-        val on = if (heads.isEmpty()) "off" else "on ${heads.joinToString(", ")}"
+        val on = onText(mode)
         val tools = list(mode["tools"]).mapNotNull { JsonScalars.str(it as? JsonObject, "offered_as") }
             .joinToString(", ")
         val callers = list(mode["callers_off"]).mapNotNull(JsonScalars::str)
@@ -65,6 +64,24 @@ internal class ModeLines(private val client: HttpClient = HttpClient.newHttpClie
     }
 
     private fun list(value: JsonElement?): List<JsonElement> = (value as? JsonArray).orEmpty()
+
+    /** `off`, `on <heads>`, `on for <callers>` or `on <heads>, for <callers>`. */
+    private fun onText(mode: JsonObject): String {
+        val heads = onIn(mode["heads"]).joinToString(", ")
+        val everyHead = ((mode["on"] as? JsonObject)?.get("value") as? JsonPrimitive)?.booleanOrNull == true
+        val alone = if (everyHead) "" else onIn(mode["callers"]).joinToString(", ")
+        return when {
+            heads.isEmpty() && alone.isEmpty() -> "off"
+            heads.isEmpty() -> "on for $alone"
+            alone.isEmpty() -> "on $heads"
+            else -> "on $heads, for $alone"
+        }
+    }
+
+    /** The keys of a `{<key>: {on, from}}` table whose `on` is true, in its order. */
+    private fun onIn(value: JsonElement?): List<String> = (value as? JsonObject).orEmpty()
+        .filter { (_, state) -> ((state as? JsonObject)?.get("on") as? JsonPrimitive)?.booleanOrNull == true }
+        .keys.toList()
 
     private fun parsed(body: String): List<JsonObject>? = try {
         ((Json.parseToJsonElement(body) as? JsonObject)?.get("modes") as? JsonArray)?.filterIsInstance<JsonObject>()

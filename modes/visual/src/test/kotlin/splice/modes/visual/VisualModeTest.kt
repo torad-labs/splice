@@ -60,10 +60,11 @@ class VisualModeTest {
     }
 
     @Test
-    fun `the catalog reads it whole, off, as the server visual whose drawing tools name its view`() {
+    fun `the catalog reads it whole, on for Desktop alone, as the server visual whose drawing tools name its view`() {
         assertEquals(emptyList<String>(), catalog.findings, catalog.findings.joinToString("\n"))
         val found = checkNotNull(catalog.mode("visual"))
         assertEquals(ModeKind.MCP to false, found.manifest.kind to found.manifest.offer.on)
+        assertEquals(listOf(ModeCaller.DESKTOP), found.manifest.offer.onFor, "on for Claude Desktop's own sessions")
         assertEquals(
             listOf("mcp__visual__read_me", "mcp__visual__show_widget", "mcp__visual__html_render"),
             found.tools.map { it.offeredAs },

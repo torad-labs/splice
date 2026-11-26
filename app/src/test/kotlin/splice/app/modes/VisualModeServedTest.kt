@@ -72,7 +72,7 @@ class VisualModeServedTest {
 
     @Test
     fun `its MCP server answers only while it is on, and resources-read gives the view the route gives`() {
-        assertNull(ModeMcp { daemon(on = null) }.server("visual", "acme", "head"), "the mode ships off")
+        assertNull(ModeMcp { daemon(on = null) }.server("visual", "acme", "head"), "not a head's by default")
         val modes = daemon(on = true)
         val server = checkNotNull(ModeMcp { modes }.server("visual", "acme", "head"))
         val read = checkNotNull(server.read("ui://visual/reply.html")).single().jsonObject

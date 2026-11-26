@@ -212,4 +212,70 @@ class ModeMcpTest {
         assertEquals(emptyList<String>(), served.on("globex", "door").map { it.manifest.server })
         assertEquals(emptyList<String>(), served.on("acme", "somebody").map { it.manifest.server })
     }
+
+    /** `canvas`, an mcp mode on for Claude Desktop alone by its manifest's `on_for`, under splice.toml's [setting]. */
+    private fun canvas(setting: ModeSetting?): ModeMcp {
+        val desktopOnly = ModeOffer(
+            on = false,
+            only = emptyList(),
+            off = emptyList(),
+            callersOff = emptyList(),
+            onFor = listOf(ModeCaller.DESKTOP),
+        )
+        val found = listOf(mode("canvas", ModeKind.MCP, desktopOnly))
+        val held = DaemonModes(
+            ModeCatalog(found, emptyList(), found.map { it.name }),
+            setting?.let { mapOf("canvas" to it) }.orEmpty(),
+            listOf("acme"),
+            state,
+        )
+        return ModeMcp { held }
+    }
+
+    @Test
+    fun `a mode on_for names Desktop is Desktop's alone until splice toml says on or off for every session`() {
+        val fresh = canvas(null)
+        assertEquals(listOf("canvas"), fresh.names("", "desktop"), "Desktop is given it")
+        assertEquals(emptyList<String>(), fresh.names("", "door"), "claude on the door is not")
+        assertEquals(emptyList<String>(), fresh.names("acme", "head"), "nor a head's own command")
+        assertEquals(emptyList<String>(), fresh.names("acme", "door"), "nor claude wrapped on a head")
+        checkNotNull(fresh.server("canvas", null, "desktop")) { "Desktop's bridge is answered" }
+        assertNull(fresh.server("canvas", "acme", "head"), "a terminal's request is not")
+        checkNotNull(fresh.server("canvas", null, null)) { "a caller not known is answered while Desktop has it" }
+
+        val on = canvas(ModeSetting(on = true))
+        assertEquals(listOf("canvas"), on.names("", "door"))
+        assertEquals(listOf("canvas"), on.names("acme", "head"))
+        assertEquals(listOf("canvas"), on.names("", "desktop"))
+
+        val off = canvas(ModeSetting(on = false))
+        assertEquals(emptyList<String>(), off.names("", "desktop"), "off is off for Desktop too")
+        assertNull(off.server("canvas", null, "desktop"))
+        assertNull(off.server("canvas", null, null), "and the server stops answering")
+
+        val headOn = canvas(ModeSetting(heads = mapOf("acme" to true)))
+        assertEquals(listOf("canvas"), headOn.names("acme", "head"), "a head's switch means what it meant")
+        assertEquals(emptyList<String>(), headOn.names("", "door"))
+    }
+
+    @Test
+    fun `GET api modes says a mode on_for names Desktop is on for Desktop, and off for every head and the rest`() {
+        val desktopOnly = ModeOffer(false, emptyList(), emptyList(), emptyList(), listOf(ModeCaller.DESKTOP))
+        val found = listOf(mode("canvas", ModeKind.MCP, desktopOnly))
+        val catalog = ModeCatalog(found, emptyList(), found.map { it.name })
+        val held = DaemonModes(catalog, emptyMap(), listOf("acme"), state)
+        val row = ModeRows(held).all().getValue("modes").jsonArray.single().jsonObject
+        assertEquals("""["desktop"]""", row.getValue("on_for").toString())
+        assertEquals("""{"value":false,"from":"manifest"}""", row.getValue("on").toString())
+        assertEquals("""{"acme":{"on":false,"from":"manifest"}}""", row.getValue("heads").toString())
+        assertEquals(
+            """{"door":{"on":false,"from":"manifest"},"head":{"on":false,"from":"manifest"},""" +
+                """"desktop":{"on":true,"from":"manifest"}}""",
+            row.getValue("callers").toString(),
+        )
+        held.follow(mapOf("canvas" to ModeSetting(on = false)))
+        val off = ModeRows(held).all().getValue("modes").jsonArray.single().jsonObject
+        val desktop = off.getValue("callers").jsonObject.getValue("desktop")
+        assertEquals("""{"on":false,"from":"splice.toml"}""", desktop.toString())
+    }
 }

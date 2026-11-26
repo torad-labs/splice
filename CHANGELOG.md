@@ -138,15 +138,20 @@
   instructions, and a client that draws MCP Apps shows the page a tool names (a `ui://` resource, served from the
   mode's folder or by its code). A client that does not draw them shows the tool's answer as any tool's result.
   `modes/templateapp` is a working one to copy, shipped off.
-- **The model can draw in the conversation: the `visual` mode.** An mcp mode, shipped off, whose tools reach every
-  head as `mcp__visual__<tool>`: `show_widget` draws an HTML or SVG fragment (a chart, a comparison, a diagram, an
+- **The model can draw in the conversation: the `visual` mode.** An mcp mode, on for Claude Desktop's own sessions
+  and not offered to a terminal's, whose tools reach a client as `mcp__visual__<tool>`: `show_widget` draws an HTML or SVG fragment (a chart, a comparison, a diagram, an
   annotated diff, an explainer, a small tool) and `html_render` a whole page, which the mode keeps by an id
   (`vp_` and twelve hex digits). Both draw in one view, `ui://visual/reply.html`, which loads nothing from any
   origin, so every host that draws MCP Apps draws them alike; any other client shows an answer that says what was
   drawn. `read_me` gives the guidance on call: when a visual beats text, the host's theme, and one module per kind of
   visual. `GET /api/visual/view?uri=` and `GET /api/visual/pages/<id>` give the view and a kept page with the
-  management key. `html_render` takes the page as `html` only: it reads no file. Turn it on with
-  `[modes.visual] on = true`.
+  management key. `html_render` takes the page as `html` only: it reads no file. `[modes.visual] on = true` turns it
+  on for every session, terminals included, and `on = false` off for every one, Desktop included.
+- **A mode can be on in Claude Desktop alone.** A manifest's `on_for = ["desktop"]` puts a mode on for Claude
+  Desktop's own sessions while its `on` is false; splice.toml's `[modes.<name>] on` still decides for every session.
+  `GET /api/modes` adds `on_for` and `callers`, each caller's value; `splice status` and `splice setup` say when a
+  mode is on for Claude Desktop alone, and Settings > Modes gives such a mode an Every session switch: Default, On or
+  Off.
 - **The keyed team listener serves the door.** `/door/v1` answers on a team's server from the gateway's providers,
   with each person's allowlist applied to the provider a model resolves to, and a streamed turn's client is pinged
   at `[server] keepalive_seconds` when that is shorter than splice's own probe.

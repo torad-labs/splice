@@ -101,6 +101,9 @@ public class LaunchService(
 
     public var peerLaunch: PeerLaunch? = null
 
+    /** Where the daemon keeps the launch's mod settings, assigned before serving recipes. */
+    public var launchNotices: splice.launch.LaunchNotices? = null
+
     /** LAN share: the commands another machine serves, launched when a name no head here carries is asked for.
      *  Assigned by the daemon before routes serve requests; null launches heads only. */
     public var remotes: RemoteCommands? = null
@@ -117,7 +120,13 @@ public class LaunchService(
     private val onGateway = GatewayLaunch()
 
     /** What a launch of `claude` on the [door] runs. */
-    internal val onDoor = DoorRecipe(wrap, wrapState, claudeBinary, envReader) { ownMcp }
+    internal val onDoor = DoorRecipe(
+        wrap,
+        wrapState,
+        claudeBinary,
+        envReader,
+        LaunchNoticesNow { launchNotices },
+    ) { ownMcp }
 
     /** What a launch merges with the environment it inherits: NO_PROXY and the custom headers. */
     private val ambient = LaunchAmbient(envReader)
@@ -225,7 +234,7 @@ public class LaunchService(
         val warnings = listOf(resume.warning(adoption), bounded.warning, hub.warning)
         val warning = warningOf(spec, dangerouslySkipPermissions, warnings, caller)
         onGateway.record(caller.launch, spec.signIn.headKey, caller.gateway)
-        return LaunchOutcome.Ready(environment.recipe(argv, warning))
+        return LaunchOutcome.Ready(environment.recipe(argv, warning, caller, launchNotices))
     }
 
     /** The launch's warnings in one line, and on a line of its own after them the notice of a custom head:
@@ -337,7 +346,7 @@ public class LaunchService(
         val dirs = listOf(spec.trees.own) + spec.trees.siblings
         val config = wrapped?.configRootUnsets(caller.inheritedConfigDir, dirs).orEmpty()
         // V4-449: what this head no longer plants must not leak in from an outer head's session either.
-        val own = { tiers: List<Pair<String, String>> -> buildEnv(held, tiers, caller.noProxy) }
+        val own = { tiers: List<Pair<String, String>> -> buildEnv(held, tiers, caller.ambient.noProxy) }
         val planted = (gateway?.let { onGateway.env(own(emptyList()), held, it) } ?: own(slots)) +
             effort.env(held)
         val clientModels = if (spec.gateway.clientModels) {
@@ -362,7 +371,7 @@ public class LaunchService(
     private fun helperShadows(spec: LaunchSpec): List<String> =
         if (spec.gateway.keyHelper != null) listOf("ANTHROPIC_AUTH_TOKEN") else emptyList()
 
-    /** What [spec]'s launch sets with its tiers [slots], beside the caller shell's [noProxy] (LaunchCaller.noProxy). */
+    /** What [spec]'s launch sets with its tiers [slots], beside the caller shell's [noProxy] (LaunchCallerAmbient.noProxy). */
     private fun buildEnv(
         spec: LaunchSpec,
         slots: List<Pair<String, String>>,

@@ -13,6 +13,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import splice.core.GATEWAY_VERSION
 import splice.core.capability.Capability
+import splice.core.client.LAUNCH_OWNER_HEADER
 import splice.core.mode.ModeSetting
 import splice.core.model.ReadableIds
 import splice.core.prompt.SystemPromptMode
@@ -137,6 +138,7 @@ private val NEVER_FORWARDED: Set<String> = setOf(
     "authorization", "proxy-authorization", "x-api-key", "api-key", "x-goog-api-key", "cookie",
     "host", "content-length", "content-type", "content-encoding", "transfer-encoding", "accept-encoding",
     "connection", "keep-alive", "proxy-connection", "te", "trailer", "upgrade", "via",
+    LAUNCH_OWNER_HEADER,
 )
 
 /** A provider's `forward_headers`: the caller's headers, by exact name, that ride on to this provider, on any head and
@@ -159,8 +161,7 @@ public class ForwardHeaders(configured: List<String>) {
     } else {
         TopologyFinding(
             "providers.$key.forward_headers",
-            "names a login or connection header (Authorization, x-api-key, Host, Content-Length and the like), " +
-                "which never rides on from a caller; remove it, or set a fixed value in extra_headers",
+            "names headers that never ride on from a caller: ${refused.joinToString()}; remove them",
         )
     }
 }

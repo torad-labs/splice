@@ -165,6 +165,7 @@ internal class ControlPlane(
     internal val alerts = stores.alerts
     internal val perfRows = stores.perfRows
     internal val foregroundTools = stores.foregroundTools
+    internal val modLaunches = stores.modLaunches
     internal val sessionFallbacks = stores.sessionFallbacks
     internal val playgroundProviders = stores.playgroundProviders
     internal val playground = stores.playground
@@ -231,6 +232,7 @@ internal class ControlPlane(
         // when it is on, the daemon marks its own log so the extra verbosity can be told apart. This
         // is the one production read of the knob — the accessor had no consumer before V4-110.
         if (config.getConfig().debug) log("[daemon] debug logging enabled\n")
+        modLaunches.restore()
         val home = statePaths.rootDir.parent ?: statePaths.rootDir
         val sharing = mcp.planner(controlPort)
         val mcpHost = mcp.host(home, sharing, heads.values.mapNotNull { it.launchSpec })
@@ -251,7 +253,7 @@ internal class ControlPlane(
             log,
             readings = ControlReadings(health.report(heads, failedHeads, headCount, probes, signals), signals),
             runtime = ControlRuntime(
-                launchService = launch.service(home, sharing, controlPort, mcp.hubLive)
+                launchService = launch.service(home, sharing, controlPort, mcp.hubLive, modLaunches)
                     .also {
                         it.remotes = remoteCommands
                         it.speeds = speeds.of(heads, desktop?.servedProviders)
@@ -294,6 +296,7 @@ internal class ControlPlane(
         performance?.let { srv.wirePerformance(it) }
         srv.ports.turns.codeMode = providerAssembly.codeModeControls
         srv.ports.turns.foreground = foregroundTools
+        srv.ports.modLaunches = modLaunches
         srv.ports.compaction = compactionInstructions
         srv.ports.claudeLogins = claudeLogin.owner
         srv.ports.serverMode = serverMode

@@ -61,7 +61,7 @@ class DoorLaunchEnvTest(@param:TempDir private val tmp: Path) {
         door: DoorLaunchSpec = spec(),
         noProxy: List<String> = emptyList(),
     ): LaunchRecipe {
-        val caller = LaunchCaller(cwd = tmp.toString(), noProxy = noProxy)
+        val caller = LaunchCaller(cwd = tmp.toString(), ambient = LaunchCallerAmbient(noProxy = noProxy))
         val outcome = service(ambient).onDoor.outcome(door, args, false, caller, emptyList())
         return (outcome as LaunchOutcome.Ready).recipe
     }
@@ -73,6 +73,9 @@ class DoorLaunchEnvTest(@param:TempDir private val tmp: Path) {
         assertEquals(1, recipe.argv.count { it == "--settings" }, "one overlay")
         return Json.parseToJsonElement(recipe.argv[at + 1]).jsonObject
     }
+
+    private fun ownerHeader(recipe: LaunchRecipe): String =
+        "x-splice-launch-owner: ${recipe.env.getValue("SPLICE_FOREGROUND_OWNER")}"
 
     private fun overlayEnv(recipe: LaunchRecipe): Map<String, String> =
         overlayOf(recipe).getValue("env").jsonObject.mapValues { (_, value) -> value.jsonPrimitive.content }
@@ -99,7 +102,10 @@ class DoorLaunchEnvTest(@param:TempDir private val tmp: Path) {
     fun `the recipe's custom headers are splice's own, never the daemon's environment, and never in the overlay`() {
         val daemonOwn = mapOf("ANTHROPIC_CUSTOM_HEADERS" to "x-corp-route: blue\nx-splice-client-wall-ms: 1")
         val recipe = launch(ambient = daemonOwn)
-        assertEquals(listOf("x-splice-client-wall-ms: $WALL"), recipe.env.getValue("ANTHROPIC_CUSTOM_HEADERS").lines())
+        assertEquals(
+            listOf("x-splice-client-wall-ms: $WALL", ownerHeader(recipe)),
+            recipe.env.getValue("ANTHROPIC_CUSTOM_HEADERS").lines(),
+        )
         // the caller's headers can carry secrets: the launcher puts them before these in the shell (ShimHeadersTest)
         assertFalse("ANTHROPIC_CUSTOM_HEADERS" in overlayEnv(recipe))
         assertFalse("x-corp-route" in recipe.argv.joinToString(" "))
@@ -107,22 +113,28 @@ class DoorLaunchEnvTest(@param:TempDir private val tmp: Path) {
 
     @Test
     fun `a caller's --settings headers join the launch's in the environment, never standing over the wall`() {
-        val headers = "x-splice-wrapper: acme-ai/1.4.0\nx-team: blue\nx-splice-client-wall-ms: 1"
+        val headers = "x-splice-wrapper: acme-ai/1.4.0\nx-team: blue\nx-splice-client-wall-ms: 1\n" +
+            "X-Splice-Launch-Owner: outer"
         val inline = """{"env":{"ANTHROPIC_CUSTOM_HEADERS":${JsonPrimitive(headers)}}}"""
         val recipe = launch(listOf("--settings", inline))
         assertEquals(
-            listOf("x-splice-wrapper: acme-ai/1.4.0", "x-team: blue", "x-splice-client-wall-ms: $WALL"),
+            listOf(
+                "x-splice-wrapper: acme-ai/1.4.0",
+                "x-team: blue",
+                "x-splice-client-wall-ms: $WALL",
+                ownerHeader(recipe),
+            ),
             recipe.env.getValue("ANTHROPIC_CUSTOM_HEADERS").lines(),
         )
         assertFalse("ANTHROPIC_CUSTOM_HEADERS" in overlayEnv(recipe), "the overlay never outranks the wall header")
     }
 
     @Test
-    fun `with no wall to outlive no timer is planted, and the headers still say none, so an outer one is dropped`() {
+    fun `with no wall to outlive the launch names its owner but sets no timer`() {
         val recipe = launch(door = spec(wall = null))
         assertNull(recipe.env["API_TIMEOUT_MS"])
         assertNull(overlayEnv(recipe)["API_TIMEOUT_MS"])
-        assertEquals("", recipe.env["ANTHROPIC_CUSTOM_HEADERS"])
+        assertEquals(ownerHeader(recipe), recipe.env["ANTHROPIC_CUSTOM_HEADERS"])
     }
 
     @Test

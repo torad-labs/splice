@@ -11,6 +11,7 @@ import splice.client.login.HookScriptFiles
 import splice.client.login.HookScriptFiles.shellSingleQuote
 import splice.client.login.LoginInterception
 import splice.client.resume.DaemonHook
+import splice.client.resume.RESUME_SOURCE
 import splice.client.resume.ResumeHook
 import splice.client.resume.ResumeHookTarget
 import splice.client.resume.STARTUP_SOURCE
@@ -56,8 +57,7 @@ private object DoorStartHook : DaemonHook {
 
     override fun script(controlPort: Int, authHeaderFile: Path, headKey: String): String = buildString {
         appendLine("#!/usr/bin/env bash")
-        appendLine("# NEW (splice): on a door session startup, notify the daemon of session_id and cwd for")
-        appendLine("# Teams rule-binding and foreground tracking. Never blocks the session (exit 0 always).")
+        appendLine("# On startup or resume, tell splice which launch serves this session (exit 0 always).")
         appendLine("curl -sS -m ${ResumeHook.CURL_TIMEOUT_S} -X POST \\")
         appendLine("  -H ${shellSingleQuote("@$authHeaderFile")} \\")
         appendLine("  -H 'Content-Type: application/json' --data-binary @- \\")
@@ -69,6 +69,7 @@ private object DoorStartHook : DaemonHook {
     override fun events(script: Path): Map<String, List<JsonObject>> = mapOf(
         HookScriptFiles.SESSION_START to listOf(
             HookScriptFiles.hookEntry(script, HookScriptFiles.HOOK_TIMEOUT_SECONDS, matcher = STARTUP_SOURCE),
+            HookScriptFiles.hookEntry(script, HookScriptFiles.HOOK_TIMEOUT_SECONDS, matcher = RESUME_SOURCE),
         ),
     )
 }

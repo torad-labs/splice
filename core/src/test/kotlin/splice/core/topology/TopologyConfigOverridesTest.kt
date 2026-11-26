@@ -277,6 +277,21 @@ class TopologyConfigOverridesTest {
     }
 
     @Test
+    fun `the launch owner cannot be forwarded but other x-splice headers can be named`(@TempDir tmp: Path) {
+        val provider = ProviderConfig(
+            dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+            baseUrl = "https://gateway.example.test",
+            auth = AuthConfig("api-key"),
+            forwardHeaders = listOf(" x-SPLICE-launch-owner ", "x-splice-customer-tag"),
+        )
+        val topology = Topology(providers = mapOf("acme" to provider))
+        val finding = TopologyFindings.of(topology, stateBase = tmp, rosters = false)
+            .single { it.path == "providers.acme.forward_headers" }
+        assertTrue("x-SPLICE-launch-owner" in finding.message)
+        assertTrue("x-splice-customer-tag" !in finding.message)
+    }
+
+    @Test
     fun `a forwarded client login boots without rows and ignores legacy picker restrictions`() {
         val provider = ProviderConfig(
             dialect = Dialect.ANTHROPIC_PASSTHROUGH,

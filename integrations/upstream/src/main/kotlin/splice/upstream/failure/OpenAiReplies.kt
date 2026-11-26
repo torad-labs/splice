@@ -102,6 +102,7 @@ public object OpenAiReplies {
             said,
             inputTokens = INPUT_SIZE.find(message)?.let { it.groups[1] ?: it.groups[2] }
                 ?.value?.replace(",", "")?.toLongOrNull(),
+            outputTokens = OUTPUT_SIZE.find(message)?.groupValues?.get(1)?.replace(",", "")?.toLongOrNull(),
         )
 
     /** A 5xx. A capacity code (the backend's server_is_overloaded and slow_down, codex-rs PR #31058, or any code
@@ -196,6 +197,7 @@ private val CONTEXT_LIMIT = Regex("""(?i)maximum context length is\s*([\d,]{1,12
 private val INPUT_SIZE = Regex(
     """(?i)messages resulted in\s+([\d,]{1,12})\s+tokens?|\b([\d,]{1,12})(?:\s+tokens?)?\s+in (?:the )?messages""",
 )
+private val OUTPUT_SIZE = Regex("""(?i)\b(\d[\d,]*)\s+in (?:the )?completion\b""")
 private const val INSUFFICIENT_QUOTA = "insufficient_quota"
 
 // why: the last status in the 5xx class, so the range below covers every failure status an HTTP reply can carry.

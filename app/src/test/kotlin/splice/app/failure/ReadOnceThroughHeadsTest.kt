@@ -297,16 +297,16 @@ class ReadOnceThroughHeadsTest {
     }
 
     @Test
-    fun `DeepSeek on Messages reports its context window and the messages portion of its request`(
+    fun `DeepSeek on Messages reports its window and reserves the provider's larger summary allowance`(
         @TempDir tmp: Path,
     ) = runTest {
         withScriptedHeads(tmp) {
             val refusal = reply {
                 status(400)
-                anthropicErrorBody(
-                    "invalid_request_error",
-                    "This model's maximum context length is 131072 tokens. " +
-                        "However, you requested 131074 tokens (99074 in the messages, 32000 in the completion).",
+                body(
+                    """{"error":{"message":"This model's maximum context length is 131072 tokens. """ +
+                        """However, you requested 131074 tokens (99074 in the messages, 32000 in the completion).",""" +
+                        """"type":"invalid_request_error","param":null,"code":"invalid_request_error"}}""",
                 )
             }
             provider.script(refusal, refusal)
@@ -316,7 +316,7 @@ class ReadOnceThroughHeadsTest {
             assertEquals(400, ordinary.status)
             assertLine(ordinary, "Its model holds 131,072 tokens.")
 
-            val compact = client.send(ClientRequest(maxTokens = 32000, extra = COMPACTION_TURN))
+            val compact = client.send(ClientRequest(maxTokens = 16_000, extra = COMPACTION_TURN))
             assertEquals(400, compact.status)
             assertLine(compact, "prompt is too long: 99074 tokens > 99072")
         }

@@ -128,12 +128,14 @@ public sealed class FailureCause {
         }
 
         /** The request outgrew the model's window. [whileAnswering]: it filled during the answer
-         *  (stop_reason model_context_window_exceeded). */
+         *  (stop_reason model_context_window_exceeded). [outputTokens] is the allowance the refusal states,
+         *  not the number of tokens already generated. */
         public data class TooLong(
             val limitTokens: Long?,
             val whileAnswering: Boolean,
             override val said: ProviderWords? = null,
             val inputTokens: Long? = null,
+            val outputTokens: Long? = null,
         ) : Provider() {
             override fun saying(words: ProviderWords?): Provider = copy(said = words)
 

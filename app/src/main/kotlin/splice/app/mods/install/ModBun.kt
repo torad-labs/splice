@@ -13,8 +13,13 @@ internal const val BUN_NOT_FOUND = "Bun not found"
 internal class ModBun(private val env: EnvReader = EnvReader(System::getenv)) {
     fun atInstall(): Path? = path(env("SPLICE_BUN"))?.toAbsolutePath()?.normalize() ?: onPath()
 
-    fun forRun(recorded: String?): Path? = executable(path(recorded)) ?: onPath()
-        ?: executable(UserHome.dir(env).resolve(".bun/bin/bun"))
+    fun forRun(recorded: String?): Path? = executable(path(recorded)) ?: executable(path(env("SPLICE_BUN")))
+        ?: onPath() ?: executable(UserHome.dir(env).resolve(".bun/bin/bun"))
+
+    fun missing(name: String): String =
+        "Bun was not found (checked the install record, SPLICE_BUN, PATH and ~/.bun/bin/bun). " +
+            "Install Bun from https://bun.sh, then run splice mod enable $name. " +
+            "To point Splice to Bun explicitly: SPLICE_BUN=/path/to/bun splice mod install <folder-or-tarball>."
 
     private fun onPath(): Path? = env("PATH").orEmpty().splitToSequence(File.pathSeparatorChar)
         .filter(String::isNotEmpty)

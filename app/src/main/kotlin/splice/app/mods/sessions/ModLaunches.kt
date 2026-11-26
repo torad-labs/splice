@@ -80,12 +80,12 @@ internal class ModLaunches(
     }
 
     /** Registered rows can also be read before their hook arrives, or after the daemon reopens. */
-    fun labels(sessionId: String?, pid: Long?): Map<String, String> {
+    fun forRecord(sessionId: String?, pid: Long?): LaunchNotice? {
         val joined = sessionId?.let(sessions::get)
         val registered = pid?.let(pids::get)?.takeIf {
             (joined == null || it.recordedAt > joined.recordedAt) && it.isAlive()
         }
-        return (registered ?: joined)?.launch?.settings?.labels.orEmpty()
+        return (registered ?: joined)?.launch
     }
 
     private fun remember(record: StoredModLaunch) {

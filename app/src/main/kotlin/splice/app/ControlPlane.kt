@@ -31,6 +31,7 @@ import splice.app.head.HeadProbeReadings
 import splice.app.head.LaunchSpeedWiring
 import splice.app.modes.DaemonModes
 import splice.app.modes.ModesNow
+import splice.app.mods.run.ModCallRows
 import splice.app.provider.ClaudeAccountWiring
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ModelRosters
@@ -166,6 +167,7 @@ internal class ControlPlane(
     internal val perfRows = stores.perfRows
     internal val foregroundTools = stores.foregroundTools
     internal val modLaunches = stores.modLaunches
+    internal val modRunner = stores.modRunner
     internal val sessionFallbacks = stores.sessionFallbacks
     internal val playgroundProviders = stores.playgroundProviders
     internal val playground = stores.playground
@@ -242,6 +244,7 @@ internal class ControlPlane(
         // door (this machine's, on this control port, or a `[remote.*]` one) is placed on it (door-sessions).
         val doors = LaunchDoors(topology.launches.remote, controlPort)
         val sessions = sessionWiring.source(home, heads, doors, console, foregroundTools)
+        modRunner.start(ModCallRows(sessions, modLaunches))
         val signals = health.signals(heads, sessions, probes, home)
         val guard = parts.guard()
         val listen = adopted.control(controlPort)

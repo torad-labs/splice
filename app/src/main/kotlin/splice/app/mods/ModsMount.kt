@@ -51,18 +51,21 @@ internal class ModsMount(
     private suspend fun install(call: ApplicationCall, mods: InstalledMods) {
         val mod = mods.install(ModRequests.install(call))
         mods.runtime.changed(mod.name)
+        mods.runtime.settled(mod.name)
         answer(call, ModRows(mods).row(mod), HttpStatusCode.Created)
     }
 
     private suspend fun switch(call: ApplicationCall, mods: InstalledMods) {
         val mod = mods.switch(call.parameters["name"].orEmpty(), ModRequests.switch(call))
         mods.runtime.changed(mod.name)
+        mods.runtime.settled(mod.name)
         answer(call, ModRows(mods).row(mod))
     }
 
     private suspend fun remove(call: ApplicationCall, mods: InstalledMods) {
         val mod = mods.remove(call.parameters["name"].orEmpty())
         mods.runtime.changed(mod.name)
+        mods.runtime.settled(mod.name)
         answer(
             call,
             buildJsonObject {

@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonObject
 import splice.app.mods.install.BUN_NOT_FOUND
 import splice.core.util.JsonScalars
 
+private const val STATE = "state"
 private const val TURN_NOTICE =
     "It will hear turns from now on, including in sessions already running. " +
         "No session.start is replayed; new sessions announce their start."
@@ -59,27 +60,47 @@ internal class ModLines {
         append("${name(row)} ${value(row, "version")}: ")
         append(if (value(row, "enabled") == "true") "enabled" else "disabled")
         if (linked(row)) append("; ${linkNotice(row)}")
-        val state = value(row, "state")
+        append(runtime(row))
+        value(row, "lastError").takeIf(String::isNotBlank)?.let { append("; last handler error: $it") }
+        append(drops(row))
+        value(row, "bunVersion").takeIf(String::isNotBlank)?.let { append("; Bun $it") }
+        notices(row).forEach { append("\n  $it") }
+    }
+
+    private fun drops(row: JsonObject): String = buildString {
+        append("; dropped events: ${value(row, "dropped")}")
+        for ((key, label) in listOf("droppedTransport" to "pipe lines", "droppedLogLines" to "log lines")) {
+            val count = value(row, key).toLongOrNull() ?: 0L
+            if (count > 0L) append("; dropped $label: $count")
+        }
+    }
+
+    private fun runtime(row: JsonObject): String = buildString {
+        val state = value(row, STATE)
         if (state != "disabled") {
             append("; $state")
-            val why = value(row, "why")
-            if (why.isNotBlank()) append(": $why")
+            value(row, "why").takeIf(String::isNotBlank)?.let { append(": $it") }
         }
-        append("; dropped events: ${value(row, "dropped")}")
     }
 
     private fun next(row: JsonObject): String {
         val why = value(row, "why")
-        return when {
+        val message = when {
             why == BUN_NOT_FOUND ->
-                "$BUN_NOT_FOUND. It will stay failed until Bun is found. " +
-                    "Install Bun from https://bun.sh, then run splice mod enable ${name(
-                        row,
-                    )}. Once it runs: $TURN_NOTICE"
-            value(row, "state") == "failed" -> "It is not running: $why. Once it runs: $TURN_NOTICE"
+                "$BUN_NOT_FOUND. Install Bun from https://bun.sh, then run splice mod enable ${name(row)}."
+            value(row, STATE) == "failed" -> "It is not running: $why"
+            value(row, STATE) == "starting" -> "Still loading. See splice mod list for its state."
+            value(row, STATE) == "restarting" -> why
             else -> TURN_NOTICE
         }
+        return (notices(row) + message).joinToString("\n")
     }
+
+    private fun notices(row: JsonObject): List<String> =
+        listOfNotNull(value(row, "notice").takeIf(String::isNotBlank)) +
+            listOf("refused", "declaredNotServed").flatMap { key ->
+                (row[key] as? JsonArray).orEmpty().map { text(JsonScalars.strOrEmpty(it)) }
+            }
 
     private fun linked(row: JsonObject): Boolean = value(row, "linked") == "true"
 
@@ -88,6 +109,7 @@ internal class ModLines {
 
     private fun name(row: JsonObject): String = value(row, "name")
 
-    private fun value(row: JsonObject, key: String): String =
-        JsonScalars.str(row, key).orEmpty().map { if (it.isISOControl()) ' ' else it }.joinToString("")
+    private fun value(row: JsonObject, key: String): String = text(JsonScalars.str(row, key).orEmpty())
+
+    private fun text(value: String): String = value.map { if (it.isISOControl()) ' ' else it }.joinToString("")
 }

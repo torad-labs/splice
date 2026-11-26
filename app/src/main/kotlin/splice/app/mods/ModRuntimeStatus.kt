@@ -4,6 +4,7 @@ package splice.app.mods
 internal interface ModRuntimeStatus {
     fun of(name: String): ModRuntime?
     fun changed(name: String)
+    suspend fun settled(name: String) = Unit
 }
 
 internal enum class ModRuntimeState(val wire: String) {
@@ -19,6 +20,26 @@ internal data class ModRuntime(
     val state: ModRuntimeState,
     val why: String? = null,
     val dropped: Long = 0,
+    val pid: Long? = null,
+    val loaded: ModLoadFacts? = null,
+    val diagnostics: ModDiagnostics = ModDiagnostics(),
+)
+
+internal data class ModLoadFacts(
+    val notice: String,
+    val served: Set<String>,
+    val refused: List<String>,
+    val declaredNotServed: List<String>,
+    val bunVersion: String?,
+)
+
+internal data class ModDiagnostics(
+    val droppedByEvent: Map<String, Long> = emptyMap(),
+    val droppedTransport: Long = 0,
+    val droppedLogLines: Long = 0,
+    val restartsInWindow: Int = 0,
+    val lastError: String? = null,
+    val bunPath: String? = null,
 )
 
 internal object PendingMods : ModRuntimeStatus {

@@ -1,6 +1,9 @@
 package splice.app.mods
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -15,8 +18,9 @@ internal class ModRows(private val mods: InstalledMods) {
     }
 
     fun row(mod: InstalledMod): JsonObject {
-        val bun = mods.bun.forRun(mod.bunPath)?.toString()
-        val runtime = status(mod, bun)
+        val reported = mods.runtime.of(mod.name)
+        val bun = reported?.diagnostics?.bunPath ?: mods.bun.forRun(mod.bunPath)?.toString()
+        val runtime = status(mod, reported, bun)
         return buildJsonObject {
             mod.manifest.forEach { (key, value) -> put(key, value) }
             put("runtime", "ts")
@@ -28,19 +32,35 @@ internal class ModRows(private val mods: InstalledMods) {
             put("state", runtime.state.wire)
             put("failed", runtime.state == ModRuntimeState.FAILED)
             put("dropped", runtime.dropped)
-            put("bunPath", mod.bunPath ?: bun)
+            put("bunPath", bun ?: mod.bunPath)
             runtime.why?.let { put("why", it) }
-            if (mod.linked) put("notice", "Linked files are not hash-checked.")
+            runtime.pid?.let { put("pid", it) }
+            if (mod.linked) put("linkNotice", "Linked files are not hash-checked.")
+            putDiagnostics(this, runtime)
         }
     }
 
-    private fun status(mod: InstalledMod, bun: String?): ModRuntime {
-        val reported = mods.runtime.of(mod.name)
-        return when {
-            !mod.enabled -> ModRuntime(ModRuntimeState.DISABLED, dropped = reported?.dropped ?: 0)
-            reported != null -> reported
-            bun == null -> ModRuntime(ModRuntimeState.FAILED, BUN_NOT_FOUND)
-            else -> ModRuntime(ModRuntimeState.STARTING)
+    private fun putDiagnostics(out: JsonObjectBuilder, runtime: ModRuntime) = with(out) {
+        val diagnostics = runtime.diagnostics
+        put("droppedByEvent", JsonObject(diagnostics.droppedByEvent.mapValues { JsonPrimitive(it.value) }))
+        put("droppedTransport", diagnostics.droppedTransport)
+        put("droppedLogLines", diagnostics.droppedLogLines)
+        put("restartsInWindow", diagnostics.restartsInWindow)
+        diagnostics.lastError?.let { put("lastError", it) }
+        runtime.loaded?.let { load ->
+            put("notice", load.notice)
+            put("bunVersion", load.bunVersion)
+            putJsonArray("served") { load.served.sorted().forEach { add(it) } }
+            putJsonArray("refused") { load.refused.forEach { add(it) } }
+            putJsonArray("declaredNotServed") { load.declaredNotServed.forEach { add(it) } }
         }
+    }
+
+    private fun status(mod: InstalledMod, reported: ModRuntime?, bun: String?): ModRuntime = when {
+        !mod.enabled -> (reported ?: ModRuntime(ModRuntimeState.DISABLED))
+            .copy(state = ModRuntimeState.DISABLED, why = null, pid = null)
+        reported != null -> reported
+        bun == null -> ModRuntime(ModRuntimeState.FAILED, BUN_NOT_FOUND)
+        else -> ModRuntime(ModRuntimeState.STARTING)
     }
 }

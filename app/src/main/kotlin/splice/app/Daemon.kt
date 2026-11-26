@@ -129,6 +129,7 @@ public class Daemon(
 
     /** The modes as this daemon holds them; null until Main assigns [modeBoot], and in a daemon a test builds. */
     internal val modes: DaemonModes? get() = controlPlane.modes
+    internal val modEvents get() = controlPlane.modRunner.events
 
     // Topology TOML ([daemon] + [defaults]) feeds the headOverrides layer so reasoning
     // display is operator-editable without recompiling. Env and runtime PATCH still win.
@@ -485,6 +486,7 @@ public class Daemon(
         // them, that wait was part of the stretch in which no daemon serves (2.4 to 2.5 s of it in eight of the
         // thirteen hand-overs of Nov 12, 2026).
         controlPlane.ownership.quiet()
+        controlPlane.modRunner.beginStop("handover")
         headProbes.fenceStarts()
         controlPlane.ownership.fence()
         closeListeners()
@@ -494,6 +496,7 @@ public class Daemon(
             controlPlane.ownership.leave()
         }
         val handedOver = System.nanoTime()
+        controlPlane.modRunner.stop("handover")
         closeBackground()
         // #525 (2026-11-13): the lock is freed when this returns, and the next daemon boots from there. No line said
         // how long this daemon still held it: the stretch from the heads' hand-over to the next daemon's first line
@@ -535,6 +538,7 @@ public class Daemon(
             val routes = heads.values.map { it.head } + providers.running()
             val headBudgetMs = (HEAD_STOP_BUDGET_MS - listenersMs).coerceAtLeast(0L)
             headShutdown.stopHeads(routes, headBudgetMs, log) { controlPlane.ownership.close() }
+            controlPlane.modRunner.stop()
 
             // A daemon that handed over closed these then, before the next daemon opened its own.
             if (!retired) closeBackground()

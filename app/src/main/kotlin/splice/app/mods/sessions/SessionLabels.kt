@@ -9,7 +9,7 @@ import splice.sessions.registry.SessionRecord
 internal class SessionLabels(private val ports: ConsolePorts) : SessionLabelsOf {
     override fun labelsOf(record: SessionRecord): Map<String, String> {
         val pid = record.process.pid.takeUnless { record.availability == SessionAvailability.GONE }
-        return ports.modLaunches?.labels(record.sessionId, pid).orEmpty()
+        return ports.modLaunches?.forRecord(record.sessionId, pid)?.settings?.labels.orEmpty()
     }
 
     override fun forRecords(records: List<SessionRecord>): SessionLabelsOf {

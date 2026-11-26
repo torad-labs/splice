@@ -15,5 +15,5 @@
     "noUnusedParameters": true,
     "skipLibCheck": true
   },
-  "include": ["**/*.ts"]
+  "include": ["contract/**/*.ts", "example/**/*.ts"]
 }

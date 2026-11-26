@@ -126,6 +126,10 @@ application {
     mainClass.set("splice.app.MainKt")
 }
 
+tasks.named<ProcessResources>("processResources") {
+    from(rootProject.layout.projectDirectory.file("mods/host/host.ts")) { into("splice/mods") }
+}
+
 val identitySources = layout.buildDirectory.dir("generated/sources/application-identity")
 val applicationIdentity = tasks.register<splice.release.ApplicationArtifactIdentity>(
     "generateApplicationArtifactIdentity",

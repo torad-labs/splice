@@ -28,7 +28,7 @@ public data class CompactionFit(
     val windowTokens: Long?,
     val summaryTokens: Long,
 ) {
-    internal fun refusal(cause: FailureCause.Provider.TooLong, head: String, spoken: Spoken): Said {
+    internal fun refusal(cause: FailureCause.Provider.TooLong, head: String, spoken: Spoken): Said? {
         val explanation = when {
             cause.whileAnswering -> "The summary filled $head's context window before it finished."
             cause.limitTokens != null -> "The model on $head holds ${spoken.tokens(cause.limitTokens)} tokens."
@@ -37,12 +37,16 @@ public data class CompactionFit(
         return refusal(explanation, cause.inputTokens, cause.limitTokens)
     }
 
-    internal fun refusal(explanation: String, actual: Long? = null, limit: Long? = null): Said {
+    internal fun refusal(explanation: String, actual: Long? = null, limit: Long? = null): Said? {
         val measured = actual?.takeIf { it > 0 }
         val input = (measured ?: inputTokens).coerceAtLeast(1)
         val estimate = if (measured == null) "about " else ""
         val window = limit?.takeIf { it > 0 } ?: windowTokens
-        val fits = window?.let { (it - summaryTokens).coerceAtLeast(0) }
+        val fits = window?.let {
+            // Dropping rounds cannot make the summary itself fit.
+            if (summaryTokens >= it) return null
+            it - summaryTokens
+        }
         // The provider refused, even when our estimate shows no excess. Ask for a fifth of the estimated input
         // then, similar to the client's round-based trim when the error names no size.
         val target = fits?.takeIf { it < input } ?: (input - (input / FALLBACK_TRIM_DIVISOR).coerceAtLeast(1))

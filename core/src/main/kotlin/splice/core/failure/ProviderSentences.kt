@@ -112,7 +112,7 @@ internal class ProviderSentences(private val spoken: Spoken) {
     }
 
     private fun tooLong(cause: FailureCause.Provider.TooLong, facts: LineFacts): Said {
-        facts.request.shorterCompaction()?.let { return it.refusal(cause, facts.head, spoken) }
+        facts.request.shorterCompaction()?.refusal(cause, facts.head, spoken)?.let { return it }
         val head = facts.head
         val what = when {
             facts.request.compaction -> "This conversation is too long for $head to summarize"

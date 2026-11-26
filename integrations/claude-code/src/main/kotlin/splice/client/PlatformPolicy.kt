@@ -13,6 +13,7 @@ package splice.client
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import java.io.IOException
@@ -24,8 +25,11 @@ import java.util.concurrent.TimeUnit
  *  whether it exists but could not be read ([unreadable]), which Claude Code counts as a document that is present. */
 public data class PolicyDocument(public val settings: JsonObject?, public val unreadable: Boolean) {
     /** What the document says of [PARENT_SETTINGS_KEY]: nothing where it is absent, `null` or unreadable. */
-    public fun parentSetting(): ParentSetting =
-        ParentSetting(settings?.get(PARENT_SETTINGS_KEY)?.takeUnless { it is JsonNull }?.toString())
+    public fun parentSetting(): ParentSetting {
+        val value = settings?.get(PARENT_SETTINGS_KEY)?.takeUnless { it is JsonNull } ?: return ParentSetting()
+        val text = value is JsonPrimitive && value.isString
+        return if (text) ParentSetting(value.toString()) else ParentSetting(notText = true)
+    }
 }
 
 /** The operating-system policy of a machine on [osName]. [preferences] is macOS's managed preferences folder and

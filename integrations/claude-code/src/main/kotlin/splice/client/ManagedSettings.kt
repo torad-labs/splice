@@ -55,7 +55,9 @@ public class ManagedSettings(
      *  `unreadable` where it is there and can't be read (no permission) or is no JSON object. Whoever speaks of what
      *  the file holds asks here, so a file that could not be read is never taken for one that says nothing. */
     public fun fileDocument(): PolicyDocument? {
-        if (!Files.isRegularFile(file)) return null
+        // why: notExists is true only where the file is known to be absent; where the folder can't be looked into it
+        // is false, and the file is then one that could not be read, never one that is not there.
+        if (Files.notExists(file)) return null
         val settings = read(file)
         return PolicyDocument(settings, unreadable = settings == null)
     }
@@ -197,10 +199,15 @@ public const val PARENT_SETTINGS_KEY: String = "parentSettingsBehavior"
 public const val PARENT_SETTINGS_MERGE: String = "merge"
 
 /** What a managed settings file says of [PARENT_SETTINGS_KEY]: nothing ([absent]), `"merge"` ([merges]), or another
- *  value, which [shown] gives as JSON text (`"first-wins"` with its quotes). A `null` sets nothing, as in Claude Code. */
-public data class ParentSetting(public val shown: String? = null) {
+ *  value, which [shown] gives as JSON text (`"first-wins"` with its quotes) when it is a string. A value of any other
+ *  type is [notText] and is never shown: what it holds is not splice's to print. A `null` sets nothing, as in Claude
+ *  Code. */
+public data class ParentSetting(public val shown: String? = null, public val notText: Boolean = false) {
     /** Whether the file does not set the key. */
-    public val absent: Boolean get() = shown == null
+    public val absent: Boolean get() = shown == null && !notText
+
+    /** The value as splice may say it: a string in quotes, or that it is not text, and never what such a value holds. */
+    public val quoted: String get() = shown ?: "a value that is not text"
 
     /** Whether the file sets the key to [PARENT_SETTINGS_MERGE]. */
     public val merges: Boolean get() = shown == "\"$PARENT_SETTINGS_MERGE\""

@@ -10,8 +10,12 @@ import splice.client.PARENT_SETTINGS_KEY
 import splice.client.PARENT_SETTINGS_MERGE
 
 /** What [managed], where Claude Code's managed settings are or may be, says of `parentSettingsBehavior`, and what
- *  could be done about it. */
+ *  could be done about it. Where another source that splice did not read exists, nothing here says what Desktop does or
+ *  that a key must be added: it says what the file holds, names the source, and what is true if no source sets
+ *  "merge". */
 internal class ParentSettingsText(private val managed: ManagedFileFacts) {
+    private val unreadSources: Boolean get() = managed.elsewhere.isNotEmpty()
+
     /** The state of the key in the file, with the places splice did not read. */
     fun said(): String {
         val parent = managed.parent
@@ -20,12 +24,11 @@ internal class ParentSettingsText(private val managed: ManagedFileFacts) {
             managed.state == ManagedFileState.MISSING -> "there is no $file"
             managed.state == ManagedFileState.UNREADABLE -> unreadable(PARENT_SETTINGS_KEY)
             parent.merges ->
-                "$file sets $PARENT_SETTINGS_KEY to \"$PARENT_SETTINGS_MERGE\", so Claude Desktop's limits apply to " +
-                    "the Code sessions it starts"
-            parent.absent -> "$file does not set $PARENT_SETTINGS_KEY, $PARENT_DROPS_POLICY"
-            else -> "$file sets $PARENT_SETTINGS_KEY to ${parent.shown}, $PARENT_DROPS_POLICY"
+                "$file sets $PARENT_SETTINGS_KEY to \"$PARENT_SETTINGS_MERGE\"" + effect("so $LIMITS_APPLY")
+            parent.absent -> "$file does not set $PARENT_SETTINGS_KEY" + effect("so $PARENT_DROPS_POLICY")
+            else -> "$file sets $PARENT_SETTINGS_KEY to ${parent.quoted}" + effect("so $PARENT_DROPS_POLICY")
         }
-        return state + unread()
+        return state + unread() + conditional()
     }
 
     /** That the file could not be read, so splice cannot say what it holds for [key]. */
@@ -43,12 +46,26 @@ internal class ParentSettingsText(private val managed: ManagedFileFacts) {
             "read it as an administrator and check that it has both keys (`splice desktop wrapper` says what they are)"
         managed.parent.merges -> null
         managed.parent.absent ->
-            "add \"$PARENT_SETTINGS_KEY\": \"$PARENT_SETTINGS_MERGE\" to it (`splice desktop wrapper` shows what to " +
-                "put where)"
+            (if (unreadSources) "check whether one of those sets it; if none does, " else "") +
+                "add \"$PARENT_SETTINGS_KEY\": \"$PARENT_SETTINGS_MERGE\" to it (`splice desktop wrapper` shows " +
+                "what to put where)"
         else ->
             "that is the administrator's choice: setting it to \"$PARENT_SETTINGS_MERGE\" puts Claude Desktop's " +
                 "limits under the administrator's own for the Code sessions Desktop starts, and stops Desktop's warning"
     }
+
+    /** What the file's value does, said only where no unread source could change it. */
+    private fun effect(what: String): String = if (unreadSources) "" else ", $what"
+
+    /** What is true if no source sets "merge": said where an unread source leaves the effect open. */
+    private fun conditional(): String =
+        if (unreadSources && withoutMerge()) {
+            "; if no source sets \"$PARENT_SETTINGS_MERGE\", $PARENT_DROPS_POLICY"
+        } else {
+            ""
+        }
+
+    private fun withoutMerge(): Boolean = managed.state == ManagedFileState.READ && !managed.parent.merges
 
     private fun unread(): String = when {
         managed.elsewhere.isEmpty() -> ""
@@ -61,5 +78,7 @@ internal class ParentSettingsText(private val managed: ManagedFileFacts) {
     }
 }
 
-private const val PARENT_DROPS_POLICY = "so Claude Code drops the policy Claude Desktop hands each Code session it " +
+private const val LIMITS_APPLY = "Claude Desktop's limits apply to the Code sessions it starts"
+
+private const val PARENT_DROPS_POLICY = "Claude Code drops the policy Claude Desktop hands each Code session it " +
     "starts, and Desktop warns in every one"

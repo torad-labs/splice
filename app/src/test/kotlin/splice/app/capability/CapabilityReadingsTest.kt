@@ -112,7 +112,30 @@ class CapabilityReadingsTest {
         val said = parentRow(facts)!!.said
         assertTrue("did not read /etc/claude-code/managed-settings.d/10-org.json" in said, said)
         assertTrue("may win over the file's" in said, said)
-        assertTrue("did not read" in parentGap(facts)!!.text)
+        assertTrue("; if no source sets \"merge\", Claude Code drops the policy" in said, said)
+        assertEquals(ToolLevel.INFO, parentRow(facts)!!.level, "what Desktop does is not known: noted, not warned")
+        assertTrue("check whether one of those sets it; if none does, add" in parentRow(facts)!!.fix.orEmpty())
+        assertEquals(null, parentGap(facts), "the key may already be in force, so no item asks for it")
+    }
+
+    @Test
+    fun `a merge in the main file with another source unread is not said to be in force`() {
+        val dropIn = "/etc/claude-code/managed-settings.d/a.json"
+        val facts = appWith(ParentSetting("\"merge\""), elsewhere = listOf(dropIn))
+        val row = parentRow(facts)!!
+        assertEquals(ToolLevel.INFO, row.level)
+        assertTrue("sets parentSettingsBehavior to \"merge\"; splice did not read" in row.said, row.said)
+        assertTrue("limits apply" !in row.said, row.said)
+        assertEquals(null, parentGap(facts))
+    }
+
+    @Test
+    fun `a value that is not text is said to be so and never printed, in the row and the item`() {
+        val facts = appWith(ParentSetting(notText = true))
+        val row = parentRow(facts)!!
+        assertTrue("sets parentSettingsBehavior to a value that is not text" in row.said, row.said)
+        val gap = parentGap(facts)!!.text
+        assertTrue("sets parentSettingsBehavior to a value that is not text" in gap, gap)
     }
 
     @Test

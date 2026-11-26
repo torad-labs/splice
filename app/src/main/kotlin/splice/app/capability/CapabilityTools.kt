@@ -81,6 +81,7 @@ internal class CapabilityTools(private val facts: Capabilities) {
         val text = ParentSettingsText(managed)
         val level = when {
             managed.state != ManagedFileState.READ -> ToolLevel.INFO
+            managed.elsewhere.isNotEmpty() -> ToolLevel.INFO
             managed.parent.merges -> ToolLevel.OK
             managed.parent.absent -> ToolLevel.WARN
             else -> ToolLevel.INFO

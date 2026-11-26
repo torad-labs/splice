@@ -15,6 +15,7 @@ import splice.core.config.UserHome
 import splice.core.util.EnvReader
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 
 class DesktopFactsReadTest {
 
@@ -81,6 +82,32 @@ class DesktopFactsReadTest {
         val read = facts(home, null, keep = true)
         assertEquals(ManagedFileState.UNREADABLE, read.managedFile!!.state)
         assertEquals(WrapperState.UNREADABLE, read.wrapper)
+    }
+
+    @Test
+    fun `a file in a folder splice cannot look into is unreadable, not missing`(@TempDir home: Path) {
+        val folder = Files.createDirectory(home.resolve("managed"))
+        Files.writeString(folder.resolve("managed-settings.json"), """{"parentSettingsBehavior": "merge"}""")
+        Files.setPosixFilePermissions(folder, emptySet())
+        try {
+            assumeFalse(Files.isReadable(folder), "a user that can look into any folder cannot show this")
+            val managed = ManagedSettings("Linux", platformDir = folder, policy = PlatformPolicy("Linux"))
+            val read = UserHome.within(home) { DesktopFactsRead(EnvReader { null }, "Linux", managed).read(null) }
+            assertEquals(ManagedFileState.UNREADABLE, read.managedFile!!.state)
+            assertEquals(WrapperState.UNREADABLE, read.wrapper)
+        } finally {
+            Files.setPosixFilePermissions(folder, PosixFilePermissions.fromString("rwxr-xr-x"))
+        }
+    }
+
+    @Test
+    fun `a value that is not a string is not text, and holds nothing splice shows`(@TempDir home: Path) {
+        val objectValue = facts(home, """{"parentSettingsBehavior": {"env": {"T": "sentinel"}}}""").managedFile!!.parent
+        assertTrue(objectValue.notText)
+        assertEquals(null, objectValue.shown)
+        assertEquals("a value that is not text", objectValue.quoted)
+        assertFalse(objectValue.absent)
+        assertTrue(facts(home, """{"parentSettingsBehavior": true}""").managedFile!!.parent.notText)
     }
 
     @Test

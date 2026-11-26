@@ -46,16 +46,17 @@ internal class CapabilityGaps(private val facts: Capabilities, private val claud
     /** The managed settings file that splice read and that does not say `parentSettingsBehavior` "merge", with or
      *  without a processWrapper: Desktop's limits for the Code tab are then not applied. Where the file sets another
      *  value it is put as the administrator's choice. A file splice could not read is no item: nothing is known to be
-     *  missing from it, and the doctor says what it could not read. */
+     *  missing from it, and the doctor says what it could not read. The same where another source splice did not read
+     *  exists: it may already set the key, so no item asks for it. */
     private fun parent(): Gap? {
-        val managed = facts.desktop.managedFile?.takeIf(::readWithoutMerge) ?: return null
+        val managed = facts.desktop.managedFile?.takeIf(::certainlyWithoutMerge) ?: return null
         if (facts.desktop.mode != DesktopMode.APP) return null
         val text = ParentSettingsText(managed)
         return Gap(GapKind.PARENT_SETTINGS, "${text.said()}; ${text.fix()} (a root-owned file)")
     }
 
-    private fun readWithoutMerge(managed: ManagedFileFacts): Boolean =
-        managed.state == ManagedFileState.READ && !managed.parent.merges
+    private fun certainlyWithoutMerge(managed: ManagedFileFacts): Boolean =
+        managed.state == ManagedFileState.READ && !managed.parent.merges && managed.elsewhere.isEmpty()
 
     /** Side-by-side launchers, where nothing runs Claude Desktop or Claude Code beside the person's own yet. */
     private fun sideBySide(): Gap? {

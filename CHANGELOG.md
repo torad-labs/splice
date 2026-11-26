@@ -164,17 +164,16 @@
 - **A turn's row names the Claude Code subagent and parent agent that sent it** on `/api/perf/turns`.
 - **`splice desktop launch`** is what a managed `processWrapper` starts the Code tab through, and `splice desktop`
   says each Desktop feature that depends on the backend, working or why not.
-- **`splice desktop wrapper` asks for both managed settings, and says for each what to do.** Claude Code's managed
-  settings file needs `"parentSettingsBehavior": "merge"` beside `processWrapper`: without it Claude Code drops the
-  policy Claude Desktop hands each Code session, and Desktop warns in every one. For each key `--print` says whether
-  it is already right, to be added, or set to another value and to be changed; it prints the whole file only where
-  there is none, and for a file that exists says to edit it in place (a copy would reset its owner and mode). A
-  `"first-wins"` already there is the administrator's choice and is said so. `--check` exits 0 where the wrapper works
-  and its first line says when `parentSettingsBehavior` is not `"merge"`. `splice doctor` and `splice upgrade` say the
-  same for any managed file that exists with Desktop on splice, with or without a `processWrapper`, and name a
-  drop-in or system policy they did not read. A file splice could not read (for example one only root may read) is
-  said to be unread for both keys, never to lack them: `--check` exits 1, and `splice doctor` notes it without an
-  action item.
+- **`splice desktop wrapper` asks for both managed settings, and says only what splice read.** Claude Code's managed
+  settings need `"parentSettingsBehavior": "merge"` beside `processWrapper`: without it Claude Code drops the policy
+  Claude Desktop hands each Code session, and Desktop warns in every one. `--print`, `--check`, the doctor's
+  `managed settings` row and the upgrade item say the same things: the file read (each key's string, a value that is
+  not text, or absent), could not be read (splice then does not say whether it exists), or nothing at its path, which
+  a link to nothing is not; every other place Claude Code reads that splice did not (remote settings, the system's
+  policy, each drop-in, or a drop-in folder it cannot list); and what Desktop does, plainly only where splice read
+  every place, and as a condition otherwise. What to do is to make the file hold both keys, in place wherever one may
+  exist; only where nothing is at the path is it to be created. `--check` exits 0 when the launcher is laid and the
+  file names it, and the upgrade lists an item only where splice read every place and something is known to be wrong.
 - **A command-auth provider signs in from the terminal or the console**, and `splice doctor` reports on it.
 - **A provider's declared effort vocabulary names its models' reasoning levels.** An openai-chat provider whose
   endpoint lists nothing about reasoning (a team gateway, a llama.cpp server) had no effort control in Claude Desktop's

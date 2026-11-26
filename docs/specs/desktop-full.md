@@ -35,9 +35,9 @@ working or why not (DesktopFeatures; what only the live test settles is "unknown
 `<state>/desktop-launch`, which runs `splice desktop launch`: a managed processWrapper can name it, and it gives a
 Code-tab launch on the door the desktop key Desktop stripped (Mantle's bearer, or the gateway's variable). The managed
 file also needs `"parentSettingsBehavior": "merge"`: while it is absent or `"first-wins"` Claude Code drops the policy
-Desktop hands each Code session, and Desktop warns in every one. That holds whatever else the file holds, with or without a
-`processWrapper`; splice says so for the file it read, says plainly when a file is there and it could not read it (it then
-says nothing of either key), names any drop-in or system policy it did not read, and still never writes the managed file. Each turn's perf row names its subagent and parent agent (df-turn-headers). The policy
+Desktop hands each Code session, and Desktop warns in every one. splice says only what it read (the file read, could not be read, or
+nothing at its path; each key text, not text, or absent), names every other place Claude Code reads that it did not, says
+what Desktop does plainly only where it read every place, and still never writes the managed file. Each turn's perf row names its subagent and parent agent (df-turn-headers). The policy
 also raises Desktop's Claude Code import prompt (`bannerBehavior: "show"`, `bannerMaxDismissals: 10`), so gateway mode
 can bring the sessions Claude Code has on the computer into its Code-tab list. Not built: the gateway answer fields of
 df-wire-answers.

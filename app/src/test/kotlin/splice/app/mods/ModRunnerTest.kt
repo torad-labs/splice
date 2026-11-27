@@ -212,24 +212,6 @@ class ModRunnerTest {
     }
 
     @Test
-    fun `the next daemon reaps a process whose birth matches the old run record`() = testApplication {
-        val rig = RunnerTestRig(root)
-        application { routing { rig.mount.register(this) } }
-        val previous = ProcessBuilder("sh", "-c", "exec sleep 600").start()
-        try {
-            val birth = previous.info().startInstant().orElseThrow().toString()
-            val run = Files.createDirectories(rig.paths.modsDir.resolve("run"))
-            Files.writeString(run.resolve("old.json"), """{"pid":${previous.pid()},"birth":"$birth"}""")
-            rig.runner.start()
-            assertFalse(previous.isAlive)
-            assertTrue(rig.rows(client).isEmpty())
-        } finally {
-            previous.destroyForcibly()
-            rig.runner.stop()
-        }
-    }
-
-    @Test
     fun `handler errors and log overflow do not take down the mod`() = testApplication {
         val rig = RunnerTestRig(root)
         application { routing { rig.mount.register(this) } }

@@ -13,6 +13,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Parameters
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -163,7 +164,7 @@ class ModSessionHandoverTest {
         BlockedModRead(record, root.resolve("opened")).use { read ->
             SessionDaemon(root, events).use { daemon ->
                 kotlinx.coroutines.coroutineScope {
-                    val starting = launch { daemon.start() }
+                    val starting = launch(Dispatchers.IO) { daemon.start() }
                     try {
                         withTimeout(3_000) {
                             daemon.awaitReady()

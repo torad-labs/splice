@@ -70,7 +70,9 @@ function spawnHost() {
 
 const status = new Int32Array(1);
 const info = new BigUint64Array(16); // siginfo_t; si_signo is the first int on Linux and macOS
-const poll = new Int32Array(2); // pollfd: fd 0, events 0 (POLLHUP is unconditional), revents 0
+const poll = new Int16Array(4); // pollfd: i32 fd, i16 events, i16 revents
+poll[2] = 0x01; // POLLIN arms the pipe's read filter on Darwin too
+const CLOSED = 0x08 | 0x10 | 0x20; // POLLERR, POLLHUP, POLLNVAL
 let stopping = false;
 process.on("SIGTERM", () => { stopping = true; });
 
@@ -105,13 +107,15 @@ async function guard(): Promise<number> {
   try {
     writeSync(1, JSON.stringify({ type: "guardian", pid: host }) + "\n");
     while (!stopping && !exited(host)) {
-      if (c.poll(ptr(poll), 1, POLL_MS) > 0) {
+      const signalled = c.poll(ptr(poll), 1, POLL_MS) > 0;
+      if (signalled && (poll[3]! & CLOSED)) {
         // The host reads the same pipe; do not consume any of its protocol bytes.
         const until = performance.now() + STOP_HOOK_MS;
         while (!stopping && !exited(host) && performance.now() < until) await Bun.sleep(20);
         break;
       }
-      await Bun.sleep(0);
+      // A busy host may leave data pending. Polling it must not turn into a spin.
+      await Bun.sleep(signalled ? POLL_MS : 0);
     }
   } catch (error) {
     const code = await stopHost(host);

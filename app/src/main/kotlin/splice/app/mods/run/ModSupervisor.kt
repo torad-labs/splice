@@ -124,7 +124,8 @@ internal class ModSupervisor(
                 // Next attempt is paced by the crash policy.
             }
         }.onFailure {
-            fail("could not run Bun: ${SafeFailureText.render(it)}")
+            val why = (it as? ModStillRunning)?.explanation ?: "could not run Bun: ${SafeFailureText.render(it)}"
+            fail(why)
         }
         settled.complete(Unit)
     }

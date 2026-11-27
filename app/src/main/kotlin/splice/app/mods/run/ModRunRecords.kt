@@ -32,12 +32,12 @@ internal class ModRunRecords(modsDir: Path, log: LogSink) {
             }
             true
         }
-        if (cleared == null) throw stillRunning(pid)
+        if (cleared == null) throw ModStillRunning(pid)
     }
 
     fun requireGone(name: String) {
         val old = files.read(name) ?: return
-        ownership.stillRunning(old)?.let { throw stillRunning(it) }
+        ownership.stillRunning(old)?.let { throw ModStillRunning(it) }
     }
 
     fun begin(name: String, guardian: ModIdentity): ModRunAdmission {
@@ -52,9 +52,10 @@ internal class ModRunRecords(modsDir: Path, log: LogSink) {
             files.write(name, ModRunOwner(guardian, group))
         }
     }
+}
 
-    private fun stillRunning(pid: Long): IOException =
-        IOException("an earlier copy of this mod is still running (PID $pid); stop it before enabling this mod")
+internal class ModStillRunning(pid: Long) : IOException() {
+    val explanation = "an earlier copy of this mod is still running (PID $pid); stop it before enabling this mod"
 }
 
 internal class ModRunAdmission(

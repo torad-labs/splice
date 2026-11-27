@@ -4,13 +4,13 @@
 // merges over it in filename order, skipping hidden files; the `remote-settings.json` Claude Code keeps in a config tree
 // for settings the organisation sends it; and the operating system's policy ([PlatformPolicy]): macOS's
 // `com.anthropic.claudecode` managed preferences, and Windows' `Settings` value under HKLM and, as a fallback, HKCU.
-// `splice claude check`, `splice desktop wrapper` and the doctor's managed settings row (which read the file and only
-// find the other places), the MCP plan and a launch's telemetry decision all read those places from here. Claude Code
-// ranks the sources remote settings, then the system's admin policy (the plist or HKLM), then the files merged as it
-// merges them (a later drop-in's value replacing or, with `null`, clearing an earlier one's), and reads HKCU only
-// when none of those holds a document. Most keys come from the first source that sets a
-// policy key, but `env` merges per variable across the three admin sources, the highest that defines a variable giving
-// its value. Where the settings that reach a session set telemetry of their own (a `null` or blank value sets nothing),
+// `splice claude check`, `splice desktop wrapper` and the doctor's managed settings row (which read the files and
+// name the places they cannot read), the MCP plan and a launch's telemetry decision all read those places from here.
+// Claude Code ranks the sources remote settings, then the system's admin policy (the plist or HKLM), then the files
+// merged as it merges them (a later drop-in's value replacing or, with `null`, clearing an earlier one's), and reads
+// HKCU only when none of those holds a document. Most keys come from the first source that sets a policy key,
+// but `env` merges per variable across the three admin sources, the highest that defines a variable giving its value.
+// Where the settings that reach a session set telemetry of their own (a `null` or blank value sets nothing),
 // a launch adds none of splice's: the organisation's collector stays the one the session reports to. A document that is
 // absent, can't be read, or is no JSON object as `JSON.parse` reads one (an unquoted word or a raw control character in
 // a string makes it none; a key written twice keeps its last value) sets nothing, as Claude Code itself reads it.
@@ -54,18 +54,23 @@ public class ManagedSettings(
      *  of `managed-settings.d` in filename order. A folder that is absent or can't be listed adds no drop-in. */
     public fun sources(): List<Path> = listOf(file) + dropIns()
 
-    /** What splice can say of the main file, and the other places Claude Code may take managed settings from, named
-     *  without being read: the remote settings in the config folder [env] gives Claude Code (`CLAUDE_CONFIG_DIR`, or
-     *  `~/.claude`), the system's policy stores, and each drop-in splice lists, or the drop-in folder where it can't
-     *  list it ([ManagedReading]). */
+    /** What splice can say of the main file and each drop-in it reads, and the places Claude Code may take managed
+     *  settings from that splice names without reading: the remote settings in the config folder [env] gives Claude
+     *  Code (`CLAUDE_CONFIG_DIR`, or `~/.claude`), the system's policy stores, the drop-in folder where it can't list
+     *  it, and each drop-in it lists and can't read as an object ([ManagedReading]). */
     public fun reading(env: EnvReader): ManagedReading {
-        val state = if (PathAbsence.known(file)) ManagedFile.Absent else read(file)?.let(ManagedFile::Read)
+        val main = read(file)
+        val state = if (PathAbsence.known(file)) ManagedFile.Absent else main?.let(ManagedFile::Read)
         val tree = env(CONFIG_TREE_ENV)?.takeIf(String::isNotBlank)?.let(Path::of) ?: UserHome.claudeDir(env)
         val listed = if (PathAbsence.known(dropInFolder)) emptyList() else PathAbsence.listed(dropInFolder)
-        val dropIns = listed?.let(::jsonFiles)?.map(Path::toString) ?: listOf(dropInFolder.toString())
+        val dropIns = listed?.let(::jsonFiles).orEmpty().map { it to read(it) }
+        val unreadDropIns = listed?.let { dropIns.filter { it.second == null }.map(Pair<Path, *>::first) }
+            ?: listOf(dropInFolder)
+        val read = (listOf(file to main) + dropIns).mapNotNull { (path, json) -> json?.let { path to it } }
         val remote = "$REMOTE_SETTINGS in Claude Code's config folder ($tree, unless $CONFIG_TREE_ENV names another " +
             "for a session)"
-        return ManagedReading(file, state ?: ManagedFile.Unreadable, listOf(remote) + policy.stores() + dropIns)
+        val unread = listOf(remote) + policy.stores() + unreadDropIns.map(Path::toString)
+        return ManagedReading(file, state ?: ManagedFile.Unreadable, read, unread)
     }
 
     /** Whether the managed settings that reach a session of the tree at [configDir] set telemetry: the switch or any

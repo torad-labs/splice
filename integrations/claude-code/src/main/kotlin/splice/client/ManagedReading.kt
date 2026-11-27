@@ -1,7 +1,7 @@
-// NEW: what splice can say of Claude Code's managed settings file, in explicit states, for the text that speaks of
-// it (`splice desktop wrapper`, the doctor's managed settings row and the upgrade items): the file read, could not be
-// read, or known to be absent; each key in it a string, a value that is not one, or absent; and the other places
-// Claude Code may take managed settings from, which splice names and does not read. Nothing is called absent unless
+// NEW: what splice can say of Claude Code's managed settings files, in explicit states, for the text that speaks of
+// them (`splice desktop wrapper`, the doctor's managed settings row and the upgrade items): the main file read, could
+// not be read, or known to be absent; for each key, the file whose value the merged files give, and that value as a
+// string or a value that is not one; and the places splice could not read, named. Nothing is called absent unless
 // splice established it. ManagedSettings.reading builds it.
 package splice.client
 
@@ -13,10 +13,23 @@ import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 
-/** What splice read of the platform's managed settings: the [file] in its [state], and the other places Claude Code may
- *  take managed settings from, which splice did not read ([unread], in words). A value set in one of those may be the
+/** What splice read of the platform's managed settings: the main [file] in its [state]; the files it [read], in the
+ *  order Claude Code merges them (the main file, then each drop-in in filename order); and the places Claude Code may
+ *  take managed settings from that splice could not read ([unread], in words). A value set in one of those may be the
  *  one Claude Code takes. */
-public data class ManagedReading(public val file: Path, public val state: ManagedFile, public val unread: List<String>)
+public data class ManagedReading(
+    public val file: Path,
+    public val state: ManagedFile,
+    public val read: List<Pair<Path, JsonObject>>,
+    public val unread: List<String>,
+) {
+    /** The file whose value for [key] the merged files give, the last one read that sets it; null where none does. */
+    public fun held(key: String): ManagedHeld? = read.lastOrNull { key in it.second }
+        ?.let { (path, settings) -> ManagedHeld(path, ManagedFile.Read(settings).value(key)) }
+}
+
+/** The [file] that holds a key, and its [value] there: [ManagedValue.Text] or [ManagedValue.NotText]. */
+public data class ManagedHeld(public val file: Path, public val value: ManagedValue)
 
 /** The managed settings file as splice found it: [Read] as a JSON object; [Unreadable], where something may be at its
  *  path and splice could not read it (no permission on the path, a link to nothing, no JSON object), so splice does

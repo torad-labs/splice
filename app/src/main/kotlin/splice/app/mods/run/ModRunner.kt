@@ -65,7 +65,7 @@ internal class ModRunner(
         val forwarding = ModHandover(scope, port, key, log)
         handover = forwarding
         events.handOver(forwarding)
-        fence("handover")
+        fence("handover", forwarding)
     }
 
     fun leave() {
@@ -76,18 +76,16 @@ internal class ModRunner(
         handover?.finish()
     }
 
-    suspend fun acceptHandover(batch: ModHandoverBatch): Boolean {
-        if (batch.events.isNotEmpty()) {
-            for (supervisor in roster.values) supervisor.settled.await()
-        }
-        return acceptReadyBatch(batch)
-    }
-
     @Synchronized
-    private fun acceptReadyBatch(batch: ModHandoverBatch): Boolean {
+    fun acceptHandover(batch: ModHandoverBatch): Boolean {
         if (phase != Phase.RUNNING) return false
-        batch.events.forEach(events::receive)
-        handoverLoss.addAndGet(batch.dropped)
+        var dropped = batch.dropped
+        for (event in batch.events) {
+            for (supervisor in roster.values) {
+                if (!supervisor.receive(event)) dropped++
+            }
+        }
+        handoverLoss.addAndGet(dropped)
         return true
     }
 
@@ -145,8 +143,8 @@ internal class ModRunner(
     }
 
     @Synchronized
-    private fun fence(reason: String): List<ModSupervisor> {
+    private fun fence(reason: String, forwarding: ModHandover? = null): List<ModSupervisor> {
         phase = Phase.STOPPED
-        return roster.values.toList().onEach { it.stop(reason) }
+        return roster.values.toList().onEach { it.stop(reason, forwarding) }
     }
 }

@@ -35,11 +35,13 @@ class ModHandoverTest {
         ModHandoverTestRig(root).use { rig ->
             rig.installRecorder()
             val turn = rig.startTurn("session")
+            rig.holdRequest()
             turn.requestSent(ObservedRequest(1, "model", 64, 2))
             rig.through("request.send")
+            turn.responseReceived(ObservedResponse(200, 1, 3))
 
             rig.retire()
-            turn.responseReceived(ObservedResponse(200, 1, 3))
+            rig.releaseRequest()
             turn.frame(ObservedStreamFrame(1, "message_start", 32, 4))
             turn.toolCall(ObservedToolCall("call", "Read", 5))
             turn.completed(ObservedTurnEnd("ok", ObservedUsage(0, 0, 0, 0), 1, 6))
@@ -94,6 +96,22 @@ class ModHandoverTest {
             rig.retire()
             rig.finish()
             assertFalse(old.isAlive)
+        }
+    }
+
+    @Test
+    fun `the successor reaps the recorder left by a killed daemon`() = runBlocking {
+        ModHandoverTestRig(root).use { rig ->
+            rig.installRecorder(startRunner = false)
+            val orphan = rig.killRetiringOwner()
+            try {
+                rig.recoverRecorder()
+                val successor = rig.successorRecorderStart()
+                assertFalse(successor.oldProcessAlive)
+                assertFalse(orphan.isAlive)
+            } finally {
+                if (orphan.isAlive) orphan.destroyForcibly()
+            }
         }
     }
 

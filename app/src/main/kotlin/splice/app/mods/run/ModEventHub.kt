@@ -40,10 +40,6 @@ internal class ModEventHub {
         }
     }
 
-    fun receive(delivery: ModDelivery) {
-        publish(delivery, byEvent[delivery.event.name].orEmpty())
-    }
-
     private fun publish(delivery: ModDelivery, listeners: List<ModListener>) {
         if (delivery.offAll) return
         for (listener in listeners) {

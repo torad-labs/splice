@@ -12,6 +12,8 @@ import splice.app.mods.ModDiagnostics
 import splice.app.mods.ModLoadFacts
 import splice.app.mods.ModRuntime
 import splice.app.mods.ModRuntimeState
+import splice.app.mods.handover.ModDelivery
+import splice.app.mods.handover.ModHandover
 import splice.app.mods.install.HashVerdict
 import splice.app.mods.install.InstalledMod
 import splice.core.util.Cancellables
@@ -32,6 +34,7 @@ internal class ModSupervisor(
 ) : ModProcessObserver {
     private val shutdown = CompletableDeferred<String>()
     private val crashes = ModCrashes(output.clock)
+    private val inbox = ModHandoverInbox(mod.name)
     val settled = CompletableDeferred<Unit>()
     val job = scope.launch(start = CoroutineStart.LAZY) {
         prior?.join()
@@ -72,7 +75,11 @@ internal class ModSupervisor(
     }
 
     @Synchronized
-    fun stop(reason: String) {
+    fun receive(delivery: ModDelivery): Boolean = inbox.offer(delivery)
+
+    @Synchronized
+    fun stop(reason: String, forwarding: ModHandover? = null) {
+        inbox.close(forwarding)
         shutdown.complete(reason)
         process?.let { hub.unbind(ModListener(mod.name, it.pipe)) }
     }
@@ -86,12 +93,14 @@ internal class ModSupervisor(
             loaded = ModLoadFacts(loaded.notice, loaded.events, loaded.refused, loaded.declared, loaded.version),
         )
         output.drops.register(loaded.events)
+        inbox.bind(process.pipe, loaded.events)
         hub.bind(ModListener(mod.name, process.pipe), loaded.events)
         settled.complete(Unit)
     }
 
     @Synchronized
     override fun disconnected(process: ModProcess) {
+        inbox.close()
         hub.unbind(ModListener(mod.name, process.pipe))
     }
 
@@ -162,7 +171,9 @@ internal class ModSupervisor(
         }
     }
 
+    @Synchronized
     private fun fail(why: String): Boolean {
+        inbox.close()
         current = current.copy(state = ModRuntimeState.FAILED, why = "Mod ${mod.name}: $why", pid = null)
         output.log.write(checkNotNull(current.why))
         return false

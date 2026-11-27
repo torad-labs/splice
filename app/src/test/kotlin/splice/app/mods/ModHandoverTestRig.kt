@@ -8,13 +8,16 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import splice.app.control.ControlAuth
+import splice.app.control.ControlServer
 import splice.app.control.controlServerWith
 import splice.app.control.topologyHealthFor
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.util.AsyncFileIo
 import splice.core.util.LogSink
+import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.TimeUnit
 
 private const val RECORDER = "recorder"
 
@@ -24,19 +27,19 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
     val key = MgmtKey(old.runner.paths, LogSink {})
     private val client = HttpClient(CIO)
     private val oldControl = control(old)
-    private var nextControl: splice.app.control.ControlServer? = null
+    private var nextControl: ControlServer? = null
     val modsUrl get() = "${url(checkNotNull(nextControl).listeningPort)}/api/mods"
     val handoverUrl get() = "$modsUrl/handover"
 
     private var oldPid = 0L
 
-    suspend fun installRecorder(slowStop: Boolean = false) {
-        old.runner.runner.start()
+    suspend fun installRecorder(slowStop: Boolean = false, startRunner: Boolean = true) {
+        if (startRunner) old.runner.runner.start()
         oldControl.start()
         val source = old.runner.fixture(
             RECORDER,
             """
-            import { readFileSync, writeFileSync } from "node:fs";
+            import { existsSync, readFileSync, writeFileSync } from "node:fs";
             export function register(on) {
               on("mod.start", async ($) => {
                 const path = Bun.env.SPLICE_MOD_DATA + "/previous-pid";
@@ -50,18 +53,34 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
                 $.log("started=" + JSON.stringify({pid: process.pid, oldAlive}));
               });
               on("mod.stop", async ($) => {
+                $.log("stopping=" + process.pid);
+                if (existsSync(Bun.env.SPLICE_MOD_DATA + "/stall")) Bun.sleepSync(30_000);
                 ${if (slowStop) "await Bun.sleep(1500);" else ""}
                 $.log("stopped=" + process.pid);
               });
               for (const name of ["session.start", "session.end", "turn.start", "request.send", "response.receive",
                                   "stream.event", "tool.call", "turn.complete"]) {
-                on(name, async ($, e) => { $.log("event=" + JSON.stringify({name, payload:e})); });
+                on(name, async ($, e) => {
+                  $.log("event=" + JSON.stringify({name, payload:e}));
+                  const data = Bun.env.SPLICE_MOD_DATA;
+                  if (name === "request.send" && existsSync(data + "/hold")) {
+                    while (!existsSync(data + "/release")) await Bun.sleep(25);
+                  }
+                });
               }
             }
             """.trimIndent(),
         )
         old.runner.install(client, source, base = url(oldControl.listeningPort))
-        oldPid = starts(1).single().pid
+        if (startRunner) oldPid = starts(1).single().pid
+    }
+
+    fun holdRequest() {
+        Files.writeString(data("hold"), "")
+    }
+
+    fun releaseRequest() {
+        Files.writeString(data("release"), "")
     }
 
     fun startTurn(session: String) = checkNotNull(old.begin(session, old.launch()))
@@ -92,6 +111,27 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
 
     suspend fun successorRecorderStart(): RecorderStart = starts(2).last()
 
+    suspend fun killRetiringOwner(): ProcessHandle {
+        val owner = OrphanedRecorder.start(root)
+        try {
+            val recorder = ProcessHandle.of(starts(1).single().pid).orElseThrow()
+            Files.writeString(data("stall"), "")
+            owner.outputStream.write(1)
+            owner.outputStream.flush()
+            old.runner.eventually { old.runner.log(RECORDER).takeIf { "stopping=${recorder.pid()}" in it } }
+            check(owner.destroyForcibly().waitFor(10, TimeUnit.SECONDS))
+            check(recorder.isAlive) { "The recorder did not survive its owner to exercise the reaper" }
+            return recorder
+        } finally {
+            if (owner.isAlive) owner.destroyForcibly().waitFor()
+        }
+    }
+
+    suspend fun recoverRecorder() {
+        oldControl.stop()
+        next.runner.runner.start()
+    }
+
     private suspend fun starts(count: Int): List<RecorderStart> = old.runner.eventually {
         old.runner.log(RECORDER).lineSequence()
             .filter { it.startsWith("started=") }
@@ -116,6 +156,8 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
     }
 
     private fun url(port: Int) = "http://127.0.0.1:$port"
+
+    private fun data(name: String) = old.runner.paths.modsDir.resolve("data/$RECORDER/$name")
 
     override fun close() = runBlocking {
         oldControl.stop()

@@ -38,6 +38,7 @@ abstract class DesktopWrapperFixture(protected val tmp: Path) {
     protected val condition = "managed settings exist, Desktop warns in every Code session unless the source that " +
         "wins sets parentSettingsBehavior to \"merge\""
     protected val places = "Claude Code may also take managed settings from"
+    protected val checkSentence = "check that none of the places splice did not read sets either key to another value"
     protected val unreadFile = "$managed could not be read (no permission on its path, a link to nothing, or not a " +
         "JSON object), so splice does not say whether it exists or what it holds"
 
@@ -74,9 +75,13 @@ abstract class DesktopWrapperFixture(protected val tmp: Path) {
     /** The step, as --print says it; null where there is none. */
     protected fun step(): String? = said.singleOrNull { it.startsWith("What to do: ") }
 
-    /** Nothing to do: no step, no edit and no restart, in either verb. */
-    protected fun nothingToDo() {
-        assertTrue(said.none { "what to do" in it.lowercase() || "sudoedit" in it || "reopen" in it }, printed())
+    /** Nothing to change: the one step is the check of the places splice did not read, with no edit and no restart,
+     *  in either verb. */
+    protected fun checkOnly() {
+        val step = said.filter { "what to do" in it.lowercase() }
+        assertEquals(1, step.size, printed())
+        assertTrue(step.single().lowercase().endsWith("what to do: $checkSentence."), printed())
+        assertTrue(said.none { "sudoedit" in it || "reopen" in it || "shows what to put where" in it }, printed())
     }
 
     /** The restart, only as following a change. */

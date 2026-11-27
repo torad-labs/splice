@@ -57,18 +57,19 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
             "a value set there may be the one Claude Code takes"
     }
 
-    /** What to do, null where both keys come out as wanted: each file to edit and what it is to hold, on the
-     *  condition that no place splice did not read sets those keys. */
+    /** What to do: each file to edit and what it is to hold, on the condition that no place splice did not read sets
+     *  those keys; where both keys come out as wanted, the check of the places splice did not read, or null if none. */
     fun step(): String? {
-        val edits = edits().takeIf { it.isNotEmpty() } ?: return null
+        val unseen = reading.unread.isNotEmpty()
+        val edits = edits().takeIf { it.isNotEmpty() } ?: return CHECK_ONLY.takeIf { unseen }
         val keys = edits.values.flatten().joinToString(" or ")
         val changes = edits.entries.joinToString("; and ") { (target, keys) -> change(target, keys) }
-        val unseen = reading.unread.isNotEmpty()
         return if (unseen) "where none of the places splice did not read sets $keys, $changes" else changes
     }
 
-    /** [step], with where the keys are shown and the restart that follows a change. */
-    fun pointed(): String? = step()?.let { "$it (`splice desktop wrapper` shows what to put where); $AFTER_CHANGE" }
+    /** [step], with where the keys are shown and the restart that follows a change, where a file is to change. */
+    fun pointed(): String? =
+        step()?.let { if (right) it else "$it (`splice desktop wrapper` shows what to put where); $AFTER_CHANGE" }
 
     /** What is wanted and what was found, as one line. */
     fun said(): String = (listOf(wantedLine()) + facts()).joinToString("; ")
@@ -137,3 +138,6 @@ private const val CONDITION = "wherever managed settings exist, Desktop warns in
 
 // Desktop reads its configuration at launch, so a change reaches it only after the whole app restarts.
 internal const val AFTER_CHANGE = "after a change, quit Claude Desktop entirely and reopen it"
+
+// What to do with files that give both keys where splice names places it did not read.
+private const val CHECK_ONLY = "check that none of the places splice did not read sets either key to another value"

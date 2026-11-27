@@ -13,7 +13,7 @@ import java.nio.file.Path
 
 class DropInDesktopWrapperTest(@TempDir tmp: Path) : DesktopWrapperFixture(tmp) {
     @Test
-    fun `a drop-in that sets merge over a main file that sets first-wins holds the key, so nothing is to do`() {
+    fun `a drop-in that sets merge over a main file that sets first-wins holds the key, so only the check is to do`() {
         layLauncher()
         val dropIn = dropIn()
         file("""{"processWrapper":"$launch","parentSettingsBehavior":"first-wins"}""")
@@ -21,7 +21,7 @@ class DropInDesktopWrapperTest(@TempDir tmp: Path) : DesktopWrapperFixture(tmp) 
             assertEquals(0, wrapper(verb))
             assertTrue(said.any { "$dropIn sets parentSettingsBehavior to \"merge\"" in it }, printed())
             assertFalse(said.any { places in it && "$dropIn" in it }, "splice read it: $said")
-            nothingToDo()
+            checkOnly()
             conditionOnly()
         }
     }
@@ -43,13 +43,13 @@ class DropInDesktopWrapperTest(@TempDir tmp: Path) : DesktopWrapperFixture(tmp) 
     }
 
     @Test
-    fun `a drop-in that sets both keys over another wrapper in the main file leaves nothing to do`() {
+    fun `a drop-in that sets both keys over another wrapper in the main file leaves only the check to do`() {
         layLauncher()
         dropIn(bothRight)
         file("""{"processWrapper":"/usr/bin/other","parentSettingsBehavior":"first-wins"}""")
         for (verb in listOf("--print", "--check")) {
             assertEquals(0, wrapper(verb))
-            nothingToDo()
+            checkOnly()
         }
     }
 
@@ -109,6 +109,6 @@ class DropInDesktopWrapperTest(@TempDir tmp: Path) : DesktopWrapperFixture(tmp) 
         val broken = dropIn("{ not json")
         assertEquals(0, wrapper("--check"))
         assertTrue("$broken" in placesLine(), printed())
-        nothingToDo()
+        checkOnly()
     }
 }

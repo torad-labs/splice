@@ -49,8 +49,8 @@ internal class DesktopWrapper(
         out.line(PRETTY.encodeToString(JsonObject.serializer(), settings.wanted()))
         out.line("")
         settings.facts().forEach { out.line("${it.replaceFirstChar(Char::uppercase)}.") }
-        settings.step()?.let { step ->
-            out.line("What to do: $step.")
+        settings.step()?.let { out.line("What to do: $it.") }
+        if (!settings.right) {
             commands(settings)
             out.line("${AFTER_CHANGE.replaceFirstChar(Char::uppercase)}.")
         }

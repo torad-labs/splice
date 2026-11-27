@@ -139,7 +139,8 @@ class CapabilityReadingsTest(@param:TempDir private val tmp: Path) {
             assertEquals(emptyList<String>(), items(ok), "the file needs no edit, so there is no item")
         }
         assertEquals(null, row(app(right()))!!.fix)
-        assertEquals(null, row(app(right(), listOf(dropIn)))!!.fix, "nothing to edit, so no step and no restart")
+        val check = "check that none of the places splice did not read sets either key to another value"
+        assertEquals(check, row(app(right(), listOf(dropIn)))!!.fix, "nothing to edit, so the check alone, no restart")
         val noWrapper = app(read("""{"parentSettingsBehavior": "merge"}"""))
         assertEquals(ToolLevel.INFO, row(noWrapper)!!.level)
         val noFile = "no managed settings file splice read sets processWrapper"

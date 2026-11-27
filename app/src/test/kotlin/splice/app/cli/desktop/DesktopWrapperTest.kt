@@ -78,20 +78,21 @@ class DesktopWrapperTest(@TempDir tmp: Path) : DesktopWrapperFixture(tmp) {
     }
 
     // Splice never reads every place Claude Code may take managed settings from, so even a right file gets the
-    // condition, never an all-clear; with both keys as wanted there is nothing to edit or reopen.
+    // condition, never an all-clear; with both keys as wanted the one step is to check the places it did not read,
+    // with nothing to edit or reopen.
     @Test
-    fun `both keys right with the launcher laid exits 0, with nothing to do and the condition only`() {
+    fun `both keys right with the launcher laid exits 0, asks only for a check of the other places, claims nothing`() {
         layLauncher()
         file(bothRight)
         assertEquals(0, wrapper("--print"))
         val found = "$managed sets processWrapper to \"$launch\", and $managed sets parentSettingsBehavior to " +
             "\"merge\"."
         assertTrue(found in said, printed())
-        nothingToDo()
+        checkOnly()
         conditionOnly()
         assertEquals(0, wrapper("--check"))
         assertEquals("splice: $wanted.", said.first(), printed())
-        nothingToDo()
+        checkOnly()
         conditionOnly()
     }
 

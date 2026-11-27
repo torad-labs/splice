@@ -2,10 +2,15 @@
   "mod": "reviews",
   "version": "1.0.0",
   "served": [
+    "mod.start",
     "session.start",
-    "mod.stop"
+    "tool.call"
   ],
   "refused": [
-    "sessions.list is not served yet."
+    "Mod reviews: sessions.list is not served yet.",
+    "Mod reviews: ui.render is not served yet.",
+    "Mod reviews: $.ui is not served yet.",
+    "Mod reviews: $.sessions.invalidate is not served yet.",
+    "Mod reviews: $.ui.respond is not served yet."
   ]
 }

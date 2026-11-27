@@ -1,5 +1,6 @@
+import { Database } from "bun:sqlite";
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, mkdir, rm, symlink } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { HostSessionRow, ModManifest } from "../../contract/index.ts";
@@ -120,9 +121,12 @@ test("load notices name the mod, describe observation, and name the refused feat
   const refused = (ready.refused as string[]).join("\n");
   const names = [
     "launch.prepare", "sessions.list", "ui.render", "command.run", "http.request",
-    "$.command", "$.tool", "$.ui", "$.sessions.invalidate", "$.ui.respond",
+    "$.ui", "$.sessions.invalidate", "$.ui.respond",
   ];
   for (const name of names) expect(refused).toContain(`Mod recorder: ${name} is not served yet`);
+  // The contract has no $.command or $.tool, so the host does not advertise them.
+  expect(refused).not.toContain("$.command");
+  expect(refused).not.toContain("$.tool");
   expect(ready.declared_not_served).toEqual([
     "Mod recorder: pages: board is declared but not served yet.",
     "Mod recorder: commands: open is declared but not served yet.",
@@ -390,4 +394,36 @@ test("every file kind the loader reads is refused outside the mod's folder, and 
     expect(why, line).toMatch(/outside the mod's folder/);
     expect(why, line).toContain(line.includes("node:module") || line.includes("require(") ? "outside" : "outside.");
   }
+});
+
+test("the example mod loads in the host, hears a labelled session.start without a handler error, and refuses what is not served", async () => {
+  const example = join(import.meta.dir, "../../example");
+  const parent = await mkdtemp(join(tmpdir(), "splice-mod-test-"));
+  projects.add(parent);
+  const root = join(parent, "mod");
+  await cp(example, root, { recursive: true });
+  const child = new RunningMod(root, join(root, "data"));
+  const ready = await child.frame("ready");
+  expect(ready.events).toEqual(["session.start", "tool.call"]);
+  const refused = (ready.refused as string[]).join("\n");
+  expect(refused).toContain("Mod recorder: sessions.list is not served yet.");
+  expect(refused).toContain("Mod recorder: ui.render is not served yet.");
+  expect(refused).not.toContain("$.command");
+  expect(refused).not.toContain("$.tool");
+  await child.event("session.start", {
+    session: "6f1c2a7e-3b0d-4c55-9a41-2d8e0f7b9c13",
+    cwd: "/work/shop",
+    labels: { ticket: "ENG-412", review: "Review the login fix" },
+    seenBefore: false,
+  });
+  // The handler stores the review for the session's label and finishes; a handler error would arrive first.
+  expect((await child.frame(["handled", "error"])).type).toBe("handled");
+  await child.stop();
+  expect(await child.exited()).toBe(0);
+  const store = new Database(join(root, "data/store.sqlite"), { readonly: true });
+  try {
+    const row = store.query<{ value: string }, [string]>("SELECT value FROM values_by_key WHERE key = ?")
+      .get("review/6f1c2a7e-3b0d-4c55-9a41-2d8e0f7b9c13");
+    expect(JSON.parse(row?.value ?? "null")).toMatchObject({ title: "Review the login fix" });
+  } finally { store.close(); }
 });

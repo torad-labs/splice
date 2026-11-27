@@ -1,14 +1,25 @@
 /**
  * The Splice Mods v2 contract: every shape a mod and Splice exchange, as TypeScript declarations.
+ * It declares more than this version of Splice runs; mods/README.md, "What runs today", says which part runs.
  *
  * A mod is a small folder a person installs into Splice. It watches or changes what passes through
  * Splice (a session starting, a turn, a tool call), adds rows and views to any app that shows
  * Splice's sessions, and gives the model tools that draw UI in a conversation. Splice's core holds
  * no code for any one mod.
  *
- * NOTHING HERE RUNS YET. This file is the shapes alone, so that Splice and the mods written against
- * it build against one file. When the runner lands, a mod using an event Splice does not serve yet
- * is refused at load, in words naming the mod and the event.
+ * WHAT RUNS NOW. A mod runs in its own Bun process, as an observer. Splice serves `mod.start`, `mod.stop`,
+ * `session.start`, `session.end`, `turn.start`, `request.send`, `stream.event`, `tool.call`,
+ * `response.receive` and `turn.complete`, and the handle's `store`, `clock`, `log` and `sessions.list`.
+ * A handler's answer, and a changed event passed to `next`, change nothing. Everything else here (rows,
+ * `ui.render`, `command.run`, `http.request`, `launch.prepare`, `sessions.list`, a mod's own tools, and the
+ * handle's `sessions.invalidate` and `ui.respond`) is the contract's wider shape: a mod that registers an event
+ * Splice does not serve is told so at load, in words naming the mod and the event, and its other handlers run.
+ *
+ * Two surfaces of one contract. `Register` (the default, "observe") is what runs: the six turn events arrive as
+ * the metadata shapes `TurnStart`, `RequestSend`, `StreamEvent`, `ToolCall`, `ResponseReceive` and
+ * `TurnComplete`. `Register<"full">` is the wider contract, whose shapes (bodies, frames, tool arguments, and
+ * answers that change a turn) are `FullTurnStart`, `FullRequestSend`, `FullStreamEvent`, `FullToolCall`,
+ * `FullResponseReceive` and `FullTurnComplete`. This host does not serve them.
  *
  * The author's page is mods/README.md. A mod imports these declarations as types only:
  *
@@ -392,7 +403,7 @@ export interface SessionsList {
   readonly allRows: boolean;
 }
 
-export interface TurnStart {
+export interface FullTurnStart {
   readonly session: string;
   readonly turn: string;
   readonly labels: Labels;
@@ -400,7 +411,7 @@ export interface TurnStart {
 }
 
 /** A request on its way to the model. A handler changes it by passing a changed `e` to `next`. */
-export interface RequestSend {
+export interface FullRequestSend {
   readonly session: string;
   readonly turn: string;
   readonly model: string;
@@ -409,7 +420,7 @@ export interface RequestSend {
 }
 
 /** One event of the model's stream. Return what the client receives; return `null` to drop it. */
-export interface StreamEvent {
+export interface FullStreamEvent {
   readonly session: string;
   readonly turn: string;
   readonly event: JsonObject;
@@ -420,7 +431,7 @@ export interface StreamEvent {
  * infer an identity from tool arguments or untrusted request metadata. App calls from views or
  * actions can be sessionless; when an app call has a session, it too comes from host context.
  */
-export type ToolCall = ToolCallFields & (
+export type FullToolCall = ToolCallFields & (
   | { readonly caller: "model"; readonly session: string }
   | { readonly caller: "app"; readonly session?: string }
 );
@@ -433,7 +444,7 @@ interface ToolCallFields {
   readonly arguments: JsonObject;
 }
 
-export interface ResponseReceive {
+export interface FullResponseReceive {
   readonly session: string;
   readonly turn: string;
   readonly model: string;
@@ -442,11 +453,12 @@ export interface ResponseReceive {
   readonly body: JsonObject;
 }
 
-export interface TurnComplete {
+export interface FullTurnComplete {
   readonly session: string;
   readonly turn: string;
   readonly model: string;
   readonly stopReason: string;
+  /** `input` includes `cacheRead` and `cacheWrite`: it is every token the request sent, not only the uncached part. */
   readonly usage?: { readonly input: number; readonly output: number; readonly cacheRead: number; readonly cacheWrite: number };
 }
 
@@ -484,12 +496,12 @@ export interface Events {
   "session.end": { payload: SessionEnd; filter: never; result: void };
   "launch.prepare": { payload: LaunchPrepare; filter: never; result: LaunchPrepare };
   "sessions.list": { payload: SessionsList; filter: never; result: readonly SessionRow[] };
-  "turn.start": { payload: TurnStart; filter: never; result: void };
-  "request.send": { payload: RequestSend; filter: never; result: RequestSend };
-  "stream.event": { payload: StreamEvent; filter: never; result: StreamEvent | null };
-  "tool.call": { payload: ToolCall; filter: { readonly server?: string; readonly tool?: string }; result: ToolResult };
-  "response.receive": { payload: ResponseReceive; filter: never; result: ResponseReceive };
-  "turn.complete": { payload: TurnComplete; filter: never; result: void };
+  "turn.start": { payload: FullTurnStart; filter: never; result: void };
+  "request.send": { payload: FullRequestSend; filter: never; result: FullRequestSend };
+  "stream.event": { payload: FullStreamEvent; filter: never; result: FullStreamEvent | null };
+  "tool.call": { payload: FullToolCall; filter: { readonly server?: string; readonly tool?: string }; result: ToolResult };
+  "response.receive": { payload: FullResponseReceive; filter: never; result: FullResponseReceive };
+  "turn.complete": { payload: FullTurnComplete; filter: never; result: void };
   "ui.render": {
     payload: UiRenderRequest;
     filter: { readonly surface?: string } & (
@@ -502,30 +514,74 @@ export interface Events {
   "http.request": { payload: HttpRequest; filter: { readonly path?: string; readonly method?: string }; result: HttpAnswer };
 }
 
-/** The runner projects the full contract onto metadata. It neither publishes bodies nor runs mutation hooks. */
-type TurnObservation = Omit<Pick<TurnStart, "session" | "turn" | "labels">, "session"> & {
+/**
+ * The shapes this version of Splice serves for the six turn events: the full contract projected onto metadata.
+ * Splice neither publishes bodies, frames and tool arguments nor runs a handler that changes a turn.
+ * Every one carries `session` (null when the turn is not attributed to one), `turn`, `labels` and `at`
+ * (Unix milliseconds).
+ */
+interface TurnFacts {
   readonly session: string | null;
+  readonly turn: string;
+  readonly labels: Labels;
   readonly at: number;
-};
+}
+
+export interface TurnStart extends TurnFacts {
+  /** The model the client asked for. */
+  readonly model: string;
+  readonly head: string;
+  readonly compact: boolean;
+  readonly agent: string | null;
+}
+
+export interface RequestSend extends TurnFacts {
+  /** The upstream model this round goes to. */
+  readonly model: string;
+  readonly round: number;
+}
+
+export interface StreamEvent extends TurnFacts {
+  readonly seq: number;
+  readonly type: string;
+  readonly bytes: number;
+}
+
+export interface ToolCall extends TurnFacts {
+  /** A model opened a tool block. This says the model asked, not that the client ran the tool. */
+  readonly caller: "model";
+  readonly id: string;
+  /** The MCP server, or null for a tool the client has natively. */
+  readonly server: string | null;
+  readonly tool: string;
+}
+
+export interface ResponseReceive extends TurnFacts {
+  /** The model the client asked for. */
+  readonly model: string;
+  readonly status: number;
+  /** The transport attempt. */
+  readonly attempt: number;
+}
+
+export interface TurnComplete extends TurnFacts {
+  readonly model: string;
+  /** The stop reason in the client's clean ending, or null when no clean ending was written. */
+  readonly stopReason: string | null;
+  /** The daemon's outcome, distinct from the client's stop reason. */
+  readonly outcome: string;
+  readonly durationMs: number;
+  /** `input` includes `cacheRead` and `cacheWrite`: it is every token the request sent, not only the uncached part. */
+  readonly usage: { readonly input: number; readonly output: number; readonly cacheRead: number; readonly cacheWrite: number };
+}
 
 interface Observations {
-  "turn.start": TurnObservation & Pick<TurnStart, "model"> & {
-    readonly head: string; readonly compact: boolean; readonly agent: string | null;
-  };
-  "request.send": TurnObservation & Pick<RequestSend, "model"> & { readonly round: number };
-  "stream.event": TurnObservation & { readonly seq: number; readonly type: string; readonly bytes: number };
-  "tool.call": TurnObservation & Pick<ToolCall, "tool"> & {
-    readonly caller: "model"; readonly id: string; readonly server: string | null;
-  };
-  "response.receive": TurnObservation & Pick<ResponseReceive, "model" | "status"> & { readonly attempt: number };
-  "turn.complete": TurnObservation & Pick<TurnComplete, "model"> & {
-    /** The stop reason in the client's clean ending, or null when no clean ending was written. */
-    readonly stopReason: TurnComplete["stopReason"] | null;
-    /** The daemon outcome, distinct from the client's stop reason. */
-    readonly outcome: string;
-    readonly durationMs: number;
-    readonly usage: NonNullable<TurnComplete["usage"]>;
-  };
+  "turn.start": TurnStart;
+  "request.send": RequestSend;
+  "stream.event": StreamEvent;
+  "tool.call": ToolCall;
+  "response.receive": ResponseReceive;
+  "turn.complete": TurnComplete;
 }
 
 export type EventName = keyof Events;

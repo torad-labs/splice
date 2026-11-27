@@ -3,16 +3,16 @@
   "turn": "turn-42",
   "at": 1785156300000,
   "labels": {
-    "TICKET": "42"
+    "ticket": "42"
   },
   "model": "requested-model",
   "stopReason": "end_turn",
   "outcome": "ok",
   "durationMs": 1250,
   "usage": {
-    "input": 12,
+    "input": 19,
     "output": 5,
-    "cacheRead": 0,
-    "cacheWrite": 0
+    "cacheRead": 3,
+    "cacheWrite": 4
   }
 }

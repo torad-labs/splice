@@ -3,7 +3,7 @@
   "turn": "turn-42",
   "at": 1785156300000,
   "labels": {
-    "TICKET": "42"
+    "ticket": "42"
   },
   "seq": 1,
   "type": "message_start",

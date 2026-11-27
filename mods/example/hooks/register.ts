@@ -66,7 +66,6 @@ export const register: Register<"full"> = (on) => {
     const title = e.labels["review"];
     if (title && !e.seenBefore) {
       await $.store.set(`review/${e.session}`, { id: e.session, session: e.session, title });
-      $.sessions.invalidate();
     }
     return next(e);
   });

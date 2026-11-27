@@ -1,5 +1,8 @@
 // These calls are type-checked by mods/tsconfig.json, never executed.
-import type { On, RowAction, SessionRow, ToolCall } from "./index.ts";
+import type {
+  FullRequestSend, FullResponseReceive, FullStreamEvent, FullToolCall, FullTurnComplete, FullTurnStart, Labels, On, Payload,
+  RequestSend, ResponseReceive, RowAction, SessionRow, StreamEvent, ToolCall, TurnComplete, TurnStart,
+} from "./index.ts";
 
 export function hookTypes(on: On<"full">, name: "ui.render" | "tool.call"): void {
   on("request.send", async (_, e, next) => {
@@ -71,6 +74,72 @@ export const tooManyActions: SessionRow = { ...row, actions: [action, action, ac
 // @ts-expect-error The v2 row wire is keyed by id, never session_id.
 export const legacyId: SessionRow = { ...row, session_id: row.id };
 
-export const appCall: ToolCall = { caller: "app", server: "reviews", tool: "resolve", arguments: {} };
+export const appCall: FullToolCall = { caller: "app", server: "reviews", tool: "resolve", arguments: {} };
 // @ts-expect-error A model call must have a session even when its arguments contain a session ID.
-export const modelWithoutSession: ToolCall = { ...appCall, caller: "model", arguments: { session: "one" } };
+export const modelWithoutSession: FullToolCall = { ...appCall, caller: "model", arguments: { session: "one" } };
+
+// The shapes an author reads in a handler today are the plain names; the wider contract's are Full*.
+type Same<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
+function pin<_ extends true>(): void {}
+pin<Same<Payload<"turn.start">, TurnStart>>();
+pin<Same<Payload<"request.send">, RequestSend>>();
+pin<Same<Payload<"stream.event">, StreamEvent>>();
+pin<Same<Payload<"tool.call">, ToolCall>>();
+pin<Same<Payload<"response.receive">, ResponseReceive>>();
+pin<Same<Payload<"turn.complete">, TurnComplete>>();
+pin<Same<Payload<"turn.start", "full">, FullTurnStart>>();
+pin<Same<Payload<"request.send", "full">, FullRequestSend>>();
+pin<Same<Payload<"stream.event", "full">, FullStreamEvent>>();
+pin<Same<Payload<"tool.call", "full">, FullToolCall>>();
+pin<Same<Payload<"response.receive", "full">, FullResponseReceive>>();
+pin<Same<Payload<"turn.complete", "full">, FullTurnComplete>>();
+
+export function servedShapes(
+  start: TurnStart, request: RequestSend, frame: StreamEvent, tool: ToolCall, response: ResponseReceive, end: TurnComplete,
+): void {
+  const everyTurnEvent = [start, request, frame, tool, response, end];
+  for (const e of everyTurnEvent) {
+    e.session?.toUpperCase();
+    e.turn.toUpperCase();
+    e.at.toFixed();
+    const labels: Labels = e.labels;
+    void labels;
+  }
+  start.head.toUpperCase();
+  start.compact satisfies boolean;
+  start.agent?.toUpperCase();
+  request.round.toFixed();
+  frame.seq.toFixed();
+  frame.type.toUpperCase();
+  frame.bytes.toFixed();
+  tool.caller satisfies "model";
+  tool.id.toUpperCase();
+  tool.server?.toUpperCase();
+  response.status.toFixed();
+  response.attempt.toFixed();
+  end.stopReason?.toUpperCase();
+  end.outcome.toUpperCase();
+  end.durationMs.toFixed();
+  // Input is every token sent, cache reads and writes included, so these three are always present.
+  end.usage.input + end.usage.output + end.usage.cacheRead + end.usage.cacheWrite;
+  // @ts-expect-error A served turn start has no request body.
+  start.body;
+  // @ts-expect-error A served request has no body.
+  request.body;
+  // @ts-expect-error A served stream event has no frame.
+  frame.event;
+  // @ts-expect-error A served tool call has no arguments.
+  tool.arguments;
+  // @ts-expect-error A served response has no body.
+  response.body;
+  // @ts-expect-error A served turn end names the outcome the daemon reached, not a stop reason that is always present.
+  end.stopReason.toUpperCase();
+}
+
+export function fullShapes(request: FullRequestSend, frame: FullStreamEvent, response: FullResponseReceive): void {
+  request.body;
+  frame.event;
+  response.body;
+  // @ts-expect-error A full request carries no round count.
+  request.round;
+}

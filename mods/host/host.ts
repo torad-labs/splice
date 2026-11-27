@@ -332,7 +332,7 @@ class Host {
       if (this.#abort.signal.aborted) return 0;
       this.#hooks = hooks;
       const notice = `Mod ${this.name}: handlers observe only in this version of Splice.`;
-      const refused = [...hooks.refused, ...["$.command", "$.tool", "$.ui", "$.sessions.invalidate", "$.ui.respond"]
+      const refused = [...hooks.refused, ...["$.ui", "$.sessions.invalidate", "$.ui.respond"]
         .map(member => this.#notServed(member).message)];
       const declared = this.#declarations(manifest);
       this.#pipe.send({
@@ -422,9 +422,6 @@ class Host {
       },
       ui: { respond: () => { throw this.#notServed("$.ui.respond"); } },
     };
-    for (const key of ["command", "tool"]) {
-      Object.defineProperty(handle, key, { get: () => { throw this.#notServed(`$.${key}`); } });
-    }
     return frozen(handle);
   }
 

@@ -106,7 +106,7 @@ class ModProcessOwnershipTest {
     private fun identity(process: Process): ModIdentity = checkNotNull(ModProcessIdentity.of(process.toHandle()))
 
     private fun records(groups: Map<Long, Long>?): ModRunRecords =
-        ModRunRecords(root, log, ModGroupOwnership { groups })
+        ModRunRecords(root, log, ModGroupOwnership { groups?.let(::ModGroupSnapshot) })
 
     private fun withUnrelatedProcess(test: (Process) -> Unit) {
         val process = ProcessBuilder("/bin/sleep", "60").start()

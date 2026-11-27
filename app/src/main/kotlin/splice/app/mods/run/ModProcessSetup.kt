@@ -35,7 +35,8 @@ internal class ModProcessSetup(
         ModPrivateDir.create(data)
         val host = script.install().toAbsolutePath().normalize()
         val command = ModProcessGroup.isolate(env.command(mod, executable, host, data), host.resolveSibling("guard.pl"))
-        return records.turn(mod.name).use {
+        val turn: ModStartTurn = records.turn(mod.name)
+        return turn.use {
             records.requireGone(mod.name)
             if (stop.isCompleted) null else spawn(mod, command, output, pipe)
         }

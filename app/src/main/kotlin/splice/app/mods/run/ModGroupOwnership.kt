@@ -16,7 +16,7 @@ internal class ModGroupOwnership(private val inspector: ModGroupInspector) {
         val identity = owner.leader
         val live = ModProcessIdentity.open(identity)
         if (!owner.grouped) return if (live == null) ModGroupClaim.Gone else ModGroupClaim.Held
-        val groups = inspector.groups() ?: return ModGroupClaim.Unreadable
+        val groups = inspector.groups()?.byPid ?: return ModGroupClaim.Unreadable
         return when {
             live != null && identity.pid in groups -> ModGroupClaim.Held
             identity.pid !in groups.values -> ModGroupClaim.Gone

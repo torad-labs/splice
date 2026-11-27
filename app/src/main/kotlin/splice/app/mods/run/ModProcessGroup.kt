@@ -2,20 +2,12 @@ package splice.app.mods.run
 
 import java.nio.file.Path
 
-// why: give Bun time to finish its stop hook on EOF when its daemon was killed.
-private const val MOD_PARENT_EXIT_GRACE_SECONDS = 4
-
-/** Start the session guardian. Bun cannot run until the daemon publishes the guardian's identity. */
+/** The same Bun runs both scripts. Only the guardian receives the admission byte. */
 internal object ModProcessGroup {
-    fun isolate(command: ProcessBuilder, guard: Path): ProcessBuilder =
-        command.command(
-            listOf(
-                "/usr/bin/perl",
-                guard.toString(),
-                ProcessHandle.current().pid().toString(),
-                MOD_PARENT_EXIT_GRACE_SECONDS.toString(),
-            ) + command.command(),
-        )
+    fun isolate(command: ProcessBuilder, guard: Path): ProcessBuilder {
+        val host = command.command().toList()
+        return command.command(host.dropLast(1) + guard.toString() + host)
+    }
 
     fun admit(process: Process) {
         process.outputStream.write(0)

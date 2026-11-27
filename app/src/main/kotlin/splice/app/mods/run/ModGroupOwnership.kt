@@ -1,37 +1,25 @@
 package splice.app.mods.run
 
-/** The saved owner is never authority to signal whatever later takes its numeric group ID. */
-internal sealed class ModGroupClaim {
-    data object Gone : ModGroupClaim()
-    data object Reused : ModGroupClaim()
-    data object Draining : ModGroupClaim()
-    data object Held : ModGroupClaim()
-    data object Unreadable : ModGroupClaim()
-}
+import java.io.IOException
 
-internal class ModGroupOwnership(private val inspector: ModGroupInspector) {
-    val supported: Boolean get() = inspector.supported
+/** The successor only observes. A saved identity is never authority to send a signal. */
+internal class ModGroupOwnership(private val table: ModProcessTable) {
+    val supported: Boolean get() = table.supported
 
-    fun claim(owner: ModRunOwner): ModGroupClaim {
-        val identity = owner.leader
-        val live = ModProcessIdentity.open(identity)
-        if (!owner.grouped) return if (live == null) ModGroupClaim.Gone else ModGroupClaim.Held
-        val groups = inspector.groups()?.byPid ?: return ModGroupClaim.Unreadable
-        return when {
-            live != null && identity.pid in groups -> ModGroupClaim.Held
-            identity.pid !in groups.values -> ModGroupClaim.Gone
-            else -> occupied(identity, groups)
-        }
+    fun stillRunning(owner: ModRunOwner): Long? {
+        val guardian = owner.guardian
+        if (ModProcessIdentity.matches(guardian)) return guardian.pid
+        val group = owner.group ?: return null
+        val groups = table.groups() ?: throw IOException("the previous mod group cannot be verified")
+        return member(groups, group)
     }
 
-    private fun occupied(identity: ModIdentity, groups: Map<Long, Long>): ModGroupClaim {
-        // If the reused leader already exited, its helpers cannot be told from a draining old group.
-        if (groups[identity.pid] != identity.pid) return ModGroupClaim.Draining
-        val replacement = ProcessHandle.of(identity.pid).orElse(null)?.let(ModProcessIdentity::of)
-        return if (replacement != null && replacement != identity) {
-            ModGroupClaim.Reused
-        } else {
-            ModGroupClaim.Draining
-        }
+    private fun member(groups: Map<Long, Long>, group: ModIdentity): Long? {
+        val held = groups.entries.firstOrNull { it.value == group.pid } ?: return null
+        // Another leader with the same PID proves reuse. Without that witness,
+        // keep ownership rather than starting alongside a possibly draining group.
+        if (groups[group.pid] != group.pid) return held.key
+        val leader = ModProcessIdentity.of(group.pid)
+        return if (leader != null && leader != group) null else held.key
     }
 }

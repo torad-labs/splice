@@ -34,7 +34,10 @@ internal class ModProcessSetup(
         val data = paths.modsDir.toAbsolutePath().normalize().resolve("data").resolve(mod.name)
         ModPrivateDir.create(data)
         val host = script.install().toAbsolutePath().normalize()
-        val command = ModProcessGroup.isolate(env.command(mod, executable, host, data), host.resolveSibling("guard.pl"))
+        val command = ModProcessGroup.isolate(
+            env.command(mod, executable, host, data),
+            host.resolveSibling("guardian.ts"),
+        )
         val turn: ModStartTurn = records.turn(mod.name)
         return turn.use {
             records.requireGone(mod.name)
@@ -44,14 +47,14 @@ internal class ModProcessSetup(
 
     private fun spawn(mod: InstalledMod, command: ProcessBuilder, output: ModOutput, pipe: ModPipe): ModProcess {
         val child = command.start()
-        val owner = Cancellables.runCatchingBestEffort {
+        val admission = Cancellables.runCatchingBestEffort {
             val identity = ModProcessIdentity.of(child.toHandle()) ?: error("could not identify the mod guardian")
             records.begin(mod.name, identity).also { ModProcessGroup.admit(child) }
         }.onFailure {
             // EOF before the admission byte releases the guardian without running mod code.
             child.outputStream.close()
         }.getOrThrow()
-        return ModProcess(child, mod.name, calls, output, pipe, io, records.tree(owner))
+        return ModProcess(child, mod.name, calls, output, pipe, io, admission)
     }
 }
 

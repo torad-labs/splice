@@ -16,12 +16,13 @@ Where a mod's files live, what it is shown and what it can reach are on
 
 - Only TypeScript mods run, each in its own [Bun](https://bun.sh) process that Splice starts, watches and stops.
 - A mod observes. Handlers are told about sessions and turns; they cannot change, answer or slow a turn.
-- A mod is an ordinary process running as you. It is **not sandboxed**: it can read any file you can.
+- Mods run as you, **not in a sandbox**. Splice stops the host and processes that stay in its group. A process that
+  deliberately leaves the group, for example by starting a new session, is the mod's responsibility.
 
 ### Bun
 
-Bun is required and is not bundled with Splice. Install it from <https://bun.sh>. Mods run on Linux and macOS and
-also need `/usr/bin/perl` to keep their child processes tied to the daemon. At install Splice looks for Bun
+Bun is required and is not bundled with Splice. Install it from <https://bun.sh>. Mods run on Linux and macOS.
+At install Splice looks for Bun
 in `SPLICE_BUN`, then on `PATH`, and records the path it found with the mod. At each start it uses the recorded
 path if it is still an executable, then `SPLICE_BUN`, then `PATH`, then `~/.bun/bin/bun`. When it finds none, the
 mod is `failed` with `Bun not found`, and `splice mod install` says how to fix it:
@@ -216,8 +217,9 @@ successor cannot record the retiring daemon's count, the retiring daemon reports
 
 Killing the old daemon with SIGKILL is a crash, not a graceful handover. Events still queued in its memory can be lost
 without a count, and a `session.start` whose history had not been saved can be sent again with `seenBefore: true`.
-The old mod's process group is cleaned up even if a successor never starts. A successor waits for that group to clear
-before starting a replacement. Mods are not sandboxed; this does not cover a process that deliberately leaves the group.
+The mod host and every process that stays in its process group are stopped even if no successor starts. The successor
+waits for that group to clear; if it is still running, `splice mod list` shows the earlier copy's PID instead of starting
+another one. Mods are not sandboxed: a process that deliberately leaves the group is the mod's responsibility.
 
 ## The contract
 

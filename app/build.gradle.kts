@@ -127,7 +127,10 @@ application {
 }
 
 tasks.named<ProcessResources>("processResources") {
-    from(rootProject.layout.projectDirectory.file("mods/host/host.ts")) { into("splice/mods") }
+    from(rootProject.layout.projectDirectory.dir("mods/host")) {
+        include("host.ts", "guardian.ts")
+        into("splice/mods")
+    }
 }
 
 val identitySources = layout.buildDirectory.dir("generated/sources/application-identity")

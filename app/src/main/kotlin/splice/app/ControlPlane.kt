@@ -178,7 +178,7 @@ internal class ControlPlane(
         splice.app.mods.handover.ModHandoverStarts(statePaths.envReader(splice.app.daemon.SPLICE_SUCCEEDS) != null),
     ).also { modRunner.handoverStarts = it.starts }
 
-    internal suspend fun prepareModObservations(providers: Map<String, splice.core.topology.ProviderConfig>) {
+    internal fun prepareModObservations(providers: Map<String, splice.core.topology.ProviderConfig>) {
         stores.rememberModCredentials(providers)
         modRunner.start(recoveredSessions = modTracking.ready)
     }

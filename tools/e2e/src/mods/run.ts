@@ -341,7 +341,7 @@ export class ModRun {
       return [{
         pid: Number(match[1]), parent: Number(match[2]), group: Number(match[3]),
         line: line.trim(), mod: match[5]!.includes(this.home.state + "/mods/host/host.ts") &&
-          !match[5]!.startsWith("/usr/bin/perl "),
+          !match[5]!.includes(this.home.state + "/mods/host/guardian.ts"),
       }];
     });
   }

@@ -20,7 +20,8 @@ import splice.upstream.LifecycleScope
 private const val PIPE_LANES = 3
 private const val LOAD_MS = 30_000L // why: an import that never registers cannot ever accept events
 private const val PIPE_DRAIN_MS = 1000L // why: a foreign process may still hold the write end
-private const val EOF_GRACE_MS = 4000L // why: the 2 s stop hook gets its full budget before TERM
+private const val EOF_GRACE_MS = 4000L // why: allow the guardian to close its group after the host's stop hook
+private const val GUARDIAN_START_MS = 5000L // why: an unsuccessful spawn must not hold the mod's pipe
 
 internal interface ModProcessObserver {
     fun ready(process: ModProcess, loaded: ModLoad.Ready)
@@ -40,23 +41,25 @@ internal class ModProcess(
     private val output: ModOutput,
     val pipe: ModPipe,
     private val io: CoroutineDispatcher,
-    private val tree: ModProcessTree,
+    private val admission: ModRunAdmission,
 ) {
     private val receiver = ModReceiver(name, pipe, calls, output.log, output.drops)
     private val pipes = io.limitedParallelism(PIPE_LANES)
-    val pid: Long get() = receiver.hostPid ?: process.pid()
+
+    @Volatile var pid: Long = process.pid()
+        private set
     val lastError: String? get() = receiver.lastError
 
     fun exitReason(): String {
         val detail = receiver.lastStderr?.let { ", \"$it\"" }.orEmpty()
-        return "exit code ${receiver.hostExit ?: process.exitValue()}$detail"
+        return "exit code ${process.exitValue()}$detail"
     }
 
     suspend fun run(stop: CompletableDeferred<String>, observer: ModProcessObserver): ModExit {
         val exited = process.onExit().asDeferred()
         // Cancelling a blocking JDK pipe read does not close an inherited write end.
         val wiring = LifecycleScope(pipes)
-        val writer = wiring.launch { io("write") { pipe.write(process.outputStream, calls) } }
+        val writer = wiring.launch { io("write") { write() } }
         val stdout = wiring.launch { io("read stdout") { ModLineReader(process.inputStream).drain(receiver::stdout) } }
         val stderr = wiring.launch { io("read stderr") { ModLineReader(process.errorStream).drain(receiver::stderr) } }
         return try {
@@ -110,8 +113,23 @@ internal class ModProcess(
     private suspend fun close(reason: String, exited: Deferred<Process>) {
         pipe.finish(reason)
         if (process.isAlive) withTimeoutOrNull(EOF_GRACE_MS) { exited.await() }
-        if (!tree.terminate()) output.log.write("A process of this mod could not be stopped and is left running.")
+        if (process.isAlive) {
+            // Process.destroy may close JDK streams behind a blocked writer. It owns only this direct child.
+            Thread.startVirtualThread { process.destroy() }
+            if (withTimeoutOrNull(PIPE_DRAIN_MS) { exited.await() } == null) {
+                output.log.write("The guardian of this mod is still running (PID ${process.pid()}).")
+            }
+        }
         pipe.close()
+    }
+
+    private suspend fun write() {
+        process.outputStream.use { stream ->
+            val host = withTimeoutOrNull(GUARDIAN_START_MS) { receiver.child.await() } ?: return
+            admission.host(host)
+            pid = host
+            pipe.write(stream, calls)
+        }
     }
 
     private inline fun io(action: String, body: () -> Unit) {

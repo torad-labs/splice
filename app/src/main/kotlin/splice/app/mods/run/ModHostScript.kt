@@ -21,7 +21,7 @@ internal class ModHostScript(modsDir: Path) {
             ModPrivateDir.create(file.parent)
             ModPrivateDir.create(installed)
             extract(file)
-            extract(file.resolveSibling("guard.pl"))
+            extract(file.resolveSibling("guardian.ts"))
             SecureFile.writeAtomic0600(installed.resolve("tsconfig.json"), "{}\n")
             ready = true
         }

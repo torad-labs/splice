@@ -73,7 +73,7 @@ class ModSessionHandoverTest {
     }
 
     @Test
-    fun `a successor serves while reaping the old mod and restores its launch without a replay`() = isolated {
+    fun `a successor serves while the old mod stops and restores its launch without a replay`() = isolated {
         val events = ModEventsTestRig(root)
         val launch = ProcessBuilder("/bin/sleep", "60").start()
         try {

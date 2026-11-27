@@ -23,24 +23,14 @@ internal data class ModIdentity(val pid: Long, val birth: Instant)
  * whole. Null is never an answer of "nobody": a caller that cannot read the table must not conclude a group is gone.
  * Zombies are not listed: a process that has exited holds nothing.
  */
-internal data class ModGroupSnapshot(val byPid: Map<Long, Long>)
-
-internal fun interface ModGroupInspector {
-    fun groups(): ModGroupSnapshot?
-
-    /** False on a system whose table splice cannot read: no mod is started there. */
-    val supported: Boolean get() = true
-}
-
 internal object ModProcessIdentity {
     fun of(handle: ProcessHandle): ModIdentity? =
         handle.info().startInstant().orElse(null)?.let { ModIdentity(handle.pid(), it) }
 
-    /** The live process that still has this pid AND this birth; anything else is another process or none. */
-    fun open(identity: ModIdentity): ProcessHandle? =
-        ProcessHandle.of(identity.pid).orElse(null)
-            ?.takeUnless { it.pid() == ProcessHandle.current().pid() }
-            ?.takeIf { it.isAlive && of(it) == identity }
+    fun of(pid: Long): ModIdentity? =
+        ProcessHandle.of(pid).orElse(null)?.takeIf(ProcessHandle::isAlive)?.let(::of)
+
+    fun matches(identity: ModIdentity): Boolean = of(identity.pid) == identity
 }
 
 /**
@@ -52,12 +42,12 @@ internal class ModProcessTable(
     private val osName: String = System.getProperty("os.name").orEmpty(),
     private val psPath: String = "/bin/ps",
     private val log: LogSink = LogSink {},
-) : ModGroupInspector {
+) {
     private val blanks = Regex("\\s+")
 
-    override val supported: Boolean get() = osName.startsWith("Linux") || osName.startsWith("Mac")
+    val supported: Boolean get() = osName.startsWith("Linux") || osName.startsWith("Mac")
 
-    override fun groups(): ModGroupSnapshot? {
+    fun groups(): Map<Long, Long>? {
         val read = Cancellables.runCatchingCancellable {
             when {
                 osName.startsWith("Linux") -> fromProc()
@@ -65,7 +55,7 @@ internal class ModProcessTable(
                 else -> null
             }
         }.onFailure { log("[mods] cannot read the process table: ${SafeFailureText.render(it)}\n") }
-        return read.getOrNull()?.takeIf { ProcessHandle.current().pid() in it }?.let(::ModGroupSnapshot)
+        return read.getOrNull()?.takeIf { ProcessHandle.current().pid() in it }
     }
 
     /** `ps -o pid=,pgid=,stat=` lines to pid and group, zombies left out. */

@@ -4,7 +4,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.joinAll
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import splice.app.mods.ModRuntime
 import splice.app.mods.ModRuntimeStatus
@@ -23,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 // why: a remote install can report starting instead of waiting for a hung load
 private const val CHANGE_WAIT_MS = 10_000L
-private const val MOD_TEARDOWN_MS = 9000L // why: leave blocked ownership work to the next daemon's reap
+private const val MOD_TEARDOWN_MS = 9000L // why: a blocked mod must not hold the daemon after retirement
 
 internal class ModRunner(
     private val paths: StatePaths,
@@ -45,23 +44,8 @@ internal class ModRunner(
 
     override val handoverDropped: Long get() = events.handoverDropped
 
-    private enum class Phase { NEW, REAPING, RUNNING, STOPPED }
+    private enum class Phase { NEW, RUNNING, STOPPED }
     private var phase = Phase.NEW
-
-    /** Called only by the daemon holding the lock, before the management routes accept changes. */
-    suspend fun start(sessions: ModSessions? = null, recoveredSessions: Job? = null) {
-        if (!beginStart()) return
-        val enabled = installed.all().filter { it.enabled }.map { it.name }.toSet()
-        withContext(io) { setup.records.reap(except = enabled) }
-        startRoster(sessions, recoveredSessions)
-    }
-
-    @Synchronized
-    private fun beginStart(): Boolean {
-        if (phase != Phase.NEW) return false
-        phase = Phase.REAPING
-        return true
-    }
 
     @Synchronized
     fun beginHandover(port: Int, key: MgmtKey) {
@@ -152,9 +136,10 @@ internal class ModRunner(
         if (mod == null && supervisor.job.isCompleted) roster.remove(name, supervisor)
     }
 
+    /** Arms intake before listeners open. Only the mod jobs wait for the post-bind history and process checks. */
     @Synchronized
-    private fun startRoster(sessions: ModSessions?, recoveredSessions: Job?) {
-        if (phase != Phase.REAPING) return
+    fun start(sessions: ModSessions? = null, recoveredSessions: Job? = null) {
+        if (phase != Phase.NEW) return
         calls.sessions = sessions
         startup = recoveredSessions
         installed.runtime = this

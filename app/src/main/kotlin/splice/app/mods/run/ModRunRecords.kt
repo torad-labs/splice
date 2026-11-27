@@ -1,68 +1,66 @@
 package splice.app.mods.run
 
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.future.await
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
-import splice.core.util.Cancellables
 import splice.core.util.LogSink
-import splice.core.util.SafeFailureText
+import splice.upstream.codemode.ProcessWaiter
 import java.io.IOException
 import java.nio.file.Path
 
-// why: the retiring daemon gets its own stop hook and cleanup window before the successor needs to act.
+// why: give the orphaned guardian its stop and reap window without blocking the successor forever.
 private const val MOD_PREVIOUS_OWNER_GRACE_MS = 6000L
-private const val MOD_START_TURN_MS = 5000L // why: a launch stuck holding its turn must not block its successor
+private const val MOD_START_TURN_MS = 5000L // why: a stuck launch cannot prevent the successor from responding
+private const val MOD_GROUP_SETTLE_MS = 100L // why: avoid spinning on the OS process table during retirement
 
-internal class ModRunRecords(
-    modsDir: Path,
-    private val log: LogSink,
-    private val ownership: ModGroupOwnership = ModGroupOwnership(ModProcessTable(log = log)),
-) {
-    private val files = ModRunFiles(modsDir, log)
+internal class ModRunRecords(modsDir: Path, log: LogSink) {
+    private val files = ModRunFiles(modsDir)
     private val locks = ModStartLocks(files.directory)
+    private val ownership = ModGroupOwnership(ModProcessTable(log = log))
+    private val waiter = ProcessWaiter()
 
     val supported: Boolean get() = ownership.supported
-
-    fun tree(owner: ModRunOwner): ModProcessTree = ModProcessTree(owner, ownership)
 
     fun turn(name: String): ModStartTurn =
         locks.acquire(name, MOD_START_TURN_MS) ?: throw IOException("another start of mod $name is in progress")
 
-    fun previous(name: String): ModRunOwner? {
-        val owner = files.read(name) ?: return null
-        return when (ownership.claim(owner)) {
-            ModGroupClaim.Gone, ModGroupClaim.Reused -> null
-            ModGroupClaim.Unreadable -> throw IOException("the previous mod group cannot be verified")
-            ModGroupClaim.Held, ModGroupClaim.Draining -> owner
+    suspend fun awaitGone(name: String) {
+        val old = files.read(name) ?: return
+        var pid = ownership.stillRunning(old) ?: return
+        val cleared = withTimeoutOrNull(MOD_PREVIOUS_OWNER_GRACE_MS) {
+            while (true) {
+                waiter.wait(MOD_GROUP_SETTLE_MS)
+                pid = ownership.stillRunning(old) ?: break
+            }
+            true
         }
-    }
-
-    suspend fun awaitPrevious(owner: ModRunOwner) {
-        val leader = ModProcessIdentity.open(owner.leader)
-        if (leader != null) withTimeoutOrNull(MOD_PREVIOUS_OWNER_GRACE_MS) { leader.onExit().await() }
-        if (!tree(owner).terminate()) throw IOException("the previous mod group has not stopped")
+        if (cleared == null) throw stillRunning(pid)
     }
 
     fun requireGone(name: String) {
-        if (previous(name) != null) throw IOException("the previous mod group has not stopped")
+        val old = files.read(name) ?: return
+        ownership.stillRunning(old)?.let { throw stillRunning(it) }
     }
 
-    fun begin(name: String, leader: ModIdentity): ModRunOwner =
-        ModRunOwner(leader, grouped = true).also { files.write(name, it) }
+    fun begin(name: String, guardian: ModIdentity): ModRunAdmission {
+        files.write(name, ModRunOwner(guardian))
+        return ModRunAdmission(this, name, guardian)
+    }
 
-    suspend fun reap(except: Set<String>): Unit = coroutineScope {
-        for (name in files.names()) {
-            if (name !in except) launch { reap(name) }
+    fun admit(name: String, guardian: ModIdentity, host: Long) {
+        turn(name).use {
+            check(files.read(name)?.guardian == guardian) { "the mod launch no longer owns its run record" }
+            val group = ModProcessIdentity.of(host) ?: throw IOException("the new Bun host could not be identified")
+            files.write(name, ModRunOwner(guardian, group))
         }
     }
 
-    private suspend fun reap(name: String) {
-        Cancellables.runCatchingBestEffort {
-            turn(name).use {
-                val owner = previous(name)
-                if (owner == null || tree(owner).terminate()) files.clear(name)
-            }
-        }.onFailure { log("[mods] cannot reap $name: ${SafeFailureText.render(it)}\n") }
-    }
+    private fun stillRunning(pid: Long): IOException =
+        IOException("an earlier copy of this mod is still running (PID $pid); stop it before enabling this mod")
+}
+
+internal class ModRunAdmission(
+    private val records: ModRunRecords,
+    private val name: String,
+    private val guardian: ModIdentity,
+) {
+    fun host(pid: Long) = records.admit(name, guardian, pid)
 }

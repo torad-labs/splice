@@ -131,7 +131,7 @@ internal class ModSupervisor(
 
     private suspend fun attempt(): Boolean {
         val executable = executable() ?: return false
-        setup.records.previous(mod.name)?.let { setup.records.awaitPrevious(it) }
+        setup.records.awaitGone(mod.name)
         bunPath = executable
         val child = launch(executable) ?: return false
         if (current.state == ModRuntimeState.RESTARTING) crashes.restarted()

@@ -2,6 +2,8 @@ package splice.app.mods
 
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -92,7 +94,30 @@ class ModGuardianLossTest {
         }
     }
 
-    private fun fixture(rig: RunnerTestRig, held: Boolean): Path = rig.fixture(
+    @Test
+    fun `a host finishing its stop hook cleans up its helper even if the guardian was just killed`() = testApplication {
+        val rig = RunnerTestRig(root)
+        application { routing { rig.mount.register(this) } }
+        rig.runner.start()
+        try {
+            val row = rig.install(client, fixture(rig, held = false, holdStop = true))
+            processes(rig, row.getValue("pid").jsonPrimitive.long).use { mod ->
+                coroutineScope {
+                    val stop = async { rig.disable(client, "watched") }
+                    rig.eventually { true.takeIf { Files.exists(rig.paths.modsDir.resolve("data/watched/stopping")) } }
+                    mod.killGuardian()
+                    rig.eventually { true.takeUnless { mod.guardianAlive } }
+                    mod.releaseHost()
+                    stop.await()
+                    rig.eventually { true.takeUnless { mod.host.isAlive || mod.helper.isAlive } }
+                }
+            }
+        } finally {
+            rig.runner.stop()
+        }
+    }
+
+    private fun fixture(rig: RunnerTestRig, held: Boolean, holdStop: Boolean = false): Path = rig.fixture(
         "watched",
         """
         import { existsSync, writeFileSync } from "node:fs";
@@ -102,6 +127,12 @@ class ModGuardianLossTest {
             const child = Bun.spawn(["/bin/sleep", "60"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
             writeFileSync(data + "/helper", String(child.pid));
             while ($held && !existsSync(data + "/release")) Bun.sleepSync(20);
+          });
+          on("mod.stop", () => {
+            if (!$holdStop) return;
+            const data = Bun.env.SPLICE_MOD_DATA;
+            writeFileSync(data + "/stopping", "");
+            while (!existsSync(data + "/release")) Bun.sleepSync(20);
           });
         }
         """.trimIndent(),
@@ -121,6 +152,7 @@ private class ModGuardianFixture(pid: Long, helperPid: Long, private val release
     val host: ProcessHandle = ProcessHandle.of(pid).orElseThrow()
     val helper: ProcessHandle = ProcessHandle.of(helperPid).orElseThrow()
     private val guardian = host.parent().orElseThrow()
+    val guardianAlive: Boolean get() = guardian.isAlive
 
     fun killGuardian() {
         assertTrue(guardian.destroyForcibly())

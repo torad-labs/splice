@@ -44,18 +44,42 @@ import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.testing.TestPorts
 import splice.core.util.LogSink
+import splice.core.util.WallClock
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 private const val CHAIN_HANDOVERS = 18 // why: more daemons in a row than the old sixteen-sender list could hold
 
 class ModHandoverFlushTest {
     @TempDir lateinit var root: Path
+
+    @Test
+    fun `an event held behind mod start is accounted for when its dispatch is aborted`() = runBlocking {
+        val ticks = AtomicLong(1)
+        val clock = WallClock { ticks.getAndAdd(31_000) }
+        ModHandoverTestRig(root, clock, holdStart = true).use { rig ->
+            rig.installRecorder()
+            HttpClient(CIO).use { client ->
+                val held = lostReply("behind-start").events + lostReply("queued-after").events
+                val accepted = client.send(rig.oldHandoverUrl, rig.key.get(), ModHandoverBatch(held))
+                assertEquals(HttpStatusCode.NoContent, accepted)
+                rig.awaitMods(client, "stuck", at = rig.oldModsUrl)
+                rig.retire()
+                rig.finish()
+                val events = barrier(rig)
+                val dropped = client.get(rig.modsUrl) { bearerAuth(rig.key.get()) }.bodyAsText()
+                    .let { Json.parseToJsonElement(it).jsonObject["handoverDropped"]?.jsonPrimitive?.long ?: 0L }
+                assertEquals(1, events.count { it.session == "queued-after" })
+                assertEquals(1L, events.count { it.session == "behind-start" } + dropped)
+            }
+        }
+    }
 
     @Test
     fun `a retried receipt does not tell the mod twice`() = runBlocking {

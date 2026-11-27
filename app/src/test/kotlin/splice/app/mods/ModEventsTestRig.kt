@@ -15,6 +15,7 @@ import splice.app.mods.sessions.ModSessionTracker
 import splice.core.turn.ObservedTurnEnd
 import splice.core.turn.ObservedUsage
 import splice.core.util.LogSink
+import splice.core.util.WallClock
 import splice.head.observe.ObservedTurnFacts
 import splice.launch.LaunchModSettings
 import splice.launch.LaunchNotice
@@ -26,8 +27,9 @@ internal class ModEventsTestRig(
     env: Map<String, String> = System.getenv(),
     overrideText: ModEventText? = null,
     daemonLog: LogSink = LogSink {},
+    clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
-    val runner = RunnerTestRig(root, env, daemonLog = daemonLog)
+    val runner = RunnerTestRig(root, env, daemonLog = daemonLog, clock = clock)
     val text = overrideText ?: ModEventText(ModSecretSources(runner.paths.envReader, env.keys))
     val sessions = ModSessionTracker(
         runner.runner.events,

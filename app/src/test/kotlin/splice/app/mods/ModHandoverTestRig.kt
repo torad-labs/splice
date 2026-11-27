@@ -23,6 +23,7 @@ import splice.core.config.MgmtKey
 import splice.core.testing.TestPorts
 import splice.core.util.AsyncFileIo
 import splice.core.util.LogSink
+import splice.core.util.WallClock
 import splice.launch.LaunchModSettings
 import java.nio.file.Files
 import java.nio.file.Path
@@ -30,13 +31,18 @@ import java.util.concurrent.TimeUnit
 
 private const val RECORDER = "recorder"
 
-internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
+internal class ModHandoverTestRig(
+    private val root: Path,
+    clock: WallClock = WallClock(System::currentTimeMillis),
+    private val holdStart: Boolean = false,
+) : AutoCloseable {
     private val relayWaiting = CompletableDeferred<Unit>()
     private val old = ModEventsTestRig(
         root,
         daemonLog = LogSink {
             if ("waiting for the successor to accept the handover" in it) relayWaiting.complete(Unit)
         },
+        clock = clock,
     )
     private val next by lazy { ModEventsTestRig(root) }
     val key = MgmtKey(old.runner.paths, LogSink {})
@@ -47,6 +53,7 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
     private var nextControl: ControlServer? = null
     val modsUrl get() = "${url(checkNotNull(nextControl).listeningPort)}/api/mods"
     val handoverUrl get() = "$modsUrl/handover"
+    val oldModsUrl get() = "${url(oldControl.listeningPort)}/api/mods"
     val oldHandoverUrl get() = "${url(oldControl.listeningPort)}$MOD_HANDOVER_PATH"
 
     private var oldPid = 0L
@@ -67,6 +74,7 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
             export function register(on) {
               on("mod.start", async ($) => {
                 const path = Bun.env.SPLICE_MOD_DATA + "/previous-pid";
+                const firstStart = !existsSync(path);
                 let oldAlive = false;
                 try {
                   const previous = Number(readFileSync(path, "utf8"));
@@ -76,6 +84,7 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
                 ${helperAtStart(withHelper, escapedHelper)}
                 writeFileSync(path, String(process.pid));
                 $.log("started=" + JSON.stringify({pid: process.pid, oldAlive}));
+                if ($holdStart && firstStart) await new Promise(() => {});
               });
               on("mod.stop", async ($) => {
                 $.log("stopping=" + process.pid);
@@ -159,8 +168,8 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
 
     suspend fun through(event: String, session: String? = null) = old.through(RECORDER, event, session)
 
-    suspend fun awaitMods(client: HttpClient, state: String) = old.runner.eventually {
-        val answer = client.get(modsUrl) { bearerAuth(key.get()) }
+    suspend fun awaitMods(client: HttpClient, state: String, at: String = modsUrl) = old.runner.eventually {
+        val answer = client.get(at) { bearerAuth(key.get()) }
         val rows = Json.parseToJsonElement(answer.bodyAsText()).jsonObject
         rows.takeIf { it.getValue("mods").jsonArray.single().jsonObject["state"]?.jsonPrimitive?.content == state }
     }

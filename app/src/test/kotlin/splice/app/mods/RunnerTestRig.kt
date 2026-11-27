@@ -24,6 +24,7 @@ import splice.app.mods.run.ModRunner
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.util.LogSink
+import splice.core.util.WallClock
 import splice.upstream.Waiter
 import splice.upstream.codemode.ProcessWaiter
 import java.nio.file.Files
@@ -36,13 +37,14 @@ internal class RunnerTestRig(
     env: Map<String, String> = System.getenv(),
     retryWait: Waiter = ProcessWaiter(),
     daemonLog: LogSink = LogSink {},
+    clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     val paths = StatePaths(baseOverride = home.resolve("state"), envReader = { name ->
         if (name == "HOME") home.toString() else env[name]
     })
     private val key = MgmtKey(paths, LogSink {})
     val mods = InstalledMods(paths)
-    val runner = ModRunner(paths, mods, daemonLog, waiter = retryWait)
+    val runner = ModRunner(paths, mods, daemonLog, clock, waiter = retryWait)
     private val ports = ConsolePorts().apply { this.mods = this@RunnerTestRig.mods }
     val mount = ModsMount(ports, ControlAuth(key, LogSink {}).guard())
 

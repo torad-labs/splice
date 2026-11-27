@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { chmodSync, closeSync, createReadStream, mkdirSync, openSync, realpathSync, writeSync } from "node:fs";
+import { chmodSync, closeSync, mkdirSync, openSync, realpathSync, writeSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
@@ -129,7 +129,7 @@ class Pipe {
   async read(receive: (message: Payload) => void) {
     const buffer = new Uint8Array(LINE_BYTES);
     let used = 0;
-    const input = protocol === null ? Bun.stdin.stream() : createReadStream("", { fd: protocol });
+    const input = (protocol === null ? Bun.stdin : Bun.file(protocol)).stream();
     for await (const chunk of input) {
       let offset = 0;
       while (offset < chunk.length) {
@@ -439,24 +439,8 @@ class Host {
   }
 }
 
-function cleanEnvironment() {
-  // A shell's Bun may be a version-manager shim, which can add entries after ProcessBuilder cleared them.
-  const allowed = new Set(["PATH", "HOME", "LANG", "TMPDIR", "SPLICE_MOD_NAME", "SPLICE_MOD_ROOT", "SPLICE_MOD_DATA"]);
-  const entries = Object.entries(process.env);
-  if (entries.every(([name]) => allowed.has(name))) return;
-  const sanitized = Object.fromEntries(entries.filter(([name]) => allowed.has(name)));
-  const replace = (process as typeof process & {
-    execve?: (path: string, argv: readonly string[], env: typeof sanitized) => never;
-  }).execve;
-  if (!replace) throw new Error("This Bun launcher adds environment variables. Set SPLICE_BUN to the Bun binary.");
-  replace.call(process, process.execPath, [
-    process.execPath, "--config=/dev/null", "--no-env-file", "--no-install", import.meta.path, ...process.argv.slice(2),
-  ], sanitized);
-}
-
 async function main() {
   try {
-    cleanEnvironment();
     const { SPLICE_MOD_NAME: name, SPLICE_MOD_ROOT: root, SPLICE_MOD_DATA: data } = process.env;
     if (!name || !root || !data) throw new Error("The mod host must be started by Splice.");
     if (protocol !== null) void Bun.stdin.arrayBuffer().then(stopOwnGroup, stopOwnGroup);
@@ -480,6 +464,6 @@ function stopOwnGroup(): Promise<void> {
 }
 
 const code = await main();
-// Do not let normal host exit race a lifeline EOF and leave helpers behind.
-if (protocol !== null) await stopOwnGroup();
+// Let an EOF cleanup already in progress finish before releasing the group ID.
+if (cleanup) await cleanup;
 process.exit(code);

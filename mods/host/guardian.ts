@@ -51,14 +51,18 @@ const TERM_GRACE_MS = 250;
 const REAP_MS = 1000;
 
 function spawnHost(protocol: number, life: Int32Array) {
-  const command = [...process.argv.slice(2), String(protocol)];
+  // The configured Bun can be a version-manager shim. Run the actual binary
+  // with Splice's environment before passing any descriptors to the host.
+  const command = [process.execPath, ...process.argv.slice(2), String(protocol)];
+  const allowed = new Set(["PATH", "HOME", "LANG", "TMPDIR", "SPLICE_MOD_NAME", "SPLICE_MOD_ROOT", "SPLICE_MOD_DATA"]);
   const encoder = new TextEncoder();
   function vector(strings: string[]) {
     const bytes = strings.map(s => encoder.encode(s + "\0"));
     return { bytes, pointers: new BigUint64Array([...bytes.map(b => BigInt(ptr(b))), 0n]) };
   }
   const argv = vector(command);
-  const envp = vector(Object.entries(process.env).map(([key, value]) => `${key}=${value}`));
+  const envp = vector(Object.entries(process.env).flatMap(([key, value]) =>
+    allowed.has(key) ? [`${key}=${value}`] : []));
   // Pointer-aligned storage for libc's opaque posix_spawnattr_t (a pointer on macOS).
   const attrs = new BigUint64Array(128);
   const child = new Int32Array(1);
@@ -112,7 +116,7 @@ async function stopHost(host: number) {
     }
     await Bun.sleep(20);
   } while (performance.now() < until);
-  return 128 + SIGKILL;
+  throw new Error("the guardian could not reap the mod host");
 }
 
 async function guard(): Promise<number> {
@@ -151,9 +155,7 @@ async function keep(host: number): Promise<number> {
       await Bun.sleep(signalled ? POLL_MS : 0);
     }
   } catch (error) {
-    const code = await stopHost(host);
     console.error(error);
-    return code;
   }
   return stopHost(host);
 }

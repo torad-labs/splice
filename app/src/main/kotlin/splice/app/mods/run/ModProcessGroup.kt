@@ -6,7 +6,7 @@ import java.nio.file.Path
 internal object ModProcessGroup {
     fun isolate(command: ProcessBuilder, guard: Path): ProcessBuilder {
         val host = command.command().toList()
-        return command.command(host.dropLast(1) + guard.toString() + host)
+        return command.command(host.dropLast(1) + guard.toString() + host.drop(1))
     }
 
     fun admit(process: Process) {

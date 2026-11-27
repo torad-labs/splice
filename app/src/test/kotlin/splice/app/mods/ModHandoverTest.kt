@@ -190,17 +190,16 @@ class ModHandoverTest {
     }
 
     @Test
-    fun `the successor reaps the recorder left by a killed daemon`() = runBlocking {
+    fun `a recorder and its last helper cannot outlive a killed daemon even without a successor`() = runBlocking {
         ModHandoverTestRig(root).use { rig ->
             rig.installRecorder(startRunner = false)
-            val orphan = rig.killRetiringOwner()
+            val old = rig.killRetiringOwner()
             try {
+                rig.awaitGone(old)
                 rig.recoverRecorder()
-                val successor = rig.successorRecorderStart()
-                assertFalse(successor.oldProcessAlive)
-                assertFalse(orphan.isAlive)
+                assertFalse(rig.successorRecorderStart().oldProcessAlive)
             } finally {
-                if (orphan.isAlive) orphan.destroyForcibly()
+                old.filter(ProcessHandle::isAlive).forEach(ProcessHandle::destroyForcibly)
             }
         }
     }

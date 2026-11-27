@@ -70,7 +70,11 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
               });
               on("mod.stop", async ($) => {
                 $.log("stopping=" + process.pid);
-                if (existsSync(Bun.env.SPLICE_MOD_DATA + "/stall")) Bun.sleepSync(30_000);
+                if (existsSync(Bun.env.SPLICE_MOD_DATA + "/stall")) {
+                  const helper = Bun.spawn(["/bin/sleep", "60"], { stderr: "inherit" });
+                  writeFileSync(Bun.env.SPLICE_MOD_DATA + "/late-helper", String(helper.pid));
+                  Bun.sleepSync(30_000);
+                }
                 ${if (slowStop) "await Bun.sleep(1500);" else ""}
                 $.log("stopped=" + process.pid);
               });
@@ -163,20 +167,27 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
 
     suspend fun successorRecorderStart(): RecorderStart = starts(2).last()
 
-    suspend fun killRetiringOwner(): ProcessHandle {
+    suspend fun killRetiringOwner(): List<ProcessHandle> {
         val owner = OrphanedRecorder.start(root)
         try {
             val recorder = ProcessHandle.of(starts(1).single().pid).orElseThrow()
             Files.writeString(data("stall"), "")
             owner.outputStream.write(1)
             owner.outputStream.flush()
-            old.runner.eventually { old.runner.log(RECORDER).takeIf { "stopping=${recorder.pid()}" in it } }
+            val helper = old.runner.eventually {
+                val marker = data("late-helper")
+                if (Files.exists(marker)) Files.readString(marker).toLongOrNull() else null
+            }
+            val process = ProcessHandle.of(helper).orElseThrow()
             check(owner.destroyForcibly().waitFor(10, TimeUnit.SECONDS))
-            check(recorder.isAlive) { "The recorder did not survive its owner to exercise the reaper" }
-            return recorder
+            return listOf(recorder, process)
         } finally {
             if (owner.isAlive) owner.destroyForcibly().waitFor()
         }
+    }
+
+    suspend fun awaitGone(processes: List<ProcessHandle>) {
+        old.runner.eventually { true.takeIf { processes.none(ProcessHandle::isAlive) } }
     }
 
     suspend fun recoverRecorder() {

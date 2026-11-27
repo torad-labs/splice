@@ -14,7 +14,8 @@ import java.nio.file.Path
 private val regularFiles = setOf(TarConstants.LF_NORMAL, TarConstants.LF_OLDNORM)
 
 /** Expands a tar or tar.gz into a private, empty directory without following archive links. */
-internal class ModTarball(private val target: Path) {
+internal class ModTarball(target: Path) {
+    private val root = target.toAbsolutePath().normalize()
     private val budget = ModBudget()
 
     fun unpack(path: Path) {
@@ -69,7 +70,11 @@ internal class ModTarball(private val target: Path) {
         if (escapes || unportable) {
             throw ModRefusal("$name is not a path inside the tarball's mod folder")
         }
-        return target.resolve(name).normalize()
+        val path = root.resolve(name).normalize()
+        if (!path.startsWith(root)) {
+            throw ModRefusal("$name is not a path inside the tarball's mod folder")
+        }
+        return path
     }
 
     private fun directory(path: Path) {

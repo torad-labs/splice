@@ -7,9 +7,7 @@ import splice.app.mods.handover.MOD_HANDOVER_DROPPED
 import splice.app.mods.install.BUN_NOT_FOUND
 import splice.core.util.JsonScalars
 
-private const val TURN_NOTICE =
-    "It will hear turns from now on, including in sessions already running. " +
-        "No session.start is replayed; new sessions announce their start."
+private const val SESSION_NOTICE = "No session.start is replayed; new sessions announce their start."
 
 /** Operator-facing words for the management answers. No installed code runs to print them. */
 internal class ModLines {
@@ -90,11 +88,12 @@ internal class ModLines {
         val why = value(row, "why")
         val message = when {
             why == BUN_NOT_FOUND ->
-                "$BUN_NOT_FOUND. Install Bun from https://bun.sh, then run splice mod enable ${name(row)}."
+                "$BUN_NOT_FOUND. Install Bun from https://bun.sh, then run splice mod enable ${name(row)}.\n" +
+                    "Once running, it will hear turns, including in sessions already running. $SESSION_NOTICE"
             value(row, MOD_RUNTIME_STATE_FIELD) == "failed" -> "It is not running: $why"
             value(row, MOD_RUNTIME_STATE_FIELD) == "starting" -> "Still loading. See splice mod list for its state."
             value(row, MOD_RUNTIME_STATE_FIELD) == "restarting" -> why
-            else -> TURN_NOTICE
+            else -> "It will hear turns from now on, including in sessions already running. $SESSION_NOTICE"
         }
         return (notices(row) + message).joinToString("\n")
     }

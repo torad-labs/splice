@@ -19,33 +19,36 @@ import java.time.Instant
 private const val OLD_OWNER_GRACE_MS = 6000L
 
 @Serializable
-private data class ModRunRecord(val pid: Long, val birth: String)
+private data class ModRunRecord(val pid: Long, val birth: String, val grouped: Boolean = false)
+
+internal data class ModRunOwner(val handle: ProcessHandle, val grouped: Boolean)
 
 internal class ModRunRecords(modsDir: Path, private val log: LogSink) {
     private val directory = modsDir.resolve("run")
 
-    fun save(name: String, handle: ProcessHandle) {
+    fun save(name: String, handle: ProcessHandle, grouped: Boolean) {
         val birth = handle.info().startInstant().orElse(null)
             ?: if (handle.isAlive) error("could not identify Bun's process birth") else return
         ModPrivateDir.create(directory)
-        SecureFile.writeAtomic0600(file(name), Json.encodeToString(ModRunRecord(handle.pid(), birth.toString())))
+        val record = ModRunRecord(handle.pid(), birth.toString(), grouped)
+        SecureFile.writeAtomic0600(file(name), Json.encodeToString(record))
     }
 
-    fun previous(name: String): ProcessHandle? {
+    fun previous(name: String): ModRunOwner? {
         val path = file(name)
         return if (Files.exists(path)) liveProcess(path) else null
     }
 
-    suspend fun awaitPrevious(handle: ProcessHandle) {
+    suspend fun awaitPrevious(owner: ModRunOwner) {
+        val handle = owner.handle
         if (!handle.isAlive) return
-        if (withTimeoutOrNull(OLD_OWNER_GRACE_MS) { handle.onExit().await() } == null) {
-            ModProcessTree(handle).terminate()
-        }
+        val exited = withTimeoutOrNull(OLD_OWNER_GRACE_MS) { handle.onExit().await() }
+        if (exited == null || owner.grouped) ModProcessTree(handle, grouped = owner.grouped).terminate()
     }
 
     fun requireGone(name: String) {
         val path = file(name)
-        if (Files.exists(path) && liveProcess(path)?.isAlive == true) {
+        if (Files.exists(path) && liveProcess(path)?.handle?.isAlive == true) {
             throw java.io.IOException("the previous Bun process is still alive")
         }
     }
@@ -67,23 +70,25 @@ internal class ModRunRecords(modsDir: Path, private val log: LogSink) {
     }
 
     private suspend fun reap(path: Path) {
-        val handle = Cancellables.runCatchingBestEffort { liveProcess(path) }.getOrElse {
+        val owner = Cancellables.runCatchingBestEffort { liveProcess(path) }.getOrElse {
             log("[mods] cannot read ${path.fileName}: ${SafeFailureText.render(it)}\n")
             null
         }
         Cancellables.runCatchingBestEffort {
-            if (handle != null) ModProcessTree(handle).terminate()
+            if (owner != null) ModProcessTree(owner.handle, grouped = owner.grouped).terminate()
         }.onFailure {
             log("[mods] cannot stop Bun from ${path.fileName}: ${SafeFailureText.render(it)}\n")
         }
-        if (handle?.isAlive != true) clean(path)
+        if (owner?.handle?.isAlive != true) clean(path)
     }
 
-    private fun liveProcess(path: Path): ProcessHandle? {
+    private fun liveProcess(path: Path): ModRunOwner? {
         val record = Json.decodeFromString<ModRunRecord>(Files.readString(path))
         if (record.pid == ProcessHandle.current().pid()) return null
         val birth = Instant.parse(record.birth)
-        return ProcessHandle.of(record.pid).orElse(null)?.takeIf { it.info().startInstant().orElse(null) == birth }
+        return ProcessHandle.of(record.pid).orElse(null)
+            ?.takeIf { it.info().startInstant().orElse(null) == birth }
+            ?.let { ModRunOwner(it, record.grouped) }
     }
 
     private fun file(name: String): Path = directory.resolve("$name.json")

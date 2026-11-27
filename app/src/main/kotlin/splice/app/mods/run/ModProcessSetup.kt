@@ -27,8 +27,8 @@ internal class ModProcessSetup(
         ModPrivateDir.create(data)
         val command = env.command(mod, executable, script.install().toAbsolutePath().normalize(), data)
         val pipe = ModPipe(output.drops, output.log, output.clock)
-        val child = command.start()
-        Cancellables.runCatchingCancellable { records.save(mod.name, child.toHandle()) }.onFailure {
+        val child = ModProcessGroup.isolate(command).start()
+        Cancellables.runCatchingCancellable { records.save(mod.name, child.toHandle(), grouped = true) }.onFailure {
             child.destroyForcibly()
         }.getOrThrow()
         return ModProcess(child, mod.name, calls, output, pipe, io)

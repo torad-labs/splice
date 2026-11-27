@@ -5,18 +5,21 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.future.asDeferred
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
+import splice.upstream.LifecycleScope
 
 // why: the writer and two drains block independently of other mods and the daemon's I/O lane
 private const val PIPE_LANES = 3
 private const val LOAD_MS = 30_000L // why: an import that never registers cannot ever accept events
+private const val PIPE_DRAIN_MS = 1000L // why: a foreign process may still hold the write end
 private const val EOF_GRACE_MS = 4000L // why: the 2 s stop hook gets its full budget before TERM
 
 internal interface ModProcessObserver {
@@ -38,7 +41,7 @@ internal class ModProcess(
     val pipe: ModPipe,
     io: CoroutineDispatcher,
 ) {
-    private val tree = ModProcessTree(process.toHandle())
+    private val tree = ModProcessTree(process.toHandle(), grouped = true)
     private val receiver = ModReceiver(name, pipe, calls, output.log, output.drops)
     private val pipes = io.limitedParallelism(PIPE_LANES)
     val pid: Long get() = process.pid()
@@ -49,22 +52,26 @@ internal class ModProcess(
         return "exit code ${process.exitValue()}$detail"
     }
 
-    suspend fun run(stop: CompletableDeferred<String>, observer: ModProcessObserver): ModExit = coroutineScope {
+    suspend fun run(stop: CompletableDeferred<String>, observer: ModProcessObserver): ModExit {
         val exited = process.onExit().asDeferred()
-        val writer = launch(pipes) { io("write") { pipe.write(process.outputStream, calls) } }
-        val stdout = launch(pipes) { io("read stdout") { ModLineReader(process.inputStream).drain(receiver::stdout) } }
-        val stderr = launch(pipes) { io("read stderr") { ModLineReader(process.errorStream).drain(receiver::stderr) } }
-        try {
+        // Cancelling a blocking JDK pipe read does not close an inherited write end.
+        val wiring = LifecycleScope(pipes)
+        val writer = wiring.launch { io("write") { pipe.write(process.outputStream, calls) } }
+        val stdout = wiring.launch { io("read stdout") { ModLineReader(process.inputStream).drain(receiver::stdout) } }
+        val stderr = wiring.launch { io("read stderr") { ModLineReader(process.errorStream).drain(receiver::stderr) } }
+        return try {
             supervise(stop, exited, stdout, observer)
         } finally {
             withContext(NonCancellable) {
                 observer.disconnected(this@ModProcess)
                 val why = if (stop.isCompleted) stop.await() else "daemon stop"
-                close(why, exited)
-                writer.join()
-                stdout.join()
-                stderr.join()
-                output.log.reportDrops(flush = true)
+                try {
+                    close(why, exited)
+                    withTimeoutOrNull(PIPE_DRAIN_MS) { joinAll(writer, stdout, stderr) }
+                } finally {
+                    wiring.cancel()
+                    output.log.reportDrops(flush = true)
+                }
             }
         }
     }
@@ -80,7 +87,7 @@ internal class ModProcess(
                 stop.onAwait { null }
                 receiver.loaded.onAwait { it }
                 exited.onAwait {
-                    stdout.join()
+                    withTimeoutOrNull(PIPE_DRAIN_MS) { stdout.join() }
                     if (receiver.loaded.isCompleted) receiver.loaded.await() else null
                 }
             }

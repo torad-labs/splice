@@ -37,8 +37,12 @@ internal class ModSupervisor(
     private val inbox = ModHandoverInbox(mod.name)
     val settled = CompletableDeferred<Unit>()
     val job = scope.launch(start = CoroutineStart.LAZY) {
-        prior?.join()
-        if (!shutdown.isCompleted) runMod()
+        try {
+            prior?.join()
+            if (!shutdown.isCompleted) runMod()
+        } finally {
+            settled.complete(Unit)
+        }
     }
 
     @Volatile private var current = ModRuntime(ModRuntimeState.STARTING)
@@ -133,7 +137,7 @@ internal class ModSupervisor(
     }
 
     @Synchronized
-    private fun previous(): ProcessHandle? =
+    private fun previous(): ModRunOwner? =
         if (shutdown.isCompleted) null else setup.records.previous(mod.name)
 
     // The retirement fence cannot pass a spawn without its PID record, even if ready is still pending.

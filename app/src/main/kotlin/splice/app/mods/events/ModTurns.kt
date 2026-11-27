@@ -36,7 +36,7 @@ internal class ModTurns(
         project(facts, credentials)
 
     private fun project(facts: ObservedTurnFacts, credentials: ObservedCredentials?): TurnObservation? {
-        val scrubber = text.snapshot(credentials)
+        val scrubber = text.withRequest(credentials)
         val session = facts.sessionId?.takeIf(scrubber::safe)
         val launch = launches.forTurn(session, facts.launchOwner)
         val bound = if (facts.launchOwner == null) session?.let(launches::forSession) else null
@@ -51,7 +51,7 @@ internal class ModTurns(
         // A session association may only narrow delivery; it cannot supply labels for an unproved launch.
         val off = (launch ?: bound)?.settings?.modsOff
         if (turnEvents.none { hub.listening(it, off) }) return null
-        val labels = scrubber.labels(launch?.settings?.labels.orEmpty())
+        val labels = launch?.settings?.labels.orEmpty()
         val id = "$turnPrefix-${sequence.incrementAndGet()}"
         return ModTurn(hub, off, TurnFields(id, session, labels, facts), scrubber).also { it.started() }
     }

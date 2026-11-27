@@ -2,35 +2,46 @@ package splice.app.mods
 
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.future.await
+import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.mods.events.ModEventText
+import splice.app.mods.events.ModSecretSources
 import splice.core.turn.ObservedRequest
 import splice.core.turn.ObservedResponse
 import splice.core.turn.ObservedStreamFrame
 import splice.core.turn.ObservedToolCall
 import splice.core.turn.ObservedTurnEnd
 import splice.core.turn.ObservedUsage
+import splice.core.util.EnvReader
+import splice.head.observe.ObservedTurnFacts
 import splice.launch.LaunchModSettings
 import splice.launch.ModsOff
 import java.nio.file.Path
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CountDownLatch
 
 class ModTurnEventsTest {
     @TempDir lateinit var root: Path
 
     @Test
-    fun `a streamed turn delivers ordered labels and only matching tools`() = testApplication {
+    fun `a streamed turn delivers every served field in order and only matching tools`() = testApplication {
         val rig = ModEventsTestRig(root)
         application { routing { rig.runner.mount.register(this) } }
         rig.runner.runner.start()
         try {
             rig.install(client, "recorder", """{ server: "notes", tool: "read" },""")
             val owner = rig.launch(settings = LaunchModSettings(labels = mapOf("ticket" to "42")))
-            val turn = checkNotNull(rig.begin("work", owner))
-            turn.requestSent(ObservedRequest(1, "upstream", 2))
-            turn.responseReceived(ObservedResponse(200, 1, 3))
-            turn.frame(ObservedStreamFrame(1, "message_start", 35, 4))
+            val turn = checkNotNull(rig.begin(ObservedTurnFacts("work", owner, "head", "asked", true, "reviewer", 1)))
+            turn.requestSent(ObservedRequest(2, "upstream", 2))
+            turn.responseReceived(ObservedResponse(201, 3, 3))
+            turn.frame(ObservedStreamFrame(4, "message_start", 35, 4))
             turn.toolCall(ObservedToolCall("ignored", "mcp__notes__write", 5))
             turn.toolCall(ObservedToolCall("ignored", "mcp__elsewhere__read", 6))
             turn.toolCall(ObservedToolCall("tool-1", "mcp__notes__read", 7))
@@ -48,20 +59,63 @@ class ModTurnEventsTest {
                 ),
                 got.map { it.name },
             )
-            val turnId = got[1].payload.getValue("turn")
-            for (event in got) assertEquals("""{"ticket":"42"}""", event.payload["labels"].toString())
-            for (event in got.drop(1)) assertEquals(turnId, event.payload["turn"])
-            assertEquals(""""read"""", got[5].payload["tool"].toString())
-            assertEquals("1", got[2].payload["round"].toString())
-            assertFalse("bytes" in got[2].payload)
-            assertFalse("body" in got[2].payload)
-            assertFalse("body" in got[3].payload)
-            assertFalse("event" in got[4].payload)
-            assertFalse("arguments" in got[5].payload)
-            assertEquals(""""tool_use"""", got[6].payload["stopReason"].toString())
+            assertTurnPayloads(got.drop(1))
         } finally {
             rig.runner.runner.stop()
         }
+    }
+
+    @Test
+    fun `turn completion does not wait for the credential reader but the mod sees only scrubbed text`() =
+        testApplication {
+            val allowRead = CountDownLatch(1)
+            val credential = "fixture-provider-secret"
+            val envReader = EnvReader { name ->
+                if (name != "FIXTURE_API_KEY") {
+                    null
+                } else {
+                    allowRead.await()
+                    credential
+                }
+            }
+            val text = ModEventText(ModSecretSources(envReader, setOf("FIXTURE_API_KEY")))
+            val rig = ModEventsTestRig(root, overrideText = text)
+            application { routing { rig.runner.mount.register(this) } }
+            rig.runner.runner.start()
+            try {
+                rig.install(client, "recorder")
+                val owner = rig.launch(settings = LaunchModSettings(labels = mapOf("private" to credential)))
+                val clientTurn = CompletableFuture.runAsync { rig.complete("work", owner) }
+                try {
+                    withTimeout(5_000) { clientTurn.await() }
+                } finally {
+                    allowRead.countDown()
+                }
+                val events = rig.through("recorder", "turn.complete")
+                for (event in events) {
+                    assertEquals("""{"private":"[redacted]"}""", event.payload["labels"].toString())
+                }
+            } finally {
+                allowRead.countDown()
+                rig.runner.runner.stop()
+            }
+        }
+
+    private fun assertTurnPayloads(events: List<RecordedModEvent>) {
+        val turn = events.first().payload.getValue("turn").jsonPrimitive
+        val common = Json.parseToJsonElement("""{"session":"work","labels":{"ticket":"42"}}""").jsonObject +
+            ("turn" to turn)
+        val fields = listOf(
+            """{"at":1,"head":"head","model":"asked","compact":true,"agent":"reviewer"}""",
+            """{"at":2,"model":"upstream","round":2}""",
+            """{"at":3,"model":"asked","status":201,"attempt":3}""",
+            """{"at":4,"seq":4,"type":"message_start","bytes":35}""",
+            """{"at":7,"caller":"model","id":"tool-1","server":"notes","tool":"read"}""",
+            """{"at":8,"model":"asked","stopReason":"tool_use","outcome":"ok","durationMs":20,
+                "usage":{"input":13,"output":2,"cacheRead":3,"cacheWrite":4}}""",
+        )
+        val expected = fields.map { JsonObject(common + Json.parseToJsonElement(it).jsonObject) }
+        assertEquals(expected, events.map { it.payload })
     }
 
     @Test

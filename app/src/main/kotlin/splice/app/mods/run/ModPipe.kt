@@ -88,9 +88,12 @@ internal class ModPipe(private val drops: ModDrops, private val log: ModLog, pri
 
     private fun writeEvent(stream: OutputStream): Boolean {
         if (queue.writingSince != 0L) return false
-        val event = queue.take() ?: return false
+        val pending = queue.take() ?: return false
         queue.writing(clock())
-        if (!ModLine.write(stream, event.message())) {
+        val event = pending.sealed()
+        if (event == null) {
+            queue.handled()
+        } else if (!ModLine.write(stream, event.message())) {
             drops.event(event.name)
             queue.handled()
         }

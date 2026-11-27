@@ -1,6 +1,5 @@
 package splice.app.mods.events
 
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -20,7 +19,7 @@ private const val MOD_EVENT_MODEL_FIELD = "model"
 internal data class TurnFields(
     val turn: String,
     val session: String?,
-    val labels: JsonObject,
+    val labels: Map<String, String>,
     val facts: ObservedTurnFacts,
 )
 
@@ -29,10 +28,15 @@ internal class ModTurn(
     private val hub: ModEventHub,
     private val off: ModsOff?,
     private val fields: TurnFields,
-    private val text: ModEventText,
+    text: ModEventText,
 ) : TurnObservation {
     private val facts = fields.facts
-    private val asked = clean(facts.model)
+
+    // The first I/O consumer samples the credentials, once for all events and listeners of this turn.
+    private val scrubber by lazy { text.snapshot() }
+    private val asked by lazy { clean(facts.model) }
+    private val session by lazy { fields.session?.takeIf(scrubber::safe) }
+    private val labels by lazy { scrubber.labels(fields.labels) }
 
     override val wantsFrames: Boolean get() = hub.listening("stream.event", off)
     override val wantsRequests: Boolean get() = hub.listening("request.send", off)
@@ -87,23 +91,22 @@ internal class ModTurn(
         )
     }
 
-    private fun clean(value: String): String = text.text(value)
+    private fun clean(value: String): String = scrubber.text(value)
 
-    private inline fun emit(name: String, at: Long, payload: JsonObjectBuilder.() -> Unit) {
+    private inline fun emit(name: String, at: Long, crossinline payload: JsonObjectBuilder.() -> Unit) {
         if (!hub.listening(name, off)) return
-        hub.offer(
+        hub.offer(name, off) {
             ModEvent(
                 name,
-                fields.session,
+                session,
                 buildJsonObject {
-                    put("session", fields.session)
+                    put("session", session)
                     put("turn", fields.turn)
                     put("at", at)
-                    put("labels", fields.labels)
+                    put("labels", labels)
                     payload()
                 },
-            ),
-            off,
-        )
+            )
+        }
     }
 }

@@ -21,9 +21,13 @@ import splice.launch.LaunchNotice
 import java.nio.file.Path
 import java.util.UUID
 
-internal class ModEventsTestRig(root: Path, private val env: Map<String, String> = System.getenv()) {
+internal class ModEventsTestRig(
+    root: Path,
+    env: Map<String, String> = System.getenv(),
+    overrideText: ModEventText? = null,
+) {
     val runner = RunnerTestRig(root, env)
-    val text = ModEventText(ModSecretSources(runner.paths.envReader, env.keys))
+    val text = overrideText ?: ModEventText(ModSecretSources(runner.paths.envReader, env.keys))
     val sessions = ModSessionTracker(
         runner.runner.events,
         ModSessionLedger(runner.paths.modsDir, runner.paths.stateDir, LogSink {}),
@@ -60,7 +64,9 @@ internal class ModEventsTestRig(root: Path, private val env: Map<String, String>
         UUID.randomUUID().toString().also { launches.launched(LaunchNotice(it, pid, cwd, settings)) }
 
     fun begin(session: String, owner: String?, model: String = "asked") =
-        turns.begin(ObservedTurnFacts(session, owner, "head", model, false, null, 1))
+        begin(ObservedTurnFacts(session, owner, "head", model, false, null, 1))
+
+    fun begin(facts: ObservedTurnFacts) = turns.begin(facts)
 
     fun complete(session: String, owner: String?) {
         begin(session, owner)?.completed(ObservedTurnEnd("ok", ObservedUsage(0, 0, 0, 0), 1, 2))

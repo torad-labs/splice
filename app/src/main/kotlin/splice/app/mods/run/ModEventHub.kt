@@ -1,11 +1,14 @@
 package splice.app.mods.run
 
+import kotlinx.serialization.json.JsonObject
 import splice.app.mods.handover.ModDelivery
 import splice.app.mods.handover.ModHandover
 import splice.launch.ModsOff
 
 /** Subscriptions are published off the turn path. A turn only reads an immutable snapshot and offers. */
 internal class ModEventHub {
+    private val emptyPayload = JsonObject(emptyMap())
+
     @Volatile private var byEvent = emptyMap<String, List<ModListener>>()
 
     @Volatile private var retiring: Retiring? = null
@@ -22,6 +25,10 @@ internal class ModEventHub {
         } else {
             handover.names[name].orEmpty().any { modsOff?.suppresses(it) != true }
         }
+    }
+
+    fun offer(name: String, modsOff: ModsOff?, projection: ModEventProjection) {
+        offer(ModEvent(name, null, emptyPayload, projection), modsOff)
     }
 
     /** Use the settings of the event's own launch, not the latest launch seen for the session. */

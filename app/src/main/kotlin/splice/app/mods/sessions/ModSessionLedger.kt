@@ -30,6 +30,15 @@ internal data class ModSessionEntry(
 @Serializable
 internal data class ModSessionContext(val cwd: String, val labels: JsonObject, val off: ModsOff?)
 
+/** Share one scrubbed session context across the pipe, the ledger and active session rows. */
+internal data class ModPendingSession(
+    val pair: ModSessionPair,
+    val off: ModsOff?,
+    private val projected: Lazy<ModSessionEntry?>,
+) {
+    val entry: ModSessionEntry? get() = projected.value
+}
+
 internal data class ModSessionIndex(
     val ids: Set<String>,
     val ownerless: Set<String>,
@@ -85,12 +94,12 @@ internal class ModSessionLedger(
     private fun expired(file: Path, cutoff: Long): Boolean =
         cutoff != Long.MIN_VALUE && Files.getLastModifiedTime(file).toMillis() < cutoff
 
-    fun save(entry: ModSessionEntry) {
-        val file = path(entry.pair)
+    fun save(pending: ModPendingSession) {
         val _ = AsyncFileIo.submit(owner = dir) {
             Cancellables.runCatchingCancellable {
+                val entry = pending.entry ?: return@runCatchingCancellable
                 check(SecureFile.ownerOnlyDirectory(dir) == null) { "mod session directory is not owner-only" }
-                SecureFile.writeAtomic0600(file, Json.encodeToString(entry))
+                SecureFile.writeAtomic0600(path(entry.pair), Json.encodeToString(entry))
             }.onFailure { log("[mods] could not write session history\n") }
         }
     }

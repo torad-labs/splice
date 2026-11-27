@@ -11,6 +11,7 @@ import splice.app.mods.events.ModEventText
 import splice.app.mods.run.ModEvent
 import splice.app.mods.run.ModEventHub
 import splice.core.util.WallClock
+import splice.launch.LaunchNotice
 import splice.launch.ModsOff
 import splice.upstream.Ticker
 import splice.upstream.codemode.ProcessTicker
@@ -54,7 +55,8 @@ internal class ModSessionTracker(
         for (id in index.ids) seen[id] = id in index.ownerless
         for (entry in index.active) {
             pairs.getOrPut(entry.pair.id, ::mutableSetOf).add(entry.pair.owner)
-            active.track(entry, entry.pair.owner?.let(launches::stored))
+            val pending = ModPendingSession(entry.pair, entry.context.off, lazyOf(entry))
+            active.track(pending, entry.pair.owner?.let(launches::stored))
             // Restored session.start entries may be hooks without an admitted turn.
             launches.forTurn(entry.pair.id, entry.pair.owner, served = false)
         }
@@ -67,7 +69,7 @@ internal class ModSessionTracker(
 
     suspend fun sweep() {
         while (ticker.awaitTick(SESSION_SWEEP_MS)) {
-            if (observing && hub.listening) active.expired(clock()).forEach(::finish)
+            if (observing && hub.listening) active.expired().forEach(::finish)
         }
     }
 
@@ -124,52 +126,79 @@ internal class ModSessionTracker(
         cwd: String?,
         scrubber: ModEventText?,
     ): Boolean {
-        val current = scrubber ?: text.snapshot()
+        val current = scrubber ?: text
         if (!current.safe(key.id)) return false
         val previous = if (key.owner == null) seen.put(key.id, true) else seen.putIfAbsent(key.id, false)
         if (key.owner == null && previous == true) return false
-        val seenBefore = previous != null
-        val context = ModSessionContext(
-            current.text(launch?.launch?.cwd ?: cwd.orEmpty()),
-            current.labels(launch?.launch?.settings?.labels.orEmpty()),
-            launch?.launch?.settings?.modsOff,
+        val notice = launch?.launch
+        val pending = ModPendingSession(
+            key,
+            notice?.settings?.modsOff,
+            lazy { opening(key, at, notice, cwd, current.snapshot()) },
         )
-        val entry = ModSessionEntry(key, at, context)
-        ledger.save(entry)
-        offer("session.start", entry, seenBefore)
-        active.track(entry, launch)
+        ledger.save(pending)
+        offer("session.start", pending, previous != null)
+        active.track(pending, launch)
         return true
     }
 
-    private fun finish(entry: ModSessionEntry) {
-        val key = entry.pair
+    private fun opening(
+        key: ModSessionPair,
+        at: Long,
+        launch: LaunchNotice?,
+        cwd: String?,
+        live: ModEventText,
+    ): ModSessionEntry? {
+        if (!live.safe(key.id)) return null
+        val context = ModSessionContext(
+            live.text(launch?.cwd ?: cwd.orEmpty()),
+            live.labels(launch?.settings?.labels.orEmpty()),
+            launch?.settings?.modsOff,
+        )
+        return ModSessionEntry(key, at, context)
+    }
+
+    private fun finish(start: ModPendingSession) {
+        val key = start.pair
+        val at = clock()
+        val end = ModPendingSession(key, start.off, lazy { ended(start.entry, at) })
         pairs.computeIfPresent(key.id) { _, owners ->
-            ledger.save(entry)
-            offer("session.end", entry)
+            ledger.save(end)
+            offer("session.end", end)
             owners.remove(key.owner)
             owners.takeIf { it.isNotEmpty() }
         }
     }
 
-    private fun offer(name: String, entry: ModSessionEntry, seenBefore: Boolean? = null) {
+    private fun ended(start: ModSessionEntry?, at: Long): ModSessionEntry? {
+        val entry = start ?: return null
+        val live = text.snapshot()
+        if (!live.safe(entry.pair.id)) return null
         val context = entry.context
-        if (!hub.listening(name, context.off)) return
-        val id = entry.pair.id
-        val scrubber = if (entry.ended) text.snapshot() else text
-        if (!scrubber.safe(id)) return
-        hub.offer(
-            ModEvent(
-                name,
-                id,
-                buildJsonObject {
-                    put("session", id)
-                    put("cwd", scrubber.text(context.cwd))
-                    put("labels", scrubber.labels(context.labels))
-                    if (seenBefore != null) put("seenBefore", seenBefore)
-                },
-            ),
-            context.off,
+        return entry.copy(
+            at = at,
+            context = context.copy(cwd = live.text(context.cwd), labels = live.labels(context.labels)),
+            ended = true,
         )
+    }
+
+    private fun offer(name: String, pending: ModPendingSession, seenBefore: Boolean? = null) {
+        if (!hub.listening(name, pending.off)) return
+        hub.offer(name, pending.off) {
+            pending.entry?.let { entry ->
+                val id = entry.pair.id
+                ModEvent(
+                    name,
+                    id,
+                    buildJsonObject {
+                        put("session", id)
+                        put("cwd", entry.context.cwd)
+                        put("labels", entry.context.labels)
+                        if (seenBefore != null) put("seenBefore", seenBefore)
+                    },
+                )
+            }
+        }
     }
 }
 

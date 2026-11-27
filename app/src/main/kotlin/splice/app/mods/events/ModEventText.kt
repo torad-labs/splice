@@ -7,18 +7,17 @@ import kotlinx.serialization.json.put
 import splice.head.observe.ObservedCredentials
 import splice.upstream.transport.HeaderRedaction
 
-/** An immutable scrubber for one boundary: no file or environment reads while offering its events. */
+/** Match request text in memory; sample live provider credentials only at output boundaries. */
 internal class ModEventText(
     private val source: ModSecretSources? = null,
     private val secrets: Set<String> = emptySet(),
     private val request: ObservedCredentials? = null,
 ) {
-    fun snapshot(credentials: ObservedCredentials? = null): ModEventText =
-        if (source == null && credentials == null) {
-            this
-        } else {
-            ModEventText(secrets = source?.read() ?: secrets, request = credentials)
-        }
+    fun withRequest(credentials: ObservedCredentials?): ModEventText =
+        credentials?.let { ModEventText(source, secrets, it) } ?: this
+
+    /** Reads provider credentials. Never call from a turn, an event offer or a session lock. */
+    fun snapshot(): ModEventText = source?.let { ModEventText(secrets = it.read(), request = request) } ?: this
 
     fun text(value: String): String = if (safe(value)) value else HeaderRedaction.REDACTED
 

@@ -42,7 +42,7 @@ internal class ModSessionTracker(
             if (!entry.ended) {
                 val launch = entry.pair.owner?.let(launches::stored)
                 track(entry, launch)
-                launches.forTurn(entry.pair.id, entry.pair.owner)
+                launches.forTurn(entry.pair.id, entry.pair.owner, served = false)
             }
         }
     }

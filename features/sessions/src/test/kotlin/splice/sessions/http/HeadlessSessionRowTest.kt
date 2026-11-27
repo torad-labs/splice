@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.sessions.registry.HeadlessSessionSource
+import splice.sessions.registry.ServedLaunchRows
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionClient
 import splice.sessions.registry.SessionProcess
@@ -26,6 +27,7 @@ class HeadlessSessionRowTest {
 
         val row = rows(routes).single()
         assertEquals(ID, row.field("session_id"))
+        assertEquals(ID, row.field("id"))
         assertEquals("headless", row.field("kind"))
         assertEquals("7", row.field("pid"))
         assertEquals("/work", row.field("cwd"))
@@ -58,15 +60,18 @@ class HeadlessSessionRowTest {
         val row = rows(routes).single()
         assertEquals(ID, row.field("session_id"))
         assertEquals("/interactive", row.field("cwd"))
-        assertEquals("""{"role":"worker"}""", row.getValue("labels").toString())
+        assertEquals("""{"role":"interactive-worker"}""", row.getValue("labels").toString())
     }
 
     private fun routes(dir: Path, served: () -> List<SessionRecord>): SessionsRoutes {
         val registry = SessionRegistry(dir, routeOf = { SessionRoute.Unknown }, pidAlive = { true }, clock = { NOW })
+        val launches = object : ServedLaunchRows {
+            override fun rows(): List<SessionRecord> = served()
+        }
         return SessionsRoutes(
-            HeadlessSessionSource(registry, served),
+            HeadlessSessionSource(registry, launches),
             TestTranscripts(),
-            facts = SessionRowFacts(labelsOf = SessionLabelsOf { mapOf("role" to "worker") }),
+            facts = SessionRowFacts(labelsOf = SessionLabelsOf { mapOf("role" to "interactive-worker") }),
         )
     }
 
@@ -77,7 +82,7 @@ class HeadlessSessionRowTest {
         route = SessionRoute.Unknown,
         availability = availability,
         process = SessionProcess(pid, "/work", NOW, NOW, null),
-        client = SessionClient("headless", null),
+        client = SessionClient("headless", null, launchLabels = mapOf("role" to "worker")),
     )
 
     private fun rows(routes: SessionsRoutes) = Json.parseToJsonElement(routes.sessionsJson())

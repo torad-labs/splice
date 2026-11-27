@@ -5,7 +5,7 @@ import splice.sessions.http.SessionLabelsOf
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 
-/** Only enriches rows the registry already lists. A headless launch never makes a row. */
+/** Finds launch labels for registry rows, which do not carry launch metadata themselves. */
 internal class SessionLabels(private val ports: ConsolePorts) : SessionLabelsOf {
     override fun labelsOf(record: SessionRecord): Map<String, String> {
         val pid = record.process.pid.takeUnless { record.availability == SessionAvailability.GONE }

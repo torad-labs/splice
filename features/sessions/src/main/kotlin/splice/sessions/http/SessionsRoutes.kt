@@ -28,6 +28,7 @@
 package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
@@ -58,6 +59,7 @@ import splice.sessions.transcript.SessionActivity
 import splice.sessions.transcript.SessionTitleOf
 import splice.sessions.transcript.SessionTranscriptViewEnabled
 import splice.sessions.transcript.SessionTranscripts
+import splice.sessions.transcript.TranscriptFields
 import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptPage
@@ -255,8 +257,12 @@ public class SessionsRoutes(
     ): JsonObject = buildJsonObject {
         put("session_id", s.sessionId)
         put("name", if (viewEnabled()) s.name else null)
-        val trees = roots.treesFor(s.head)
-        val shown = transcriptFields.of(s, trees)
+        val headless = s.client.launchLabels != null
+        val shown = if (headless) {
+            TranscriptFields(JsonNull, JsonNull, null)
+        } else {
+            transcriptFields.of(s, roots.treesFor(s.head))
+        }
         put("last", shown.last)
         put("model", shown.model)
         put("title", shown.title)
@@ -291,7 +297,7 @@ public class SessionsRoutes(
 
     /** V4-131: the session's repo as its row reports it (ProjectsRoutes groups by it); null without a cwd. */
     public fun repoOf(record: SessionRecord): RepoRoot? =
-        record.process.cwd?.let { resolverFor(record.head).resolve(it) }
+        record.process.cwd?.takeIf { record.client.launchLabels == null }?.let { resolverFor(record.head).resolve(it) }
 
     /** V4-131: a sender's SendMessage texts, from the transcript trees this route already searches. */
     public fun sentTexts(session: String, head: String?, ids: Set<String>): SentTexts {

@@ -38,22 +38,30 @@ public data class SessionRowFacts(
 ) {
     /** One snapshot of every source, taken once per request before the first row is written. A source
      *  without a bounded lookup returns itself, so this is free for the ones that do not need it. */
-    public fun forRecords(records: List<SessionRecord>): SessionRowFacts =
-        copy(
-            accountOf = accountOf.forRecords(records),
-            turnsOf = turnsOf.forRecords(records),
-            labelsOf = labelsOf.forRecords(records),
+    public fun forRecords(records: List<SessionRecord>): SessionRowFacts {
+        val registered = records.filter { it.client.launchLabels == null }
+        return copy(
+            accountOf = accountOf.forRecords(registered),
+            turnsOf = turnsOf.forRecords(registered),
+            labelsOf = labelsOf.forRecords(registered),
         )
+    }
 
     /** Each source writes its own keys. The order is the order they are declared in, and nothing here
      *  reads or overwrites another's key: two sources that wanted the same key would be a conflict to
      *  resolve at the source, not a precedence to encode here. */
     public fun write(record: SessionRecord, target: JsonObjectBuilder) {
-        accountOf.write(record, target)
-        turnsOf.write(record, target)
-        endingOf.write(record, target)
-        servedOf.write(record, target)
-        windowOf.write(record, target)
+        if (record.client.launchLabels != null) {
+            target.put("id", record.sessionId)
+            target.put("kind", record.client.kind)
+            target.put("pid", record.process.pid)
+        } else {
+            accountOf.write(record, target)
+            turnsOf.write(record, target)
+            endingOf.write(record, target)
+            servedOf.write(record, target)
+            windowOf.write(record, target)
+        }
         labelsOf.write(record, target)
     }
 }
@@ -66,7 +74,7 @@ public fun interface SessionLabelsOf {
 
     public fun write(record: SessionRecord, target: JsonObjectBuilder) {
         target.putJsonObject("labels") {
-            labelsOf(record).forEach { (key, value) -> put(key, value) }
+            (record.client.launchLabels ?: labelsOf(record)).forEach { (key, value) -> put(key, value) }
         }
     }
 }

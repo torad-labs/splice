@@ -1,20 +1,20 @@
 // NEW: desktop-antigravity. `splice desktop wrapper [--print | --check]`: the settings Claude Desktop's Code tab needs
 // from outside splice. Desktop starts a Code tab session through a process wrapper only when Claude Code's managed
 // settings name one (`processWrapper`); splice's Desktop configuration already turns the wrapper on
-// (`claudeCodeProcessWrapperEnabled`, written by `splice desktop on`), but the managed file is the administrator's,
-// root-owned, and splice never writes it. It also needs `parentSettingsBehavior` "merge" in the source that wins. Both
-// verbs say the same things, from WrapperSettings, which the doctor and the upgrade item say too: what is wanted, what
-// splice read, the places it did not, what Desktop does (only as the condition), and what to do. `--print` (the
-// default) also shows the wanted keys as a file, and the commands that put it in place only where nothing is at its
-// path. `--check` exits 0 where the launcher is laid and the file splice read names it, and 1 otherwise: it confirms no
-// more than that.
+// (`claudeCodeProcessWrapperEnabled`, written by `splice desktop on`), but the managed files are the administrator's,
+// root-owned, and splice never writes them. It also needs `parentSettingsBehavior` "merge" in the source that wins.
+// Both verbs say the same things, from WrapperSettings, which the doctor and the upgrade item say too: what is wanted,
+// what splice read and which file holds each key, the places it could not read, what Desktop does (only as the
+// condition), and the file to edit. `--print` (the default) also shows the wanted keys as a file, and the commands
+// that put it in place only where nothing is at its path and no drop-in was read. `--check` exits 0 where the
+// launcher is laid and the files splice read, merged, name it, and 1 otherwise: it confirms no more than that.
 package splice.app.cli.desktop
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import splice.app.capability.AFTER_CHANGE
 import splice.app.capability.WrapperSettings
 import splice.app.desktop.setup.DesktopPrograms
-import splice.client.ManagedFile
 import splice.client.ManagedSettings
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
@@ -49,20 +49,20 @@ internal class DesktopWrapper(
         out.line(PRETTY.encodeToString(JsonObject.serializer(), settings.wanted()))
         out.line("")
         settings.facts().forEach { out.line("${it.replaceFirstChar(Char::uppercase)}.") }
-        settings.step()?.let { out.line("What to do: $it.") }
-        if (!settings.right) {
+        settings.step()?.let { step ->
+            out.line("What to do: $step.")
             commands(settings)
-            out.line("Then $QUIT_AND_REOPEN")
+            out.line("${AFTER_CHANGE.replaceFirstChar(Char::uppercase)}.")
         }
         return 0
     }
 
-    /** How to put the file in place where nothing is at its path, or how to edit it where something may be. */
+    /** How to put the main file in place where it is to be created whole, or how to edit each file to change. */
     private fun commands(settings: WrapperSettings) {
         val file = settings.file
         when {
-            settings.state != ManagedFile.Absent && windows -> out.line("  Edit it in an editor run as administrator.")
-            settings.state != ManagedFile.Absent -> out.line("  For example: sudoedit '$file'")
+            !settings.creates && windows -> out.line("  Edit each file named above in an editor run as administrator.")
+            !settings.creates -> settings.edits().keys.forEach { out.line("  For example: sudoedit '$it'") }
             windows -> {
                 out.line("  Save the text above as managed-settings.json and, in a terminal run as administrator:")
                 out.line("  New-Item -ItemType Directory -Force '${file.parent}'")
@@ -75,19 +75,15 @@ internal class DesktopWrapper(
         }
     }
 
-    /** The same things as [print], each line marked; 0 where the launcher is laid and the file splice read names it. */
+    /** The same things as [print], each line marked; 0 where the launcher is laid and the merged files name it. */
     private fun check(settings: WrapperSettings): Int {
         (listOf(settings.wantedLine()) + settings.facts()).forEach { out.line("splice: $it.") }
-        val reopen = if (settings.right) "." else ", then $QUIT_AND_REOPEN"
-        settings.pointed()?.let { out.line("splice: what to do: $it$reopen") }
+        settings.pointed()?.let { out.line("splice: what to do: $it.") }
         return if (settings.starts && settings.laid) 0 else 1
     }
 }
 
 private val PRETTY = Json { prettyPrint = true }
-
-// Desktop reads its configuration at launch, so a change reaches it only after the whole app restarts.
-private const val QUIT_AND_REOPEN = "quit Claude Desktop entirely and reopen it."
 
 private const val WRAPPER_PRINT_FLAG = "--print"
 private const val WRAPPER_CHECK_FLAG = "--check"

@@ -96,7 +96,26 @@ For Antigravity in **Code** and for live switching between Antigravity and Claud
 splice desktop wrapper --print
 ```
 
-Save the JSON the command prints as `managed-settings.json` and use the install command it prints as an administrator. The proposed JSON adds `processWrapper` pointing to splice's `desktop-launch` and preserves the other settings it can read. If it warns the existing JSON couldn't be read, inspect that file before replacing it. The file belongs to the administrator; splice never installs it for you.
+The file needs two keys:
+
+```json
+{
+    "processWrapper": "<state>/desktop-launch",
+    "parentSettingsBehavior": "merge"
+}
+```
+
+`processWrapper` names splice's launcher for the Code tab's sessions. `parentSettingsBehavior` set to `"merge"` layers the limits in Claude Desktop's own policy under the administrator's, but only from the source that wins: Claude Code takes the key from the highest managed source that sets it, and its default, `"first-wins"`, drops the policy Desktop hands each Code session wherever managed settings exist; while no source sets `"merge"`, Desktop logs a `[custom-3p] configuration warning` at every start and shows "The policy from your inference configuration isn't fully applied on this computer" in every Code session. (Claude Code defaults to `"merge"` only for Desktop's own gateway mode with an interactive sign-in; Desktop on splice uses a key, so the default is `"first-wins"` and the key matters.)
+
+The command says only what splice read, in the same shape as `--check`, the `managed settings` row of `splice doctor` and the item `splice upgrade` lists. Each of them starts with what is wanted: both keys with their values.
+
+- **What splice found in the files.** splice reads the main file and each `managed-settings.d/*.json` drop-in beside it, in the order Claude Code merges them: the main file, then each drop-in in filename order, hidden files skipped. For each key it names the last of those files that mentions it, which may be a drop-in, and what that file holds: the string (quoted), or "a value that is not text" (an object, a list, a number, `true` or `null`, whose contents are never printed). A `null` there is reported as a value that is not text, and Claude Code takes it as the key cleared. Where no file sets a key, it says so. It also says the main file's own state where it did not read it: *could not be read* (no permission anywhere on its path, a folder splice cannot look into, a link to nothing, or not a JSON object; splice then does not say whether the file exists), or *nothing at the path*, only where splice established that nothing at all is there.
+- **The places splice could not read**, named on every run in one wording: `remote-settings.json` in Claude Code's config folder (`~/.claude`, or the folder `CLAUDE_CONFIG_DIR` names for the process that runs the command; Desktop may give its Code sessions another one), which splice names and never opens; the macOS policy plists and the Windows `HKLM` and `HKCU` policy values; the `managed-settings.d` folder where splice can't list it; and each drop-in it can't read as a JSON object. Claude Code takes `parentSettingsBehavior` from the highest source that sets it, so a value there may be the one that counts.
+- **What Desktop does**, said once and always as the condition: wherever managed settings exist, Desktop warns in every Code session unless the source that wins sets `parentSettingsBehavior` to `"merge"`. splice never reads every source, so it never says what Desktop does as a fact.
+- **Whether splice's launcher is laid**, where it is not: a regular, executable file at the path wanted.
+- **What to do**, only where a key does not come out as wanted, naming the file to edit: a key held with another value is changed in the file that holds it, drop-in or main file; a key no file holds is added to the main file. Where nothing is at the main path, it says to create the main file holding what it lacks, `processWrapper` for instance beside a drop-in that sets `"merge"`; it prints the commands that copy a whole new file into place only where, besides, no drop-in was read. A file that exists it says to edit in place as an administrator (a copy would reset the file's owner and mode and lose its other keys), and it never prints what a file holds. Where splice names places it could not read, the step is a condition on them: "where none of the places splice did not read sets `parentSettingsBehavior`, make … hold …". After a change, quit Claude Desktop entirely and reopen it. When both keys come out as wanted there is nothing to edit and nothing to reopen: where splice names places it could not read, the step is only "check that none of the places splice did not read sets either key to another value", and where it names none there is no step.
+
+The file belongs to the administrator; splice never installs it for you.
 
 | Platform | Claude Code managed settings |
 | --- | --- |
@@ -104,13 +123,13 @@ Save the JSON the command prints as `managed-settings.json` and use the install 
 | macOS | `/Library/Application Support/ClaudeCode/managed-settings.json` |
 | Windows (wrapper command path) | `C:\Program Files\ClaudeCode\managed-settings.json` |
 
-This is **Claude Code's** managed file, not the **Claude Desktop** provider configuration under `/etc/claude-desktop`. Verify the executable and setting with the check below (0 if correctly configured), then quit and reopen Desktop entirely.
+This is **Claude Code's** managed file, not the **Claude Desktop** provider configuration under `/etc/claude-desktop`. Run the check below. It prints the same things as `--print`, each line starting `splice:`, without the file and the commands: a `wanted:` line, then the file holding each key, then the places splice could not read. It exits 0 when splice's launcher is laid and the files splice read, merged, name it as `processWrapper`, and confirms no more than that: whether `"merge"` comes out of them is on the per-key line, and what the unread places hold is for the administrator to look at. Edit a file only where the step names it, and quit and reopen Desktop entirely only after a change. It exits 1 otherwise: no launcher laid, or no file splice read giving a `processWrapper` that names it (absent, not text, another program, or the main file unreadable with no drop-in setting it). Both commands, the doctor and the upgrade find the launcher in the state folder the daemon uses, `[daemon] state_dir` in `splice.toml` included. `splice doctor` shows the same in its `managed settings` row while Desktop is on splice, and warns where the files splice read, merged, do not give `"merge"` or name a wrapper that is not splice's laid launcher, except where splice read no managed settings file at all, where the row is a note. `splice upgrade` and `splice setup --update` list an item whenever the files splice read, merged, do not give both keys as wanted, or the launcher is not laid. Where nothing needs setting up, `setup --update` says so only of what splice checked; the doctor it ends on names the places to check.
 
 ```bash
 splice desktop wrapper --check
 ```
 
-Use either `--print` or `--check`, not both. Bare `splice desktop wrapper` is the same as `--print`. If you stop using the wrapper, have the administrator remove its `processWrapper` entry; `splice desktop off` doesn't edit that managed file. The following are internal entry points, not interactive sign-in commands:
+Use either `--print` or `--check`, not both. Bare `splice desktop wrapper` is the same as `--print`. If you stop using the wrapper, have the administrator remove its `processWrapper` entry (and `parentSettingsBehavior` if nothing else needs it); `splice desktop off` doesn't edit that managed file. The following are internal entry points, not interactive sign-in commands:
 
 | Entry point | Role |
 | --- | --- |

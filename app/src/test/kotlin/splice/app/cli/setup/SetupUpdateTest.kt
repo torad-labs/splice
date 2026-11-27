@@ -4,6 +4,8 @@
 package splice.app.cli.setup
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -13,8 +15,10 @@ import splice.app.capability.Capabilities
 import splice.app.capability.DesktopFacts
 import splice.app.capability.HarnessFacts
 import splice.app.capability.HubFacts
-import splice.app.capability.WrapperState
+import splice.app.capability.WrapperSettings
 import splice.app.desktop.setup.DesktopMode
+import splice.client.ManagedFile
+import splice.client.ManagedReading
 import splice.core.config.UserHome
 import splice.core.util.EnvReader
 import splice.terminal.ConfirmPrompt
@@ -81,25 +85,70 @@ class SetupUpdateTest {
         val ok = UserHome.within(home) {
             Files.createDirectories(toml.parent)
             Files.writeString(toml, "[daemon]\ncontrol_port = 3096\nauto_update = false\n")
-            val complete = desktop(cli = true, app = true).copy(mode = DesktopMode.APP, wrapper = WrapperState.SPLICE)
+            val launch = Files.writeString(home.resolve("desktop-launch"), "#!/bin/sh\n")
+            launch.toFile().setExecutable(true)
+            val right = managed("""{"processWrapper": "$launch", "parentSettingsBehavior": "merge"}""", launch = launch)
+            val complete = desktop(cli = true, app = true).copy(mode = DesktopMode.APP, managed = right)
             runBlocking { update(said, facts = complete, onCheckup = { checkups++ }).run() }
         }
         assertTrue(ok)
-        assertTrue("Nothing new to set up" in said, said.toString())
+        assertTrue("Nothing new to set up in what splice checked." in said, said.toString())
         assertEquals(1, checkups, "an update ends on the doctor, as setup does")
         assertEquals("[daemon]\ncontrol_port = 3096\nauto_update = false\n", Files.readString(toml), "nothing written")
     }
 
     @Test
-    fun `an update says the managed processWrapper only root can fix`(@TempDir home: Path) {
+    fun `an update says what only root can fix in the managed settings`(@TempDir home: Path) {
         val said = StringBuilder()
         UserHome.within(home) {
             val toml = Files.createDirectories(home.resolve(".config/splice")).resolve("splice.toml")
             Files.writeString(toml, "[daemon]\ncontrol_port = 3096\nauto_update = false\n")
-            val other = desktop(cli = true, app = true).copy(mode = DesktopMode.APP, wrapper = WrapperState.OTHER)
+            val other = desktop(cli = true, app = true).copy(mode = DesktopMode.APP, managed = managed(OTHER))
             runBlocking { update(said, facts = other).run() }
         }
-        assertTrue("processWrapper names another program" in said, said.toString())
+        assertTrue("sets processWrapper to \"/usr/bin/other\"" in said, said.toString())
+        val step = "make /etc/claude-code/managed-settings.json hold processWrapper \"/s/desktop-launch\", editing it"
+        assertTrue(step in said, said.toString())
+        assertTrue("after a change, quit Claude Desktop entirely and reopen it" in said, said.toString())
+    }
+
+    // A place splice did not read changes how the item is said, never whether a known mismatch is one.
+    @Test
+    fun `an unattended update with a mismatch beside an unread drop-in lists it and never says nothing is new`(
+        @TempDir home: Path,
+    ) {
+        val said = StringBuilder()
+        val dropIn = "/etc/claude-code/managed-settings.d/10-org.json"
+        UserHome.within(home) {
+            seedToml(home, autoUpdate = false)
+            val unread = listOf(dropIn)
+            val other = desktop(cli = true, app = true).copy(mode = DesktopMode.APP, managed = managed(OTHER, unread))
+            runBlocking { update(said, facts = other, console = false).run() }
+        }
+        assertFalse("Nothing new to set up" in said, said.toString())
+        assertTrue("sets processWrapper to \"/usr/bin/other\"" in said && dropIn in said, said.toString())
+        assertTrue("where none of the places splice did not read sets processWrapper, make " in said, said.toString())
+    }
+
+    // The main file needs no edit, so there is no item; an unread place may still win, so the update says it found
+    // nothing new only in what splice checked, never that the install is complete.
+    @Test
+    fun `an unattended update with a right file beside an unread drop-in claims only what splice checked`(
+        @TempDir home: Path,
+    ) {
+        val said = StringBuilder()
+        val dropIn = "/etc/claude-code/managed-settings.d/10-org.json"
+        UserHome.within(home) {
+            seedToml(home, autoUpdate = false)
+            val launch = Files.writeString(home.resolve("desktop-launch"), "#!/bin/sh\n")
+            launch.toFile().setExecutable(true)
+            val text = """{"processWrapper": "$launch", "parentSettingsBehavior": "merge"}"""
+            val right = desktop(cli = true, app = true)
+                .copy(mode = DesktopMode.APP, managed = managed(text, listOf(dropIn), launch))
+            runBlocking { update(said, facts = right, console = false).run() }
+        }
+        assertTrue("Nothing new to set up in what splice checked." in said, said.toString())
+        assertFalse("already has what this release adds" in said, said.toString())
     }
 
     private fun update(
@@ -185,5 +234,18 @@ class SetupUpdateTest {
         program: Path? = Path.of("/usr/bin/claude-desktop"),
         cli: Boolean = false,
         app: Boolean = false,
-    ) = DesktopFacts(program, DesktopMode.OFF, cli, app, WrapperState.NONE)
+    ) = DesktopFacts(program, DesktopMode.OFF, cli, app)
+
+    private fun managed(
+        text: String,
+        unread: List<String> = emptyList(),
+        launch: Path = Path.of("/s/desktop-launch"),
+    ): WrapperSettings {
+        val file = Path.of("/etc/claude-code/managed-settings.json")
+        val settings = Json.parseToJsonElement(text).jsonObject
+        val reading = ManagedReading(file, ManagedFile.Read(settings), listOf(file to settings), unread)
+        return WrapperSettings(reading, launch)
+    }
 }
+
+private const val OTHER = """{"processWrapper": "/usr/bin/other", "parentSettingsBehavior": "merge"}"""

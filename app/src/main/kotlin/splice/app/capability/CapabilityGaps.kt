@@ -10,7 +10,7 @@ import splice.core.mcp.McpHarness
 /** What a gap is about, so `splice setup --update` can offer the step that closes it. */
 internal enum class GapKind {
     DESKTOP_STANDARD,
-    PROCESS_WRAPPER,
+    MANAGED_SETTINGS,
     SIDE_BY_SIDE,
     MCP_SYNC,
     CODEX_HOOKS,
@@ -26,7 +26,7 @@ internal data class Gap(val kind: GapKind, val text: String)
 internal class CapabilityGaps(private val facts: Capabilities, private val claudeWrapped: Boolean) {
     /** Every gap, `[daemon] auto_update` included. */
     fun all(): List<Gap> =
-        listOfNotNull(desktop(), wrapper(), sideBySide(), codexHooks(), shim(), hub()) + sync() + autoUpdate()
+        listOfNotNull(desktop(), managed(), sideBySide(), codexHooks(), shim(), hub()) + sync() + autoUpdate()
 
     /** The gaps an upgrade says: all but auto_update, which is a choice, not something the release left undone. */
     fun afterUpgrade(): List<Gap> = all().filterNot { it.kind == GapKind.AUTO_UPDATE }
@@ -36,11 +36,15 @@ internal class CapabilityGaps(private val facts: Capabilities, private val claud
         "Claude Desktop is on the older Code-tab-only door; `splice desktop on` puts all of Desktop on splice",
     ).takeIf { facts.desktop.mode == DesktopMode.STANDARD }
 
-    private fun wrapper(): Gap? = Gap(
-        GapKind.PROCESS_WRAPPER,
-        "Claude Code's managed processWrapper names another program, so Desktop's Code tab gets no splice key; " +
-            "$WRAPPER_FIX (a root-owned file)",
-    ).takeIf { facts.desktop.mode == DesktopMode.APP && facts.desktop.wrapper == WrapperState.OTHER }
+    /** Claude Code's managed settings, an item wherever the files splice read, merged, do not give both keys
+     *  as wanted, or the launcher is not laid: what was found, the places it did not read, and the file to edit. Only
+     *  root writes those files, so the item says what to do. */
+    private fun managed(): Gap? {
+        val managed = facts.desktop.managed?.takeIf { facts.desktop.mode == DesktopMode.APP } ?: return null
+        if (managed.right && managed.laid) return null
+        val step = managed.pointed()?.let { "what to do: $it" }
+        return Gap(GapKind.MANAGED_SETTINGS, listOfNotNull(managed.said(), step).joinToString("; "))
+    }
 
     /** Side-by-side launchers, where nothing runs Claude Desktop or Claude Code beside the person's own yet. */
     private fun sideBySide(): Gap? {

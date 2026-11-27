@@ -2,15 +2,22 @@
 // tool the machine does not use) and the "action needed" list an interactive upgrade and `splice setup --update` say.
 package splice.app.capability
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.app.desktop.setup.DesktopMode
+import splice.client.ManagedFile
+import splice.client.ManagedReading
 import splice.core.mcp.McpHarness
 import splice.diagnostics.doctor.ToolLevel
+import java.nio.file.Files
 import java.nio.file.Path
 
-class CapabilityReadingsTest {
+class CapabilityReadingsTest(@param:TempDir private val tmp: Path) {
 
     @Test
     fun `a machine with none of the tools has no rows and no gaps beyond the auto-update choice`() {
@@ -35,21 +42,194 @@ class CapabilityReadingsTest {
         assertTrue(CapabilityTools(facts).readings().none { it.name == "claude-desktop" })
     }
 
+    private val managedFile: Path = Path.of("/etc/claude-code/managed-settings.json")
+    private val launch: Path = tmp.resolve("desktop-launch")
+    private val dropIn = "/etc/claude-code/managed-settings.d/10-org.json"
+    private val wanted = "wanted: processWrapper \"$launch\" and parentSettingsBehavior \"merge\""
+    private val condition = "wherever managed settings exist, Desktop warns in every Code session unless the source " +
+        "that wins sets parentSettingsBehavior to \"merge\""
+    private val effects = listOf("Desktop does not warn", "limits apply", "its limits for them are not applied")
+
+    init {
+        Files.writeString(launch, "#!/bin/sh\n")
+        launch.toFile().setExecutable(true)
+    }
+
+    private fun app(
+        state: ManagedFile,
+        unread: List<String> = emptyList(),
+        mode: DesktopMode = DesktopMode.APP,
+        dropIns: List<Pair<Path, JsonObject>> = emptyList(),
+    ): Capabilities {
+        val read = listOfNotNull((state as? ManagedFile.Read)?.let { managedFile to it.settings }) + dropIns
+        val reading = ManagedReading(managedFile, state, read, unread)
+        return bare().copy(desktop = desktop(mode = mode).copy(managed = WrapperSettings(reading, launch)))
+    }
+
+    private fun dropIn(text: String) = Path.of(dropIn) to Json.parseToJsonElement(text).jsonObject
+
+    private fun read(text: String) = ManagedFile.Read(Json.parseToJsonElement(text).jsonObject)
+
+    private fun right() = read("""{"processWrapper": "$launch", "parentSettingsBehavior": "merge"}""")
+
+    private fun row(facts: Capabilities) =
+        CapabilityTools(facts).readings().singleOrNull { it.name == "managed settings" }
+
+    /** The upgrade's checklist lines that speak of the managed settings, as a person reads them. */
+    private fun items(facts: Capabilities) =
+        CapabilityGaps(facts, false).afterUpgrade().map { it.text }.filter { "$managedFile" in it }
+
+    private val states = listOf(
+        read("""{"processWrapper": "$launch", "parentSettingsBehavior": "first-wins"}"""),
+        read("""{"processWrapper": "/usr/bin/other"}"""),
+        ManagedFile.Unreadable,
+        ManagedFile.Absent,
+    )
+
     @Test
-    fun `app mode with a managed processWrapper naming another program warns and is an action item`() {
-        val facts = bare().copy(desktop = desktop(mode = DesktopMode.APP, wrapper = WrapperState.OTHER))
-        val row = CapabilityTools(facts).readings().single { it.name == "processWrapper" }
-        assertEquals(ToolLevel.WARN, row.level)
-        assertTrue(GapKind.PROCESS_WRAPPER in CapabilityGaps(facts, false).afterUpgrade().map { it.kind })
+    fun `every surface says what is wanted, then the condition once, and never what Desktop does as a fact`() {
+        val facts = listOf(emptyList(), listOf(dropIn)).flatMap { unread -> (states + right()).map { app(it, unread) } }
+        for (text in facts.flatMap { listOf(row(it)!!.said) + items(it) }) {
+            assertTrue(text.startsWith(wanted), text)
+            assertEquals(1, text.split(condition).size - 1, text)
+            effects.forEach { assertTrue(it !in text, "\"$it\" said as a fact: $text") }
+        }
     }
 
     @Test
-    fun `splice's own processWrapper, or none, is no action item`() {
-        for (wrapper in listOf(WrapperState.SPLICE, WrapperState.NONE)) {
-            val facts = bare().copy(desktop = desktop(mode = DesktopMode.APP, wrapper = wrapper))
-            assertTrue(CapabilityGaps(facts, false).afterUpgrade().none { it.kind == GapKind.PROCESS_WRAPPER })
-            assertTrue(CapabilityTools(facts).readings().none { it.level == ToolLevel.WARN })
+    fun `a file that lacks parentSettingsBehavior warns and is an item to edit in place`() {
+        for (wrapper in listOf("", """"processWrapper": "$launch"""", """"processWrapper": "/usr/bin/other"""")) {
+            val facts = app(read("{$wrapper}"))
+            val row = row(facts)!!
+            assertEquals(ToolLevel.WARN, row.level)
+            assertTrue("no managed settings file splice read sets parentSettingsBehavior" in row.said, row.said)
+            assertTrue(row.fix.orEmpty().startsWith("make $managedFile hold "), row.fix)
+            assertTrue("parentSettingsBehavior \"merge\", editing it in place as an administrator" in row.fix.orEmpty())
+            val item = items(facts).single()
+            assertTrue(row.said in item && "what to do: make $managedFile hold" in item, item)
         }
+    }
+
+    @Test
+    fun `another program's wrapper is named, warned and an item, and nothing says what starts the Code tab`() {
+        val facts = app(read("""{"processWrapper": "/usr/bin/other", "parentSettingsBehavior": "merge"}"""))
+        assertEquals(ToolLevel.WARN, row(facts)!!.level)
+        val item = items(facts).single()
+        assertTrue("sets processWrapper to \"/usr/bin/other\"" in item && wanted in item, item)
+        assertTrue("starts through" !in item, item)
+    }
+
+    @Test
+    fun `first-wins in the file is named as it is, warned, and the item changes only that key, in that file`() {
+        val facts = app(read("""{"processWrapper": "$launch", "parentSettingsBehavior": "first-wins"}"""))
+        val row = row(facts)!!
+        assertEquals(ToolLevel.WARN, row.level)
+        assertTrue("sets parentSettingsBehavior to \"first-wins\"" in row.said, row.said)
+        assertTrue(row.fix.orEmpty().startsWith("make $managedFile hold parentSettingsBehavior \"merge\","), row.fix)
+        assertTrue("processWrapper \"" !in row.fix.orEmpty(), row.fix)
+        assertTrue(row.fix.orEmpty().endsWith("after a change, quit Claude Desktop entirely and reopen it"), row.fix)
+        assertTrue(row.fix.orEmpty() in items(facts).single())
+    }
+
+    @Test
+    fun `both keys right with the launcher laid is a note and no item, whatever other places are named`() {
+        for (unread in listOf(emptyList(), listOf(dropIn))) {
+            val ok = app(right(), unread)
+            assertEquals(ToolLevel.INFO, row(ok)!!.level, "which source wins is never known")
+            assertEquals(emptyList<String>(), items(ok), "the file needs no edit, so there is no item")
+        }
+        assertEquals(null, row(app(right()))!!.fix)
+        val check = "check that none of the places splice did not read sets either key to another value"
+        assertEquals(check, row(app(right(), listOf(dropIn)))!!.fix, "nothing to edit, so the check alone, no restart")
+        val noWrapper = app(read("""{"parentSettingsBehavior": "merge"}"""))
+        assertEquals(ToolLevel.INFO, row(noWrapper)!!.level)
+        val noFile = "no managed settings file splice read sets processWrapper"
+        assertTrue(noFile in items(noWrapper).single(), items(noWrapper).toString())
+    }
+
+    @Test
+    fun `both keys right with no launcher laid is a warning and an item that says to lay it`() {
+        Files.delete(launch)
+        val facts = app(right())
+        assertEquals(ToolLevel.WARN, row(facts)!!.level)
+        assertTrue("$launch is not laid yet: run `splice desktop on` first" in items(facts).single())
+    }
+
+    @Test
+    fun `nothing at the path is said as nothing there, with the step to create it, as an item`() {
+        val facts = app(ManagedFile.Absent)
+        val row = row(facts)!!
+        assertEquals(ToolLevel.INFO, row.level)
+        assertTrue("nothing is at $managedFile" in row.said, row.said)
+        assertTrue(row.fix.orEmpty().startsWith("create $managedFile holding processWrapper"), row.fix)
+        assertTrue("create $managedFile holding" in items(facts).single())
+    }
+
+    @Test
+    fun `a file splice could not read is said so for both keys, with no missing key, as an item`() {
+        val facts = app(ManagedFile.Unreadable)
+        val row = row(facts)!!
+        assertEquals(ToolLevel.INFO, row.level)
+        assertTrue("$managedFile could not be read" in row.said, row.said)
+        assertTrue("splice does not say whether it exists or what it holds" in row.said, row.said)
+        for (untrue in listOf("file splice read sets", "nothing is at")) {
+            assertTrue(untrue !in row.said, "${row.said} says \"$untrue\" of a file nobody read")
+        }
+        assertTrue("as an administrator, editing it in place where it exists" in items(facts).single())
+    }
+
+    // A place splice did not read changes how the step is said, never whether a file that needs an edit is an item.
+    @Test
+    fun `places splice did not read are named in one wording, and every file that needs an edit is an item`() {
+        for (state in states) {
+            val facts = app(state, listOf(dropIn))
+            val row = row(facts)!!
+            assertEquals(row(app(state))!!.level, row.level, "the level is the file's, whatever else is named: $state")
+            val named = "Claude Code may also take managed settings from $dropIn, which splice did not read: a value " +
+                "set there may be the one Claude Code takes"
+            assertTrue(named in row.said, row.said)
+            assertTrue(row.fix.orEmpty().startsWith("where none of the places splice did not read sets "), row.fix)
+            val item = items(facts).single()
+            assertTrue(named in item && "what to do: where none of the places splice did not read sets " in item, item)
+        }
+    }
+
+    @Test
+    fun `a value that is not text is said to be so for either key, in the row and the item`() {
+        val facts = app(read("""{"processWrapper": ["/bin/sh", "-c", "s3cret"], "parentSettingsBehavior": null}"""))
+        val item = items(facts).single()
+        assertTrue("sets processWrapper to a value that is not text" in item, item)
+        assertTrue("sets parentSettingsBehavior to a value that is not text" in item, item)
+        assertTrue("s3cret" !in item && "file splice read sets" !in item, item)
+    }
+
+    // Claude Code merges each drop-in over the main file, so the row and the item take the value the drop-in gives.
+    @Test
+    fun `a drop-in that sets merge over first-wins in the main file is a note and no item, and is named`() {
+        val main = read("""{"processWrapper": "$launch", "parentSettingsBehavior": "first-wins"}""")
+        val facts = app(main, dropIns = listOf(dropIn("""{"parentSettingsBehavior": "merge"}""")))
+        val row = row(facts)!!
+        assertEquals(ToolLevel.INFO, row.level)
+        assertTrue("$dropIn sets parentSettingsBehavior to \"merge\"" in row.said, row.said)
+        assertEquals(null, row.fix)
+        assertEquals(emptyList<String>(), items(facts))
+    }
+
+    @Test
+    fun `first-wins in a drop-in is the item to change, in that drop-in, not the main file`() {
+        val main = read("""{"processWrapper": "$launch", "parentSettingsBehavior": "merge"}""")
+        val facts = app(main, dropIns = listOf(dropIn("""{"parentSettingsBehavior": "first-wins"}""")))
+        val row = row(facts)!!
+        assertEquals(ToolLevel.WARN, row.level)
+        assertTrue(row.fix.orEmpty().startsWith("make $dropIn hold parentSettingsBehavior \"merge\""), row.fix)
+        assertTrue("make $managedFile" !in items(facts).single(), items(facts).toString())
+    }
+
+    @Test
+    fun `Desktop not in app mode says nothing about the managed settings`() {
+        val off = app(read("{}"), mode = DesktopMode.OFF)
+        assertEquals(null, row(off))
+        assertEquals(emptyList<String>(), items(off))
     }
 
     @Test
@@ -107,8 +287,7 @@ class CapabilityReadingsTest {
         mode: DesktopMode = DesktopMode.OFF,
         cli: Boolean = false,
         app: Boolean = false,
-        wrapper: WrapperState = WrapperState.NONE,
-    ) = DesktopFacts(program, mode, cli, app, wrapper)
+    ) = DesktopFacts(program, mode, cli, app)
 }
 
 private val DESKTOP = Path.of("/usr/bin/claude-desktop")

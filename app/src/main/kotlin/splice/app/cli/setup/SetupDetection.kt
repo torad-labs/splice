@@ -21,7 +21,7 @@ internal fun interface ControlPortResolver {
 }
 
 /** The optional programs splice works beside, read once (CapabilityLook): Claude Desktop and its mode, agy, codex,
- *  the managed processWrapper. */
+ *  and Claude Code's managed settings for the Code tab. */
 internal fun interface CapabilityProbe {
     operator fun invoke(env: EnvReader): Capabilities?
 }

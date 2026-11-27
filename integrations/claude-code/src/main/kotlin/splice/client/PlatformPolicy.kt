@@ -48,13 +48,24 @@ public class PlatformPolicy(
     /** Windows' HKCU value, which Claude Code reads only when no admin document is present; null everywhere else. */
     public fun userFallback(): PolicyDocument? = if (os.startsWith(WINDOWS_FAMILY)) registry(HKCU_KEY) else null
 
+    /** The system's policy stores Claude Code reads, in words, named without looking at them: macOS's plists, Windows'
+     *  HKLM and HKCU `Settings` values; none on any other system. */
+    internal fun stores(): List<String> = when {
+        os.startsWith(MAC_FAMILY) -> plists().map(Path::toString)
+        os.startsWith(WINDOWS_FAMILY) -> listOf(HKLM_KEY, HKCU_KEY).map { "the registry value $it\\$SETTINGS_VALUE" }
+        else -> emptyList()
+    }
+
+    /** The person's plist, where macOS names a person, then the device's. */
+    private fun plists(): List<Path> = listOfNotNull(
+        user.takeIf { it.isNotBlank() }?.let { preferences.resolve(it).resolve(PLIST) },
+        preferences.resolve(PLIST),
+    )
+
     /** The first of the person's and the device's plists that exists and converts, as Claude Code takes the first
      *  readable one; null when neither exists, and unreadable when none that exists converts to a JSON object. */
     private fun preferences(): PolicyDocument? {
-        val candidates = listOfNotNull(
-            user.takeIf { it.isNotBlank() }?.let { preferences.resolve(it).resolve(PLIST) },
-            preferences.resolve(PLIST),
-        ).filter(Files::exists)
+        val candidates = plists().filter(Files::exists)
         if (candidates.isEmpty()) return null
         val settings = candidates.firstNotNullOfOrNull { plist ->
             run(listOf(plutil.toString()) + PLUTIL_ARGS + plist.toString())?.let(::parsed)

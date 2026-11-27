@@ -2,7 +2,7 @@
 // rows (CapabilityTools), the "action needed" list `splice upgrade` and `splice setup --update` print (CapabilityGaps),
 // and what `splice setup` reports it found. One reader, so the three never disagree about what is installed.
 // It only reads: the PATH, Claude Desktop's program and splice's record of its mode, the side-by-side launchers,
-// Claude Code's managed settings (for a processWrapper), the Antigravity shim, the MCP hub's programs and each
+// Claude Code's managed settings (for the Code tab), the Antigravity shim, the MCP hub's programs and each
 // harness's MCP file. Nothing here writes, starts a process or opens a socket.
 package splice.app.capability
 

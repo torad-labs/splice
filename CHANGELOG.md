@@ -177,6 +177,22 @@
 - **A turn's row names the Claude Code subagent and parent agent that sent it** on `/api/perf/turns`.
 - **`splice desktop launch`** is what a managed `processWrapper` starts the Code tab through, and `splice desktop`
   says each Desktop feature that depends on the backend, working or why not.
+- **`splice desktop wrapper` asks for both managed settings, and says only what splice read.** Claude Code's managed
+  settings need `"parentSettingsBehavior": "merge"` beside `processWrapper`: without it in the source that wins,
+  Claude Code drops the policy Claude Desktop hands each Code session, and Desktop warns in every one. `--print`,
+  `--check`, the doctor's `managed settings` row and the upgrade item say the same things: both keys wanted; for each
+  key, the last of the main file and its `managed-settings.d` drop-ins that mentions it and what that file holds (a
+  string, or a value that is not text; a `null` is reported so, and Claude Code takes it as the key cleared), or that
+  no file sets it; the main file's state where splice did not read it (could not
+  be read, so splice does not say whether it exists, or nothing at its path, which a link to nothing, here or in a
+  folder above, is not); the places splice could not read (its remote settings, the macOS plists, the Windows HKLM and
+  HKCU values, a drop-in folder it can't list or a drop-in that is no JSON object), named; whether the launcher is
+  laid; and what Desktop does, always as the condition. What to do names the file to edit: a key held with another
+  value is changed in the file that holds it, a key no file holds is added to the main file, on the condition that no
+  unread place sets it; where both keys come out as wanted there is nothing to edit and no restart, only a check of the
+  places splice could not read where it names any, and a restart is said only as following a change. `--check` exits 0 when the launcher, found where the daemon lays it, is laid and the merged
+  files name it, and nothing more. The upgrade lists an item whenever the merged files do not give both keys, or the
+  launcher is not laid; `setup --update` says it found nothing new only in what splice checked.
 - **A command-auth provider signs in from the terminal or the console**, and `splice doctor` reports on it.
 - **A provider's declared effort vocabulary names its models' reasoning levels.** An openai-chat provider whose
   endpoint lists nothing about reasoning (a team gateway, a llama.cpp server) had no effort control in Claude Desktop's

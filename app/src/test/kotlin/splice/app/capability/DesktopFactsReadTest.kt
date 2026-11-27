@@ -1,43 +1,117 @@
-// Which processWrapper Claude Code's managed settings name, as DesktopFactsRead reads it: splice's only when the program
-// is `desktop-launch`, none when the key is absent or names no program, another program otherwise.
+// What the doctor's managed settings row says of a real managed settings folder, as DesktopFactsRead reads it with
+// Desktop on splice in app mode: splice's launcher only when it is the program named, a file read or one that could
+// not be read, nothing at the path only where nothing is there, and every drop-in beside the file named as unread.
 package splice.app.capability
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.desktop.setup.DesktopMode
+import splice.app.desktop.setup.DesktopPrograms
+import splice.client.ManagedSettings
+import splice.client.PlatformPolicy
 import splice.core.config.UserHome
 import splice.core.util.EnvReader
+import splice.diagnostics.doctor.ToolLevel
+import splice.diagnostics.doctor.ToolReading
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 
-class DesktopFactsReadTest {
+class DesktopFactsReadTest(@param:TempDir private val tmp: Path) {
+    private val home = tmp.resolve("home")
+    private val state = tmp.resolve("state")
+    private val folder = tmp.resolve("managed")
+    private val file = folder.resolve("managed-settings.json")
+    private val launch = DesktopPrograms(state).launch
 
     @Test
-    fun `splice's desktop-launch, as a path or a command line, is splice's`(@TempDir home: Path) {
-        val path = """{"processWrapper": "/home/me/.splice/state/desktop-launch"}"""
-        assertEquals(WrapperState.SPLICE, wrapper(home, path))
-        assertEquals(WrapperState.SPLICE, wrapper(home, """{"processWrapper": ["/s/desktop-launch", "--x"]}"""))
+    fun `splice's laid desktop-launch is the one program that is right, and nothing says what starts the Code tab`() {
+        Files.createDirectories(state)
+        DesktopPrograms(state).lay()
+        val row = row("""{"processWrapper": "$launch", "parentSettingsBehavior": "merge"}""")
+        assertEquals(ToolLevel.INFO, row.level, "which source wins is never known: ${row.said}")
+        assertTrue("does not warn" !in row.said && "limits apply" !in row.said, row.said)
+        val other = row("""{"processWrapper": "/usr/bin/not-desktop-launch", "parentSettingsBehavior": "merge"}""")
+        assertEquals(ToolLevel.WARN, other.level)
+        assertTrue("sets processWrapper to \"/usr/bin/not-desktop-launch\"" in other.said, other.said)
+        assertTrue("starts through" !in row.said + other.said, other.said)
     }
 
     @Test
-    fun `a program whose name only ends like desktop-launch is another program`(@TempDir home: Path) {
-        assertEquals(WrapperState.OTHER, wrapper(home, """{"processWrapper": "/usr/bin/not-desktop-launch"}"""))
+    fun `a file with only other keys is read and no file is said to set either key`() {
+        val row = row("""{"permissions": {"deny": ["Bash(rm:*)"]}}""")
+        val none = "no managed settings file splice read sets processWrapper, and no managed settings file splice " +
+            "read sets parentSettingsBehavior"
+        assertTrue(none in row.said, row.said)
+        assertTrue("Bash(rm" !in row.said, "what the file holds is not said: ${row.said}")
     }
 
     @Test
-    fun `an absent, blank or empty processWrapper is none`(@TempDir home: Path) {
-        assertEquals(WrapperState.NONE, wrapper(home, """{"env": {}}"""))
-        assertEquals(WrapperState.NONE, wrapper(home, """{"processWrapper": "  "}"""))
-        assertEquals(WrapperState.NONE, wrapper(home, """{"processWrapper": []}"""))
-        assertEquals(WrapperState.NONE, wrapper(home, null))
+    fun `merge is told apart from first-wins, from Merge and from null`() {
+        assertTrue("sets parentSettingsBehavior to \"merge\"" in row("""{"parentSettingsBehavior": "merge"}""").said)
+        assertTrue("to \"first-wins\"" in row("""{"parentSettingsBehavior": "first-wins"}""").said)
+        val capital = row("""{"processWrapper": "$launch", "parentSettingsBehavior": "Merge"}""")
+        assertEquals(ToolLevel.WARN, capital.level, capital.said)
+        val nul = row("""{"parentSettingsBehavior": null}""").said
+        assertTrue("sets parentSettingsBehavior to a value that is not text" in nul, nul)
     }
 
-    private fun wrapper(home: Path, settings: String?): WrapperState {
-        val file = home.resolve("managed-settings.json")
-        Files.deleteIfExists(file)
-        settings?.let { Files.writeString(file, it) }
-        return UserHome.within(home) {
-            DesktopFactsRead(EnvReader { null }, osName = "Linux", managed = file).read(null).wrapper
+    @Test
+    fun `nothing at the path is said so, and a file that is no JSON object is one splice could not read`() {
+        assertTrue("nothing is at $file" in row(null).said, row(null).said)
+        val broken = row("{ not json")
+        assertTrue("$file could not be read" in broken.said, broken.said)
+        assertTrue("nothing is at" !in broken.said && "file splice read sets" !in broken.said, broken.said)
+    }
+
+    @Test
+    fun `a file splice has no permission to read, or in a folder it cannot look into, is never said to be absent`() {
+        row("""{"processWrapper": "$launch", "parentSettingsBehavior": "merge"}""")
+        for (locked in listOf(file, folder)) {
+            Files.setPosixFilePermissions(locked, emptySet())
+            try {
+                assumeFalse(Files.isReadable(locked), "a user that can read anything cannot show this")
+                val said = row(null, keep = true).said
+                assertTrue("$file could not be read" in said, said)
+                assertTrue("nothing is at" !in said && "file splice read sets" !in said, said)
+            } finally {
+                Files.setPosixFilePermissions(locked, PosixFilePermissions.fromString("rwxr-xr-x"))
+            }
         }
+    }
+
+    // Claude Code merges each drop-in over the main file, so the row names the drop-in as the file holding the key.
+    @Test
+    fun `a drop-in beside the file is read, with or without a main file, and named as the file holding its key`() {
+        val dropIn = Files.createDirectories(folder.resolve("managed-settings.d")).resolve("10-org.json")
+        Files.writeString(dropIn, """{"parentSettingsBehavior": "merge"}""")
+        for (text in listOf("""{"env": {}, "parentSettingsBehavior": "first-wins"}""", null)) {
+            val row = row(text)
+            assertTrue("$dropIn sets parentSettingsBehavior to \"merge\"" in row.said, row.said)
+            val unread = row.said.split("; ").single { "which splice did not read" in it }
+            assertTrue("$dropIn" !in unread, "splice read it: ${row.said}")
+            assertTrue("$file sets parentSettingsBehavior" !in row.said, "the drop-in's value wins: ${row.said}")
+        }
+    }
+
+    private fun row(settings: String?, keep: Boolean = false): ToolReading {
+        if (!keep) {
+            Files.createDirectories(folder)
+            Files.deleteIfExists(file)
+            settings?.let { Files.writeString(file, it) }
+        }
+        val managed = ManagedSettings("Linux", platformDir = folder, policy = PlatformPolicy("Linux"))
+        val env = EnvReader { if (it == "SPLICE_STATE_DIR") state.toString() else null }
+        val desktop = UserHome.within(home) { DesktopFactsRead(env, osName = "Linux", managed = managed).read(null) }
+        val facts = Capabilities(
+            desktop.copy(mode = DesktopMode.APP),
+            HarnessFacts(agy = null, codex = null, geminiShim = false, synced = emptySet()),
+            HubFacts(linux = true, on = false, systemd = false),
+            autoUpdate = null,
+        )
+        return CapabilityTools(facts).readings().single { it.name == "managed settings" }
     }
 }

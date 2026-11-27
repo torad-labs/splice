@@ -33,8 +33,12 @@ The daemon reads the table at start, so an edit takes a daemon restart and Deskt
 whether Desktop was reopened since splice changed it, and `splice desktop` lists each backend-dependent feature per mode,
 working or why not (DesktopFeatures; what only the live test settles is "unknown"). `on` also lays
 `<state>/desktop-launch`, which runs `splice desktop launch`: a managed processWrapper can name it, and it gives a
-Code-tab launch on the door the desktop key Desktop stripped (Mantle's bearer, or the gateway's variable). splice still
-never writes the managed file. Each turn's perf row names its subagent and parent agent (df-turn-headers). The policy
+Code-tab launch on the door the desktop key Desktop stripped (Mantle's bearer, or the gateway's variable). The managed
+settings also need `"parentSettingsBehavior": "merge"` in the source that wins: without it Claude Code drops the policy
+Desktop hands each Code session, and Desktop warns in every one. splice says what is wanted and only what it read (the file read, could
+not be read, or nothing at its path; each key text, not text, or absent), names the other places Claude Code may take managed
+settings from without reading them, says what Desktop does only as that condition, lists an upgrade item for any file that
+does not hold both keys, and still never writes the managed file. Each turn's perf row names its subagent and parent agent (df-turn-headers). The policy
 also raises Desktop's Claude Code import prompt (`bannerBehavior: "show"`, `bannerMaxDismissals: 10`), so gateway mode
 can bring the sessions Claude Code has on the computer into its Code-tab list. Not built: the gateway answer fields of
 df-wire-answers.
@@ -263,7 +267,7 @@ building on it.
        Chat, which a person did not ask for by setting them in Claude Code.
      - The status line: Desktop runs one only from a root-owned file outside the home folder.
      - A launcher (`processWrapper`): Desktop then passes no credential, so only a launcher that gives splice's key
-       works, which is `desktop-launch` and a managed file's to name.
+       works, which is `desktop-launch` and a managed file's to name (with `"parentSettingsBehavior": "merge"` beside it).
      - A marketplace read from a folder on this computer, which Desktop's configuration cannot name, and one Claude
        Code clones only in part, which Desktop would clone whole.
    - **No Claude login in gateway mode.** The configuration opens Desktop straight on splice (`deploymentMode: "3p"`,

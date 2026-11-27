@@ -1,5 +1,7 @@
 package splice.app.mods.install
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.Json
 import splice.app.mods.ModFolderCheck
 import splice.app.mods.ModNames
@@ -34,6 +36,9 @@ internal class InstalledMods(paths: StatePaths) : InstalledModNames {
 
     @Volatile
     private var records = loaded.getOrNull().orEmpty()
+
+    private val present = MutableStateFlow(records.isNotEmpty())
+    val presence = present.asStateFlow()
 
     fun all(): List<InstalledMod> = records.values.map { InstalledMod(it, installed) }
 
@@ -153,6 +158,7 @@ internal class InstalledMods(paths: StatePaths) : InstalledModNames {
         ModPrivateDir.create(directory)
         SecureFile.writeAtomic0600(file, Json.encodeToString(next.values.toList()))
         records = next
+        present.value = next.isNotEmpty()
     }
 
     private fun read(): Map<String, ModRecord> {

@@ -25,11 +25,12 @@ internal class TurnObserverAdmission(
     private val offers = observers.offerAudit ?: TurnObserverOffer(log)
 
     fun begin(call: ApplicationCall, perf: TurnPerf, meta: TurnMeta) {
-        if (observers === NoTurnObservers) return
+        val observingTurns = observers.observingTurns
+        if (!observingTurns && !observers.observingSessions) return
         val gateway = GatewayTurns.of(call)
         val owner = if (gateway?.listener?.servedTurn == null) launchOwner(call) else null
         val session = meta.scope.sessionId
-        if (!observers.observingTurns) {
+        if (!observingTurns) {
             if (session != null && owner != null) offers.isolated { observers.sessionSeen(session, owner) }
             return
         }

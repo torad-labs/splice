@@ -6,6 +6,7 @@ import splice.core.turn.TurnObserverOffer
 /** Admission-time offer port. Return null if no turn events are wanted; never wait, run a mod, or do I/O here. */
 public interface TurnObservers {
     public val observingTurns: Boolean get() = true
+    public val observingSessions: Boolean get() = true
 
     /** One failure report for this observer across all heads that use it. */
     public val offerAudit: TurnObserverOffer? get() = null
@@ -19,6 +20,9 @@ public interface TurnObservers {
 }
 
 public object NoTurnObservers : TurnObservers {
+    override val observingTurns: Boolean = false
+    override val observingSessions: Boolean = false
+
     override fun begin(facts: ObservedTurnFacts): TurnObservation? = null
 }
 

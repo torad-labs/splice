@@ -2,6 +2,7 @@ package splice.app.mods.sessions
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -28,7 +29,8 @@ internal class ModSessionTracker(
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val ticker: Ticker = ProcessTicker(),
 ) {
-    private val seen = ConcurrentHashMap.newKeySet<String>()
+    // One entry per historical id. The flag remembers an ownerless start without retaining a synthetic pair.
+    private val seen = ConcurrentHashMap<String, Boolean>()
     private val pairs = ConcurrentHashMap<String, MutableSet<String?>>()
     private val processes = ConcurrentHashMap<Long, MutableMap<ModSessionPair, SessionProcess>>()
     private val live = ConcurrentHashMap<ModSessionPair, ModLiveSession>()
@@ -38,22 +40,34 @@ internal class ModSessionTracker(
 
     @Volatile private var accepting = true
 
-    fun restore(launches: ModLaunches) {
-        seen.addAll(ledger.seen())
-        for (entry in ledger.restore(clock(), launches)) {
-            seen.add(entry.pair.id)
+    @Volatile private var historyReady = true
+
+    private var presence: StateFlow<Boolean>? = null
+    val observing: Boolean get() = accepting && historyReady && presence?.value != false
+
+    fun follow(roster: StateFlow<Boolean>) {
+        presence = roster
+        historyReady = false
+    }
+
+    suspend fun restore(launches: ModLaunches) {
+        val index = ledger.restore(clock(), launches)
+        for (id in index.ids) seen[id] = id in index.ownerless
+        for (entry in index.active) {
             pairs.getOrPut(entry.pair.id, ::mutableSetOf).add(entry.pair.owner)
-            if (!entry.ended) {
-                val launch = entry.pair.owner?.let(launches::stored)
-                track(entry, launch)
-                launches.forTurn(entry.pair.id, entry.pair.owner)
-            }
+            track(entry, entry.pair.owner?.let(launches::stored))
+            launches.forTurn(entry.pair.id, entry.pair.owner)
         }
+        historyReady = true
     }
 
     fun start(scope: CoroutineScope) {
-        sweep = scope.launch {
-            while (ticker.awaitTick(SESSION_SWEEP_MS)) endGone()
+        sweep = scope.launch { sweep() }
+    }
+
+    suspend fun sweep() {
+        while (ticker.awaitTick(SESSION_SWEEP_MS)) {
+            if (observing && hub.listening) endGone()
         }
     }
 
@@ -71,12 +85,12 @@ internal class ModSessionTracker(
         cwd: String? = null,
         scrubber: ModEventText? = null,
     ) {
-        if (!accepting || !ledger.valid(id)) return
+        if (!observing || !ledger.valid(id)) return
         if (launch == null && !hub.listening) return
         val read = writers.readLock()
         if (read.tryLock()) {
             try {
-                if (accepting) seeFirst(ModSessionPair(id, launch?.launch?.owner), at, launch, cwd, scrubber)
+                if (observing) seeFirst(ModSessionPair(id, launch?.launch?.owner), at, launch, cwd, scrubber)
             } finally {
                 read.unlock()
             }
@@ -93,7 +107,9 @@ internal class ModSessionTracker(
         // Serialize the first offers for this id, so the first event says seenBefore=false even on a race.
         pairs.compute(key.id) { _, existing ->
             val owners = existing ?: mutableSetOf()
-            if (key.owner !in owners && open(key, at, launch, cwd, scrubber)) owners.add(key.owner)
+            if (key.owner !in owners && open(key, at, launch, cwd, scrubber)) {
+                key.owner?.let(owners::add)
+            }
             owners.takeIf { it.isNotEmpty() }
         }
     }
@@ -116,7 +132,9 @@ internal class ModSessionTracker(
     ): Boolean {
         val current = scrubber ?: text.snapshot()
         if (!current.safe(key.id)) return false
-        val seenBefore = !seen.add(key.id)
+        val previous = if (key.owner == null) seen.put(key.id, true) else seen.putIfAbsent(key.id, false)
+        if (key.owner == null && previous == true) return false
+        val seenBefore = previous != null
         val context = ModSessionContext(
             current.text(launch?.launch?.cwd ?: cwd.orEmpty()),
             current.labels(launch?.launch?.settings?.labels.orEmpty()),

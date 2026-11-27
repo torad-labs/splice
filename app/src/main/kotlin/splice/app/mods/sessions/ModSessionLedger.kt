@@ -1,5 +1,7 @@
 package splice.app.mods.sessions
 
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -28,6 +30,12 @@ internal data class ModSessionEntry(
 @Serializable
 internal data class ModSessionContext(val cwd: String, val labels: JsonObject, val off: ModsOff?)
 
+internal data class ModSessionIndex(
+    val ids: Set<String>,
+    val ownerless: Set<String>,
+    val active: List<ModSessionEntry>,
+)
+
 /** The durable pairing includes the scrubbed context, never a new read of raw launch text after a restart. */
 internal class ModSessionLedger(
     modsDir: Path,
@@ -42,22 +50,40 @@ internal class ModSessionLedger(
 
     fun valid(id: String): Boolean = sessionId.matches(id)
 
-    fun seen(): List<String> = rows(existing).map { it.fileName.toString().removeSuffix(".json") }.filter(::valid)
-
-    fun restore(now: Long, launches: ModLaunches): List<ModSessionEntry> {
+    suspend fun restore(now: Long, launches: ModLaunches): ModSessionIndex {
+        val ids = mutableSetOf<String>()
+        val ownerless = mutableSetOf<String>()
+        val active = mutableListOf<ModSessionEntry>()
         val cutoff = history?.now()?.cutoffMs(now) ?: Long.MIN_VALUE
-        return rows(dir).mapNotNull { file ->
-            val entry = read(file) ?: return@mapNotNull null
-            val process = entry.pair.owner?.let(launches::stored)?.processStart
-            val stillTracked = process != null && !entry.ended
-            if (entry.at < cutoff && !stillTracked) {
+        visit(existing) { file ->
+            val id = file.fileName.toString().removeSuffix(".json")
+            if (valid(id)) ids.add(id)
+        }
+        visit(dir) { file ->
+            val pair = key(file) ?: return@visit
+            val launch = pair.owner?.let(launches::stored)
+            val entry = launch?.let { read(file) }?.takeUnless(ModSessionEntry::ended)
+            if (entry == null && expired(file, cutoff)) {
                 Files.deleteIfExists(file)
-                null
             } else {
-                entry
+                ids.add(pair.id)
+                if (pair.owner == null) ownerless.add(pair.id)
+                if (entry != null) active.add(entry)
             }
         }
+        return ModSessionIndex(ids, ownerless, active)
     }
+
+    private fun key(file: Path): ModSessionPair? {
+        val name = file.fileName.toString().removeSuffix(".json")
+        if ('.' !in name) return null
+        val id = name.substringBefore('.')
+        val owner = name.substringAfter('.').ifEmpty { null }
+        return ModSessionPair(id, owner).takeIf { valid(id) && (owner == null || ownerId.matches(owner)) }
+    }
+
+    private fun expired(file: Path, cutoff: Long): Boolean =
+        cutoff != Long.MIN_VALUE && Files.getLastModifiedTime(file).toMillis() < cutoff
 
     fun save(entry: ModSessionEntry) {
         val file = path(entry.pair)
@@ -81,9 +107,17 @@ internal class ModSessionLedger(
 
     private fun path(pair: ModSessionPair): Path = dir.resolve("${pair.id}.${pair.owner.orEmpty()}.json")
 
-    private fun rows(folder: Path): List<Path> = try {
-        Files.newDirectoryStream(folder, "*.json").use { it.toList() }
-    } catch (_: IOException) {
-        emptyList()
+    private suspend inline fun visit(folder: Path, each: (Path) -> Unit) {
+        if (!Files.isDirectory(folder)) return
+        try {
+            Files.newDirectoryStream(folder, "*.json").use { files ->
+                for (file in files) {
+                    currentCoroutineContext().ensureActive()
+                    each(file)
+                }
+            }
+        } catch (_: IOException) {
+            log("[mods] could not read session history\n")
+        }
     }
 }

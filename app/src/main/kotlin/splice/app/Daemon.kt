@@ -360,7 +360,7 @@ public class Daemon(
         controlPlane.adopted = adopted
         controlPlane.handOver = handOver
         headServerFactory.adopted = adopted
-        controlPlane.restoreModSessions(topology.providers)
+        controlPlane.prepareModObservations(topology.providers)
         // door-default, decision 9: the head keyed `claude` hands the door's models to their heads once the door opens.
         headServerFactory.others = HeadOthers(desktop.headLane::forHead)
         val cfg = config.getConfig()
@@ -500,7 +500,7 @@ public class Daemon(
         }
         val handedOver = System.nanoTime()
         controlPlane.modLaunches.stop()
-        controlPlane.modSessions.stop()
+        controlPlane.modTracking.stop()
         closeBackground()
         // #525 (2026-11-13): the lock is freed when this returns, and the next daemon boots from there. No line said
         // how long this daemon still held it: the stretch from the heads' hand-over to the next daemon's first line
@@ -544,7 +544,7 @@ public class Daemon(
             val headBudgetMs = (HEAD_STOP_BUDGET_MS - listenersMs).coerceAtLeast(0L)
             headShutdown.stopHeads(routes, headBudgetMs, log) { controlPlane.ownership.close() }
             controlPlane.modLaunches.stop()
-            controlPlane.modSessions.stop()
+            controlPlane.modTracking.stop()
             controlPlane.modRunner.stop()
 
             // A daemon that handed over closed these then, before the next daemon opened its own.

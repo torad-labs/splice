@@ -169,12 +169,16 @@ internal class ControlPlane(
     internal val modLaunches = stores.modLaunches
     internal val modRunner = stores.modRunner
     internal val modSessions = stores.modSessions
-    internal val modTurns = stores.modTurns
+    internal val modTurns = splice.app.mods.sessions.ModObservationGate(modSessions, stores.modTurns)
+    internal val modTracking = splice.app.mods.sessions.ModSessionTracking(
+        probeScope,
+        stores.mods.presence,
+        modSessions,
+        modLaunches,
+    )
 
-    internal fun restoreModSessions(providers: Map<String, splice.core.topology.ProviderConfig>) {
+    internal fun prepareModObservations(providers: Map<String, splice.core.topology.ProviderConfig>) {
         stores.rememberModCredentials(providers)
-        modLaunches.restore()
-        modSessions.restore(modLaunches)
     }
     internal val sessionFallbacks = stores.sessionFallbacks
     internal val playgroundProviders = stores.playgroundProviders
@@ -251,8 +255,7 @@ internal class ControlPlane(
         // door (this machine's, on this control port, or a `[remote.*]` one) is placed on it (door-sessions).
         val doors = LaunchDoors(topology.launches.remote, controlPort)
         val sessions = sessionWiring.source(home, heads, doors, console, foregroundTools)
-        modRunner.start(ModCallRows(sessions, modLaunches, stores.modText, modSessions))
-        modSessions.start(probeScope)
+        modRunner.start(ModCallRows(sessions, modLaunches, stores.modText, modSessions), modTracking.ready)
         val signals = health.signals(heads, sessions, probes, home)
         val guard = parts.guard()
         val listen = adopted.control(controlPort)
@@ -283,6 +286,7 @@ internal class ControlPlane(
         parts.wirePeers(srv, guard, probeScope)
         parts.wireRestartSuccessor(srv, controlPort)
         return if (ownership.bind(srv, controlPort, listen.handOn(guard))) {
+            modTracking.start()
             srv.also { mcp.onControlBound(mcpServices, probeScope, home, it.listeningPort, it.mcpHarnessSyncLock) }
         } else {
             null

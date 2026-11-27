@@ -1,6 +1,7 @@
 package splice.app.mods.run
 
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.withContext
@@ -39,6 +40,7 @@ internal class ModRunner(
     private val roster = ConcurrentHashMap<String, ModSupervisor>()
     private val handoverLoss = AtomicLong()
     private var handover: ModHandover? = null
+    private var startup: Job? = null
 
     override val handoverDropped: Long get() = handoverLoss.get()
 
@@ -46,11 +48,11 @@ internal class ModRunner(
     private var phase = Phase.NEW
 
     /** Called only by the daemon holding the lock, before the management routes accept changes. */
-    suspend fun start(sessions: ModSessions? = null) {
+    suspend fun start(sessions: ModSessions? = null, recoveredSessions: Job? = null) {
         if (!beginStart()) return
         val enabled = installed.all().filter { it.enabled }.map { it.name }.toSet()
         withContext(io) { setup.records.reap(except = enabled) }
-        startRoster(sessions)
+        startRoster(sessions, recoveredSessions)
     }
 
     @Synchronized
@@ -114,7 +116,7 @@ internal class ModRunner(
         val output = prior?.output ?: ModOutput(paths, name, log, clock)
         roster[name] = ModSupervisor(
             scope,
-            prior?.job,
+            prior?.job ?: startup,
             mod,
             setup,
             events,
@@ -133,9 +135,10 @@ internal class ModRunner(
     }
 
     @Synchronized
-    private fun startRoster(sessions: ModSessions?) {
+    private fun startRoster(sessions: ModSessions?, recoveredSessions: Job?) {
         if (phase != Phase.REAPING) return
         calls.sessions = sessions
+        startup = recoveredSessions
         installed.runtime = this
         installed.unreadable?.let { log("[mods] $it\n") }
         phase = Phase.RUNNING

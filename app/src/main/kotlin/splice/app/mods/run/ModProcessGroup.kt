@@ -9,7 +9,13 @@ internal object ModProcessGroup {
     private val launcher = when {
         Files.isExecutable(Path.of("/usr/bin/setsid")) -> listOf("/usr/bin/setsid")
         Files.isExecutable(Path.of("/bin/setsid")) -> listOf("/bin/setsid")
-        else -> listOf("/usr/bin/perl", "-MPOSIX", "-e", "POSIX::setsid() >= 0 or die $!; exec @ARGV", "--")
+        else -> listOf(
+            "/usr/bin/perl",
+            "-MPOSIX",
+            "-e",
+            "defined(POSIX::setsid()) or die $!; exec @ARGV or die $!",
+            "--",
+        )
     }
 
     fun isolate(command: ProcessBuilder): ProcessBuilder = command.command(launcher + command.command())

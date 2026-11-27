@@ -5,6 +5,7 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.accept
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.forms.submitForm
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -12,8 +13,13 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Parameters
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -128,6 +134,50 @@ class ModSessionHandoverTest {
         }
     }
 
+    @Test
+    fun `a session start staged during blocked history is counted when the daemon retires`() = isolated {
+        val events = ModEventsTestRig(root)
+        SessionDaemon(root, events).use { daemon ->
+            daemon.start()
+            daemon.install()
+        }
+        HeldModHistory(root, events).use { history ->
+            SessionDaemon(root, events).use { old ->
+                old.start()
+                history.awaitRead()
+                old.turn("staged", old.launch(ProcessHandle.current().pid()))
+                old.retire()
+                old.successor().use { next ->
+                    next.start()
+                    old.stop()
+                    assertEquals(1L, next.handoverDropped())
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `a blocked stale mod record cannot delay the head or control listener`() = isolated {
+        val events = ModEventsTestRig(root)
+        val record = events.runner.paths.modsDir.resolve("run/disabled.json")
+        BlockedModRead(record, root.resolve("opened")).use { read ->
+            SessionDaemon(root, events).use { daemon ->
+                kotlinx.coroutines.coroutineScope {
+                    val starting = launch { daemon.start() }
+                    try {
+                        withTimeout(3_000) {
+                            daemon.awaitReady()
+                            daemon.turn("not-blocked", daemon.launch(ProcessHandle.current().pid()))
+                        }
+                    } finally {
+                        read.release()
+                        starting.join()
+                    }
+                }
+            }
+        }
+    }
+
     private suspend fun assertHandover(old: SessionDaemon, events: ModEventsTestRig, launch: Process) {
         val owner = old.launch(launch.pid())
         old.turn("carried", owner)
@@ -154,14 +204,26 @@ class ModSessionHandoverTest {
     }
 }
 
-/** A real history read that cannot finish until the test closes the other end of the FIFO. */
 private class HeldModHistory(root: Path, private val events: ModEventsTestRig) : AutoCloseable {
     private val entered = root.resolve("opened")
+    private val pipe = events.runner.paths.modsDir.resolve("launches/00000000-0000-0000-0000-000000000000.json")
+    private val held = BlockedModRead(pipe, entered)
+
+    suspend fun awaitRead() {
+        events.runner.eventually { true.takeIf { Files.exists(entered) } }
+    }
+
+    fun release() = held.release()
+
+    override fun close() = held.close()
+}
+
+/** A real file read that cannot finish until its FIFO writer closes. */
+private class BlockedModRead(pipe: Path, entered: Path) : AutoCloseable {
     private val writer: Process
 
     init {
-        val launches = Files.createDirectories(events.runner.paths.modsDir.resolve("launches"))
-        val pipe = launches.resolve("00000000-0000-0000-0000-000000000000.json")
+        Files.createDirectories(pipe.parent)
         check(ProcessBuilder("mkfifo", pipe.toString()).start().waitFor() == 0)
         writer = ProcessBuilder(
             "sh",
@@ -173,21 +235,18 @@ private class HeldModHistory(root: Path, private val events: ModEventsTestRig) :
         ).start()
     }
 
-    suspend fun awaitRead() {
-        events.runner.eventually { true.takeIf { Files.exists(entered) } }
-    }
-
-    fun release() {
-        writer.outputStream.close()
-    }
+    fun release() = writer.outputStream.close()
 
     override fun close() {
         writer.destroyForcibly().waitFor()
     }
 }
 
-private class SessionDaemon(private val home: Path, private val events: ModEventsTestRig) : AutoCloseable {
-    private val control = TestPorts.reserve()
+private class SessionDaemon(
+    private val home: Path,
+    private val events: ModEventsTestRig,
+    private val control: Int = TestPorts.reserve(),
+) : AutoCloseable {
     private val head = TestPorts.reserve()
     private val base = "http://127.0.0.1:$control"
     private val client = HttpClient(CIO)
@@ -198,7 +257,18 @@ private class SessionDaemon(private val home: Path, private val events: ModEvent
 
     suspend fun start() {
         daemon.start()
-        awaitListening(control, head)
+        awaitReady()
+    }
+
+    suspend fun awaitReady() = awaitListening(control, head)
+
+    fun successor() = SessionDaemon(home, events, control)
+
+    suspend fun handoverDropped(): Long {
+        val answer = client.get("$base/api/mods") { bearerAuth(key.get()) }
+        assertEquals(HttpStatusCode.OK, answer.status)
+        val catalog = Json.parseToJsonElement(answer.bodyAsText()).jsonObject
+        return catalog["handoverDropped"]?.jsonPrimitive?.longOrNull ?: 0
     }
 
     suspend fun retire() {

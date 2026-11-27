@@ -205,6 +205,40 @@ class ModHandoverTest {
     }
 
     @Test
+    fun `a helper that leaves the mod group is not killed on daemon crash`() = runBlocking {
+        ModHandoverTestRig(root).use { rig ->
+            rig.installRecorder(startRunner = false, withHelper = true, escapedHelper = true)
+            val old = rig.killRetiringOwner()
+            val escaped = rig.helperProcess()
+            try {
+                rig.awaitGone(old)
+                assertTrue(escaped.isAlive)
+            } finally {
+                escaped.destroyForcibly()
+                old.filter(ProcessHandle::isAlive).forEach(ProcessHandle::destroyForcibly)
+            }
+        }
+    }
+
+    @Test
+    fun `the successor reports a still running group and does not signal it`() = runBlocking {
+        ModHandoverTestRig(root).use { rig ->
+            rig.installRecorder(startRunner = false)
+            rig.withOldGroup { old ->
+                rig.retire()
+                HttpClient(CIO).use { client ->
+                    val rows = rig.awaitMods(client, "failed")
+                    val listed = ModLines().list(rows)
+                    assertTrue(listed.contains("earlier copy"))
+                    assertTrue(listed.contains("still running"))
+                    assertTrue(listed.contains(old.pid().toString()))
+                    assertTrue(old.isAlive)
+                }
+            }
+        }
+    }
+
+    @Test
     fun `the successor starts after a helper of a killed Bun host is gone`() = runBlocking {
         ModHandoverTestRig(root).use { rig ->
             rig.installRecorder(withHelper = true)

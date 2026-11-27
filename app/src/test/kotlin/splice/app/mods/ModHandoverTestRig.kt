@@ -54,6 +54,7 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
         startRunner: Boolean = true,
         linked: Boolean = false,
         withHelper: Boolean = false,
+        escapedHelper: Boolean = false,
     ) {
         if (startRunner) old.runner.runner.start()
         oldControl.start()
@@ -70,7 +71,7 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
                   process.kill(previous, 0);
                   oldAlive = true;
                 } catch {}
-                ${helperAtStart(withHelper)}
+                ${helperAtStart(withHelper, escapedHelper)}
                 writeFileSync(path, String(process.pid));
                 $.log("started=" + JSON.stringify({pid: process.pid, oldAlive}));
               });
@@ -101,7 +102,7 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
         if (startRunner) oldPid = starts(1).single().pid
     }
 
-    private fun helperAtStart(enabled: Boolean): String = """
+    private fun helperAtStart(enabled: Boolean, detached: Boolean): String = """
         const file = Bun.env.SPLICE_MOD_DATA + "/handover-helper";
         if (existsSync(file)) {
           try {
@@ -109,7 +110,7 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
             oldAlive = true;
           } catch {}
         } else if ($enabled) {
-          const helper = Bun.spawn(["/bin/sleep", "60"], { stderr: "inherit" });
+          const helper = Bun.spawn(["/bin/sleep", "60"], { stderr: "inherit", detached: $detached });
           writeFileSync(file, String(helper.pid));
         }
     """.trimIndent()
@@ -210,6 +211,27 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
 
     suspend fun awaitGone(processes: List<ProcessHandle>) {
         old.runner.eventually { true.takeIf { processes.none(ProcessHandle::isAlive) } }
+    }
+
+    suspend fun withOldGroup(check: suspend (ProcessHandle) -> Unit) {
+        val bun = checkNotNull(old.runner.mods.bun.atInstall()).toString()
+        val script = """
+            const old = Bun.spawn(["/bin/sleep", "60"], { detached: true, stdout: "ignore", stderr: "ignore" });
+            console.log(old.pid);
+            await old.exited;
+        """.trimIndent()
+        val parent = ProcessBuilder(bun, "--no-env-file", "-e", script).start()
+        val pid = parent.inputStream.bufferedReader().readLine().toLong()
+        val old = ProcessHandle.of(pid).orElseThrow()
+        try {
+            val birth = old.info().startInstant().orElseThrow()
+            val records = Files.createDirectories(this.old.runner.paths.modsDir.resolve("run"))
+            Files.writeString(records.resolve("$RECORDER.json"), """{"pid":$pid,"birth":"$birth","grouped":true}""")
+            check(old)
+        } finally {
+            old.destroyForcibly()
+            parent.destroyForcibly().waitFor()
+        }
     }
 
     suspend fun recoverRecorder() {

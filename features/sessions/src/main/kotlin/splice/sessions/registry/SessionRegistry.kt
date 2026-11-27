@@ -90,6 +90,8 @@ public data class SessionClient(
     val version: String?,
     /** The cross-session wire the client says it speaks (`peerProtocol`); a send needs 1 (peer messaging, spec 1.4). */
     val peerProtocol: Int? = null,
+    /** Non-null only for rows backed by a serving launch instead of a registration. */
+    val launchLabels: Map<String, String>? = null,
 )
 
 public data class SessionRecord(

@@ -14,12 +14,12 @@ import java.nio.file.Path
 
 class SessionLabelsRowTest {
     @Test
-    fun `the list contains labels on the interactive rows but does not add a headless row`(@TempDir dir: Path) {
+    fun `registry rows carry their launch labels or an empty object`(@TempDir dir: Path) {
         listOf("first", "second").forEachIndexed { index, id ->
             Files.writeString(dir.resolve("${index + 1}.json"), """{"pid":${index + 1},"sessionId":"$id"}""")
         }
         val registry = SessionRegistry(dir, routeOf = { SessionRoute.Unknown }, pidAlive = { true })
-        val labels = mapOf("first" to mapOf("role" to "worker a"), "headless" to mapOf("role" to "worker b"))
+        val labels = mapOf("first" to mapOf("role" to "worker a"))
         val routes = SessionsRoutes(
             registry,
             TestTranscripts(),

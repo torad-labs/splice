@@ -55,7 +55,8 @@ internal class ModSessionTracker(
         for (entry in index.active) {
             pairs.getOrPut(entry.pair.id, ::mutableSetOf).add(entry.pair.owner)
             active.track(entry, entry.pair.owner?.let(launches::stored))
-            launches.forTurn(entry.pair.id, entry.pair.owner)
+            // Restored session.start entries may be hooks without an admitted turn.
+            launches.forTurn(entry.pair.id, entry.pair.owner, served = false)
         }
         historyReady = true
     }

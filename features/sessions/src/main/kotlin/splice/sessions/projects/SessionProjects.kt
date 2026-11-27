@@ -18,7 +18,8 @@ public class SessionProjects(private val settings: SessionSettings) {
     private val resolvers = ConcurrentHashMap<Pair<List<String>, List<String>>, ProjectResolver>()
 
     /** The project the session belongs to; null without a cwd or outside every project. */
-    public fun of(record: SessionRecord): ProjectRef? = record.process.cwd?.let { at(it, record.head) }
+    public fun of(record: SessionRecord): ProjectRef? =
+        record.process.cwd?.takeIf { record.client.launchLabels == null }?.let { at(it, record.head) }
 
     /** The project a working directory belongs to for [head]: a Teams slot, a team repo or a request row asks here. */
     public fun at(cwd: String, head: String?): ProjectRef? =

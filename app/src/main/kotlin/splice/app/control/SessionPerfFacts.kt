@@ -3,6 +3,7 @@
 // count and how the newest request ended, for /api/sessions rows.
 package splice.app.control
 
+import splice.app.mods.sessions.HeadlessSessionRows
 import splice.app.mods.sessions.SessionLabels
 import splice.app.sources.PerfStatsSource
 import splice.client.resume.ModelMoves
@@ -18,6 +19,8 @@ import splice.sessions.http.SessionServedOf
 import splice.sessions.http.SessionTurnCount
 import splice.sessions.http.SessionTurnsOf
 import splice.sessions.http.SessionWindowOf
+import splice.sessions.registry.HeadlessSessionSource
+import splice.sessions.registry.SessionSource
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -27,6 +30,10 @@ internal class SessionPerfFacts(
     private val ports: ConsolePorts,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
+    /** Add served launches to the HTTP listing, without adding them to the registry or durable history. */
+    fun listingSource(registry: SessionSource): SessionSource =
+        HeadlessSessionSource(registry, HeadlessSessionRows(ports))
+
     /** The row's facts share these head sources; each callback still reads its live port at call time. */
     fun rowFacts(accountOf: SessionAccountOf, moves: ModelMoves): SessionRowFacts = SessionRowFacts(
         accountOf = accountOf,

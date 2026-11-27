@@ -5,8 +5,6 @@
 // them cannot hold the bridge open after its client has gone.
 package splice.app.mcp.stdio
 
-import kotlinx.serialization.json.JsonObject
-import splice.core.util.JsonWire
 import splice.core.wire.HttpStatus
 import java.io.InputStream
 import java.net.URI
@@ -15,12 +13,12 @@ import java.net.http.HttpResponse
 import java.time.Duration
 
 internal class McpStdioRequests(private val target: McpStdioTarget) {
-    /** [message] posted to [url] (the target's own unless the older transport named another). */
-    fun post(message: JsonObject, session: McpStdioSession, url: URI = target.url): HttpRequest =
+    /** The original [wire] document posted to [url], the target's own unless the older transport named another. */
+    fun post(wire: String, session: McpStdioSession, url: URI = target.url): HttpRequest =
         built(HttpRequest.newBuilder(url), session)
             .setHeader(STDIO_CONTENT_TYPE, STDIO_JSON_TYPE)
             .setHeader(STDIO_ACCEPT, "$STDIO_JSON_TYPE, $STDIO_EVENT_STREAM")
-            .POST(HttpRequest.BodyPublishers.ofByteArray(JsonWire.bytes(message)))
+            .POST(HttpRequest.BodyPublishers.ofString(wire))
             .build()
 
     /** The server's own stream opened, for [session]; its answer awaited no longer than [within] when given. */

@@ -6,7 +6,7 @@ name = "visual"
 summary = "Lets the model draw charts, diagrams, small tools and whole pages in clients that draw MCP Apps."
 server = "visual"
 handler = "splice.modes.visual.VisualMode"
-tools = ["read_me", "show_widget", "html_render"]
+tools = ["read_me", "show_widget", "html_render", "feed"]
 kind = "mcp"
 on = false
 # On for Claude Desktop's own sessions, which draw MCP Apps, and not offered to a terminal's, which draw nothing and

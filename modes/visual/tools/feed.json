@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "1-40 ASCII chars: letter/digit first, then -/_ too."
+    },
+    "data": {
+      "description": "Any value but null, at most 64 KiB."
+    }
+  },
+  "required": ["name"]
+}

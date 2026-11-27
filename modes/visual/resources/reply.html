@@ -9,7 +9,8 @@
   It reaches nothing: its policy is the empty CSP (inline code only, no network), its origin opaque. The widget's own
   scripts run here, in that frame, and nowhere else. It reports its height with size-changed and follows the host's light
   or dark and its theme variables. A widget may call sendPrompt(text), which the host shows the person to send or not,
-  and openLink(url).
+  openLink(url), and watchFeed(name, onData, everyMs) or readFeed(name), which ask the host to call the mode's feed tool
+  (its own server) for a small named value a script or the model wrote, so a card can stay up to date with no network.
 -->
 <html lang="en">
 <head>
@@ -46,13 +47,39 @@
   let drawn = "";
   let ran = false;
   let waitTimer = 0;
+  // Set when the host tears the frame down: from then on the view posts nothing and asks nothing.
+  let tornDown = false;
 
-  const post = (message) => window.parent.postMessage({ jsonrpc: "2.0", ...message }, "*");
-  const ask = (method, params) => new Promise((resolve, reject) => {
+  const post = (message) => {
+    if (!tornDown) window.parent.postMessage({ jsonrpc: "2.0", ...message }, "*");
+  };
+  // `within` (ms), when given, forgets the call if no answer comes by then: it is rejected and leaves `waiting`, so a
+  // host that never answers cannot grow it. An answer that comes after that finds nothing waiting and is dropped.
+  const ask = (method, params, within) => new Promise((resolve, reject) => {
+    if (tornDown) {
+      reject(new Error("torn down"));
+      return;
+    }
     const id = next++;
-    waiting.set(id, { resolve, reject });
-    post({ id, method, params });
+    const timer = within ? setTimeout(() => { waiting.delete(id); reject(new Error("no answer")); }, within) : 0;
+    waiting.set(id, { resolve: (result) => { clearTimeout(timer); resolve(result); }, reject: (error) => { clearTimeout(timer); reject(error); } });
+    try {
+      post({ id, method, params });
+    } catch (error) {
+      clearTimeout(timer);
+      waiting.delete(id);
+      reject(error);
+    }
   });
+
+  /** The host tore the frame down: the feeds stop, what still waits for an answer is let go, and nothing is posted after. */
+  function tearDown() {
+    tornDown = true;
+    for (const stop of [...watching]) stop();
+    const unanswered = [...waiting.values()];
+    waiting.clear();
+    for (const asked of unanswered) asked.reject(new Error("torn down"));
+  }
 
   // ---- The host's context: its light or dark, and its theme as the standard's variables.
   function applyContext(changed) {
@@ -176,6 +203,62 @@
   const went = (result) => !(result && result.isError);
   window.sendPrompt = (text) => ask("ui/message", { role: "user", content: [{ type: "text", text: String(text) }] }).then(went, () => false);
   window.openLink = (url) => ask("ui/open-link", { url: String(url) }).then(went, () => false);
+
+  // ---- Feeds: a small named value the visual mode holds, which a card reads through the host (a card reaches no
+  // network). The host passes a view's tool call on to this mode's server, or does not; either way these hand the card
+  // nothing and throw nothing when there is no answer, so a card keeps what it drew. They ask with ask(), as above.
+  const FEED_TOOL = "feed";
+  const FEED_FLOOR_MS = 1000;
+  const FEED_DEFAULT_MS = 5000;
+  const FEED_CEILING_MS = 3600000;
+  const FEED_REPLY_MS = 15000;
+  const watching = new Set();
+
+  /** The feed as the host answers for it: { raw, data, updated }, or null when it is not there or the host does not say. */
+  async function fetchFeed(name) {
+    if (tornDown) return null;
+    try {
+      const reply = await ask("tools/call", { name: FEED_TOOL, arguments: { name: String(name) } }, FEED_REPLY_MS);
+      const block = reply && !reply.isError && Array.isArray(reply.content) ? reply.content.find((part) => part && part.type === "text") : null;
+      const feed = block ? JSON.parse(block.text) : null;
+      return feed && feed.found === true ? { raw: block.text, data: feed.data, updated: new Date(feed.updated) } : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /** The feed once: { data, updated } with `updated` a Date, or null. */
+  window.readFeed = async (name) => {
+    const feed = await fetchFeed(name);
+    return feed && { data: feed.data, updated: feed.updated };
+  };
+
+  /** Asks for the feed every `everyMs` (from a second up) and calls onData(data, updated) each time the feed was written since it last did, a new value or the same one again, so a card can show how old its data is; returns the function that stops it. */
+  window.watchFeed = (name, onData, everyMs) => {
+    let last = "";
+    let busy = false;
+    let timer = 0;
+    const stop = () => {
+      clearInterval(timer);
+      watching.delete(stop);
+    };
+    const tick = async () => {
+      if (busy) return;
+      busy = true;
+      const feed = await fetchFeed(name);
+      busy = false;
+      if (!feed || feed.raw === last || !watching.has(stop)) return;
+      last = feed.raw;
+      try { onData(feed.data, feed.updated); } catch (error) { console.error(error); }
+    };
+    if (tornDown || typeof onData !== "function") return stop;
+    const every = Number(everyMs);
+    watching.add(stop);
+    timer = setInterval(tick, Math.min(FEED_CEILING_MS, Math.max(FEED_FLOOR_MS, Number.isFinite(every) && every > 0 ? every : FEED_DEFAULT_MS)));
+    tick();
+    return stop;
+  };
+
   // A link opens outside the app, through the host and only on his tap. (A page could still navigate this frame itself;
   // the host feeds a frame nothing after a load it didn't cause, and points it back.)
   document.addEventListener("click", (event) => {
@@ -221,8 +304,12 @@
         if (!drawn) wait(["This visual was cancelled."]);
         return;
       case "ping":
-      case "ui/resource-teardown":
         if (message.id !== undefined) post({ id: message.id, result: {} });
+        return;
+      case "ui/resource-teardown":
+        // Its answer is the last thing the view posts.
+        if (message.id !== undefined) post({ id: message.id, result: {} });
+        tearDown();
         return;
       default:
         if (message.id !== undefined && message.method) post({ id: message.id, error: { code: -32601, message: "Not offered by this view" } });

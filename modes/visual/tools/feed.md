@@ -1,0 +1,1 @@
+Write or read a feed: a small named value a card you drew watches to keep itself up to date. Pass `data` to write it, or leave it out to read it. Read `read_me` module `live` before drawing such a card.

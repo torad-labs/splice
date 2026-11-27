@@ -237,7 +237,7 @@ class McpModeDoorLaunchTest {
         daemon(tmp, "[modes.visual]\non = true") {
             val listed = bare("""{"jsonrpc":"2.0","id":1,"method":"tools/list"}""").getValue("tools").jsonArray
             assertEquals(
-                listOf("read_me", "show_widget", "html_render"),
+                listOf("read_me", "show_widget", "html_render", "feed"),
                 listed.map { it.jsonObject.getValue("name").jsonPrimitive.content },
             )
             val read = bare(

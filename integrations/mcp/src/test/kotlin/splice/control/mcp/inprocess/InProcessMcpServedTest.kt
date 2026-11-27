@@ -189,6 +189,14 @@ class InProcessMcpServedTest {
     }
 
     @Test
+    fun `a request to an unrelated in-process tool can carry deeply nested valid arguments`() {
+        val prefix = """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"show_tide","arguments":"""
+        val deep = "[".repeat(520) + "0" + "]".repeat(520)
+        val reply = result(ask(prefix + """{"port":"a\tb","details":$deep}}}"""))
+        assertEquals("false", reply.getValue("isError").jsonPrimitive.content)
+    }
+
+    @Test
     fun `the name is the daemon's only for the head it is on, and every other name goes to the hosted servers`() {
         assertTrue(host.answeredHere("harbor", "acme"))
         assertFalse(host.answeredHere("harbor", "globex"))

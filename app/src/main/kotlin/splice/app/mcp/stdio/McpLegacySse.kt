@@ -57,9 +57,9 @@ internal class McpLegacySse(
         return if (endpoint == null) "its event stream named no endpoint at its own address" else null
     }
 
-    override suspend fun send(message: JsonObject, out: TerminalOutput): McpStdioSent {
+    override suspend fun send(message: JsonObject, wire: String, out: TerminalOutput): McpStdioSent {
         val at = checkNotNull(endpoint) { "the bridge sends only once the stream is open" }
-        val status = client.sendAsync(requests.post(message, session, at), HttpResponse.BodyHandlers.discarding())
+        val status = client.sendAsync(requests.post(wire, session, at), HttpResponse.BodyHandlers.discarding())
             .await().statusCode()
         return if (status in ACCEPTED_RANGE) McpStdioSent.Delivered else McpStdioSent.Refused(status)
     }

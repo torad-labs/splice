@@ -45,7 +45,8 @@ public class InProcessMcpHost(private val servers: InProcessMcp) {
      *  [caller] is who the client's entry says it is, null when it says nothing. */
     public suspend fun post(name: String, sessionId: String?, body: String, head: String?, caller: String?): McpReply? {
         val server = servers.server(name, head, caller) ?: return null
-        val message = codec.parse(body)
+        val read = server.readDocument(body)
+        val message = (if (read == null) codec.parse(body) else read.message)
             ?: return refusal(JsonPrimitive(0), RPC_NOT_A_REQUEST, "not a JSON-RPC object")
         return when (codec.kind(message)) {
             RpcKind.REQUEST -> answer(Asked(name, server, sessionId), message)

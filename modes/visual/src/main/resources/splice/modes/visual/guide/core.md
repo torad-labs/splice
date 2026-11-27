@@ -42,14 +42,16 @@ Draw one visual per point, and never draw the same thing twice in one reply.
   reads in both. In SVG, `currentColor` follows the text colour.
 - **It reaches nothing.** The view's policy allows no origin: no `<script src>`, no stylesheet link, no web font, no
   remote image, no `fetch`. Draw with inline SVG, canvas, CSS and plain JavaScript, put the data in the code, and give
-  an image as a `data:` URI.
+  an image as a `data:` URI. The one thing a card can ask for beyond itself is a feed the app reads for it, to stay
+  up to date (module `live`).
 - **It fits the frame.** The width is the conversation's and changes: use `width: 100%`, `max-width`, and a `viewBox`
   on SVG, never a fixed width. The height follows the content, so never use `100vh`. Keep it compact.
 - **It streams well.** While the call streams, the fragment is shown without running its scripts; once it is complete,
   its scripts run in order. Write styles first, then the markup, then the scripts, and make the first state visible
   without any script.
 - **It talks back only through the host.** `sendPrompt(text)` offers the person a message to send you, which they may
-  send or not; `openLink(url)` and any `<a href>` open outside the frame. Forms do not submit, dialogs such as `alert`
+  send or not; `openLink(url)` and any `<a href>` open outside the frame; `watchFeed(name, onData)` and `readFeed(name)`
+  read a feed through it (module `live`). Forms do not submit, dialogs such as `alert`
   do not show, and storage may not be there: keep state in memory.
 - **It can be read by everyone.** Label axes and units, give SVG a `<title>` or an `aria-label`, keep text contrast
   high, and never carry meaning in colour alone.

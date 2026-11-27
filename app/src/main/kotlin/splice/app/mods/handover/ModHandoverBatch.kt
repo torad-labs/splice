@@ -1,5 +1,6 @@
 package splice.app.mods.handover
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonIgnoreUnknownKeys
@@ -18,6 +19,7 @@ internal const val MOD_HANDOVER_RECEIPT_MS = 20L * 60 * 1000
 // why: only a runaway list could reach this; age, not count, is what ends a receipt
 internal const val MOD_HANDOVER_RECEIPT_CAP = 4096
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 @JsonIgnoreUnknownKeys // An older retiree may still send a wall time; only its ordinal is used.
 internal data class ModHandoverBatch(

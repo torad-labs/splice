@@ -34,7 +34,7 @@ class ModTurnEventsTest {
             turn.toolCall(ObservedToolCall("ignored", "mcp__notes__write", 5))
             turn.toolCall(ObservedToolCall("ignored", "mcp__elsewhere__read", 6))
             turn.toolCall(ObservedToolCall("tool-1", "mcp__notes__read", 7))
-            turn.completed(ObservedTurnEnd("ok", ObservedUsage(13, 2, 3, 4), 20, 8))
+            turn.completed(ObservedTurnEnd("ok", ObservedUsage(13, 2, 3, 4), 20, 8, stopReason = "tool_use"))
             val got = rig.through("recorder", "turn.complete")
             assertEquals(
                 listOf(
@@ -54,6 +54,11 @@ class ModTurnEventsTest {
             assertEquals(""""read"""", got[5].payload["tool"].toString())
             assertEquals("1", got[2].payload["round"].toString())
             assertFalse("bytes" in got[2].payload)
+            assertFalse("body" in got[2].payload)
+            assertFalse("body" in got[3].payload)
+            assertFalse("event" in got[4].payload)
+            assertFalse("arguments" in got[5].payload)
+            assertEquals(""""tool_use"""", got[6].payload["stopReason"].toString())
         } finally {
             rig.runner.runner.stop()
         }

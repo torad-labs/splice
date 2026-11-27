@@ -118,7 +118,7 @@ This is the checkup for an existing install. It asks nothing about the plans and
 5. Modes that are off. A running daemon restarts onto any mode you turn on.
 6. `[daemon] auto_update`.
 
-What only an administrator can change (Claude Code's managed `processWrapper`), or what needs a program splice doesn't install (systemd for the MCP hub), is printed with what to do. The checkup lays the Antigravity shim where it is missing and ends on `splice doctor`. Without a terminal, it only lists the gaps.
+What only an administrator can change (Claude Code's managed settings), or what needs a program splice doesn't install (systemd for the MCP hub), is printed with what to do. The checkup lays the Antigravity shim where it is missing and ends on `splice doctor`. Without a terminal, it only lists the gaps.
 
 ### 4. Check the result
 
@@ -127,7 +127,7 @@ splice doctor
 splice claude check
 ```
 
-`splice doctor` has a new **tools** section: Claude Desktop and its mode, the managed `processWrapper`, `agy` and `codex` with their Splice MCP sync, the Antigravity shim, Codex peer hooks, and systemd for the MCP hub. These rows are OK, INFO or WARN only, so they never turn the exit code red. Each head your install still links prints a deprecation line with its replacement selector. `splice claude check` reports every way Claude Code still starts past the gateway and every model list it finds.
+`splice doctor` has a new **tools** section: Claude Desktop and its mode, Claude Code's managed settings for the Code tab, `agy` and `codex` with their Splice MCP sync, the Antigravity shim, Codex peer hooks, and systemd for the MCP hub. These rows are OK, INFO or WARN only, so they never turn the exit code red. Each head your install still links prints a deprecation line with its replacement selector. `splice claude check` reports every way Claude Code still starts past the gateway and every model list it finds.
 
 ### The decision path
 
@@ -244,11 +244,11 @@ Quit Desktop completely and reopen it after `on`, `off` or an upgrade, because D
 
 Other parts of the Desktop setup:
 
-- **Managed `processWrapper`.** Antigravity in the Code tab and live model switches need Claude Code's managed settings to name splice's launcher. splice never writes that administrator-owned file. It prints the file and the install command:
+- **Managed `processWrapper`.** Antigravity in the Code tab and live model switches need Claude Code's managed settings to name splice's launcher (`processWrapper`), and the source that wins to set `parentSettingsBehavior` to `"merge"`; wherever managed settings exist, Desktop warns in every Code session unless it does. splice never writes that administrator-owned file. It shows both keys, reads the main file and its `managed-settings.d` drop-ins in the order Claude Code merges them, names for each key the last file that mentions it and what that file holds (a `null` there is reported as a value that is not text, which Claude Code takes as the key cleared), and names the places it could not read. It names the file to edit only where a key does not come out as wanted: the file holding a wrong value, or the main file for a key no file sets, on the condition that no unread place sets it; where both keys come out as wanted, it asks only for a check of the places it could not read. It gives the commands that create the file only where nothing is at its path and no drop-in was read, and asks for a restart only after a change:
 
   ```bash
   splice desktop wrapper --print    # bare "splice desktop wrapper" is the same
-  splice desktop wrapper --check    # exit 0 when the managed file names splice's desktop-launch
+  splice desktop wrapper --check    # exit 0 when the merged managed files name splice's laid desktop-launch; its lines say the rest
   ```
 
   Use one flag or the other, not both. The paths are `/etc/claude-code/managed-settings.json` (Linux), `/Library/Application Support/ClaudeCode/managed-settings.json` (macOS) and `C:\Program Files\ClaudeCode\managed-settings.json` (Windows). This is Claude Code's managed file, not Claude Desktop's.
@@ -403,7 +403,7 @@ None of these needs any action. See [Architecture and troubleshooting](architect
 - [ ] Each head you still use prints its replacement selector, and `splice claude check` reports what still starts past the gateway.
 - [ ] `splice setup --update` has offered what you want: launchers, Desktop, MCP, Codex hooks, modes, auto-update.
 - [ ] Claude Desktop, if you use it: after `splice desktop on`, Desktop was quit fully and reopened, and `splice desktop` shows mode `app`.
-- [ ] Gemini in the Code tab, if you want it: `splice desktop wrapper --check` exits 0.
+- [ ] Gemini in the Code tab, if you want it: `splice desktop wrapper --check` exits 0 (the launcher is laid and the managed files it read name it) and asks for no edit: its `what to do:` line, if it prints one, is only the check of the places it did not read. So the files it read give both keys as on the `wanted:` line, `parentSettingsBehavior` to `"merge"` included, and you have checked that the places it names set neither key to another value.
 - [ ] Other machines using your LAN share have re-run `splice remote add http://<box>:<port>`.
 - [ ] Scripts that ran bare `splice login`, or relied on restart waiting for every compaction, are updated.
 - [ ] Team servers: `splice server audit` answers, and any new `[server]` tables pass `splice check-config`.

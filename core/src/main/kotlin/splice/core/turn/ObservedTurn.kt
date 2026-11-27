@@ -34,7 +34,7 @@ public class ObservedTurn(
         offers.deliver { observer.toolCall(ObservedToolCall(id, name, clock())) }
     }
 
-    public fun completed(outcome: String, usage: ObservedUsage, durationMs: Long) {
-        offers.deliver { observer.completed(ObservedTurnEnd(outcome, usage, durationMs, clock())) }
+    public fun completed(outcome: String, usage: ObservedUsage, durationMs: Long, stopReason: String?) {
+        offers.deliver { observer.completed(ObservedTurnEnd(outcome, usage, durationMs, clock(), stopReason)) }
     }
 }

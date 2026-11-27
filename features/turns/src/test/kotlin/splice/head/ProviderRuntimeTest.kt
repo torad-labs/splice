@@ -24,9 +24,14 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.model.ClientWindow
+import splice.core.model.CompactionReserve
+import splice.core.model.CompactionReserveDefaults
 import splice.core.server.ServedTurn
 import splice.core.server.ServedTurns
 import splice.core.topology.ForwardHeaders
+import splice.head.scripted.HeadShape
+import splice.head.scripted.HeadlessWindows
 import splice.head.scripted.ProviderRequest
 import splice.head.scripted.ScriptedLogin
 import splice.head.scripted.reply
@@ -116,7 +121,7 @@ class ProviderRuntimeTest {
                 body("claude-scripted-headless-chat--scripted-model").toByteArray(),
                 "desktop",
                 100_000,
-                requestWindow = 100_000,
+                requestWindow = ClientWindow.Stated(100_000),
             )
             assertEquals(6L, reportedInput(post(runtime, configured, beta)))
             // A window handed over as a session's alone still yields to the beta, as a terminal turn's does.
@@ -126,6 +131,37 @@ class ProviderRuntimeTest {
                 100_000,
             )
             assertEquals(60L, reportedInput(post(runtime, handed, beta)))
+        }
+    }
+
+    @Test
+    fun `a calibrated provider row through the door uses the lane window instead of the wrapper fallback`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(reply { chatAnswer("answered") })
+            val model = "gpt-5.6-luna"
+            val reserve = CompactionReserveDefaults { _, _ -> CompactionReserve(7_830, 31_791) }
+            val runtime = headless.chat(HeadShape(model = model), windows = HeadlessWindows(272_000, reserve)).runtime
+            val selector = "claude-scripted-headless-chat--$model"
+            val turn = GatewayTurn(body(model).toByteArray(), "claude", 400_000, asked = selector)
+            // 400k compacts at 323k; the calibrated provider target is 272k minus 39,621.
+            val expected = (12 * 323_000.0 / 232_379).toLong()
+            assertEquals(expected, reportedInput(post(runtime, turn)))
+        }
+    }
+
+    @Test
+    fun `the larger of the lane window and the last statusline window sizes the reply`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(reply { chatAnswer("answered") })
+            val head = headless.chat()
+            val headers = mapOf("x-claude-code-session-id" to "code-session")
+            val turn = GatewayTurn(chatTurn("claude").body, "claude", 400_000)
+            head.clientWindows.record("code-session", 100_000)
+            assertEquals(24L, reportedInput(post(head.runtime, turn, headers)))
+            head.clientWindows.record("code-session", 500_000)
+            assertEquals(30L, reportedInput(post(head.runtime, turn, headers)))
         }
     }
 

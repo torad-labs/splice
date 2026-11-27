@@ -16,45 +16,21 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import splice.app.desktop.catalog.DesktopLineup
 import splice.app.desktop.catalog.DesktopProviders
 import splice.app.desktop.catalog.DoorCatalog
 import splice.app.desktop.catalog.ModelDiscovery
-import splice.client.desktop.ANTHROPIC_BETA_HEADER
-import splice.client.desktop.APP_MODE_HEADER
-import splice.client.desktop.DesktopAppWindow
 import splice.client.desktop.GatewayDiscovery
 import splice.core.client.SESSION_HEADER
 import splice.core.speed.SessionSpeeds
 import splice.core.topology.desktop.DesktopConfig
 import splice.core.util.JsonScalars
-import splice.core.util.JsonWire
 import splice.core.util.WallClock
 import splice.core.wire.HttpStatus
 import splice.http.JsonReply
 import splice.provider.antigravity.door.DoorAgyGuard
 import splice.share.CappedBodies
 import splice.share.RefusalVoice
-
-/** What a door turn asks: its body, the model it names, the session it is a turn of, and, for a request of Claude
- *  Desktop's app mode, the window Desktop gave its Code tab for that model ([appWindow], null for any other request). */
-internal data class DoorAsk(
-    val request: JsonObject,
-    val model: String,
-    val session: String?,
-    val appWindow: Long? = null,
-) {
-    /** Whether this is Claude Code's start-up check: one token, not streamed (desktop-door.md's table), whose answer
-     *  no one reads. */
-    val probe: Boolean
-        get() = JsonScalars.long(request, REQUEST_MAX_TOKENS) == 1L &&
-            JsonScalars.str(request, REQUEST_STREAM) != "true"
-
-    /** The body as a head takes it: the same request, asking for [upstream], the ID that head runs the model as. */
-    fun asking(upstream: String): ByteArray =
-        JsonWire.bytes(JsonObject(request + (REQUEST_MODEL to JsonPrimitive(upstream))))
-}
 
 internal class DesktopDoor(
     private val callers: List<DoorCaller>,
@@ -70,7 +46,7 @@ internal class DesktopDoor(
     private val json = Json { ignoreUnknownKeys = true }
     private val routing = DoorRouting()
     private val toProvider = DoorRelay(clock, sessionSpeeds)
-    private val windows = DesktopAppWindow(desktop)
+    private val windows = DoorAppWindows(desktop)
     private val discovery = GatewayDiscovery()
     private val gatewayModels = GatewayModels()
 
@@ -135,14 +111,12 @@ internal class DesktopDoor(
         val request = read(call, caller, lineup) ?: return
         val model = JsonScalars.str(request, REQUEST_MODEL).orEmpty()
         val headers = call.request.headers
-        val beta = headers.getAll(ANTHROPIC_BETA_HEADER).orEmpty().joinToString(",")
-        val window = windows.of(headers[APP_MODE_HEADER], beta, model)
-        val ask = DoorAsk(request, model, headers[SESSION_HEADER], window)
+        val ask = DoorAsk(request, model, headers[SESSION_HEADER], appMode = windows.app(headers))
         caller.asked(ask)
         val route = routing.of(lineup, ask, caller.default(lineup), caller.runsNamedModels)
             ?: desktopOnlyRoute(call, caller, lineup, ask)
             ?: return
-        toProvider.send(call, caller, route, ask, counting)
+        toProvider.send(call, caller, route, windows.resolve(headers, ask, lineup, route), counting)
     }
 
     /** Routes a `desktopOnly` (Antigravity) model for Claude Desktop Chat turns, while refusing Claude Code CLI
@@ -211,10 +185,6 @@ private const val NO_DOOR_KEY =
 private const val DOOR_API_KEY_HEADER = "x-api-key"
 
 private const val NOT_JSON = "the request body is not a JSON object"
-
-internal const val REQUEST_MODEL: String = "model"
-private const val REQUEST_MAX_TOKENS = "max_tokens"
-private const val REQUEST_STREAM = "stream"
 
 // The query a `/v1/models` page is asked with (Claude Code's gateway discovery).
 private const val LIMIT_PARAM = "limit"

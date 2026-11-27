@@ -32,8 +32,8 @@ internal class McpStreamableHttp(
 
     override suspend fun open(out: TerminalOutput): String? = null
 
-    override suspend fun send(message: JsonObject, out: TerminalOutput): McpStdioSent {
-        val response = client.sendAsync(requests.post(message, session), STREAMED).await()
+    override suspend fun send(message: JsonObject, wire: String, out: TerminalOutput): McpStdioSent {
+        val response = client.sendAsync(requests.post(wire, session), STREAMED).await()
         response.headers().firstValue(STDIO_SESSION_HEADER).ifPresent { session.id = it }
         return withContext(io) { answer(message, response, out) }
     }

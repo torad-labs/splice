@@ -104,15 +104,9 @@
     },
     {
       "task": "modContractTests",
-      "inputs": ["mods/contract/**","mods/example/**","mods/tsconfig.json","package.json","bun.lock"],
-      "why": "The mod contract (mods/contract/index.ts) against its JSON examples and the example mod: each example and each JSON file of the example mod is compiled as a value of its declared type, so a wrong field in an example fails, and mutated examples prove the check is not vacuous.",
-      "command": ["bun", "test", "mods/contract"]
-    },
-    {
-      "task": "modHostTests",
-      "inputs": ["mods/host/**","mods/contract/**","mods/tsconfig.json","package.json","bun.lock"],
-      "why": "Runs the actual Bun mod host over its stdio pipe: lifecycle notices, durable store, handler timeouts and errors, frozen observations, and event filters.",
-      "command": ["bun", "test", "mods/host"]
+      "inputs": ["mods/**","package.json","bun.lock"],
+      "why": "Checks the contract's JSON examples and example mod against their types, and drives the installed Bun host over its stdio pipe.",
+      "command": ["bun", "test", "mods"]
     },
     { "task": "prTitle", "fresh": true, "on": "push", "why": "The commit subject against the conventional-type vocabulary; in CI the org gate judges the PR title instead.", "command": ["bun", "tools/gate", "title"] },
     {

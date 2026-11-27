@@ -15,6 +15,7 @@ import splice.accounts.pool.HeadAccountPoolView
 import splice.core.head.HeldSaying
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
+import splice.core.session.SessionContext
 import splice.core.usage.RateLimitState
 import splice.core.usage.UsageWarn
 import splice.core.usage.UsageWarnPolicy
@@ -50,6 +51,7 @@ internal class StatuslineRenderer(
     private val blob = StatuslineJson()
     private val row = StatuslineRow(catalog)
     private val windowLearner = StatuslineWindowLearner(catalog, clientWindows)
+    private val contextRead = StatuslineContextRead(clientWindows?.replies)
 
     private val bars = StatuslineBars()
     private val heldPart = StatuslineHeld()
@@ -78,6 +80,7 @@ internal class StatuslineRenderer(
         // all hang off this instant, so which segment is built first cannot change what any of them sees.
         val nowMs = now()
         val nowSeconds = TimeUnit.MILLISECONDS.toSeconds(nowMs)
+        val context = contextRead.read(root, unanswered)
         val segments = listOfNotNull(
             modelSegment(root),
             accountSegment(pool),
@@ -85,8 +88,8 @@ internal class StatuslineRenderer(
         ) +
             bars.limitSegments(root, shownQuota, selectedQuota != null, nowSeconds) +
             listOfNotNull(
-                contextSegment(root, unanswered),
-                cacheSegment(root, unanswered),
+                context?.let(::contextSegment),
+                context?.cachePercent?.let { "${cacheColor(it)}⚡ $it%$RESET" },
                 warnSegment(snapshot, warn, nowSeconds),
                 locationSegment(root),
             )
@@ -114,11 +117,8 @@ internal class StatuslineRenderer(
         return multi.selectedAccount()?.label?.removePrefix(NATIVE_LOGIN_PREFIX)
     }
 
-    private fun contextSegment(root: JsonObject, unanswered: Boolean): String? {
-        val cw = blob.ownContextWindow(root, unanswered) ?: return null
-        val id = blob.str(blob.obj(root, MODEL_FIELD)?.get("id"))
-        val (size, used) = row.window(id, blob.num(cw["context_window_size"]) ?: 0, usedTokens(cw))
-        val pct = blob.num(cw["used_percentage"])?.toInt() ?: if (size > 0) (used * PERCENT / size).toInt() else 0
+    private fun contextSegment(context: SessionContext): String {
+        val (used, size, pct) = context
         val color = when {
             pct >= CTX_CRITICAL_PCT -> RED
             pct >= CTX_WARN_PCT -> YELLOW
@@ -126,18 +126,6 @@ internal class StatuslineRenderer(
         }
         val window = if (size > 0) "${fmtK(used)}/${fmtK(size)}" else fmtK(used)
         return "$window ${dim("·")} $color$pct%$RESET"
-    }
-
-    private fun cacheSegment(root: JsonObject, unanswered: Boolean): String? {
-        val cu = blob.obj(blob.ownContextWindow(root, unanswered), "current_usage") ?: return null
-        val hit = cacheHitPct(cu) ?: return null
-        return "${cacheColor(hit)}⚡ $hit%$RESET"
-    }
-
-    private fun cacheHitPct(cu: JsonObject): Int? {
-        val read = blob.num(cu["cache_read_input_tokens"]) ?: 0
-        val total = (blob.num(cu["input_tokens"]) ?: 0) + read + (blob.num(cu["cache_creation_input_tokens"]) ?: 0)
-        return if (total <= 0) null else (read * PERCENT / total).toInt()
     }
 
     private fun cacheColor(hit: Int): String = when {
@@ -166,15 +154,6 @@ internal class StatuslineRenderer(
         val branch = git.branchOf(cwd)
         val loc = if (branch.isEmpty()) base else "$base  ⎇ $branch"
         return dim(loc)
-    }
-
-    /** current_usage.* is the correct per-turn count on every version; total_input_tokens is the
-     * pre-2.1.132 fallback. */
-    private fun usedTokens(cw: JsonObject): Long {
-        val cu = blob.obj(cw, "current_usage") ?: return blob.num(cw["total_input_tokens"]) ?: 0
-        return (blob.num(cu["input_tokens"]) ?: 0) +
-            (blob.num(cu["cache_read_input_tokens"]) ?: 0) +
-            (blob.num(cu["cache_creation_input_tokens"]) ?: 0)
     }
 
     private fun fmtK(n: Long): String = if (n >= K) "${n / K}k" else n.toString()
@@ -208,12 +187,6 @@ private class StatuslineJson {
 
     fun num(element: JsonElement?): Long? = JsonScalars.str(element)?.toDoubleOrNull()?.toLong()
 
-    /** The post's `context_window`, or null when [unanswered] and it carries a usage: that usage is
-     *  another head's last turn, neither this head's context nor its cache hit (V4-274). A post with
-     *  no usage yet still reads zero, which is no other head's figure. */
-    fun ownContextWindow(root: JsonObject, unanswered: Boolean): JsonObject? =
-        obj(root, "context_window")?.takeUnless { unanswered && obj(it, "current_usage") != null }
-
     /** When the client session began: its `cost.total_duration_ms` before [nowMs], or null when the
      *  blob does not carry it (V4-240 review, finding 4c). */
     fun sessionStartMs(root: JsonObject, nowMs: Long): Long? =
@@ -230,7 +203,6 @@ private const val GREEN = "[32m"
 private const val YELLOW = "[33m"
 private const val RED = "[31m"
 private const val SEPARATOR = "[2m   [0m"
-private const val PERCENT = 100
 private const val CTX_CRITICAL_PCT = 85
 private const val CTX_WARN_PCT = 60
 private const val CACHE_GOOD_PCT = 70

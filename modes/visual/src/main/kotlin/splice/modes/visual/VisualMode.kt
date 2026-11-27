@@ -1,7 +1,8 @@
 // NEW: the visual mode (modes/visual/mode.toml): read_me gives the guidance, show_widget draws an HTML or SVG fragment,
-// and html_render draws a whole page and keeps it. A client that draws MCP Apps draws both in resources/reply.html from
-// the call's own arguments; any other client shows the answer, which says what was drawn and asks the model to say it
-// in words. Two management routes give the view and a kept page to a host that reads them by address.
+// html_render draws a whole page and keeps it, and feed holds a small named value a drawn card reads again to stay up
+// to date. A client that draws MCP Apps draws both drawings in resources/reply.html from the call's own arguments; any
+// other client shows the answer, which says what was drawn and asks the model to say it in words. Management routes
+// give the view, a kept page and a feed to a host that reads them by address, and write a feed for a script.
 package splice.modes.visual
 
 import splice.modes.api.Mode
@@ -12,10 +13,13 @@ import splice.modes.api.ModeRoute
 private const val READ_ME = "read_me"
 private const val SHOW_WIDGET = "show_widget"
 private const val HTML_RENDER = "html_render"
+private const val FEED = "feed"
 
-/** The management routes: `GET /api/visual/view?uri=<ui://…>` and `GET /api/visual/pages/<vp_…>`. */
+/** The management routes: `GET /api/visual/view?uri=<ui://…>`, `GET /api/visual/pages/<vp_…>` and
+ *  `GET`/`PUT /api/visual/feeds/<name>`. */
 private const val VIEW_ROUTE = "/api/visual/view"
 private const val PAGES_ROUTE = "/api/visual/pages/{id}"
+private const val FEEDS_ROUTE = "/api/visual/feeds/{name}"
 
 /** What a html_render call naming `path` is told. The mode runs inside the daemon, and an mcp mode's call carries
  *  neither the session's folder nor who is calling, so a file read on the model's word could hand a caller a file it
@@ -26,18 +30,22 @@ private const val NO_PATH =
 internal class VisualMode : Mode {
     private val guide = VisualGuide()
     private val pages = VisualPages()
+    private val feeds = VisualFeeds()
     private val view = VisualView()
 
     override fun answer(call: ModeCall): ModeAnswer = when (call.tool) {
         READ_ME -> guide.answer(call.input)
         SHOW_WIDGET -> widget(call)
         HTML_RENDER -> page(call)
+        FEED -> feeds.call(call.input)
         else -> ModeAnswer.Error("there is no tool ${call.tool} in this mode")
     }
 
     override val routes: List<ModeRoute> = listOf(
         ModeRoute("GET", VIEW_ROUTE, view::answer),
         ModeRoute("GET", PAGES_ROUTE, pages::answer),
+        ModeRoute("GET", FEEDS_ROUTE, feeds::get),
+        ModeRoute("PUT", FEEDS_ROUTE, feeds::put),
     )
 
     private fun widget(call: ModeCall): ModeAnswer =

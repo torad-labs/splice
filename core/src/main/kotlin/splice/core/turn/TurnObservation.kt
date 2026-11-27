@@ -31,6 +31,8 @@ public data class ObservedTurnEnd(
     val usage: ObservedUsage,
     val durationMs: Long,
     val atEpochMs: Long,
+    /** The clean ending written for the client, if the turn had one. */
+    val stopReason: String? = null,
 )
 
 /** Perf-row usage: input is inclusive of cache reads and writes. */

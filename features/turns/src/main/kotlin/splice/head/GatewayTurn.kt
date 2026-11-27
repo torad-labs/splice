@@ -1,18 +1,18 @@
 // NEW: gateway-no-heads. What the gateway has already decided about a turn when it hands it to a ProviderRuntime: it
-// read the body to route (and set `model` to the provider's own id), admitted the caller at its own door, and knows the
-// window this session's Claude Code holds. A Ktor call's body can be read once, so the turn travels with it; the call
+// read the body to route (and set `model` to the provider's own id) and admitted the caller at its own door.
+// A Ktor call's body can be read once, so the turn travels with it; the call
 // itself still carries every header (anthropic-beta, session and agent ids) the pipeline reads as it does for a head.
 package splice.head
 
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
 import io.ktor.util.AttributeKey
+import splice.core.model.ClientWindow
 import splice.head.wire.NATIVE_CLIENT_PING_MS
 
 /** One turn as the gateway hands it to a [ProviderRuntime]: [body] is the client's body with `model` already set to
  *  the provider's own id, [door] is what the perf row's `door` says (`desktop`, `claude` or `network`), and
- *  [clientWindow] is the window this session's client holds, which counts are scaled to; null when the gateway does
- *  not know it, which leaves the window to what the request and the session's own posts say.
+ *  [clientWindow] is a hint from the gateway's launch configuration, not the divisor of any one request.
  *
  *  [listener] is what an authenticated listener in front of the gateway (the team server) says of a turn it relays. It is
  *  typed values the gateway fills, never read from the call's headers: a header on a gateway call is the caller's, and a
@@ -28,7 +28,8 @@ import splice.head.wire.NATIVE_CLIENT_PING_MS
  *  [requestWindow] is the window the gateway read off THIS request — Claude Desktop's app mode, where the door has
  *  already weighed the request's beta and model against the windows splice.toml's `[desktop]` states. It outranks
  *  what the request's beta alone would say (ClientWindowWitness), which is the client's own million, not this
- *  install's; null where the gateway read none, which is every other door. */
+ *  install's. A bound describes the largest window the gateway's client might use, not a stated divisor;
+ *  null means the gateway did not interpret the request's window. */
 public class GatewayTurn(
     public val body: ByteArray,
     public val door: String,
@@ -36,7 +37,7 @@ public class GatewayTurn(
     public val listener: ListenerSays = ListenerSays(),
     public val withheldHeaders: Set<String> = emptySet(),
     public val asked: String? = null,
-    public val requestWindow: Long? = null,
+    public val requestWindow: ClientWindow? = null,
 ) {
     /** [body] as a bounded read of it, the same answer a head's own read of a call's body gives: the body, or the cap
      *  it exceeded. */

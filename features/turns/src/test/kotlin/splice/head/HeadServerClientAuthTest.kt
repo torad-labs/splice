@@ -355,8 +355,7 @@ class HeadServerClientAuthTest {
         assertEquals(listOf("2023-06-01"), upstream.requests[before]["anthropic-version"].orEmpty())
     }
 
-    // Claude Code compacts a conversation that has one to compact, so the trigger rides a later prompt; a first message
-    // or a compaction is told it is too long without it (final-design.md section 11, failure-handling slice 2).
+    // Claude Code compacts a conversation it can shorten, so the trigger rides a later prompt, not a first message.
     @Test
     fun `a passthrough context-window stop reaches Claude Code's compaction trigger`() {
         val port = startHead(forwardClientAuth = true)

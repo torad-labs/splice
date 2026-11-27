@@ -51,7 +51,7 @@ function page(reviews: readonly Review[], theme: "light" | "dark"): UiRenderAnsw
   };
 }
 
-export const register: Register = (on) => {
+export const register: Register<"full"> = (on) => {
   const open = async (store: { list(p?: string): Promise<readonly string[]>; get(k: string): Promise<Json | undefined> }) => {
     const reviews: Review[] = [];
     for (const key of await store.list("review/")) {

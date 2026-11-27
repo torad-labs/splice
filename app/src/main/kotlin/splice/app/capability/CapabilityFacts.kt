@@ -7,19 +7,15 @@ import splice.app.desktop.setup.DesktopMode
 import splice.core.mcp.McpHarness
 import java.nio.file.Path
 
-/** Whether Claude Code's managed settings name a `processWrapper`, and whose: splice's `desktop-launch`, another
- *  program, or none (no managed file, or one without the key). */
-internal enum class WrapperState { SPLICE, OTHER, NONE }
-
 /** Claude Desktop: its [program] (null when not installed), the [mode] splice has it in, whether `claude-splice`
- *  ([sideBySideCli]) and the `Claude (Splice)` app launcher ([sideBySideApp]) are installed, and the managed
- *  [wrapper]. */
+ *  ([sideBySideCli]) and the `Claude (Splice)` app launcher ([sideBySideApp]) are installed, and what Claude Code's
+ *  managed settings say for its Code tab ([managed], null where they were not read). */
 internal data class DesktopFacts(
     val program: Path?,
     val mode: DesktopMode,
     val sideBySideCli: Boolean,
     val sideBySideApp: Boolean,
-    val wrapper: WrapperState,
+    val managed: WrapperSettings? = null,
 )
 
 /** The other harnesses: Antigravity's [agy] and [codex] on the PATH (null when absent), whether the Antigravity

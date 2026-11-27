@@ -189,7 +189,6 @@ class CodexPeerHooksTest {
             mode = DesktopMode.OFF,
             sideBySideCli = false,
             sideBySideApp = false,
-            wrapper = WrapperState.NONE,
         ),
         harness = HarnessFacts(
             agy = null,

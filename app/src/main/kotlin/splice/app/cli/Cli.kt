@@ -77,6 +77,7 @@ public class Cli {
  *  terminal of 80 columns shows whole; as one line of 470 characters it wrapped in the middle of a word. */
 private const val VERBS_USAGE =
     "usage: splice [setup|launch <claude|claude-desktop>|add <profile>|add-model|models [provider]|upgrade|status|\n" +
+        "  feed <name> [--follow]|\n" +
         "  sessions [relaunch]|perf|usage --json|wire <head> [--last N] [--json]|\n" +
         "  peer <verb>|server <key|person> <verb>|\n" +
         "  share [on|off|status]|remote [add|remove]|desktop [on|off|rotate-key]|\n" +

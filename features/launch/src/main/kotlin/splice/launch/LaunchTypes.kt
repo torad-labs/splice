@@ -17,6 +17,7 @@ import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.config.TurnKey
 import splice.core.model.CLAUDE_CODE_ONE_MILLION
 import splice.core.model.CLIENT_TABLE_WINDOW
+import splice.core.model.ClaudeCodeNativeWindow
 import splice.core.model.ClientSpelling
 import splice.core.model.ModelCatalog
 import splice.core.util.JsonScalars
@@ -66,11 +67,9 @@ public data class ModelTiers(
      *  client-auth one. */
     val spelled: Map<String, String> = emptyMap(),
 ) {
-    /** V4-232: the client's window for the presented rows, [CLIENT_TABLE_WINDOW], or 0 when there are
-     *  none. The client compacts at min(window, CLAUDE_CODE_AUTO_COMPACT_WINDOW), so the launch plants
-     *  that env no lower (LaunchService.buildEnv), or a presented row on a small runtime would compact
-     *  at a fraction of its window. */
-    val presentedWindow: Long get() = if (modelOverrides.isEmpty()) 0L else CLIENT_TABLE_WINDOW
+    /** Keep the process-wide compaction cap at or above each presented model's own client window. */
+    val presentedWindow: Long
+        get() = modelOverrides.keys.maxOfOrNull { ClaudeCodeNativeWindow.of(it) ?: CLIENT_TABLE_WINDOW } ?: 0
 
     /** V4-358: the client's window for the spelled rows, 1e6, or 0 when there are none: the same cap on
      *  the auto-compact env as [presentedWindow], for the same reason. Without it a row spelled 1M on an

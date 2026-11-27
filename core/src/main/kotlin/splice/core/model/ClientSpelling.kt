@@ -7,7 +7,7 @@
 // the marker, on a backend whose window was 872k: the client's rule, not the backend's, was losing the
 // screenshots. The id is a value splice authors, so a row whose window can hold
 // far more than 100 images is handed to the client with the 1M hint, and the head scales the counts it
-// reports (ModelCatalog.usageScale) so the client still compacts at the row's real window.
+// reports so the client still compacts at the row's real window.
 package splice.core.model
 
 /** Which catalog rows the client is told are 1M-context, and the id it is handed for them. Pure: the

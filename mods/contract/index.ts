@@ -392,65 +392,62 @@ export interface SessionsList {
   readonly allRows: boolean;
 }
 
-/** The observation host only sends metadata; bodies and credentials never reach these hooks. */
-export interface TurnEvent {
-  /** The session the daemon attributed the turn to, or null if none is known. */
-  readonly session: string | null;
+export interface TurnStart {
+  readonly session: string;
   readonly turn: string;
-  /** Unix time in milliseconds. */
-  readonly at: number;
   readonly labels: Labels;
-}
-
-export interface TurnStart extends TurnEvent {
-  readonly head: string;
-  /** The requested model. */
   readonly model: string;
-  readonly compact: boolean;
-  readonly agent: string | null;
 }
 
-/** One outgoing logical round, not one notification per retry. */
-export interface RequestSend extends TurnEvent {
-  /** The upstream model. */
+/** A request on its way to the model. A handler changes it by passing a changed `e` to `next`. */
+export interface RequestSend {
+  readonly session: string;
+  readonly turn: string;
   readonly model: string;
-  readonly round: number;
+  /** The request body as the backend will receive it. */
+  readonly body: JsonObject;
 }
 
-/** One frame sent to the client, with no frame data. */
-export interface StreamEvent extends TurnEvent {
-  readonly seq: number;
-  readonly type: string;
-  readonly bytes: number;
+/** One event of the model's stream. Return what the client receives; return `null` to drop it. */
+export interface StreamEvent {
+  readonly session: string;
+  readonly turn: string;
+  readonly event: JsonObject;
 }
 
-/** A model call observes the tool block, not its input or execution. App calls are not served by
- * the observation host; when implemented their session comes from trusted host context. */
-export type ToolCall =
-  | (TurnEvent & { readonly caller: "model"; readonly id: string; readonly server: string | null; readonly tool: string })
-  | {
-      readonly caller: "app";
-      readonly session?: string;
-      readonly turn?: string;
-      readonly server: string;
-      readonly tool: string;
-      readonly arguments: JsonObject;
-    };
+/**
+ * For a model call, the host binds `session` from trusted launch/session provenance. It must not
+ * infer an identity from tool arguments or untrusted request metadata. App calls from views or
+ * actions can be sessionless; when an app call has a session, it too comes from host context.
+ */
+export type ToolCall = ToolCallFields & (
+  | { readonly caller: "model"; readonly session: string }
+  | { readonly caller: "app"; readonly session?: string }
+);
 
-/** The HTTP status of one transport attempt. */
-export interface ResponseReceive extends TurnEvent {
-  /** The requested model. */
+interface ToolCallFields {
+  readonly turn?: string;
+  /** The MCP server the tool is on. A mod's own server is named after the mod. */
+  readonly server: string;
+  readonly tool: string;
+  readonly arguments: JsonObject;
+}
+
+export interface ResponseReceive {
+  readonly session: string;
+  readonly turn: string;
   readonly model: string;
   readonly status: number;
-  readonly attempt: number;
+  /** The whole response, assembled from the stream. */
+  readonly body: JsonObject;
 }
 
-export interface TurnComplete extends TurnEvent {
+export interface TurnComplete {
+  readonly session: string;
+  readonly turn: string;
   readonly model: string;
-  /** The daemon's turn outcome, not a model stop reason. */
-  readonly outcome: string;
-  readonly durationMs: number;
-  readonly usage: { readonly input: number; readonly output: number; readonly cacheRead: number; readonly cacheWrite: number };
+  readonly stopReason: string;
+  readonly usage?: { readonly input: number; readonly output: number; readonly cacheRead: number; readonly cacheWrite: number };
 }
 
 export interface CommandRun {
@@ -488,10 +485,10 @@ export interface Events {
   "launch.prepare": { payload: LaunchPrepare; filter: never; result: LaunchPrepare };
   "sessions.list": { payload: SessionsList; filter: never; result: readonly SessionRow[] };
   "turn.start": { payload: TurnStart; filter: never; result: void };
-  "request.send": { payload: RequestSend; filter: never; result: void };
-  "stream.event": { payload: StreamEvent; filter: never; result: void };
+  "request.send": { payload: RequestSend; filter: never; result: RequestSend };
+  "stream.event": { payload: StreamEvent; filter: never; result: StreamEvent | null };
   "tool.call": { payload: ToolCall; filter: { readonly server?: string; readonly tool?: string }; result: ToolResult };
-  "response.receive": { payload: ResponseReceive; filter: never; result: void };
+  "response.receive": { payload: ResponseReceive; filter: never; result: ResponseReceive };
   "turn.complete": { payload: TurnComplete; filter: never; result: void };
   "ui.render": {
     payload: UiRenderRequest;
@@ -505,22 +502,53 @@ export interface Events {
   "http.request": { payload: HttpRequest; filter: { readonly path?: string; readonly method?: string }; result: HttpAnswer };
 }
 
+/** The runner projects the full contract onto metadata. It neither publishes bodies nor runs mutation hooks. */
+type TurnObservation = Omit<Pick<TurnStart, "session" | "turn" | "labels">, "session"> & {
+  readonly session: string | null;
+  readonly at: number;
+};
+
+interface Observations {
+  "turn.start": TurnObservation & Pick<TurnStart, "model"> & {
+    readonly head: string; readonly compact: boolean; readonly agent: string | null;
+  };
+  "request.send": TurnObservation & Pick<RequestSend, "model"> & { readonly round: number };
+  "stream.event": TurnObservation & { readonly seq: number; readonly type: string; readonly bytes: number };
+  "tool.call": TurnObservation & Pick<ToolCall, "tool"> & {
+    readonly caller: "model"; readonly id: string; readonly server: string | null;
+  };
+  "response.receive": TurnObservation & Pick<ResponseReceive, "model" | "status"> & { readonly attempt: number };
+  "turn.complete": TurnObservation & Pick<TurnComplete, "model"> & {
+    /** The stop reason in the client's clean ending, or null when no clean ending was written. */
+    readonly stopReason: TurnComplete["stopReason"] | null;
+    /** The daemon outcome, distinct from the client's stop reason. */
+    readonly outcome: string;
+    readonly durationMs: number;
+    readonly usage: NonNullable<TurnComplete["usage"]>;
+  };
+}
+
 export type EventName = keyof Events;
-export type Payload<E extends EventName> = Events[E]["payload"];
+type ObserverEvents = { [E in EventName]: E extends keyof Observations
+  ? { payload: Observations[E]; result: void } : Events[E] };
+type HookSurface = "observe" | "full";
+type HookEvents<S extends HookSurface> = S extends "observe" ? ObserverEvents : Events;
+
+export type Payload<E extends EventName, S extends HookSurface = "observe"> = HookEvents<S>[E]["payload"];
 type KeysOfUnion<T> = T extends unknown ? keyof T : never;
 type FilterKey = KeysOfUnion<Events[EventName]["filter"]>;
 type EventFilter<F> = F extends object ? F & { readonly [K in Exclude<FilterKey, keyof F>]?: never } : never;
 
 /** Keys belonging to other filters are invalid even when the filter is passed in a variable. */
 export type Filter<E extends EventName> = EventFilter<Events[E]["filter"]>;
-export type Result<E extends EventName> = Events[E]["result"];
+export type Result<E extends EventName, S extends HookSurface = "observe"> = HookEvents<S>[E]["result"];
 
-/** The rest of the chain: the next mod's handler, or Splice's own behaviour at the end. */
-export type Next<E extends EventName> = (e: Payload<E>) => Promise<Result<E>>;
+/** The rest of the chain. In the observation host it only calls the mod's other handlers. */
+export type Next<E extends EventName, S extends HookSurface = "observe"> = (e: Payload<E, S>) => Promise<Result<E, S>>;
 
-/** A handler is a layer of an onion: it may act before `next`, change `e`, skip `next` and answer
- *  itself, or change what `next` returned. */
-export type Handler<E extends EventName> = ($: Handle, e: Payload<E>, next: Next<E>) => Promise<Result<E>>;
+export type Handler<E extends EventName, S extends HookSurface = "observe"> = (
+  $: Handle, e: Payload<E, S>, next: Next<E, S>,
+) => Promise<Result<E, S>>;
 
 /** What a handler threw, as the `.catch` handler receives it beside the event. */
 export interface ModError {
@@ -531,14 +559,14 @@ export interface ModError {
 
 /** Runs when the registration's handler throws or rejects. Its answer stands in for the handler's;
  *  calling `next` lets the event go on as though the handler were absent. */
-export type CatchHandler<E extends EventName> = (
+export type CatchHandler<E extends EventName, S extends HookSurface = "observe"> = (
   $: Handle,
-  e: Payload<E> & { readonly error: ModError },
-  next: Next<E>,
-) => Promise<Result<E>>;
+  e: Payload<E, S> & { readonly error: ModError },
+  next: Next<E, S>,
+) => Promise<Result<E, S>>;
 
-export interface Registration<E extends EventName> {
-  catch(handler: CatchHandler<E>): Registration<E>;
+export interface Registration<E extends EventName, S extends HookSurface = "observe"> {
+  catch(handler: CatchHandler<E, S>): Registration<E, S>;
 }
 
 // Distribute over E, but compare each member with the whole inferred event type.
@@ -548,17 +576,17 @@ type SingleEvent<E extends EventName, Whole = E> = E extends EventName
 
 /** Register one event at a time: narrow a dynamic name before calling. The event determines the
  *  filter, the payload and the result of both the handler and its error handler. */
-export interface On {
-  <E extends EventName>(event: E & NoInfer<SingleEvent<E>>, handler: Handler<NoInfer<E>>): Registration<E>;
+export interface On<S extends HookSurface = "observe"> {
+  <E extends EventName>(event: E & NoInfer<SingleEvent<E>>, handler: Handler<NoInfer<E>, S>): Registration<E, S>;
   <E extends EventName>(
     event: E & NoInfer<SingleEvent<E>>,
     filter: Filter<NoInfer<E>>,
-    handler: Handler<NoInfer<E>>,
-  ): Registration<E>;
+    handler: Handler<NoInfer<E>, S>,
+  ): Registration<E, S>;
 }
 
-/** `hooks/register.ts` exports `register: Register`. Splice calls it once when the mod loads. */
-export type Register = (on: On) => void;
+/** The installed runner calls `register: Register` once. `Register<"full">` describes the wider contract, not this host. */
+export type Register<S extends HookSurface = "observe"> = (on: On<S>) => void;
 
 // ---------------------------------------------------------------------------------------------
 // The handle `$`

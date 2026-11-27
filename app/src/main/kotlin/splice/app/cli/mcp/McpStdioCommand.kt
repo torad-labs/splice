@@ -18,8 +18,10 @@ import splice.core.util.LogSink
 import splice.topology.TopologyStatePaths
 import splice.upstream.codemode.ProcessDispatchers
 import java.io.InputStream
+import java.io.InputStreamReader
 import java.io.OutputStream
 import java.net.http.HttpClient
+import java.nio.charset.CharacterCodingException
 import java.nio.file.Path
 import java.time.Duration
 
@@ -59,7 +61,13 @@ internal class McpStdioCommand(
         } else {
             McpStreamableHttp(target, client, io)
         }
-        val reached = McpStdioBridge(name, transport, io, err).run(pipes.input.bufferedReader(), pipes.output)
+        val input = InputStreamReader(pipes.input, Charsets.UTF_8.newDecoder()).buffered()
+        val reached = try {
+            McpStdioBridge(name, transport, io, err).run(input, pipes.output)
+        } catch (_: CharacterCodingException) {
+            err.line("splice mcp stdio: the input is not valid UTF-8 JSON")
+            false
+        }
         return if (reached) 0 else 1
     }
 }

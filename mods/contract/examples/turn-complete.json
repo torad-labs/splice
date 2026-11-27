@@ -6,6 +6,7 @@
     "TICKET": "42"
   },
   "model": "requested-model",
+  "stopReason": "end_turn",
   "outcome": "ok",
   "durationMs": 1250,
   "usage": {

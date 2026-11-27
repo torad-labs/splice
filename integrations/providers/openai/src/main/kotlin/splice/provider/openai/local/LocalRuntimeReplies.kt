@@ -50,7 +50,12 @@ public object LocalRuntimeReplies : ProviderDeviation {
         return when {
             type == RUNTIME_LOADING -> FailureCause.Provider.Overloaded(lift, loading = true, said)
             type == RUNTIME_OVERFLOW ->
-                FailureCause.Provider.TooLong(JsonScalars.long(error, "n_ctx"), whileAnswering = false, said)
+                FailureCause.Provider.TooLong(
+                    JsonScalars.long(error, "n_ctx"),
+                    whileAnswering = false,
+                    said,
+                    inputTokens = JsonScalars.long(error, "n_prompt_tokens"),
+                )
             message != null && PULL_FIRST.containsMatchIn(message) ->
                 FailureCause.Provider.ModelMissing(ReplyFacts.modelNamed(message), said)
             else -> null

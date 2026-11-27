@@ -1,7 +1,12 @@
 // These calls are type-checked by mods/tsconfig.json, never executed.
 import type { On, RowAction, SessionRow, ToolCall } from "./index.ts";
 
-export function hookTypes(on: On, name: "ui.render" | "tool.call"): void {
+export function hookTypes(on: On<"full">, name: "ui.render" | "tool.call"): void {
+  on("request.send", async (_, e, next) => {
+    // @ts-expect-error The full contract does not expose request size either.
+    e.bytes;
+    return next({ ...e, body: e.body });
+  });
   on("ui.render", { slot: "page", page: "queue" }, async (_, e, next) => {
     const answer = await next(e);
     // @ts-expect-error A render's next returns UiRenderAnswer, not ToolResult.
@@ -14,11 +19,7 @@ export function hookTypes(on: On, name: "ui.render" | "tool.call"): void {
     return next(e);
   });
   on("tool.call", async (_, e, next) => {
-    if (e.caller === "model") {
-      e.session?.toUpperCase();
-      // @ts-expect-error A model observation never exposes tool arguments.
-      e.arguments;
-    }
+    if (e.caller === "model") e.session.toUpperCase();
     // @ts-expect-error A tool call has no render slot.
     e.slot;
     return next(e);
@@ -37,6 +38,25 @@ export function hookTypes(on: On, name: "ui.render" | "tool.call"): void {
   on("ui.render", { page: "queue" }, async (_, e, next) => next(e));
   // @ts-expect-error A lifecycle registration has no filter.
   on("session.start", {}, async (_, e, next) => next(e));
+}
+
+export function observerTypes(on: On): void {
+  on("request.send", async (_, e, next) => {
+    e.round.toFixed();
+    // @ts-expect-error A request observation has no serialized size.
+    e.bytes;
+    // @ts-expect-error A request observation has no body.
+    e.body;
+    return next(e);
+  });
+  on("tool.call", async (_, e) => {
+    e.session?.toUpperCase();
+    // @ts-expect-error A model observation never exposes arguments.
+    e.arguments;
+  });
+  on("turn.complete", async (_, e) => {
+    e.stopReason?.toUpperCase();
+  });
 }
 
 const row = { id: "reviews:one", kind: "review", title: "Review", status: "waiting", mod: "reviews" } as const;

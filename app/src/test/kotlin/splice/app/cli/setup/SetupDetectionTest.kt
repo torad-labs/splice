@@ -1,6 +1,8 @@
 // SetupDetection: what the wizard finds on the machine, given the credentials and daemon present.
 package splice.app.cli.setup
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -9,8 +11,10 @@ import splice.app.capability.Capabilities
 import splice.app.capability.DesktopFacts
 import splice.app.capability.HarnessFacts
 import splice.app.capability.HubFacts
-import splice.app.capability.WrapperState
+import splice.app.capability.WrapperSettings
 import splice.app.desktop.setup.DesktopMode
+import splice.client.ManagedFile
+import splice.client.ManagedReading
 import splice.configuration.add.AddProfiles
 import splice.configuration.add.DaemonUpProbe
 import splice.core.topology.AuthKind
@@ -56,7 +60,7 @@ class SetupDetectionTest {
     @Test
     fun `the optional programs found are part of what setup reports`() {
         val tools = Capabilities(
-            DesktopFacts(Path.of("/usr/bin/claude-desktop"), DesktopMode.STANDARD, false, false, WrapperState.OTHER),
+            DesktopFacts(Path.of("/usr/bin/claude-desktop"), DesktopMode.STANDARD, false, false, otherWrapper()),
             HarnessFacts(Path.of("/usr/bin/agy"), null, geminiShim = true, synced = emptySet()),
             HubFacts(linux = true, on = false, systemd = true),
             autoUpdate = null,
@@ -73,8 +77,15 @@ class SetupDetectionTest {
         SetupMenu(WizardFrame(out = said), AddProfiles()).printDetected(facts)
         assertTrue("Claude Desktop (on splice's older Code-tab door)" in said, said.toString())
         assertTrue("agy" in said, said.toString())
-        assertTrue("a managed processWrapper naming another program" in said, said.toString())
+        assertTrue("a managed settings file naming another program as processWrapper" in said, said.toString())
         assertFalse("codex" in said, said.toString())
+    }
+
+    private fun otherWrapper(): WrapperSettings {
+        val file = Path.of("/etc/claude-code/managed-settings.json")
+        val settings = Json.parseToJsonElement("""{"processWrapper": "/usr/bin/other"}""").jsonObject
+        val reading = ManagedReading(file, ManagedFile.Read(settings), listOf(file to settings), emptyList())
+        return WrapperSettings(reading, Path.of("/s/desktop-launch"))
     }
 
     private fun detect(env: EnvReader, files: Set<String>, daemonUp: Boolean) =

@@ -17,7 +17,7 @@ type ProcessRow = { pid: number; parent: number; group: number; line: string; mo
 export type ClientReport = { hooks: number; answers: Answer[]; model: string };
 export type Event = {
   name: EventName;
-  payload: { session?: string; turn?: string; seenBefore?: boolean; labels?: Env; seq?: number; outcome?: string; model?: string; cwd?: string };
+  payload: { session?: string; turn?: string; seenBefore?: boolean; labels?: Env; seq?: number; stopReason?: string | null; outcome?: string; model?: string; cwd?: string };
 };
 export type Mod = {
   name: string; state: string; pid?: number; failed: boolean; why?: string;

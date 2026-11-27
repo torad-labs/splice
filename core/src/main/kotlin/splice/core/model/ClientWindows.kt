@@ -55,6 +55,8 @@ public class ClientWindows(
     private val log: LogSink = LogSink {},
 ) {
 
+    public val replies: ClientUsage = ClientUsage(capacity)
+
     private val lock = Any()
     private val ioLock = Any()
     private val windows =

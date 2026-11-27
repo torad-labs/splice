@@ -213,6 +213,15 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
             }
         },
     ),
+    // Nov 25, 2026: the visual mode's feed written from a shell, the value on standard input (FeedCommand).
+    "feed" to CommandRegistration(
+        "<name> [--follow]   (the JSON value is read from standard input; --follow: one value per line)",
+        CommandFactory { a ->
+            val follow = a.count { it == FEED_FOLLOW_FLAG }
+            val names = a.drop(1).filter { it != FEED_FOLLOW_FLAG }
+            names.singleOrNull()?.takeIf { follow <= 1 }?.let { Command.Feed(it, follow == 1) }
+        },
+    ),
     "perf" to CommandRegistration("[--window 1h|24h|7d]", CommandFactory { a -> Command.Perf(a.drop(1)) }),
     // Nov 13, 2026: `usage --json` prints every command's logins and their plan windows as one JSON document
     // (UsageJson). The bare verb is refused: only the document exists yet.
@@ -282,6 +291,9 @@ internal class CommandParser {
     /** argv -> Command, or null for an unknown/empty verb (caller prints usage). */
     internal fun parse(args: Array<String>): Command? = verbs[args.firstOrNull()]?.invoke(args)
 }
+
+// `splice feed <name> --follow`: one process writes every line it is given, instead of one process per write.
+private const val FEED_FOLLOW_FLAG = "--follow"
 
 // `splice setup --update`: offer only what a new release adds.
 private const val SETUP_UPDATE_FLAG = "--update"

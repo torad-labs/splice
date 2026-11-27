@@ -24,6 +24,7 @@ import splice.head.turn.TurnAccountQuota
 import splice.head.turn.TurnDriver
 import splice.head.turn.TurnInputs
 import splice.head.turn.TurnPreparation
+import splice.head.turn.TurnReply
 import splice.head.turn.TurnSlot
 import splice.head.wire.TurnTrace
 import splice.upstream.TurnEnd
@@ -259,7 +260,8 @@ internal class HeadAdmission(
         admitted.retainRequest()
         val meta = prepared.built.meta
         val otherLogin = (deps.quotaBundle.activePool?.members?.size ?: 0) > 1
-        val voice = resends.voiceOf(driver.voice, meta.scope, meta.compact, !prepared.hasPriorExchange, otherLogin)
+        val request = admission.compactionPreflight.requestFacts(meta, prepared.hasPriorExchange, otherLogin)
+        val voice = resends.voiceOf(driver.voice, meta.scope, request)
         val inputs = TurnInputs(
             prepared.built,
             TurnSlot(
@@ -268,7 +270,7 @@ internal class HeadAdmission(
                 pace = ClientPace(GatewayTurns.clientPingMs(call), GatewayTurns.streamDeadlineMs(call)),
                 heapLease = admitted.heapLease,
                 harness = prepared.harness,
-                live = admitted.live,
+                reply = TurnReply(prepared.reply.usage, admitted.live),
             ) { admitted.markHandedOff() },
             admitted.t0,
             admitted.perf,

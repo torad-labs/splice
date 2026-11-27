@@ -21,12 +21,12 @@ const cases: ReadonlyArray<readonly [file: string, type: string]> = [
   [join(here, "examples/mod-row.json"), "ModSessionRow"],
   [join(here, "examples/mod-start.json"), "ModStart"],
   [join(here, "examples/mod-stop.json"), "ModStop"],
-  [join(here, "examples/turn-start.json"), "TurnStart"],
-  [join(here, "examples/request-send.json"), "RequestSend"],
-  [join(here, "examples/response-receive.json"), "ResponseReceive"],
-  [join(here, "examples/stream-event.json"), "StreamEvent"],
-  [join(here, "examples/tool-call.json"), "ToolCall"],
-  [join(here, "examples/turn-complete.json"), "TurnComplete"],
+  [join(here, "examples/turn-start.json"), 'Payload<"turn.start">'],
+  [join(here, "examples/request-send.json"), 'Payload<"request.send">'],
+  [join(here, "examples/response-receive.json"), 'Payload<"response.receive">'],
+  [join(here, "examples/stream-event.json"), 'Payload<"stream.event">'],
+  [join(here, "examples/tool-call.json"), 'Payload<"tool.call">'],
+  [join(here, "examples/turn-complete.json"), 'Payload<"turn.complete">'],
   [join(here, "examples/session-start.json"), "SessionStart"],
   [join(here, "examples/session-end.json"), "SessionEnd"],
   [join(here, "examples/ui-render-request.json"), "UiRenderRequest"],
@@ -45,7 +45,7 @@ const cases: ReadonlyArray<readonly [file: string, type: string]> = [
 /** Type errors of `const x: <type> = <json>;` compiled beside the contract. */
 function errors(type: string, json: string): string[] {
   const probe = join(here, "__probe__.ts");
-  const source = `import type { ${type} } from "./index.ts";\nexport const x: ${type} = ${json};\n`;
+  const source = `import type * as Contract from "./index.ts";\nexport const x: Contract.${type} = ${json};\n`;
   const options: ts.CompilerOptions = {
     strict: true,
     noEmit: true,
@@ -127,13 +127,13 @@ describe("the example mod", () => {
     const start: Handler<"session.start">[] = [];
     const list: Handler<"sessions.list">[] = [];
     // This test drives just the two hooks involved in producing a review row, not the runner.
-    const on: On = (event: EventName, handler: unknown) => {
+    const on: On<"full"> = (event: EventName, handler: unknown) => {
       if (event === "session.start") start.push(handler as Handler<"session.start">);
       if (event === "sessions.list") list.push(handler as Handler<"sessions.list">);
       return { catch() { return this; } };
     };
     for (const module of modules) {
-      const { register } = await import(module) as { register: Register };
+      const { register } = await import(module) as { register: Register<"full"> };
       register(on);
     }
 

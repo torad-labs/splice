@@ -152,6 +152,19 @@
   `GET /api/modes` adds `on_for` and `callers`, each caller's value; `splice status` and `splice setup` say when a
   mode is on for Claude Desktop alone, and Settings > Modes gives such a mode an Every session switch: Default, On or
   Off.
+- **A drawn card can keep itself up to date: the `visual` mode's `feed`.** A feed is a small named JSON value (up to 64
+  KiB, 64 of them, held as text, so 4 MiB of values at most) that splice keeps in memory with the time it was written.
+  A value that is not strict JSON, `null` or too big is refused in words and leaves the old value. The model writes one
+  with the `feed` tool, or leaves a script running that writes it from a shell with no model turn:
+  `echo '{"loss":0.31}' | splice feed training`, or, for a value written again and again,
+  `producer | splice feed training --follow`, which stays open and writes each line it is given, so the script costs one
+  process and not one per write. The command reads the management key itself, so the script never holds a key, and it
+  holds no more than a little over 64 KiB of its input at once. A card calls `watchFeed(name, onData, everyMs)` or
+  `readFeed(name)`, which the view gives it and which ask the app that frames the card to read the feed (at most once a
+  second), so the card reaches no network and keeps what it drew wherever the app does not pass the call on.
+  `GET /api/visual/feeds/<name>` gives an app that is not an MCP host the same answer the tool gives, `found: false` for
+  a feed nobody wrote included, and `PUT` writes it. `read_me` has a `live` module on drawing such a card, which a bare
+  `read_me` leaves out, so a session pays nothing for it until it asks. A restart empties the feeds.
 - **The keyed team listener serves the door.** `/door/v1` answers on a team's server from the gateway's providers,
   with each person's allowlist applied to the provider a model resolves to, and a streamed turn's client is pinged
   at `[server] keepalive_seconds` when that is shorter than splice's own probe.
@@ -164,6 +177,22 @@
 - **A turn's row names the Claude Code subagent and parent agent that sent it** on `/api/perf/turns`.
 - **`splice desktop launch`** is what a managed `processWrapper` starts the Code tab through, and `splice desktop`
   says each Desktop feature that depends on the backend, working or why not.
+- **`splice desktop wrapper` asks for both managed settings, and says only what splice read.** Claude Code's managed
+  settings need `"parentSettingsBehavior": "merge"` beside `processWrapper`: without it in the source that wins,
+  Claude Code drops the policy Claude Desktop hands each Code session, and Desktop warns in every one. `--print`,
+  `--check`, the doctor's `managed settings` row and the upgrade item say the same things: both keys wanted; for each
+  key, the last of the main file and its `managed-settings.d` drop-ins that mentions it and what that file holds (a
+  string, or a value that is not text; a `null` is reported so, and Claude Code takes it as the key cleared), or that
+  no file sets it; the main file's state where splice did not read it (could not
+  be read, so splice does not say whether it exists, or nothing at its path, which a link to nothing, here or in a
+  folder above, is not); the places splice could not read (its remote settings, the macOS plists, the Windows HKLM and
+  HKCU values, a drop-in folder it can't list or a drop-in that is no JSON object), named; whether the launcher is
+  laid; and what Desktop does, always as the condition. What to do names the file to edit: a key held with another
+  value is changed in the file that holds it, a key no file holds is added to the main file, on the condition that no
+  unread place sets it; where both keys come out as wanted there is nothing to edit and no restart, only a check of the
+  places splice could not read where it names any, and a restart is said only as following a change. `--check` exits 0 when the launcher, found where the daemon lays it, is laid and the merged
+  files name it, and nothing more. The upgrade lists an item whenever the merged files do not give both keys, or the
+  launcher is not laid; `setup --update` says it found nothing new only in what splice checked.
 - **A command-auth provider signs in from the terminal or the console**, and `splice doctor` reports on it.
 - **A provider's declared effort vocabulary names its models' reasoning levels.** An openai-chat provider whose
   endpoint lists nothing about reasoning (a team gateway, a llama.cpp server) had no effort control in Claude Desktop's
@@ -174,6 +203,8 @@
   model takes.
 
 ### Fixed
+- **An oversized compaction can finish.** Claude Code can drop the oldest rounds and try a shorter summary request
+  whether Splice or the model refused the original. A first exchange still stops with the same message.
 - **`claude` on the door launches with what a head's launch sets, and your settings files can't undo it.** A launch on
   the door (`claude`, `splice launch claude` and door commands) now sets the client's timers and wall header from the
   walls of its providers and heads (a `splice.toml` with providers and no heads included), so a long turn or

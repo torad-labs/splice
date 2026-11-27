@@ -26,6 +26,17 @@ class CommandParserTest {
     }
 
     @Test
+    fun `feed takes one name, and follow before or after it, once`() {
+        assertEquals(Command.Feed("loss", follow = false), parser.parse(arrayOf("feed", "loss")))
+        assertEquals(Command.Feed("loss", follow = true), parser.parse(arrayOf("feed", "loss", "--follow")))
+        assertEquals(Command.Feed("loss", follow = true), parser.parse(arrayOf("feed", "--follow", "loss")))
+        for (args in listOf(arrayOf("feed"), arrayOf("feed", "--follow"), arrayOf("feed", "a", "b"))) {
+            assertEquals(null, parser.parse(args), args.toList().toString())
+        }
+        assertEquals(null, parser.parse(arrayOf("feed", "loss", "--follow", "--follow")))
+    }
+
+    @Test
     fun `doctor hands its report flags to the command whole, in the order typed`() {
         assertEquals(Command.Doctor(emptyList()), parser.parse(arrayOf("doctor")))
         assertEquals(Command.Doctor(listOf("--json")), parser.parse(arrayOf("doctor", "--json")))

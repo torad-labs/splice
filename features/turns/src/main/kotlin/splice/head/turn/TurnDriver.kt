@@ -39,6 +39,7 @@ import splice.head.usage.ServedTurnReport
 import splice.head.usage.TurnSpend
 import splice.head.usage.TurnStreamAnswers
 import splice.head.wire.DetachOwner
+import splice.head.wire.TurnWiring
 import splice.upstream.Provider
 import splice.upstream.RetryNotice
 
@@ -161,8 +162,8 @@ internal class TurnDriver(
         sealedDrive,
         deps.turnQuota,
         detachOwner,
-        deps.stores.clientWindows,
         deps.traffic.upstream.retryWall,
+        TurnWiring(replies = deps.stores.clientWindows.replies),
     )
 
     /** G20: passive health snapshot for HeadServer.healthSnapshot() — the control-plane's

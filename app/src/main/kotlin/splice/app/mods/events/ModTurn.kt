@@ -73,6 +73,7 @@ internal class ModTurn(
 
     override fun completed(facts: ObservedTurnEnd) = emit("turn.complete", facts.atEpochMs) {
         put(MOD_EVENT_MODEL_FIELD, asked)
+        put("stopReason", facts.stopReason?.let(::clean))
         put("outcome", clean(facts.outcome))
         put("durationMs", facts.durationMs)
         put(

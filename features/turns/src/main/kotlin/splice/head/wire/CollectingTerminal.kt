@@ -144,6 +144,7 @@ internal class CollectingTerminal(
      *  DetachedCompaction.launchCollected, whose keep verdict reads it exactly as it reads a stream's
      *  (TurnTerminal.endedCleanly). Default false stood while collect never detached. */
     override val endedCleanly: Boolean get() = cleanEnding.get()
+    override val stopReason: String? get() = if (endedCleanly) envelope.stopReason else null
 
     /** V4-81: the pre-content wire-type rule is a streaming rule and does not apply to a buffered
      *  response, so ClientWire answers this sink at [Moment.NON_STREAM]. On `stream:false` the

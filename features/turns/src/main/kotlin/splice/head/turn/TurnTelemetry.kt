@@ -212,7 +212,7 @@ internal class TurnTelemetry(
         // key, so the stream never names a row /api/perf/turns has not been handed.
         val way = ServedWay(drive.route?.served(), drive.speed, drive.watchdog.timedOut)
         served?.ended(drive.meta, outcomeTag, snap, way)
-        TurnObserverRows.complete(drive.perf, outcomeTag, snap)
+        TurnObserverRows.complete(drive.perf, outcomeTag, snap, drive.emitter.stopReason)
         events.turnEnded(rowTs.toString(), outcomeTag, drive.meta.scope.sessionId)
         toolsOpened(drive)
         spend.spend(rowTs, drive.upstreamModel, snap.counters, accountLabel, outcomeTag)

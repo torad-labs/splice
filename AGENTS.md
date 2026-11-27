@@ -294,6 +294,13 @@ heuristics (the v13/v24 misfire class). The shadow classifier logs
 `{has_marker, tool_count, sys_len}` on every request; the marker canary test
 pins the sentence. On drift: update `compactMarkers` + fixture together.
 
+A context overflow ends with a non-retryable 400 before streaming, or an error event when a stream
+has already begun. On a later prompt, `prompt is too long` tells Claude Code to compact. On an
+oversized compaction, the same words followed by `N tokens > M` tell it to drop oldest rounds and
+retry the summary, not resend the same request. Use unscaled input tokens and a retry target that
+leaves room for the summary. A first exchange has nothing to drop and keeps its own wording.
+Splice does not shorten the transcript or retry the refusal itself.
+
 ## Out of scope (locked)
 
 No transcript shrinking. No fake summaries (L4). (Reasoning replay was formerly

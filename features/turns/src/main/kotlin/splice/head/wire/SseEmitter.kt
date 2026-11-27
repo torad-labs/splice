@@ -100,6 +100,7 @@ internal class SseEmitter(
     override val responseMessageId: String get() = start.messageId
 
     override val endedCleanly: Boolean get() = cleanEnd.get()
+    override val stopReason: String? get() = if (endedCleanly) envelope.stopReason else null
 
     override val lineWritten: SpliceLine? get() = written
 
@@ -312,6 +313,9 @@ internal class SseEmitter(
         /** The client's stop string a dialect cut the answer at (TurnTerminal.stoppedAt); null when none did. */
         private var stopped: String? = null
 
+        internal var stopReason: String? = null
+            private set
+
         internal fun acceptSource(event: JsonObject) {
             when (JsonScalars.strOrEmpty(event[TYPE])) {
                 "message_start" -> nativeStart = event
@@ -404,7 +408,7 @@ internal class SseEmitter(
             nativeReason() == ENDING_SEQUENCE ->
                 Ending(ENDING_SEQUENCE, JsonScalars.strIfString(nativeEnding()?.get(ENDING_SEQUENCE)).ifEmpty { null })
             else -> Ending(END_TURN)
-        }
+        }.also { stopReason = it.reason }
     }
 }
 

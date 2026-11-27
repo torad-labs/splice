@@ -19,8 +19,9 @@
 //   splice desktop acp [claude args...]            what Desktop's launcher runs in place of `claude` for an Antigravity
 //                                                  model: the session runs on `agy acp` (DesktopAcpCommand); needs no
 //                                                  daemon
-//   splice desktop wrapper [--print | --check]     the processWrapper Claude Code's managed settings need to start the
-//                                                  Code tab through desktop-launch: shown as it should read, or checked
+//   splice desktop wrapper [--print | --check]     the processWrapper (and parentSettingsBehavior "merge") Claude Code's
+//                                                  managed settings need to start the Code tab through desktop-launch:
+//                                                  shown as they should read, or checked
 package splice.app.cli.desktop
 
 import splice.app.LifecycleWiring

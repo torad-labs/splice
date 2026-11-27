@@ -159,7 +159,7 @@ class DiscoveredCatalogTest {
     }
 
     @Test
-    fun `a forwarded login keeps native model windows below the head window and scales the client at each row`() {
+    fun `a forwarded login keeps native model windows below the head window`() {
         val native = provider.copy(
             auth = AuthConfig("client"),
             models = listOf(
@@ -171,10 +171,8 @@ class DiscoveredCatalogTest {
         val forwarded = head.copy(pinnedModel = "claude-synthetic-wide", contextWindow = 1_000_000)
         val catalog = native.catalogFor(forwarded)
         assertEquals(200_000L, catalog.contextWindowFor("claude-synthetic-small"))
-        assertEquals(5.0, catalog.usageScale("claude-synthetic-small", sessionWindow = 1_000_000))
         assertEquals(1_000_000L, catalog.contextWindowFor("claude-synthetic-equal"))
         assertEquals(1_000_000L, catalog.contextWindowFor("claude-synthetic-wide"))
-        assertEquals(1.0, catalog.usageScale("claude-synthetic-wide", sessionWindow = 1_000_000))
         val translated = native.copy(auth = provider.auth).catalogFor(forwarded)
         assertEquals(1_000_000L, translated.contextWindowFor("claude-synthetic-small"))
         val narrowed = native.catalogFor(forwarded, contextWindowOverride = 100_000)

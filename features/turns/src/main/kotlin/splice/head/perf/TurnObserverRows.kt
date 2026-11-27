@@ -7,7 +7,7 @@ import splice.core.turn.ObservedUsage
 
 /** Publish only local rows, not the console replay of rows imported from a predecessor. */
 internal object TurnObserverRows {
-    fun complete(perf: TurnPerf, outcome: String, snapshot: PerfSnapshot) {
+    fun complete(perf: TurnPerf, outcome: String, snapshot: PerfSnapshot, stopReason: String? = null) {
         val observed = perf.observed ?: return
         val counts = snapshot.counters
         observed.completed(
@@ -19,6 +19,7 @@ internal object TurnObserverRows {
                 cacheCreation = counts[PerfKeys.CACHE_WRITE_TOKENS] ?: 0L,
             ),
             snapshot.marks[PerfKeys.TOTAL] ?: 0L,
+            stopReason,
         )
     }
 }

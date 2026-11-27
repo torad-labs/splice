@@ -35,6 +35,7 @@ function ordered(events: Event[], labels: Record<string, string>, count: number)
     const byTurn = events.filter(e => e.payload.turn === turn);
     assert.deepEqual(byTurn.slice(0, 3).map(e => e.name), ["turn.start", "request.send", "response.receive"]);
     assert.equal(byTurn.at(-1)?.name, "turn.complete");
+    assert.equal(byTurn.at(-1)?.payload.stopReason, "end_turn", "the mod must get the same clean stop reason as the client");
     const frames = byTurn.slice(3, -1);
     assert.ok(frames.length > 0 && frames.every(e => e.name === "stream.event"));
     assert.deepEqual(frames.map(e => e.payload.seq), frames.map((_, i) => i + 1), "missing or reordered stream events");

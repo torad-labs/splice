@@ -322,25 +322,23 @@ answered. That is all the mark does, and it has two limits:
 
 ```ts
 export const register: Register = (on) => {
-  on(event, filter?, async ($, e, next) => {
-    // before
-    const res = await next(e); // the rest of the chain, ending in Splice's own behaviour
-    // after
-    return res;
+  on("turn.complete", async ($, e, next) => {
+    $.log(`Turn ${e.turn} ended: ${e.outcome}`);
+    await next(e); // call this mod's next observer, not the turn
   }).catch(async ($, e, next) => {
-    // e.error says what the handler threw. Answer instead, or call next(e) to go on without it.
-    return next(e);
+    $.log(e.error.message);
+    await next(e);
   });
 };
 ```
 
-In this version handlers observe only (see [above](#handlers-observe-only)): the shape below is the contract, and
-`next`, the returned value and a changed `e` have no effect on Splice yet.
+Use `Register` for a mod running today: the table below describes the metadata its observers receive.
+The full contract's names and mutation types are available as `Register<"full">` for examples of features
+this host does not serve. It does not pass through bodies, frames or tool arguments, and neither a handler's
+return nor a changed value passed to `next` can change a turn.
 
-Each handler is one layer of an onion. It can act before `next`, change `e` before passing it on,
-answer by itself without calling `next`, or change what `next` returned. Use a literal event name,
-or narrow a dynamic name to one event first. That name determines which filter keys are valid and
-the types of `e`, `next(e)` and the handler's answer, including in `.catch`.
+Use a literal event name, or narrow a dynamic name to one event first. That name determines which filter
+keys are valid and the types of `e`, `next(e)` and the handler's answer, including in `.catch`.
 
 ### Events
 
@@ -357,7 +355,7 @@ the types of `e`, `next(e)` and the handler's answer, including in `.catch`.
 | `stream.event` | | One client SSE frame: `seq`, `type`, `bytes`. |
 | `tool.call` | `{ server?, tool? }` | A model opened a tool block: `caller: "model"`, tool call `id`, `server` (null for native tools), `tool`. It does not say that the tool ran. |
 | `response.receive` | | One HTTP response: requested `model`, `status`, transport `attempt`. |
-| `turn.complete` | | The turn ended: `model`, `outcome`, `durationMs`, `usage` (`input`, `output`, `cacheRead`, `cacheWrite`). |
+| `turn.complete` | | The turn ended: `model`, `stopReason` (the client's clean ending, or null), daemon `outcome`, `durationMs`, and `usage` (`input`, `output`, `cacheRead`, `cacheWrite`). |
 | `ui.render` | `{ surface?, slot? }`; add `page` only with `slot: "page"` | An app asks the mod to draw a page, a row or a view. |
 | `command.run` | `{ command }` | A person ran one of the mod's commands: `command`, `args`, `session?`. Answer `{ text }`. |
 | `http.request` | `{ path?, method? }` | A request under the mod's own path, `/mods/<name>/…`: `method`, `path` (the part after it), `query`, `headers`, `body?`. Answer `{ status, headers?, body? }`. |

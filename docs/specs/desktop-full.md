@@ -24,17 +24,22 @@ counts to the 200,000 (or 1M) window Desktop gives its Code tab. That pair is sp
 (`code_window`, `code_window_1m`), for an install whose Desktop is given other windows: Desktop sets the windows its
 Code tab divides by itself, so the keys state what this install's Desktop sets and splice scales to them, and a model
 is advertised with a 1M variant (`supports_1m`, `supports1m`) when its provider's real window reaches `code_window_1m`.
-Discovery's `max_input_tokens` stays the provider's real ceiling, never a configured window. Desktop reads that field
-(see the bundle reading below), but where it uses the number, in the Code tab, Chat or Cowork, is not established; the
-Code tab's Claude Code divides by the window Desktop sets in its environment, not by it. splice scales the counts of
-every request carrying the app-mode header to the `[desktop]` window, and the Code tab's Claude Code is what compacts on
-them, so where a configured window differs from a model's own, the scaled counts carry it, never a larger advertisement.
+Discovery's `max_input_tokens` stays the provider's real ceiling, never a configured window. The app-mode header
+identifies Desktop but not which window Code selected. A request that selects the large variant explicitly uses
+`code_window_1m`. Native 1M models can use their built-in million without an opt-in beta, and Code can also read a large
+window from an accepted discovery row. For these beta-free requests splice uses the largest plausible divisor and
+never discounts input based on it. This can compact early, but cannot delay compaction because the wrong window
+was assumed.
 The daemon reads the table at start, so an edit takes a daemon restart and Desktop's next launch. `splice desktop` and `splice doctor` say the mode and
 whether Desktop was reopened since splice changed it, and `splice desktop` lists each backend-dependent feature per mode,
 working or why not (DesktopFeatures; what only the live test settles is "unknown"). `on` also lays
 `<state>/desktop-launch`, which runs `splice desktop launch`: a managed processWrapper can name it, and it gives a
-Code-tab launch on the door the desktop key Desktop stripped (Mantle's bearer, or the gateway's variable). splice still
-never writes the managed file. Each turn's perf row names its subagent and parent agent (df-turn-headers). The policy
+Code-tab launch on the door the desktop key Desktop stripped (Mantle's bearer, or the gateway's variable). The managed
+settings also need `"parentSettingsBehavior": "merge"` in the source that wins: without it Claude Code drops the policy
+Desktop hands each Code session, and Desktop warns in every one. splice says what is wanted and only what it read (the file read, could
+not be read, or nothing at its path; each key text, not text, or absent), names the other places Claude Code may take managed
+settings from without reading them, says what Desktop does only as that condition, lists an upgrade item for any file that
+does not hold both keys, and still never writes the managed file. Each turn's perf row names its subagent and parent agent (df-turn-headers). The policy
 also raises Desktop's Claude Code import prompt (`bannerBehavior: "show"`, `bannerMaxDismissals: 10`), so gateway mode
 can bring the sessions Claude Code has on the computer into its Code-tab list. Not built: the gateway answer fields of
 df-wire-answers.
@@ -140,8 +145,9 @@ building on it.
 - **3P sets Claude Code managed settings:** `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1`, `DISABLE_GROWTHBOOK=1`,
   `CLAUDE_CODE_MODEL_CATALOG=0`, `CLAUDE_CODE_DISABLE_FAST_MODE=1`, `DISABLE_FEEDBACK_COMMAND=1`,
   `CLAUDE_CODE_ENABLE_AUTO_MODE`, `CLAUDE_CODE_AUTO_MODE_SERVER`, `CLAUDE_CODE_MAX_CONTEXT_TOKENS=200000` (1M through
-  `[1m]` on the ID), and `disableClaudeAiConnectors: true`. Under the 200000 window, splice scales the counts it
-  reports so each model compacts at its own window (repo CLAUDE.md §22, door decision 5).
+  `[1m]` on the ID), and `disableClaudeAiConnectors: true`. Desktop does not turn off native context in this setup.
+  `prefer1m` selects the 1M spelling; native context is resolved independently by Claude Code, before the ordinary
+  environment window. An opt-in model normally sends the context beta; a native 1M model need not.
 - **The credential:** a static token or `inferenceCredentialHelper`, which Desktop runs and puts in the session's
   environment (as `AWS_BEARER_TOKEN_BEDROCK` under mantle). Desktop sets no `apiKeyHelper`.
 - **Desktop's main process calls the base itself, not only its Claude Code:**
@@ -263,7 +269,7 @@ building on it.
        Chat, which a person did not ask for by setting them in Claude Code.
      - The status line: Desktop runs one only from a root-owned file outside the home folder.
      - A launcher (`processWrapper`): Desktop then passes no credential, so only a launcher that gives splice's key
-       works, which is `desktop-launch` and a managed file's to name.
+       works, which is `desktop-launch` and a managed file's to name (with `"parentSettingsBehavior": "merge"` beside it).
      - A marketplace read from a folder on this computer, which Desktop's configuration cannot name, and one Claude
        Code clones only in part, which Desktop would clone whole.
    - **No Claude login in gateway mode.** The configuration opens Desktop straight on splice (`deploymentMode: "3p"`,

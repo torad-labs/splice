@@ -17,10 +17,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
-import splice.core.model.ClientWindows
 import splice.core.util.JsonWire
 import splice.core.util.WallClock
-import splice.head.ClientWindowWitness
 import splice.head.admission.TurnQuota
 import splice.head.compaction.HeldReply
 import splice.head.hold.HandOverHeaders
@@ -44,23 +42,23 @@ internal class CollectTurn(
     private val turnQuota: TurnQuota,
     /** One bundle for the four seams every detached collect needs; shared with the streaming path. */
     private val detachOwner: DetachOwner,
-    private val clientWindows: ClientWindows = ClientWindows(),
     /** The wall clock a handed-over limit's reset is told against: the head's retry wall. */
     private val wall: WallClock = WallClock(System::currentTimeMillis),
+    private val wiring: TurnWiring = TurnWiring(),
 ) {
-    private val wiring = TurnWiring()
-    private val clientWindow = ClientWindowWitness(clientWindows)
-
     /** Non-stream sibling of TurnDriver.stream: Claude Code sends stream:false on some internal
      *  calls (the Node predecessor served them by collecting the terminal object). Drives the SAME
      *  fold/translator/honesty machinery into a [CollectingTerminal], then writes ONE Anthropic
      *  Messages JSON body — no SSE channel, no liveness pinger. */
     suspend fun collect(call: ApplicationCall, inputs: TurnInputs): Boolean {
         val built = inputs.built
-        val window = clientWindow.of(call, provider.catalog, built.meta)
         val terminal = CollectingTerminal(
             built.meta.route.originalModel,
-            wiring.usagePayloadBuilder(provider.catalog, built.meta, window, clientWindow.requested(call)),
+            wiring.usagePayloadBuilder(
+                built.meta.route.originalModel,
+                inputs.slot.reply.usage,
+                built.meta.scope.sessionId,
+            ),
             voice = inputs.voice,
             observed = inputs.perf.observed,
         )
@@ -117,7 +115,7 @@ internal class CollectTurn(
         // takes none. A turn with no session cannot be tied to its re-send and runs attached as before.
         // reply-stream: no frames cross this channel either, so the live turn reads the same answer, once it is final.
         inputs.live?.answeredBy { terminal.responseBody() }
-        val heldKey = detachOwner.replay.key(built.meta, built.requestBody)
+        val heldKey = detachOwner.replay.key(built.meta, built.requestBody, inputs.slot.reply.usage)
         val drive = driveFactory.assembleDrive(inputs, terminal, channel, stream = false)
         drive.collectPerf.defer()
         coroutineScope {

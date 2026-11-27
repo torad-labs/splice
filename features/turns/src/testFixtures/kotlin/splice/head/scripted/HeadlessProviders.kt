@@ -6,6 +6,8 @@ package splice.head.scripted
 
 import splice.core.auth.ClientAuthProvider
 import splice.core.config.RequestByteCap
+import splice.core.model.ClientWindows
+import splice.core.model.CompactionReserveDefaults
 import splice.core.server.ServedTurnBoard
 import splice.core.server.ServedTurns
 import splice.core.topology.ForwardHeaders
@@ -30,7 +32,13 @@ import java.nio.file.Path
 
 /** A provider served with no head: the [runtime] a gateway calls, and the JSONL file its turns' perf rows are
  *  written to. */
-public data class HeadlessProvider(val runtime: ProviderRuntime, val perfFile: Path)
+public data class HeadlessProvider(
+    val runtime: ProviderRuntime,
+    val perfFile: Path,
+    val clientWindows: ClientWindows,
+)
+
+public data class HeadlessWindows(val capacity: Long, val reserve: CompactionReserveDefaults? = null)
 
 public class HeadlessProviders internal constructor(private val heads: ScriptedHeads, private val tmp: Path) {
     /** What a headless provider is wired with beside its own login: the caller headers its provider's forward_headers
@@ -51,10 +59,23 @@ public class HeadlessProviders internal constructor(private val heads: ScriptedH
         maxRequestBytes: Int? = null,
         forwarded: ForwardHeaders = ForwardHeaders(emptyList()),
         served: ServedTurns = ServedTurnBoard(),
+        windows: HeadlessWindows? = null,
     ): HeadlessProvider {
         heads.provider.start()
         val key = "scripted-headless-chat"
-        val tuned = heads.tuning(key, shape, heads.provider.baseUrl, HeadAccounts().login.auth(key), loginCommand = "")
+        val auth = HeadAccounts().login.auth(key)
+        val original = heads.tuning(key, shape, heads.provider.baseUrl, auth, loginCommand = "")
+        val catalog = original.catalog
+        val tuned = if (windows == null) {
+            original
+        } else {
+            original.copy(
+                catalog = catalog.copy(
+                    models = catalog.models.map { it.copy(contextWindow = windows.capacity) },
+                    windows = catalog.windows.copy(compactionReserveDefaults = windows.reserve),
+                ),
+            )
+        }
         val provider = ScriptedChatProvider(tuned, ChatQuirks(tuned.key), Replies(ChatReplies))
         return serve(key, shape, provider, Wiring(forwarded, null, maxRequestBytes, served = served))
     }
@@ -94,6 +115,6 @@ public class HeadlessProviders internal constructor(private val heads: ScriptedH
         )
         val runtime = ProviderRuntime(provider, deps, forwarded = wiring.forwarded)
         runtime.start()
-        return HeadlessProvider(runtime, tmp.resolve("perf$suffix.jsonl"))
+        return HeadlessProvider(runtime, tmp.resolve("perf$suffix.jsonl"), deps.stores.clientWindows)
     }
 }

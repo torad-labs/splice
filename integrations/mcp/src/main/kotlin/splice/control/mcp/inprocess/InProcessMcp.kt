@@ -18,6 +18,15 @@ public interface InProcessMcpServer {
      *  session id, the only name the transport has for who is calling. */
     public suspend fun call(tool: String, arguments: JsonObject, session: String?): JsonObject
 
+    /** Whether HTTP requests for this server must be decoded as UTF-8 without replacement. */
+    public val requiresUtf8: Boolean get() = false
+
+    /** Reads the original request, or returns null to use the host's JSON-RPC reader. */
+    public fun readDocument(document: String): DocumentRead? = null
+
+    /** A server-specific read; a null [message] refuses the request without trying another parser. */
+    public data class DocumentRead(val message: JsonObject?)
+
     /** `resources/list`'s `resources`: each `{uri, name, mimeType}`, with its `_meta` when it has one. */
     public fun resources(): JsonArray
 

@@ -42,8 +42,10 @@ import splice.core.client.SESSION_HEADER
 import splice.core.failure.Decline
 import splice.core.failure.FailureCause
 import splice.core.failure.StoppedBy
+import splice.core.model.UsageSizing
 import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.PerfKeys
+import splice.core.perf.PromptTokenEstimate
 import splice.core.perf.TurnPerf
 import splice.core.session.ActivityAction
 import splice.core.util.Cancellables
@@ -52,6 +54,7 @@ import splice.head.ActivityLabel
 import splice.head.ActivitySamples
 import splice.head.AnthropicBodyParse
 import splice.head.BodyRead
+import splice.head.ClientWindowWitness
 import splice.head.GatewayBody
 import splice.head.HeadDeps
 import splice.head.MessageEdges
@@ -82,7 +85,7 @@ internal sealed class Preparation {
      *  with a session, null otherwise, since only that turn's re-send can be told apart. */
     data class Ready(
         val built: BuiltTurn,
-        val stream: Boolean,
+        val reply: ReplyShape,
         private var inbound: ClientInbound?,
         val messagesHash: String?,
         /** The installed client can only compact after at least one assistant exchange exists. */
@@ -93,9 +96,13 @@ internal sealed class Preparation {
         /** What the harness's capabilities read of the request (docs/specs/harness.md, decision 2). */
         val harness: HarnessAsked? = null,
     ) : Preparation() {
+        val stream: Boolean get() = reply.stream
+
         /** Transfers the raw request to its trace without retaining a second post-handoff owner. */
         fun takeInbound(): ClientInbound? = inbound.also { inbound = null }
     }
+
+    data class ReplyShape(val stream: Boolean, val usage: UsageSizing = UsageSizing())
 
     /** Refused while it was prepared: [cause] decides the answer (ClientWire at admission) and the line the client
      *  reads (the head's voice, failure-handling slice 2); [request] is what the refusal's log line, perf row and
@@ -161,6 +168,7 @@ internal class TurnPreparation(
     private val upstream: UpstreamHeaders,
     private val replay: CompactionReplay = CompactionReplay(),
 ) {
+    private val clientWindow = ClientWindowWitness(deps.stores.clientWindows)
     private val compactClassifier = CompactClassifier()
     private val activityLabel = ActivityLabel()
     private val activitySamples = ActivitySamples(deps.seams.clock)
@@ -343,7 +351,14 @@ internal class TurnPreparation(
         val rebuild = TurnRebuild(providerTurns, parsed, compactProbe.compact, arrival.sessionId, perf, client)
             .takeUnless { provider.sendsMessages }
         return providerTurns.endingOnFailure(fromProvider) {
-            handedOn(call, parsed, arrival, perf, fromProvider)
+            val sized = if (compactProbe.compact) {
+                val estimate = PromptTokenEstimate.forRequest(perf.count(PerfKeys.REQ_BYTES), parsed.typed)
+                val meta = fromProvider.meta
+                fromProvider.copy(meta = meta.copy(compaction = meta.compaction.copy(inputEstimateTokens = estimate)))
+            } else {
+                fromProvider
+            }
+            handedOn(call, parsed, arrival, perf, sized)
         }.let { prepared ->
             val harness = (prepared as? Preparation.Ready)?.harness ?: return@let prepared
             prepared.copy(harness = harness.copy(rebuild = rebuild))
@@ -387,13 +402,14 @@ internal class TurnPreparation(
         // (rig's findings of 2026-10-24 and 2026-10-25: hack-program cold-prefilled on every interruption).
         // A non-stream turn of any kind is held the same way since 2026-11-09 (CollectTurn): a Claude Code subagent
         // re-sent one stream:false request 228 times in 25 hours, each re-send restarting its five minutes from zero.
-        val replayed = heldFor(built, parsed.typed.stream)
+        val usage = clientWindow.sizing(call, provider.catalog, route.originalModel, scope.sessionId)
+        val replayed = heldFor(built, parsed.typed.stream, usage)
         val answered = parsed.typed.messages.any { it.role == "assistant" }
         // V4-165: a replayed turn is never driven, so what its build holds ends here, not at a drive.
         replayed?.let { built.onEnd?.ended() }
         return replayed ?: Preparation.Ready(
             built,
-            parsed.typed.stream,
+            Preparation.ReplyShape(parsed.typed.stream, usage),
             arrival.inbound,
             // V4-319: what a stop of this turn marks. A collect is never listed, so only a stream carries it there.
             messagesHash.takeIf { parsed.typed.stream },
@@ -421,14 +437,13 @@ internal class TurnPreparation(
     }
 
     /** A streamed compaction's recording, or a non-stream turn's held reply (a compaction's or not). */
-    private fun heldFor(built: BuiltTurn, stream: Boolean): Preparation? = when {
-        !stream -> collectedFor(built)
-        built.meta.compact -> replayFor(built)
-        else -> null
+    private fun heldFor(built: BuiltTurn, stream: Boolean, usage: UsageSizing): Preparation? {
+        if (stream && !built.meta.compact) return null
+        val key = replay.key(built.meta, built.requestBody, usage) ?: return null
+        return if (stream) replayFor(built, key) else collectedFor(built, key)
     }
 
-    private fun replayFor(built: BuiltTurn): Preparation.Replay? {
-        val key = replay.key(built.meta, built.requestBody) ?: return null
+    private fun replayFor(built: BuiltTurn, key: String): Preparation.Replay? {
         val recording = replay.lookup(key) ?: return null
         val state = if (recording.isComplete) "finished" else "still running"
         deps.log(
@@ -440,8 +455,7 @@ internal class TurnPreparation(
 
     /** The collect sibling of [replayFor]: what the answer ledger holds under the same retry key, and else
      *  the recording of a streamed compaction the same key names, which is what Claude Code's fallback retries. */
-    private fun collectedFor(built: BuiltTurn): Preparation? {
-        val key = replay.key(built.meta, built.requestBody) ?: return null
+    private fun collectedFor(built: BuiltTurn, key: String): Preparation? {
         val session = built.meta.scope.sessionId
         val model = built.meta.route.originalModel
         val hold = replay.answers.find(key)

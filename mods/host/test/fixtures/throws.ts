@@ -1,6 +1,7 @@
 import type { Register } from "../../../contract/index.ts";
 
-export const register: Register = on => {
+// Exercise the host's warning when a handler written for the full contract returns a value.
+export const register: Register<"full"> = on => {
   on("session.start", async (_, event) => {
     (event.labels as Record<string, string>).role = "changed";
   }).catch(async ($, event, next) => {

@@ -9,8 +9,10 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.model.CLAUDE_CODE_ONE_MILLION
 import splice.core.model.ClientSpelling
+import splice.core.model.ClientWindow
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.model.WindowUsage
 
 class ClientSpellingTest {
     private fun catalog(vararg rows: ModelEntry, pinned: String = rows.first().id) = ModelCatalog(
@@ -74,11 +76,12 @@ class ClientSpellingTest {
         val held = ClientSpelling(cat).of("gpt-6-sol")
 
         assertEquals(CLAUDE_CODE_ONE_MILLION, cat.clientContextWindowFor(held), "what the client divides by")
-        assertEquals(1e6 / 872_000, cat.usageScale(held), 1e-12)
+        val sizing = WindowUsage(cat).of(held, ClientWindow.Hint())
+        assertEquals(CLAUDE_CODE_ONE_MILLION, sizing.scale(872_000))
         // The client compacts when what it is told reaches its line: 85% of (its window - 20k). Told
         // real * scale, that is real = line / scale, which must be the line an unspelled row would have hit.
         val clientLine = 0.85 * (CLAUDE_CODE_ONE_MILLION - 20_000L)
-        val realAtCompaction = clientLine / cat.usageScale(held)
+        val realAtCompaction = clientLine / sizing.factor
         val unspelled = 0.85 * (872_000 - 20_000L)
         assertEquals(unspelled, realAtCompaction, unspelled * 0.005, "within the reserve's own 0.3%: it is not scaled")
         assertTrue(realAtCompaction < 872_000, "and never past what the backend serves")
@@ -89,8 +92,10 @@ class ClientSpellingTest {
         val cat = catalog(sol, ModelEntry("gpt-5.6-sol", "Sol 5.6", contextWindow = 272_000L), pinned = "gpt-6-sol")
 
         // The client strips the hint from the body's model and says it in a beta, so the head sees the bare id.
-        assertEquals(1e6 / 872_000, cat.usageScale("gpt-6-sol", sessionWindow = CLAUDE_CODE_ONE_MILLION), 1e-12)
-        assertEquals(1e6 / 272_000, cat.usageScale("gpt-5.6-sol", sessionWindow = CLAUDE_CODE_ONE_MILLION), 1e-12)
-        assertEquals(1.0, cat.usageScale("gpt-6-sol"), "no witness: the launch env's window, as before")
+        val usage = WindowUsage(cat)
+        val beta = ClientWindow.Stated(CLAUDE_CODE_ONE_MILLION)
+        assertEquals(CLAUDE_CODE_ONE_MILLION, usage.of("gpt-6-sol", beta).scale(872_000))
+        assertEquals(CLAUDE_CODE_ONE_MILLION, usage.of("gpt-5.6-sol", beta).scale(272_000))
+        assertEquals(872_000L, usage.of("gpt-6-sol", ClientWindow.Hint()).scale(872_000))
     }
 }

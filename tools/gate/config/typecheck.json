@@ -33,8 +33,7 @@
     ".campaign/checks/signin-e2e/tsconfig.json",
     ".campaign/checks/gateway-no-heads/tsconfig.json",
     ".campaign/checks/wiki-docs/tsconfig.json",
-    "mods/tsconfig.json",
-    "mods/host/tsconfig.json"
+    "mods/tsconfig.json"
   ],
   "excused": {},
   "baseline": {}

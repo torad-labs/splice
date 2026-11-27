@@ -33,7 +33,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import splice.core.perf.PerfKeys
 import splice.core.wire.SHOULD_RETRY_HEADER
-import splice.head.ClientWindowWitness
 import splice.head.HeadDeps
 import splice.head.compaction.CompactionReplay
 import splice.head.turn.delivery.CollectedReply
@@ -70,8 +69,7 @@ internal class TurnStreamer(
     },
 ) {
     private val emitters = SseEmitterFactory()
-    private val wiring = TurnWiring()
-    private val clientWindow = ClientWindowWitness(deps.stores.clientWindows)
+    private val wiring = TurnWiring(replies = deps.stores.clientWindows.replies)
     private val driveDispatcher = ProcessDispatchers().io()
 
     // The drive handles every turn failure itself; anything that still escapes a detached
@@ -89,7 +87,7 @@ internal class TurnStreamer(
 
     /** The emitter whose pinger frames go through the pending response's progress port and whose
      *  content-reached answer reads what this turn has actually written to the client. */
-    private fun streamingEmitter(call: ApplicationCall, inputs: TurnInputs, pending: PendingSse): SseEmitter {
+    private fun streamingEmitter(inputs: TurnInputs, pending: PendingSse): SseEmitter {
         val meta = inputs.built.meta
         val perf = inputs.perf
         return emitters.create(
@@ -104,10 +102,9 @@ internal class TurnStreamer(
             ),
             model = meta.route.originalModel,
             usagePayload = wiring.usagePayloadBuilder(
-                provider.catalog,
-                meta,
-                clientWindow.of(call, provider.catalog, meta),
-                clientWindow.requested(call),
+                meta.route.originalModel,
+                inputs.slot.reply.usage,
+                meta.scope.sessionId,
             ),
             voice = inputs.voice,
         )
@@ -119,7 +116,11 @@ internal class TurnStreamer(
     suspend fun stream(call: ApplicationCall, inputs: TurnInputs): Boolean {
         val built = inputs.built
         val perf = inputs.perf
-        val replayKey = if (built.meta.compact) replay.key(built.meta, built.requestBody) else null
+        val replayKey = if (built.meta.compact) {
+            replay.key(built.meta, built.requestBody, inputs.slot.reply.usage)
+        } else {
+            null
+        }
         // A compaction always records: the detached scope outlives a head restart, so there is
         // always a scope to detach onto (the launch below is ATOMIC, so its finally settles the slot
         // and the recording even if the scope is cancelled in between).
@@ -133,7 +134,7 @@ internal class TurnStreamer(
             val channel = pending.channel
             // reply-stream: before the drive writes its first frame, the channel taps every frame into the live turn.
             channel.live = inputs.live
-            val emitter = streamingEmitter(call, inputs, pending)
+            val emitter = streamingEmitter(inputs, pending)
             val drive = driveFactory.assembleDrive(inputs, emitter, channel)
             // Ktor's SseResponse body previously ran blocking Writer calls on its IO bridge.
             // The drive now starts before respond, so use the process IO adapter instead of Netty.

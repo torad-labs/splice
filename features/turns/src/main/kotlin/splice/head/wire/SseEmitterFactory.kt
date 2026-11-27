@@ -78,8 +78,8 @@ internal class StreamWiring(
  * A turn's error ending on a response that may not have committed its status (failure-handling slice 2): the SSE
  * [frame] a stream writes, what the failure is while the status is still splice's to choose ([unsent]), and the
  * error [body] that status carries. The path an ending takes is the answer, so nothing reads a line's words to
- * choose the status: a compaction's and a first message's overflow lines leave out the words a client compacts on
- * (final-design.md section 11), and they keep the 400 every overflow before commit answers with.
+ * choose the status. A first exchange has no compaction trigger, and a compaction includes a trim size when a shorter
+ * request can fit. Both still return 400 before commit.
  */
 internal fun interface EndingWrite {
     suspend operator fun invoke(frame: String, unsent: WireAnswer, body: String)

@@ -55,7 +55,7 @@ private val MODELS = listOf("gpt-5.6", "grok-4.20", "glm-5.3", "qwen3:32b", "dee
 
 private sealed class Said(val text: String) {
     class Plain(text: String) : Said(text)
-    class Overflow(text: String, val limit: Long?) : Said(text)
+    class Overflow(text: String, val limit: Long?, val input: Long? = null) : Said(text)
     class Model(text: String, val name: String) : Said(text)
 }
 
@@ -125,10 +125,11 @@ private fun duration(ms: Long): String = when {
 private fun said(random: Random): Said = when (random.nextInt(4)) {
     0 -> {
         val limit = random.nextLong(8_000, 2_000_000)
+        val input = limit + random.nextLong(1, 9_000)
         Said.Overflow(
-            "This model's maximum context length is $limit tokens. However, your messages resulted in " +
-                "${limit + random.nextLong(1, 9_000)} tokens.",
+            "This model's maximum context length is $limit tokens. However, your messages resulted in $input tokens.",
             limit,
+            input,
         )
     }
     1 -> Said.Overflow("the request exceeds the context window for this model", null)
@@ -192,7 +193,7 @@ private fun badRequestRow(c: Case, words: ProviderWords?): FailureCause.Provider
     val overflow = (c.said as? Said.Overflow)?.takeIf { c.json }
     return when {
         c.names("context_length_exceeded") || overflow != null ->
-            FailureCause.Provider.TooLong(overflow?.limit, false, words)
+            FailureCause.Provider.TooLong(overflow?.limit, false, words, inputTokens = overflow?.input)
         c.names("model_not_found") -> FailureCause.Provider.ModelMissing(modelNamed(c), words)
         POLICY.any(c::names) -> FailureCause.Provider.Refused(RefusedBy.POLICY, words)
         else -> FailureCause.Provider.Rejected(false, words)

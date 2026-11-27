@@ -42,10 +42,9 @@ internal class AntigravityDoorAdapter(
         val body = JsonScalars.objectOrNull(json, turn.body.decodeToString())
             ?: return voice.refuse(call, HttpStatus.BAD_REQUEST, "the request body is not a JSON object")
         val upstreamModel = JsonScalars.str(body, "model").orEmpty()
-        val askedModel = turn.asked ?: upstreamModel
         val stream = JsonScalars.str(body, "stream") == "true"
         val sessionHint = call.request.headers[SESSION_HEADER]
-        directTurn.serve(call, askedModel, stream, turn) { wire ->
+        directTurn.serve(call, upstreamModel, stream, turn) { wire ->
             val sink = DoorWireSink(wire)
             when (val res = engine.serve(body, upstreamModel, sink, sessionHint)) {
                 is DoorAgyTurnResult.Completed -> DirectTurnOutcome(
@@ -69,7 +68,10 @@ internal class AntigravityDoorAdapter(
 
     suspend fun countTokens(call: ApplicationCall, turn: GatewayTurn) {
         val estimate = (turn.body.size / CHARS_PER_TOKEN).coerceAtLeast(1)
-        val payload = buildJsonObject { put("input_tokens", estimate) }
+        val upstreamModel = JsonScalars.objectOrNull(json, turn.body.decodeToString())
+            ?.let { JsonScalars.str(it, "model") }.orEmpty()
+        val count = directTurn.countInput(call, upstreamModel, turn, estimate.toLong())
+        val payload = buildJsonObject { put("input_tokens", count) }
         JsonReply(HttpStatusCode.OK, JsonWire.string(payload)).send(call)
     }
 

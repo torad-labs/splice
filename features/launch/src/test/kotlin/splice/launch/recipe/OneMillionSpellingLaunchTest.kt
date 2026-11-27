@@ -18,8 +18,10 @@ import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
 import splice.core.model.CLAUDE_CODE_ONE_MILLION
+import splice.core.model.ClientWindow
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.model.WindowUsage
 import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
@@ -115,9 +117,10 @@ class OneMillionSpellingLaunchTest(@param:TempDir private val tmp: Path) {
 
         assertEquals("872000", env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"], "an unspelled row still scales against this")
         assertEquals(CLAUDE_CODE_ONE_MILLION.toString(), env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"])
-        val held = cat.clientContextWindowFor("gpt-6-sol[1m]")
+        val sizing = WindowUsage(cat).of("gpt-6-sol[1m]", ClientWindow.Hint())
+        val held = checkNotNull(sizing.contextWindow)
         val compact = env.getValue("CLAUDE_CODE_AUTO_COMPACT_WINDOW").toLong()
-        val real = minOf(held, compact) / cat.usageScale("gpt-6-sol[1m]")
+        val real = minOf(held, compact) / sizing.factor
         assertEquals(872_000.0, real, 1e-6, "the client's ceiling, in the backend's real tokens, is its window")
     }
 

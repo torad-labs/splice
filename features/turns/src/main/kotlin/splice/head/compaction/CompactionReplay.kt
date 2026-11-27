@@ -16,6 +16,7 @@ package splice.head.compaction
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.memory.HeapReservations
+import splice.core.model.UsageSizing
 import splice.core.turn.TurnMeta
 import splice.core.util.ElapsedClock
 import splice.core.util.JsonWire
@@ -50,9 +51,11 @@ internal class CompactionReplay(
         return "$session:${bodyHash ?: sha256Hex(upstreamBody)}"
     }
 
-    /** A cached pre-tail identity needs neither a wire string nor a second tree traversal. */
-    fun key(meta: TurnMeta, upstreamBody: JsonObject): String? =
-        key(meta.scope.sessionId, upstreamBody, meta.compaction.requestHash)
+    /** A recorded reply carries the first request's usage units; only replay it to a request using the same units. */
+    fun key(meta: TurnMeta, upstreamBody: JsonObject, usage: UsageSizing): String? =
+        key(meta.scope.sessionId, upstreamBody, meta.compaction.requestHash)?.let {
+            "$it:${usage.contextWindow}:${usage.factor}"
+        }
 
     fun key(sessionId: String?, upstreamBody: JsonObject, bodyHash: String? = null): String? {
         val session = sessionId?.takeIf { it.isNotBlank() } ?: return null

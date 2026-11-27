@@ -8,6 +8,7 @@ package splice.app.desktop.catalog
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonObject
+import splice.core.util.JsonScalars
 
 /** One model as its provider publishes it. [label] keeps a meaningful provider name, or the configured label, or a
  *  known model name or readable form of [id]. [description] and reasoning fill missing provider and configured facts
@@ -24,7 +25,12 @@ internal data class CatalogModel(
     val reasons: Boolean = false,
     val contextWindow: Long = 0,
     @Transient val source: JsonObject? = null,
-)
+) {
+    /** Discovery preserves an upstream runtime window alongside the gateway's published ceiling. */
+    val runtimeWindow: Long?
+        get() = JsonScalars.long(source?.get("runtime") as? JsonObject, "max_input_tokens")
+            ?: JsonScalars.long(source, "context_window")
+}
 
 /** The whole catalog: one entry per (provider, id), in the order [CatalogBuild] was given the signed-in providers. */
 @Serializable

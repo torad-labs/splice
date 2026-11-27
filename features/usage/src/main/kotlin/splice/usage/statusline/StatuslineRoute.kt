@@ -73,7 +73,8 @@ public class StatuslineRoute(
         val held = sessionId?.let { own -> managed.statusline.held?.now()?.filter { it.session == own } }.orEmpty()
         val line = renderer.led(renderer.render(stdin, managed.usage, warn, sessionId, unanswered), held)
         JsonScalars.objectOrNull(json, stdin)?.let {
-            lines.record(sessionId, StatuslineFacts(managed.statusline.catalog).read(it, unanswered))
+            val status = StatuslineFacts(managed.statusline.catalog, managed.statusline.clientWindows?.replies)
+            lines.record(sessionId, status.read(it, unanswered))
         }
         val warning = clientVersions.statuslineWarning(sessionId)
         call.respondText(warning?.let { "$line · $it" } ?: line, ContentType.Text.Plain)

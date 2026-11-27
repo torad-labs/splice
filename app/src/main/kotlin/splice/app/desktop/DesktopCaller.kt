@@ -13,6 +13,7 @@ import splice.app.desktop.record.DesktopPickerRow
 import splice.app.desktop.record.DesktopRecord
 import splice.app.desktop.record.DesktopRecords
 import splice.app.desktop.record.RecordChange
+import splice.core.model.ClientWindow
 import splice.core.turn.DESKTOP_DOOR
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
@@ -33,15 +34,7 @@ internal class DesktopCaller(
 
     override fun default(lineup: DesktopLineup): String? = records.get().defaultModel
 
-    /** The window an older splice's `on` told Desktop's environment store, for a request of that door. */
-    override fun window(): Long? = records.get().window
-
-    /** In app mode, the window Desktop gave the Code tab for the request's model (DesktopAppWindow); else [window]. */
-    override fun windowOf(ask: DoorAsk): Long? = ask.appWindow ?: window()
-
-    /** An app-mode window is read off the request itself, beta and model weighed at the door, so it stands where
-     *  the beta would when the turn's counts are scaled. */
-    override fun requestWindowOf(ask: DoorAsk): Long? = ask.appWindow
+    override fun requestWindowOf(ask: DoorAsk): ClientWindow? = ask.appWindow
 
     override val noHead: String = "no provider is in the door; `splice desktop` says why"
 
@@ -58,7 +51,7 @@ internal class DesktopCaller(
     /** An app-mode request: Desktop has been reopened since splice changed its configuration. Recorded once after each
      *  change, so a turn writes nothing while the record already says so. */
     override fun asked(ask: DoorAsk) {
-        if (ask.appWindow == null || records.get().seenSinceWritten()) return
+        if (!ask.appMode || records.get().seenSinceWritten()) return
         kept("Claude Desktop's request") { it.copy(appSeenAt = now()) }
     }
 

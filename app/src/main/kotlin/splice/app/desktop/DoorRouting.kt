@@ -36,7 +36,8 @@ internal class DoorRouting {
      *  caller's. With [named], a served Claude ID also switches providers rather than being treated as a tier on the
      *  old provider. */
     fun of(lineup: DesktopLineup, ask: DoorAsk, default: String?, named: Boolean): DoorRoute? {
-        val (provider, model) = lineup.find(ask.model) ?: return tiered(lineup, ask, default, named)
+        val (provider, model) = lineup.find(ask.model)
+            ?: return tiered(lineup, ask, default, named)
         return onProvider(ask, provider, model.upstream)
     }
 

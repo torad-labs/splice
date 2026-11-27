@@ -1,7 +1,6 @@
 // NEW: V4-162 — a running head's catalog answers every window from the declaration in force NOW.
 //
-// WHAT IT PINS: the window METHODS (contextWindowFor, clientLaunchWindow, clientContextWindowFor,
-// usageScale) all follow LiveWindows, which is what lets a context_window edit reach a running
+// The catalog's declared windows and runtime usage sizing follow LiveWindows so edits reach a running
 // daemon; live() hands a reader of the window FIELDS the same catalog; withWindowsOf changes the
 // numbers and nothing else. NEVER-BELOW-STATUS-QUO: a live source with nothing newer than boot, and
 // a catalog with no live source at all, answer exactly the windows the catalog was built with.
@@ -58,11 +57,8 @@ class LiveWindowsCatalogTest {
         assertEquals(245_760, head.contextWindowFor("elsewhere"))
         assertEquals(245_760, head.clientLaunchWindow)
         assertEquals(245_760, head.clientContextWindowFor("bonsai-27b"))
-        // A session launched BEFORE the edit keeps dividing by 131,072: its counts are scaled so it
-        // compacts at the new 245,760, and neither the daemon nor the session restarts.
-        assertEquals(131_072.0 / 245_760, head.usageScale("bonsai-27b", sessionWindow = 131_072))
-        // A session launched after the edit is planted with the new window and rides raw.
-        assertEquals(1.0, head.usageScale("bonsai-27b", sessionWindow = 245_760))
+        val sizing = WindowUsage(head).of("bonsai-27b", ClientWindow.Stated(131_072))
+        assertEquals(131_072L, sizing.scale(245_760))
     }
 
     @Test
@@ -72,7 +68,6 @@ class LiveWindowsCatalogTest {
             assertEquals(32_768, head.contextWindowFor("bonsai-aux"))
             assertEquals(16_384, head.contextWindowFor("bonsai-unlisted"))
             assertEquals(131_072, head.clientLaunchWindow)
-            assertEquals(1.0, head.usageScale("bonsai-27b", sessionWindow = 131_072))
             assertSame(head, head.live())
         }
     }
@@ -117,7 +112,8 @@ class LiveWindowsCatalogTest {
             published.copy(models = listOf(ModelEntry("bonsai-27b", contextWindow = 300_000))),
         )
         assertEquals(872_000L, ModelServeWindows.forRow(withoutOverride, "bonsai-27b"))
-        assertEquals(131_072.0 / 300_000, withoutOverride.usageScale("bonsai-27b", 131_072))
+        val sizing = WindowUsage(withoutOverride).of("bonsai-27b", ClientWindow.Stated(131_072))
+        assertEquals(131_072L, sizing.scale(300_000))
     }
 
     @Test

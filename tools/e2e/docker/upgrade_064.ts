@@ -71,6 +71,7 @@ function logged(log: string): { model: string; system: string[] }[] {
 }
 
 const slots = { opus: "mock-chat", sonnet: "mock-chat-2-big", haiku: "mock-chat-2" };
+const NATIVE_MILLION = 1_000_000;
 
 async function realinfer(
   base: string, key: string, session: string, log: string, prompt: string, window: string, laneFile?: string,
@@ -82,15 +83,17 @@ async function realinfer(
     check(row.max_input_tokens === Number(window), `${base}: RealInfer catalog window is ${row.max_input_tokens}, wanted ${window}`);
     console.log(`${base}: RealInfer catalog has the old head's context window ${window}`);
   }
-  for (const [selector, model] of [
-    ["realinfer--mock-chat", slots.opus],
-    ["claude-opus-5-5", slots.opus],
-    ["claude-sonnet-5-5", slots.sonnet],
-    ["claude-haiku-4-5", slots.haiku],
+  // Claude Code runs opus-5-5 and sonnet-5-5 at a native million window without a beta, so their
+  // counts are sized for that window; the other selectors use the window the terminal declared.
+  for (const [selector, model, native] of [
+    ["realinfer--mock-chat", slots.opus, 0],
+    ["claude-opus-5-5", slots.opus, NATIVE_MILLION],
+    ["claude-sonnet-5-5", slots.sonnet, NATIVE_MILLION],
+    ["claude-haiku-4-5", slots.haiku, 0],
   ] as const) {
     const before = logged(log).length;
     const body = await answered(base, key, session, selector, "END");
-    if (laneFile) terminalWindow(body, laneFile, Number(window));
+    if (laneFile) terminalWindow(body, laneFile, Number(window), native);
     const received = logged(log).slice(before);
     check(received.length > 0 && received.every((r) => r.model === model && r.system.some((s) => s.includes(prompt))),
       `${base}: ${selector} did not reach RealInfer as ${model} with the standing prompt`);
@@ -100,15 +103,16 @@ async function realinfer(
 
 // The terminal catalog carries no window metadata. Its client observes the window through the
 // billed input count: 12 raw tokens from the chat fixture, scaled from model to the lane's window.
-function terminalWindow(body: Answer, laneFile: string, window: number): void {
+function terminalWindow(body: Answer, laneFile: string, window: number, native: number): void {
   const lane = JSON.parse(readFileSync(laneFile, "utf8")) as { window?: number };
   check(lane.window && lane.window > 0, "the terminal never declared its window");
   const usage = body.usage;
   check(typeof usage?.input_tokens === "number", "no input usage on a completed terminal turn");
   const input = usage.input_tokens + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
-  const expected = Math.floor(12 * lane.window / window);
+  const client = Math.max(lane.window, native);
+  const expected = Math.floor(12 * client / window);
   check(input === expected, `terminal counted ${input} input tokens, wanted ${expected} at the retained window ${window}`);
-  console.log(`terminal scaled 12 input tokens to ${input} (${lane.window} client / ${window} model window)`);
+  console.log(`terminal scaled 12 input tokens to ${input} (${client} client / ${window} model window)`);
 }
 
 function fixed(path: string, prompt: string, window: string): void {

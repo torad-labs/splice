@@ -142,7 +142,6 @@ class TopologyWindowsTest {
         assertEquals(245_760, remote.clientLaunchWindow)
         assertEquals(245_760, remote.contextWindowFor("big"))
         assertEquals(65_536, remote.contextWindowFor("small"))
-        assertEquals(131_072.0 / 245_760, remote.usageScale("big", sessionWindow = 131_072))
         assertEquals(245_760, remote.live().models.first().contextWindow)
         assertFalse(windows.stale())
         assertEquals(TopologyLoader.sha256Hex(edited.toByteArray()), windows.digest())

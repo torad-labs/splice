@@ -13,8 +13,10 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.model.ClientWindow
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.model.WindowUsage
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.RoundHandoffs
@@ -67,7 +69,7 @@ class CodeModeStepContextTest {
         private val turn = CodexCodeModeBridge.Turn("session", "conversation", MODEL, setOf("Read"), results)
 
         suspend fun run(body: JsonObject, post: suspend () -> TurnOutcome) {
-            val usage = wiring.usagePayloadBuilderFor(catalog, MODEL)
+            val usage = wiring.usagePayloadBuilder(MODEL, WindowUsage(catalog).of(MODEL, ClientWindow.Hint()))
             val emitter = SseEmitterFactory().create({ frames += it }, MODEL, usage, voice = testVoice)
             RoundStrategy(
                 emitter = emitter,

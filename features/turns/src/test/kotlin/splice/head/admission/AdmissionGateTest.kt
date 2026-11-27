@@ -742,7 +742,7 @@ private fun ready(): Preparation.Ready = Preparation.Ready(
             ),
         ),
     ),
-    stream = false,
+    reply = Preparation.ReplyShape(stream = false),
     inbound = null,
     messagesHash = null,
     hasPriorExchange = false,

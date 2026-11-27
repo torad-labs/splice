@@ -121,12 +121,18 @@ class ClientWindowBetaTest {
     }
 
     @Test
-    fun `the request's own window outranks the one a status-line post taught for the session`() {
+    fun `a status-line post cannot discount a turn that names no window`() {
         windows.record("s1", 300_000L)
 
-        // 1e6 / 500k = 2.0 from the beta; the post alone would say 300k / 500k = 0.6
         assertEquals(UPSTREAM_INPUT_TOKENS * 2, reportedInput(ONE_MILLION_BETA, session = "s1"))
-        assertEquals(UPSTREAM_INPUT_TOKENS * 6 / 10, reportedInput(OTHER_BETAS, session = "s1"), "no witness: the post")
+        assertEquals(UPSTREAM_INPUT_TOKENS, reportedInput(OTHER_BETAS, session = "s1"))
+        assertEquals(6L, reportedInput(OTHER_BETAS, session = "s1", launchWindow = 300_000))
+    }
+
+    @Test
+    fun `a larger status-line window can still raise a turn's reported input`() {
+        windows.record("larger", 750_000L)
+        assertEquals(15L, reportedInput(OTHER_BETAS, session = "larger"))
     }
 
     // #706: a session first launched when the row declared 229,376 kept that window under its id. Resumed by a

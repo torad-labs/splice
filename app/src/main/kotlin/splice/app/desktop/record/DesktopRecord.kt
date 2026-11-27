@@ -28,8 +28,6 @@ internal data class DesktopRecord(
     val on: Boolean = false,
     /** The selector a session starts on: `--model`, or the one chosen the last time. */
     @SerialName("default_model") val defaultModel: String? = null,
-    /** The window Desktop is told, set at the first `on` and kept: every count the door reports is a share of it. */
-    val window: Long? = null,
     /** What an older splice's `on` replaced in the settings file, until it is put back (withoutDoor). */
     val replaced: JsonObject? = null,
     @SerialName("last_turn") val lastTurn: DesktopLastTurn? = null,

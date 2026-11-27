@@ -271,7 +271,8 @@ at its own real window.
 
 1. At launch the daemon sets `CLAUDE_CODE_MAX_CONTEXT_TOKENS` to the pinned row's declared window and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=85`.
 2. After `/model` to a row with another window, the head **scales the input token counts it reports** by `client window / declared
-   window` (`usageScale`). Output tokens and raw upstream accounting are never scaled.
+   window` when the client's window is known. Window hints can only raise reported counts. Output tokens and raw
+   upstream accounting are never scaled.
 3. An id with `[1m]` anywhere in it is different: Claude Code uses exactly 1,000,000 and never reads the env. A `[1m]` row must declare
    `context_window = 1000000`, not 1024*1024. Never spell a row `[1m]` past its real ceiling: the client would run to about 850k while the
    backend rejects at 500k. Scale instead.

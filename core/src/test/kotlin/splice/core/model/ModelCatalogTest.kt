@@ -193,21 +193,20 @@ class ModelCatalogTest {
             defaultContextWindow = 256_000,
             pinnedModel = "grok-4.6",
         )
+        val usage = WindowUsage(xai)
         // the pinned row IS the client's window: its counts ride raw
         assertEquals(256_000L, xai.clientContextWindowFor("grok-4.6"))
-        assertEquals(1.0, xai.usageScale("grok-4.6"))
+        assertEquals(256_000L, usage.of("grok-4.6", ClientWindow.Hint()).scale(256_000))
         // a "[1m]" row bypasses the env entirely and declares 1e6, so its counts ride raw
         assertEquals(1_000_000L, xai.clientContextWindowFor("grok-4.3[1m]"))
-        assertEquals(1.0, xai.usageScale("grok-4.3[1m]"))
+        assertEquals(1_000_000L, usage.of("grok-4.3[1m]", ClientWindow.Hint()).scale(1_000_000))
         // the 500k row: the client believes 256k, so halving the reported counts makes it compact
         // when REAL usage reaches 500k
         assertEquals(256_000L, xai.clientContextWindowFor("grok-4.6[500k]"))
-        assertEquals(0.512, xai.usageScale("grok-4.6[500k]"))
-        // the discovery-WRAPPED spelling starts with "claude-", which makes Claude Code ignore the
-        // env (cli 2.1.257 kL) and fall back to its 200k default: no window of ours is in play, so
-        // the counts ride raw rather than against a client number we did not set
+        assertEquals(256_000L, usage.of("grok-4.6[500k]", ClientWindow.Stated(256_000)).scale(500_000))
+        // At a head this wrapped ID, with no other evidence about its window, rides raw.
         assertEquals(500_000L, xai.clientContextWindowFor("claude-grok--grok-4.6[500k]"))
-        assertEquals(1.0, xai.usageScale("claude-grok--grok-4.6[500k]"), "wrapped: the client ignores our env")
+        assertEquals(500_000L, usage.of("claude-grok--grok-4.6[500k]", ClientWindow.Hint()).scale(500_000))
     }
 
     // DR-24: the 0.512 pin above once depended on exactWindows last-wins — fixture DECLARATION
@@ -234,8 +233,10 @@ class ModelCatalogTest {
                 defaultContextWindow = 256_000,
                 pinnedModel = "grok-4.6",
             )
-            assertEquals(0.512, xai.usageScale("grok-4.6[500k]"), "order ${rows.map { it.id }}")
-            assertEquals(1.0, xai.usageScale("grok-4.6"), "order ${rows.map { it.id }}")
+            val usage = WindowUsage(xai)
+            val launched = ClientWindow.Stated(256_000)
+            assertEquals(256_000L, usage.of("grok-4.6[500k]", launched).scale(500_000), "order ${rows.map { it.id }}")
+            assertEquals(256_000L, usage.of("grok-4.6", launched).scale(256_000), "order ${rows.map { it.id }}")
         }
     }
 
@@ -274,8 +275,9 @@ class ModelCatalogTest {
             defaultContextWindow = 262_144,
             pinnedModel = "k3-256k",
         )
-        assertEquals(1.0, kimi.usageScale("k3[1m]"), "client 1e6 over declared 1e6")
-        assertEquals(1.0, kimi.usageScale("k3-256k"), "the pinned row: client 256k over its declared 256k")
+        val usage = WindowUsage(kimi)
+        assertEquals(1_000_000L, usage.of("k3[1m]", ClientWindow.Hint()).scale(1_000_000))
+        assertEquals(262_144L, usage.of("k3-256k", ClientWindow.Hint()).scale(262_144))
     }
 
     @Test
@@ -294,7 +296,8 @@ class ModelCatalogTest {
             pinnedModel = "k3[1m]",
         )
         assertEquals(1_000_000L, declaring1024.clientContextWindowFor("k3[1m]"), "client ignores our number")
-        assertEquals(1_000_000.0 / 1_048_576.0, declaring1024.usageScale("k3[1m]"), "not 1.0 — this is the bug")
+        val sizing = WindowUsage(declaring1024).of("k3[1m]", ClientWindow.Hint())
+        assertEquals(1_000_000L, sizing.scale(1_048_576))
     }
 
     @Test
@@ -325,7 +328,8 @@ class ModelCatalogTest {
                 xai.contextWindowFor("grok-4.6[1m]"),
                 "the undeclared tier's denominator is the bare row's own window ($order)",
             )
-            assertEquals(3.90625, xai.usageScale("grok-4.6[1m]"), "the client's own 1e6 / 256k real ($order)")
+            val sizing = WindowUsage(xai).of("grok-4.6[1m]", ClientWindow.Hint())
+            assertEquals(1_000_000L, sizing.scale(256_000), "the client's own 1e6 / 256k real ($order)")
             assertEquals(1_000_000L, xai.clientContextWindowFor("grok-4.6[1m]"), "client's number regardless ($order)")
         }
     }
@@ -343,8 +347,9 @@ class ModelCatalogTest {
             defaultContextWindow = 400_000,
             pinnedModel = "gpt-5.6-sol",
         )
-        assertEquals(1.0, codex.usageScale("gpt-5.6-sol"))
-        assertEquals(3.125, codex.usageScale("gpt-5.3-codex-spark"))
+        val usage = WindowUsage(codex)
+        assertEquals(400_000L, usage.of("gpt-5.6-sol", ClientWindow.Hint()).scale(400_000))
+        assertEquals(400_000L, usage.of("gpt-5.3-codex-spark", ClientWindow.Hint()).scale(128_000))
     }
 
     // 2026-09-05: the codex rows moved 400k -> 272k to stay under OpenAI's 2x price line, and six
@@ -367,21 +372,14 @@ class ModelCatalogTest {
         val after = codex(272_000)
         assertEquals(400_000L, before.clientLaunchWindow, "the launch env is the pinned row's number")
         assertEquals(272_000L, after.clientLaunchWindow, "and it follows the edit for every NEW launch")
-        assertEquals(1.0, before.usageScale("gpt-5.6-sol"), "a session launched on 400k rides raw")
-        assertEquals(1.0, after.usageScale("gpt-5.6-sol"), "so does one launched on 272k")
-        // the process launched on 400k, still running after the edit, reports 400k on its status
-        // line: its counts are scaled 400k/272k so it compacts when REAL usage reaches 272k
-        assertEquals(400_000L, after.clientContextWindowFor("gpt-5.6-sol", sessionWindow = 400_000))
-        assertEquals(400_000.0 / 272_000.0, after.usageScale("gpt-5.6-sol", sessionWindow = 400_000))
-        // a session launched with a constant 1e6 (the reverted first fix) is carried the same way,
-        // never assumed: 3.68x against its own window, 1.0 against nobody's
-        assertEquals(1_000_000.0 / 272_000.0, after.usageScale("gpt-5.6-sol", sessionWindow = 1_000_000))
+        val usage = WindowUsage(after)
+        assertEquals(400_000L, usage.of("gpt-5.6-sol", ClientWindow.Hint(400_000)).scale(272_000))
+        // A previous launch could have used a million; now it takes evidence to choose that window.
+        assertEquals(1_000_000L, usage.of("gpt-5.6-sol", ClientWindow.Hint(1_000_000)).scale(272_000))
     }
 
-    // Claude models ignore the launch env but report the running divisor through the status line.
-    // A live TOML edit scales against that learned number without relaunching.
     @Test
-    fun `a Claude session's posted divisor scales a live window edit`() {
+    fun `a Claude session's old posted window cannot discount a live window edit`() {
         var current = ModelCatalog(
             discoveryPrefix = "claude-splice--",
             models = listOf(ModelEntry(id = "claude-opus-5-5", contextWindow = 200_000)),
@@ -389,36 +387,26 @@ class ModelCatalogTest {
             pinnedModel = "claude-opus-5-5",
         )
         val live = current.copy(windows = current.windows.copy(liveWindows = LiveWindows { current }))
-        assertEquals(1.0, live.usageScale("claude-opus-5-5"))
+        val usage = WindowUsage(live)
         current = current.copy(
             models = listOf(ModelEntry(id = "claude-opus-5-5", contextWindow = 1_000_000)),
             defaultContextWindow = 1_000_000,
         )
-        assertEquals(1.0, live.usageScale("claude-opus-5-5"), "no post keeps the raw fallback")
-        assertEquals(200_000L, live.clientContextWindowFor("claude-opus-5-5", sessionWindow = 200_000))
-        assertEquals(0.2, live.usageScale("claude-opus-5-5", sessionWindow = 200_000))
-        assertEquals(1.0, live.usageScale("claude-opus-5-5", sessionWindow = 0))
+        assertEquals(1_000_000L, usage.of("claude-opus-5-5", ClientWindow.Hint(200_000)).scale(1_000_000))
     }
 
     @Test
-    fun `an open Claude head scales a posted divisor but preserves other open ids`() {
+    fun `an open Claude head can raise counts using a bound without learning a window first`() {
         val open = ModelCatalog(
             discoveryPrefix = "claude-splice--",
             models = emptyList(),
-            defaultContextWindow = 1_000_000,
+            defaultContextWindow = 200_000,
             client = ClientModelPolicy(open = true),
         )
-        assertEquals(1.0, open.usageScale("claude-opus-5-5"))
-        assertEquals(200_000L, open.clientContextWindowFor("claude-opus-5-5", sessionWindow = 200_000))
-        assertEquals(0.2, open.usageScale("claude-opus-5-5", sessionWindow = 200_000))
-        assertEquals(1.0, open.usageScale("other-provider-id", sessionWindow = 200_000))
-        assertEquals(1.0, open.usageScale("claude-opus-5-5[1m]", sessionWindow = 200_000))
-        val presented = open.copy(
-            models = listOf(
-                ModelEntry(id = "claude-sonnet-5", contextWindow = 1_000_000, clientModel = "claude-opus-5-5"),
-            ),
-        )
-        assertEquals(1.0, presented.usageScale("claude-sonnet-5", sessionWindow = 200_000))
+        val usage = WindowUsage(open)
+        val sizing = usage.of("claude-opus-5-5", ClientWindow.Bound(1_000_000))
+        assertEquals(1_000_000L, sizing.scale(200_000))
+        assertEquals(200_000L, usage.of("other-provider-id", ClientWindow.Hint()).scale(200_000))
     }
 
     @Test
@@ -448,7 +436,8 @@ class ModelCatalogTest {
             windows = CatalogWindows(compactionReserveDefaults = CodexCompactionReserves),
         )
         assertEquals(CompactionBudget(50_000, 31_791, 272_000), CompactionBudgets.forRow(codex, "gpt-5.6-luna"))
-        assertEquals(153_000.0 / 222_000, codex.usageScale("gpt-5.6-luna", 200_000), 1e-12)
+        val sizing = WindowUsage(codex).of("gpt-5.6-luna", ClientWindow.Stated(200_000))
+        assertEquals(153_000L, sizing.scale(222_000))
     }
 
     @Test
@@ -461,7 +450,7 @@ class ModelCatalogTest {
             windows = CatalogWindows(compactionReserveDefaults = CodexCompactionReserves),
         )
         // A `[desktop]` window is any positive whole number; 85% of it is still far past the row's own target.
-        val scale = codex.usageScale("gpt-5.6-luna", requestWindow = Long.MAX_VALUE)
+        val scale = WindowUsage(codex).of("gpt-5.6-luna", ClientWindow.Stated(Long.MAX_VALUE)).factor
         assertTrue(scale > 1e12, "scale $scale")
     }
 }
@@ -487,9 +476,9 @@ class SessionWindowScaleTest {
     @Test
     fun `a session's own window replaces the launch env for an env-governed id`() {
         assertEquals(400_000L, codex.clientContextWindowFor("gpt-5.6-sol", sessionWindow = 400_000))
-        assertEquals(400_000.0 / 272_000.0, codex.usageScale("gpt-5.6-sol", sessionWindow = 400_000))
-        val atRow = codex.usageScale("gpt-5.6-sol", sessionWindow = 272_000)
-        assertEquals(1.0, atRow, "an env already at the row's window")
+        val usage = WindowUsage(codex)
+        assertEquals(400_000L, usage.of("gpt-5.6-sol", ClientWindow.Hint(400_000)).scale(272_000))
+        assertEquals(272_000L, usage.of("gpt-5.6-sol", ClientWindow.Hint(272_000)).scale(272_000))
         val unknown = codex.clientContextWindowFor("gpt-5.6-sol", sessionWindow = null)
         assertEquals(272_000L, unknown, "unknown session: the launch env, the pinned row's window")
         val nonsense = codex.clientContextWindowFor("gpt-5.6-sol", sessionWindow = 0)
@@ -499,7 +488,8 @@ class SessionWindowScaleTest {
     @Test
     fun `a 1m id ignores the posted session window`() {
         assertEquals(1_000_000L, codex.clientContextWindowFor("gpt-5.6-sol[1m]", sessionWindow = 400_000))
-        assertEquals(1.0, codex.usageScale("gpt-5.6-sol[1m]", sessionWindow = 400_000))
+        val sizing = WindowUsage(codex).of("gpt-5.6-sol[1m]", ClientWindow.Hint(400_000))
+        assertEquals(1_000_000L, sizing.scale(1_000_000))
     }
 
     @Test
@@ -507,8 +497,9 @@ class SessionWindowScaleTest {
         // Claude Desktop's Code tab given 640,000 for a 1M pick (`[desktop] code_window_1m`): the door read it off the
         // request, so the row's counts are scaled to it, not to the client's own million.
         assertEquals(640_000L, codex.clientContextWindowFor("gpt-5.6-sol[1m]", 400_000, requestWindow = 640_000))
-        assertEquals(0.64, codex.usageScale("gpt-5.6-sol[1m]", 400_000, requestWindow = 640_000), 1e-12)
-        assertEquals(1.0, codex.usageScale("gpt-5.6-sol[1m]", 400_000, requestWindow = null), "no reading: the million")
+        val usage = WindowUsage(codex)
+        assertEquals(640_000L, usage.of("gpt-5.6-sol[1m]", ClientWindow.Stated(640_000)).scale(1_000_000))
+        assertEquals(1_000_000L, usage.of("gpt-5.6-sol[1m]", ClientWindow.Hint(400_000)).scale(1_000_000))
     }
 
     @Test

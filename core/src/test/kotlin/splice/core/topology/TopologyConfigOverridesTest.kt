@@ -12,7 +12,9 @@ import splice.core.GATEWAY_VERSION
 import splice.core.client.SPLICE_CLIENT_HEADER
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
+import splice.core.model.ClientWindow
 import splice.core.model.ModelEntry
+import splice.core.model.WindowUsage
 import java.nio.file.Path
 
 class TopologyConfigOverridesTest {
@@ -133,7 +135,6 @@ class TopologyConfigOverridesTest {
         assertEquals(listOf("wide-b", "wide-a"), catalog.availableModelIds())
         assertEquals(provider.models.map { it.id }, provider.catalogFor(head.copy(models = null)).availableModelIds())
         assertEquals(setOf(500_000L), catalog.models.map { it.contextWindow }.toSet())
-        assertEquals(1.0, catalog.usageScale("wide-a"), "the pinned row's 500k launch env over the 500k override")
         assertThrows(IllegalArgumentException::class.java) {
             provider.catalogFor(head.copy(models = listOf(HeadModel("not-declared-by-provider"))))
         }
@@ -400,16 +401,18 @@ class TopologyConfigOverridesTest {
             872_000L to 724_200L,
             1_000_000L to 833_000L,
         )
+        val usage = WindowUsage(catalog)
         for ((clientWindow, threshold) in thresholds) {
+            val selected = ClientWindow.Stated(clientWindow)
             assertEquals(
                 threshold.toDouble() / (272_000 - 39_621),
-                catalog.usageScale("gpt-5.6-luna", clientWindow),
+                usage.of("gpt-5.6-luna", selected).factor,
                 1e-12,
                 "luna5.6: clean-pair p99 growth 7830 + own p99 generation 31791",
             )
             assertEquals(
                 threshold.toDouble() / (872_000 - 12_892),
-                catalog.usageScale("gpt-6-sol", clientWindow),
+                usage.of("gpt-6-sol", selected).factor,
                 1e-12,
                 "sol6: clean-pair p99 growth 1290 + own p99 generation 11602",
             )
@@ -441,13 +444,13 @@ class TopologyConfigOverridesTest {
     }
 
     @Test
-    fun `the retired oracle gpt-5-codex row retains its raw usage without an audited reserve`() {
+    fun `the retired oracle row retains its raw usage without an audited reserve`() {
         val provider = topology.providers.getValue("codex").copy(
             models = listOf(ModelEntry("gpt-5-codex", contextWindow = 272_000)),
         )
         val catalog = provider.catalogFor(topology.heads.getValue("codex").copy(pinnedModel = "gpt-5-codex"))
         assertEquals(null, splice.core.model.CompactionBudgets.forRow(catalog, "gpt-5-codex"))
-        assertEquals(1.0, catalog.usageScale("gpt-5-codex"))
+        assertEquals(272_000L, WindowUsage(catalog).of("gpt-5-codex", ClientWindow.Hint()).scale(272_000))
     }
 
     @Test

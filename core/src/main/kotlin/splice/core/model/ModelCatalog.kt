@@ -17,25 +17,13 @@ import kotlinx.serialization.Transient
  *  source that can drift. */
 public const val CLAUDE_CODE_ONE_MILLION: Long = 1_000_000L
 
-/** Claude Code's own id-keyed window hook, matched anywhere in the client id. */
-// UNANCHORED on purpose, unlike the strip rule (DR-27): this predicate exists to predict what the
-// CLIENT will do, and Claude Code's own detection is a containsMatch — `/\[1m\]/i` (cli 2.1.233
-// `G4u`) — anywhere in the id. The anchored version disagreed with the client for a mid-string
-// spelling ("k3[1m]-preview"): the client used 1e6 while usageScale corrected against the pinned
-// window, a silently wrong factor. Mirror the client, never improve on it.
-private val oneMillionHint = Regex("\\[1m]", RegexOption.IGNORE_CASE)
-
 /** Claude Code honors CLAUDE_CODE_MAX_CONTEXT_TOKENS only for an active id NOT starting with this
  *  (cli 2.1.257 `kL`: `!id.startsWith("claude-") && !knownAlias(id)`); any other id resolves to
  *  the client's built-in table or its 200k default, and nothing we launch with can move it. */
-private const val CLIENT_OWN_ID_PREFIX = "claude-"
+internal const val CLIENT_OWN_ID_PREFIX = "claude-"
 
-/** V4-232: the window Claude Code gives a Claude model it knows when the base URL is not Anthropic's,
- *  which is every head's (ANTHROPIC_BASE_URL is the head's own 127.0.0.1 port): its own table, never
- *  the env. Seen on 2.1.283 for claude-sonnet-4-6, claude-sonnet-5, claude-opus-4-6 and
- *  claude-haiku-4-5 alike (a native 1M window needs an api.anthropic.com base URL, cli `Os()`). The
- *  runtime-head e2e reads it off the real client at each pin. Mirror the client, never improve on it.
- *  The launch plants CLAUDE_CODE_AUTO_COMPACT_WINDOW no lower than it for a head that presents a row. */
+/** The ordinary client-table window. Native-million IDs can instead hold 1M behind the same gateway
+ *  ([ClaudeCodeNativeWindow]); a presented row follows the model it is presented as. */
 public const val CLIENT_TABLE_WINDOW: Long = 200_000L
 
 @Serializable
@@ -223,7 +211,7 @@ public data class ModelCatalog(
     public fun contextWindowFor(model: String?, defaultOverride: Long? = null): Long {
         // V4-162: a running head answers from the windows splice.toml declares NOW. The live catalog
         // carries no live source of its own ([withWindowsOf]), so this delegates exactly once, and
-        // [clientLaunchWindow], [clientContextWindowFor] and [usageScale] all follow through here.
+        // the launch window and [WindowUsage] both follow it.
         windows.liveWindows?.current()?.let { return it.contextWindowFor(model, defaultOverride) }
         val fallback = defaultOverride?.takeIf { it > 0 } ?: defaultContextWindow
         if (model.isNullOrEmpty()) return fallback
@@ -241,8 +229,8 @@ public data class ModelCatalog(
     }
 
     /** The window every launch declares to the client (CLAUDE_CODE_MAX_CONTEXT_TOKENS): the pinned
-     *  row's declared window, so on the row a session starts on the client's numbers are exact and
-     *  [usageScale] is 1.0. Any other row is carried against it by scaling. A TOML edit of this
+     *  row's declared window, so on the row a session starts on the client's numbers are exact.
+     *  Any other row is carried against it by [WindowUsage]. A TOML edit of this
      *  number still reaches a RUNNING session: the process keeps dividing by the number it was
      *  launched with, the head learns that number from the session's status-line posts
      *  (ClientWindows), and scaling carries the edit — never a launch constant. Planting a constant
@@ -252,7 +240,7 @@ public data class ModelCatalog(
      *  summary, re-attached files) already read as 84% of a 272k window. */
     public val clientLaunchWindow: Long get() = contextWindowFor(pinnedModel)
 
-    /** The window the CLIENT will actually use for [id]: `[1m]` and presented rows have
+    /** The window used to size [id]: `[1m]` and presented rows have
      *  selector-owned windows. A `claude-` id ignores our launch env, but the session's status-line
      *  post reports its actual divisor; before that post, the declared window keeps the old raw
      *  fallback. Other ids use the per-session launch env when known. [requestWindow] is the window
@@ -263,34 +251,11 @@ public data class ModelCatalog(
     public fun clientContextWindowFor(id: String, sessionWindow: Long? = null, requestWindow: Long? = null): Long =
         requestWindow?.takeIf { it > 0 } ?: SelectorWindow(this).of(id, sessionWindow)
 
-    /** Multiplier for the three client-visible input buckets. Most providers retain the legacy
-     *  client/declared-window ratio. A calibrated Codex row uses the client's actual threshold T(C)
-     *  divided by its real input target W-R: input and both disjoint cache buckets must agree.
-     *  Raw upstream usage and output accounting never pass through this factor. */
-
     /** True when Claude Code sizes [id]'s window from the launch env — the ids whose window a
      *  session's status-line post reveals (ClientWindows). False for a "[1m]" id (always 1e6) and
      *  a "claude-" id (Claude Code's own table): their posts say nothing about the env. */
     public fun envGoverned(id: String): Boolean = !client.open &&
-        !oneMillionHint.containsMatchIn(unwrap(id)) && !id.startsWith(CLIENT_OWN_ID_PREFIX) && !presented.covers(id)
-
-    public fun usageScale(id: String, sessionWindow: Long? = null, requestWindow: Long? = null): Double {
-        val declared = contextWindowFor(id)
-        // An undeclared [1m] tier still resolves its real window through stripSuffixes. An
-        // explicit reserve overrides the provider's default, never the client's selector window.
-        // An open head keeps raw counts except for a Claude session with a learned divisor.
-        val learnedClaude = id.startsWith(CLIENT_OWN_ID_PREFIX) && !presented.selectorSized(id)
-        val client = when {
-            !client.open -> clientContextWindowFor(id, sessionWindow, requestWindow)
-            sessionWindow?.takeIf { it > 0 } != null && learnedClaude ->
-                clientContextWindowFor(id, sessionWindow, requestWindow)
-            else -> 0L
-        }
-        if (declared <= 0 || client <= 0) return 1.0
-        val budget = CompactionBudgets.forRow(this, id) ?: return client.toDouble() / declared
-        val realInputTarget = (declared - budget.totalTokens).coerceAtLeast(1)
-        return ClaudeCodeCompactThreshold.tokens(client).toDouble() / realInputTarget
-    }
+        !ModelTierSuffix.isOneMillion(unwrap(id)) && !id.startsWith(CLIENT_OWN_ID_PREFIX) && !presented.covers(id)
 
     /** The immutable catalog snapshot in force now: live windows and refreshed discovery (V4-440).
      *  Field readers resolve this once per operation; roster and window methods already delegate. */
@@ -370,16 +335,23 @@ public data class CatalogWindows(
 
 /** The window the client holds for a row of [catalog] with no reading off the request, in the order terminal turns keep
  *  ([ModelCatalog.clientContextWindowFor] puts a request's own reading ahead of it). */
-private class SelectorWindow(private val catalog: ModelCatalog) {
-    fun of(id: String, sessionWindow: Long?): Long = when {
-        oneMillionHint.containsMatchIn(catalog.unwrap(id)) -> CLAUDE_CODE_ONE_MILLION
-        // V4-232: a presented row is one the client knows, so its window is the client's table, and
-        // unlike a "claude-" id below we know that number, so the factor is honest rather than 1.0.
-        catalog.presented.covers(id) -> CLIENT_TABLE_WINDOW
-        // A Codex discovery wrapper starts with claude- but is not a Claude model from the
-        // client's own table. It gets the client's unknown-model 200k fallback, not this row's W.
-        catalog.windows.compactionReserveDefaults != null && id.startsWith(catalog.discoveryPrefix) ->
-            CLIENT_TABLE_WINDOW
+internal class SelectorWindow(private val catalog: ModelCatalog) {
+    fun selected(id: String): WindowDivisor? {
+        if (ModelTierSuffix.isOneMillion(catalog.unwrap(id))) {
+            return WindowDivisor(CLAUDE_CODE_ONE_MILLION, WindowSource.REQUEST)
+        }
+        return catalog.presented.divisor(id) ?: wrapped(id)
+    }
+
+    // A direct calibrated wrapper isn't in the client's native table.
+    private fun wrapped(id: String): WindowDivisor? =
+        if (catalog.windows.compactionReserveDefaults != null && id.startsWith(catalog.discoveryPrefix)) {
+            WindowDivisor(CLIENT_TABLE_WINDOW, WindowSource.REQUEST)
+        } else {
+            null
+        }
+
+    fun of(id: String, sessionWindow: Long?): Long = selected(id)?.tokens ?: when {
         id.startsWith(CLIENT_OWN_ID_PREFIX) -> sessionWindow?.takeIf { it > 0 } ?: catalog.contextWindowFor(id)
         // An env-governed id: the window is whatever THIS session's process was launched with.
         // [sessionWindow] is that value when the session has told us (ClientWindows, fed by its
@@ -395,8 +367,8 @@ public data class ClientModelPolicy(
      *  several tiers. */
     val tierModels: Map<String, String> = emptyMap(),
     /** The head forwards the client's own Claude login, so the client picks its models (2026-09-30): any id
-     *  is admitted and nothing about models is declared to the client. Counts ride raw except for
-     *  Claude sessions whose actual divisor was learned from a status-line post. [ModelCatalog.models] holds
+     *  is admitted and nothing about models is declared to the client. Window hints can only raise counts;
+     *  discounting a stated window still requires a Claude session with a learned divisor. [ModelCatalog.models] holds
      *  only labels and rate cards, and may be empty. */
     val open: Boolean = false,
     /** The head's readable model names, or null when it has none: what a client that refuses another lab's name
@@ -413,9 +385,8 @@ public class PresentedRows internal constructor(models: List<ModelEntry>, privat
     /** settings.json `modelOverrides`: each presented Claude model -> the row id the client then sends. */
     public val overrides: Map<String, String> = models.mapNotNull { e -> e.clientModel?.let { it to e.id } }.toMap()
 
-    private val byId: Map<String, Boolean> =
-        models.associate { upstream(it.id) to (it.clientModel != null) } +
-            models.associate { raw(it.id) to (it.clientModel != null) }
+    private val byId: Map<String, ModelEntry> =
+        models.associateBy { upstream(it.id) } + models.associateBy { raw(it.id) }
 
     init {
         val named = models.mapNotNull { it.clientModel }
@@ -428,10 +399,22 @@ public class PresentedRows internal constructor(models: List<ModelEntry>, privat
     }
 
     /** Whether the client resolves [id] as the Claude model its row names. */
-    public fun covers(id: String): Boolean = (byId[raw(id)] ?: byId[upstream(id)]) == true
+    public fun covers(id: String): Boolean = modelFor(id) != null
+
+    internal fun divisor(id: String): WindowDivisor? = modelFor(id)?.let { presented ->
+        // The native window is plausible even without a beta, but the client can disable it.
+        val native = ClaudeCodeNativeWindow.of(presented)
+        if (native != null) {
+            WindowDivisor(native, WindowSource.HINT)
+        } else {
+            WindowDivisor(CLIENT_TABLE_WINDOW, WindowSource.REQUEST)
+        }
+    }
+
+    private fun modelFor(id: String): String? = (byId[raw(id)] ?: byId[upstream(id)])?.clientModel
 
     /** Selector-owned windows cannot teach a session's otherwise unknown process divisor. */
-    public fun selectorSized(id: String): Boolean = oneMillionHint.containsMatchIn(raw(id)) || covers(id)
+    public fun selectorSized(id: String): Boolean = ModelTierSuffix.isOneMillion(raw(id)) || covers(id)
 
     private fun raw(id: String): String = id.removePrefix(discoveryPrefix)
 

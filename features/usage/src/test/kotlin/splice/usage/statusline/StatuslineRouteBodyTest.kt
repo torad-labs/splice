@@ -21,9 +21,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
-import splice.core.model.CatalogWindows
-import splice.core.model.CompactionReserve
-import splice.core.model.CompactionReserveDefaults
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.usage.UsageHead
@@ -33,9 +30,6 @@ import splice.usage.UsageHeadWarn
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
 import java.nio.file.Path
-
-/** gpt-6.1-sol's row in core's bundled calibration table (growth p95, generation p99). */
-private val SOL_6_1_RESERVE = CompactionReserve(1_303, 22_844)
 
 class StatuslineRouteBodyTest {
     @TempDir
@@ -75,15 +69,12 @@ class StatuslineRouteBodyTest {
     }
 
     @Test
-    fun `a cached route renderer follows the current head catalog`() = testApplication {
+    fun `a cached route renderer refreshes the label without resizing unmatched usage`() = testApplication {
         var catalog = ModelCatalog(
             discoveryPrefix = "claude-codex--",
-            models = listOf(ModelEntry("gpt-6.1-sol", contextWindow = 272_000)),
+            models = listOf(ModelEntry("gpt-6.1-sol", label = "Original label", contextWindow = 272_000)),
             defaultContextWindow = 272_000,
             pinnedModel = "gpt-6.1-sol",
-            windows = CatalogWindows(
-                compactionReserveDefaults = CompactionReserveDefaults { _, _ -> SOL_6_1_RESERVE },
-            ),
         )
         val route = StatuslineRoute(
             UsageHeadLookup {
@@ -103,10 +94,12 @@ class StatuslineRouteBodyTest {
         val stdin = """{"model":{"id":"gpt-6.1-sol"},"context_window":{"context_window_size":872000,
             "current_usage":{"input_tokens":100000,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}"""
         val first = client.post("/statusline/codex") { setBody(stdin) }.bodyAsText()
-        assertTrue("/272k" in first, first)
-        catalog = catalog.copy(models = listOf(ModelEntry("gpt-6.1-sol", contextWindow = 400_000)))
+        assertTrue("Original label" in first && "100k/872k" in first, first)
+        catalog = catalog.copy(
+            models = listOf(ModelEntry("gpt-6.1-sol", label = "Updated label", contextWindow = 400_000)),
+        )
         val next = client.post("/statusline/codex") { setBody(stdin) }.bodyAsText()
-        assertTrue("/400k" in next, next)
+        assertTrue("Updated label" in next && "100k/872k" in next, next)
     }
 
     @Test

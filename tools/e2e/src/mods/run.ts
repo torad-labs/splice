@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, closeSync, copyFileSync, existsSync, openSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import { homeEnv, makeHome, writeText } from "../../../console-own/home.ts";
@@ -8,27 +8,30 @@ import type { EventName, ModManifest } from "../../../../mods/contract/index.ts"
 import type { Answer } from "./fake-claude.ts";
 
 const repo = join(import.meta.dir, "../../../..");
-const names = ["recorder", "hang", "throw", "crash", "flood"] as const;
+const names = ["recorder", "hang", "throw", "crash", "flood", "orphan", "unserved"] as const;
 type Fixture = typeof names[number];
 type Env = Record<string, string>;
 type Session = { session_id: string; labels: Env; availability: string };
 type Health = { ok: boolean; readyHeads: number; pid: number; launcher?: string };
 type ProcessRow = { pid: number; line: string; mod: boolean };
-export type ClientReport = { hooks: number; answers: Answer[] };
+export type ClientReport = { hooks: number; answers: Answer[]; model: string };
 export type Event = {
   name: EventName;
-  payload: { session?: string; turn?: string; seenBefore?: boolean; labels?: Env; seq?: number; outcome?: string };
+  payload: { session?: string; turn?: string; seenBefore?: boolean; labels?: Env; seq?: number; outcome?: string; model?: string; cwd?: string };
 };
 export type Mod = {
   name: string; state: string; pid?: number; failed: boolean; why?: string;
   dropped: number; droppedByEvent: Record<string, number>; droppedLogLines: number;
-  droppedTransport: number; restartsInWindow: number; lastError?: string; served?: string[];
+  droppedTransport: number; restartsInWindow: number; lastError?: string; served?: string[]; refused?: string[]; declaredNotServed?: string[];
 };
 
 export const BASIC = "Hello from the chat mock. 1, 2, 3 END";
 export const PREFIX = "splice-mod-e2e-";
 export const MANAGEMENT = "splice-mod-e2e-fake-management";
 export const PROVIDER = "mock-chat-key";
+export const LABEL_PROBE = "xai-" + "fakeLabelZ".repeat(8);
+export const CWD_PROBE = "AIza" + "fakePath".repeat(4) + "fakeXYZ";
+export const MODEL_PROBE = "xai-" + "fakeModelZ".repeat(8);
 export const SECRET_HEADERS = {
   authorization: "Bearer splice-mod-e2e-fake-authorization",
   "x-api-key": "splice-mod-e2e-fake-api-key",
@@ -123,6 +126,7 @@ export class ModRun {
     copyFileSync(join(repo, "app/src/main/dist/bin/splice-launch"), shim);
     chmodSync(shim, 0o700);
     const heads = await providers();
+    heads[1]!.model = MODEL_PROBE;
     this.ports = heads.map(p => p.port);
     assert.equal(new Set([this.daemon.port, ...this.ports]).size, heads.length + 1, "scratch ports must be distinct");
     for (const command of ["splice", ...heads.map(p => p.command)]) symlinkSync(shim, join(h.bin, command));
@@ -134,7 +138,7 @@ export class ModRun {
     writeFileSync(join(h.state, "terminal-key"), SECRET_HEADERS.authorization.slice("Bearer ".length), { mode: 0o600 });
     writeText(this.gate, "");
     const provider = this.own(Bun.spawn([process.execPath, join(repo, "tools/e2e/docker/mock_chat.ts"), "0", h.root + "/"], {
-      cwd: h.root, env: { ...this.env, MOCK_CHAT_GATE: this.gate }, stdout: "pipe", stderr: "inherit",
+      cwd: h.root, env: { ...this.env, MOCK_CHAT_GATE: this.gate, MOCK_CHAT_EXTRA_MODEL: MODEL_PROBE }, stdout: "pipe", stderr: "inherit",
     }));
     const ready = await oneLine(provider.stdout);
     const { port } = JSON.parse(ready) as { port: number };
@@ -213,11 +217,12 @@ export class ModRun {
     return out;
   }
 
-  async install(name: string, fixture: Fixture = "recorder"): Promise<Mod> {
+  async install(name: string, fixture: Fixture = "recorder", extra: Partial<ModManifest> = {}): Promise<Mod> {
     const source = join(this.home.root, "fixtures", name);
     const manifest = {
       name, version: "1.0.0", description: "Scratch runner evidence.", surfaces: ["console"],
       capabilities: ["watch-sessions", "watch-turns"],
+      ...extra,
     } satisfies ModManifest;
     writeText(join(source, ".splice-mod", "mod.json"), JSON.stringify(manifest));
     writeText(join(source, "hooks", "hooks.json"), JSON.stringify({ modules: ["./register.ts"] }));
@@ -254,12 +259,17 @@ export class ModRun {
     });
   }
 
-  client(id: string, prompts: string[], options: { env?: Env; interactive?: boolean; resume?: boolean; quiet?: boolean; headers?: Env; waitForHook?: boolean } = {}) {
-    const args = [join(this.home.bin, "claude-acme"), ...options.interactive ? [] : ["-p"],
+  client(id: string, prompts: string[], options: {
+    env?: Env; privateEnv?: Env; cwd?: string; command?: string; interactive?: boolean;
+    resume?: boolean; quiet?: boolean; headers?: Env; waitForHook?: boolean;
+  } = {}) {
+    const command = options.command ?? "claude-acme";
+    const args = [join(this.home.bin, command), ...options.interactive ? [] : ["-p"],
       options.resume ? "--resume" : "--session-id", id];
-    if (!options.quiet) console.log(`$ ${Object.entries(options.env ?? {}).map(([k, v]) => `${k}=${JSON.stringify(v)} `).join("")}claude-acme ${args.slice(1).join(" ")}  # ${prompts.length} streamed turn(s)`);
+    if (!options.quiet) console.log(`$ ${Object.entries(options.env ?? {}).map(([k, v]) => `${k}=${JSON.stringify(v)} `).join("")}${command} ${args.slice(1).join(" ")}  # ${prompts.length} streamed turn(s)`);
+    if (options.cwd) mkdirSync(options.cwd, { recursive: true });
     const p = this.own(Bun.spawn(args, {
-      cwd: this.home.work, env: { ...this.env, ...options.env,
+      cwd: options.cwd ?? this.home.work, env: { ...this.env, ...options.env, ...options.privateEnv,
         MOD_E2E_PROMPTS: JSON.stringify(prompts),
         MOD_E2E_WAIT_FOR_HOOK: options.waitForHook ? "1" : "0",
         MOD_E2E_HEADERS: JSON.stringify(options.headers ?? {}),
@@ -341,6 +351,17 @@ export class ModRun {
 
   noMods(): Promise<true> {
     return until("no scratch mod process left", () => this.processes().some(p => p.mod) ? undefined : true);
+  }
+
+  log(name: string): string {
+    return existing(join(this.logs, "mods", name + ".log"));
+  }
+
+  async killedDaemon(pid: number): Promise<void> {
+    console.log(`$ kill -KILL ${pid}  # scratch daemon, not its mod processes`);
+    assert.ok(this.stopExit);
+    this.killOwned(pid, "SIGKILL");
+    assert.equal(await this.stopExit, 137, "scratch daemon SIGKILL exit status");
   }
 
   bootLog(): string {

@@ -40,6 +40,7 @@ import { loads, dumps, obj, num, objGet, isPyObj, type PyValue, type PyObj } fro
 
 const REPLY_WORDS = ["Hello", " from", " the", " chat", " mock", ".", " 1,", " 2,", " 3", " END"];
 const MODELS = ["mock-chat", "mock-chat-2", "mock-chat-2-big"];
+if (process.env.MOCK_CHAT_EXTRA_MODEL) MODELS.push(process.env.MOCK_CHAT_EXTRA_MODEL);
 const USAGE = obj([
   ["prompt_tokens", num("12")],
   ["completion_tokens", num("10")],

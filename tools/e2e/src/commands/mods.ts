@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { freePort } from "../../../console-own/splice.ts";
 import type { Answer } from "../mods/fake-claude.ts";
-import { BASIC, MANAGEMENT, ModRun, PROVIDER, SECRET_HEADERS, step, until, type ClientReport, type Event } from "../mods/run.ts";
+import { BASIC, CWD_PROBE, LABEL_PROBE, MANAGEMENT, MODEL_PROBE, ModRun, PROVIDER, SECRET_HEADERS, step, until, type ClientReport, type Event } from "../mods/run.ts";
 
 export const usage = "mods --artifact <jar>   prove the mod runner on a scratch Linux daemon";
 const sampleTurns = 20;
@@ -103,23 +103,55 @@ async function recordings(run: ModRun, baseline: Answer): Promise<void> {
     console.log("GET /api/sessions: " + JSON.stringify({ session_id: id, labels: matching[0]?.labels }));
   }
   await Promise.all([second.close(), resumed.close()]);
+
+  console.log("1b. Unserved hooks and declarations are named; the same mod still receives session.start");
+  const mod = await run.install("unserved", "unserved", {
+    commands: [{ name: "probe", description: "Scratch command declaration." }],
+  });
+  assert.deepEqual(mod.served, ["session.start"]);
+  for (const hook of ["ui.render", "launch.prepare"]) {
+    assert.ok(mod.refused?.some(reason => reason.includes(`${hook} is not served yet`)), `missing refusal for ${hook}`);
+  }
+  assert.ok(mod.declaredNotServed?.some(reason => reason.includes("commands: probe is declared but not served yet")));
+  const list = await run.command("mod", "list");
+  for (const phrase of ["ui.render is not served yet", "launch.prepare is not served yet", "commands: probe is declared but not served yet"]) {
+    assert.ok(list.includes(phrase), `splice mod list omitted ${phrase}`);
+  }
+  answer(await run.client("unserved-probe", ["ordinary turn"]).report, BASIC, baseline);
+  const seen = "observed session.start: unserved-probe";
+  await until(seen, () => run.log("unserved").includes(seen) ? true : undefined);
+  console.log(`  unserved.log: ${seen}`);
+  assert.equal((await run.mod("unserved")).lastError, undefined);
+  await run.command("mod", "remove", "unserved");
 }
 
 async function misbehaving(run: ModRun, baseline: Answer, burst: Answer): Promise<void> {
   step(2, "Hang, throw, SIGKILL mid-turn, and flood the log without changing any answer");
   for (const name of ["hang", "throw", "crash", "flood"] as const) await run.install(name, name);
   for (let i = 1; i <= 4; i++) {
-    const { pid } = await run.running("crash");
+    const { pid, served } = await run.running("crash");
+    assert.deepEqual(served, ["request.send", "response.receive", "stream.event", "tool.call", "turn.complete", "turn.start"]);
     const id = `kill-probe-${i}`;
     const client = run.client(id, [`SCENARIO:gate RUN:${i}`], { env: { SPLICE_MODS_OFF: "hang" } });
-    await run.recordThrough(id, es => es.some(e => e.name === "stream.event") && !complete(es));
+    const pending = await run.recordThrough(id, es => es.some(e => e.name === "stream.event" && (e.payload.seq ?? 0) >= 2) && !complete(es));
+    const message = `crash fixture handling ${id} stream seq=1`;
+    await until(message, () => run.log("crash").includes(message) ? true : undefined);
+    const handlers = run.log("crash").split("\n").filter(line => line.includes(`crash fixture handling ${id} stream seq=`));
+    assert.equal(handlers.length, 1, "the target must still be in its first stream handler");
+    assert.equal((await run.mod("crash")).dropped, 0, "later frames must be queued, not dropped");
+    const frames = pending.filter(e => e.name === "stream.event").length;
+    console.log(`  crash.log: ${message}; ${frames - 1} later frame(s) queued behind that handler while upstream is paused.`);
     console.log(`$ kill -KILL ${pid}  # mod host while turn ${i} is open`);
     run.killOwned(pid, "SIGKILL");
     // Let the old process exit and report its death before letting the provider finish the same turn.
     await until("killed mod state reflected in GET /api/mods", async () => {
       const row = await run.mod("crash");
-      if (row.state === (i === 4 ? "failed" : "restarting")) return row;
+      if (i === 4 ? row.state === "failed" : row.state === "restarting" || (row.pid && row.pid !== pid)) return row;
     });
+    if (i === 3) {
+      const listed = await run.command("mod", "list");
+      assert.match(listed, /crash .*restarting.*exit code 137.*25 s/);
+    }
     await Bun.write(run.gate, String(i));
     answer(await client.report, BASIC, baseline);
     const row = await run.mod("crash");
@@ -178,7 +210,7 @@ async function optOut(run: ModRun, baseline: Answer): Promise<void> {
   }
 }
 
-async function changedAndStop(run: ModRun, baseline: Answer): Promise<void> {
+async function changed(run: ModRun, baseline: Answer): Promise<void> {
   step(4, "Refuse a changed installed file until the operator explicitly accepts it");
   const name = "recorder";
   const path = join(run.home.state, "mods", "installed", name, "hooks", "register.ts");
@@ -200,8 +232,10 @@ async function changedAndStop(run: ModRun, baseline: Answer): Promise<void> {
   answer(await run.client(id, ["turn after accepting the changed source"]).report, BASIC, baseline);
   await run.recordThrough(id, es => complete(es));
   console.log(`  GET /api/mods: ${name} is ${accepted.state}, pid=${accepted.pid}; accepted revision recorded a turn.`);
+}
 
-  step(5, "Disable, remove, then shut down the daemon; each affected mod process disappears");
+async function stops(run: ModRun, baseline: Answer): Promise<void> {
+  step(5, "Prove disable, remove, clean shutdown, and recovery after an unclean daemon death");
   for (const [verb, mod] of [["disable", "flood"], ["remove", "hang"]] as const) {
     const { pid } = await run.running(mod);
     const before = run.ps(`before ${verb} ${mod}`);
@@ -215,17 +249,38 @@ async function changedAndStop(run: ModRun, baseline: Answer): Promise<void> {
   assert.ok(before.some(p => p.mod));
   await run.stop();
   run.ps("after daemon stop", []);
-  // The stand-in stays up for the next scratch generation, not for the caller.
+  const daemon = await run.start();
+  await run.install("orphan", "orphan");
+  const orphan = await run.running("orphan");
+  answer(await run.client("daemon-kill", ["leave a mod inside a non-CPU-spinning handler"]).report, BASIC, baseline);
+  const marker = join(run.data("orphan"), "blocked");
+  await until("the orphan fixture entered its blocking handler", () =>
+    existsSync(marker) && readFileSync(marker, "utf8") === String(orphan.pid) ? true : undefined);
+  const old = run.ps("before daemon SIGKILL").filter(p => p.mod);
+  assert.ok(old.some(p => p.pid === orphan.pid));
+  await run.killedDaemon(daemon.pid);
+  const survivors = run.ps("after daemon SIGKILL, before restart");
+  assert.ok(!survivors.some(p => p.pid === daemon.pid));
+  assert.ok(survivors.some(p => p.mod && p.pid === orphan.pid), "the blocked orphan must still be running");
+  const next = await run.start();
+  assert.notEqual(next.pid, daemon.pid);
+  const newOrphan = await run.running("orphan");
+  const after = run.ps("after restarting against the same state");
+  assert.ok(after.some(p => p.mod && p.pid === newOrphan.pid), "the successor did not start the enabled mod");
+  assert.ok(old.every(p => !after.some(now => now.pid === p.pid)), "a host from the killed daemon is still running");
+  console.log(`  blocked orphan ${orphan.pid} was reaped; same-state successor started host ${newOrphan.pid}.`);
+  await run.command("mod", "remove", "orphan");
+  await run.stop();
 }
 
-async function handover(run: ModRun, baseline: Answer): Promise<void> {
+async function handover(run: ModRun, baseline: Answer): Promise<boolean> {
   step(6, "Handover: an admitted streaming turn finishes on the old daemon, with the tail received once");
   await run.start();
   const probe = await run.daemon.api("/api/mods/handover", { method: "POST", body: "[]" });
   const body = await probe.text();
   if (probe.status === 404 || probe.status === 405) {
     console.log(`SKIPPED: POST /api/mods/handover returned ${probe.status}; the mod event forwarding route is not in this jar. Rerun after the handover slice lands.`);
-    return;
+    return false;
   }
   assert.ok(probe.ok || probe.status === 400, `POST /api/mods/handover probe: ${probe.status} ${body}`);
   await run.stop();
@@ -264,6 +319,7 @@ async function handover(run: ModRun, baseline: Answer): Promise<void> {
   assert.ok(retired, "retired daemon did not report zero undelivered events");
   console.log(`  turn ${[...turns][0]}: ${seqs.length} frame events, zero duplicate or missing sequence numbers, one completion`);
   console.log("  " + retired);
+  return true;
 }
 
 function latency(samples: number[]): string {
@@ -282,60 +338,92 @@ function ticks(pid: number): number {
   return total;
 }
 
-async function timings(run: ModRun, baseline: Answer): Promise<void> {
-  step(7, "Same-daemon turn time and CPU with 100 live but idle sessions");
-  for (const row of await run.mods()) if (row.state !== "disabled") await run.command("mod", "disable", row.name);
+async function recorder(run: ModRun, enabled: boolean): Promise<number | undefined> {
+  const row = await run.mod("recorder");
+  if (enabled && row.state === "disabled") await run.command("mod", "enable", "recorder");
+  if (!enabled && row.state !== "disabled") await run.command("mod", "disable", "recorder");
+  if (enabled) return (await run.running("recorder")).pid;
   await run.noMods();
-  const daemon = (await run.health()).pid;
-  const prompts = Array.from({ length: sampleTurns + 3 }, () => "identical timing turn");
-  for (const withMod of [false, true]) {
-    if (withMod) await run.command("mod", "enable", "recorder");
-    const id = withMod ? "timing-with-mod" : "timing-no-mod";
+}
+
+async function turnTimings(run: ModRun, baseline: Answer, daemon: number): Promise<void> {
+  const warmups = 3;
+  const order = [false, true, false, true, true, false, true, false];
+  const prompts = Array.from({ length: sampleTurns / 4 + warmups }, () => "identical timing turn");
+  const points = { noMod: [] as Answer[], withMod: [] as Answer[] };
+  console.log("  Interleaved batches (A=no mod, B=recorder): A B A B B A B A; 3 warmups per batch.");
+  for (const [i, withMod] of order.entries()) {
+    await recorder(run, withMod);
+    const id = `timing-${withMod ? "recorder" : "none"}-${i + 1}`;
     const report = await run.client(id, prompts).report;
     answer(report, BASIC, baseline);
-    const points = report.answers.slice(3);
     if (withMod) {
       const events = await run.recordThrough(id, es => complete(es, prompts.length));
       assert.ok(events.some(e => e.name === "stream.event"));
     }
-    assert.equal((await run.health()).pid, daemon);
-    console.log(`  ${withMod ? "all-event recorder" : "no mod"}, daemon ${daemon}, N=${points.length} (+3 warmups):`);
-    for (const [name, values] of [["first byte", points.map(a => a.firstMs)], ["total", points.map(a => a.totalMs)]] as const) {
-      console.log(`    ${name}: ${latency(values)}`);
-    }
+    (withMod ? points.withMod : points.noMod).push(...report.answers.slice(warmups));
   }
-  const mod = await run.running("recorder");
+  assert.equal((await run.health()).pid, daemon);
+  for (const [label, samples] of [["no mod", points.noMod], ["all-event recorder", points.withMod]] as const) {
+    assert.equal(samples.length, sampleTurns);
+    console.log(`  ${label}, daemon ${daemon}, N=${samples.length}:`);
+    console.log(`    first byte: ${latency(samples.map(a => a.firstMs))}`);
+    console.log(`    total: ${latency(samples.map(a => a.totalMs))}`);
+  }
+}
+
+async function idleTimings(run: ModRun, baseline: Answer, daemon: number): Promise<void> {
   const clients: ReturnType<ModRun["client"]>[] = [];
+  const idleCount = async () => (await run.sessions()).filter(row =>
+    row.session_id?.startsWith("idle-") && row.availability !== "gone").length;
+  const hz = Number(Bun.spawnSync(["getconf", "CLK_TCK"]).stdout.toString());
+  assert.ok(hz > 0);
   try {
-    console.log(`$ claude-acme --session-id idle-{0..${idleSessions - 1}}  # one turn each, then idle; launches in batches of 8`);
-    for (let i = 0; i < idleSessions; i += 8) {
-      const batch = Array.from({ length: Math.min(8, idleSessions - i) }, (_, j) =>
-        run.client(`idle-${i + j}`, ["one turn before idling"], { interactive: true, quiet: true }));
-      clients.push(...batch);
-      for (const report of await Promise.all(batch.map(c => c.report))) answer(report, BASIC, baseline);
+    for (const count of [10, idleSessions]) {
+      console.log(`$ launch to ${count} registered clients  # batches of up to 8; one turn each, then idle`);
+      while (clients.length < count) {
+        const start = clients.length;
+        const batch = Array.from({ length: Math.min(8, count - start) }, (_, j) =>
+          run.client(`idle-${start + j}`, ["one turn before idling"], { interactive: true, quiet: true }));
+        clients.push(...batch);
+        for (const report of await Promise.all(batch.map(c => c.report))) answer(report, BASIC, baseline);
+      }
+      const percentages: number[] = [];
+      // Reverse the load order at 100 sessions; leave the session count unchanged within each pair.
+      for (const withMod of count === 10 ? [false, true] : [true, false]) {
+        const mod = await recorder(run, withMod);
+        assert.equal(await idleCount(), count, "GET /api/sessions idle sample size");
+        const pids = mod ? [daemon, mod] : [daemon];
+        console.log(`  N=${count} idle, ${mod ? "recorder loaded" : "no mod"}: /proc/{${pids.join(",")}}/stat, ${idleSeconds}s (CLK_TCK=${hz}).`);
+        const started = performance.now();
+        const before = pids.map(ticks);
+        await Bun.sleep(idleSeconds * 1_000);
+        const after = pids.map(ticks);
+        const seconds = (performance.now() - started) / 1_000;
+        assert.equal(await idleCount(), count, "idle sessions must stay registered for the whole sample");
+        for (const [i, end] of after.entries()) {
+          const delta = end - before[i]!;
+          assert.ok(delta >= 0);
+          const percent = 100 * delta / hz / seconds;
+          if (i === 0) percentages[Number(withMod)] = percent;
+          console.log(`    ${i === 0 ? "daemon" : "recorder Bun host"}: utime+stime ${before[i]} → ${end} ticks in ${seconds.toFixed(2)}s; ${percent.toFixed(3)}% of one CPU`);
+        }
+      }
+      console.log(`  N=${count} daemon CPU difference (loaded minus no mod): ${(percentages[1]! - percentages[0]!).toFixed(3)} percentage points.`);
     }
-    await until("all 100 idle-client completions recorded", () =>
-      run.events().filter(e => e.name === "turn.complete" && e.payload.session?.startsWith("idle-")).length === idleSessions ? true : undefined);
-    const idleCount = async () => (await run.sessions()).filter(row =>
-      row.session_id?.startsWith("idle-") && row.availability !== "gone").length;
-    assert.equal(await idleCount(), idleSessions, "GET /api/sessions idle sample size");
-    const hz = Number(Bun.spawnSync(["getconf", "CLK_TCK"]).stdout.toString());
-    assert.ok(hz > 0);
-    console.log(`  ${idleSessions} registered sessions idle; sample /proc/{${daemon},${mod.pid}}/stat over ${idleSeconds}s (CLK_TCK=${hz}).`);
-    const started = performance.now();
-    const before = [ticks(daemon), ticks(mod.pid)];
-    await Bun.sleep(idleSeconds * 1_000);
-    const after = [ticks(daemon), ticks(mod.pid)];
-    const seconds = (performance.now() - started) / 1_000;
-    assert.equal(await idleCount(), idleSessions);
-    for (const [i, label] of ["daemon", "recorder Bun host"].entries()) {
-      const delta = after[i]! - before[i]!;
-      assert.ok(delta >= 0);
-      console.log(`  ${label}: utime+stime ${before[i]} → ${after[i]} ticks in ${seconds.toFixed(2)} s; ${(100 * delta / hz / seconds).toFixed(3)}% of one CPU`);
-    }
+    assert.equal((await run.health()).pid, daemon);
   } finally {
-    await Promise.allSettled(clients.map(c => c.close()));
+    await Promise.all(clients.map(c => c.close()));
   }
+}
+
+async function timings(run: ModRun, baseline: Answer): Promise<void> {
+  step(7, "Interleaved turn latency and same-daemon CPU with 10 and 100 idle sessions");
+  for (const row of await run.mods()) if (row.state !== "disabled") await run.command("mod", "disable", row.name);
+  const { pid } = await run.health();
+  await turnTimings(run, baseline, pid);
+  await idleTimings(run, baseline, pid);
+  await recorder(run, true);
 }
 
 function files(dir: string): string[] {
@@ -346,7 +434,7 @@ function files(dir: string): string[] {
   });
 }
 
-async function secrets(run: ModRun, baseline: Answer): Promise<void> {
+async function secrets(run: ModRun): Promise<void> {
   step(8, "Search what mods received for synthetic credentials, without reading real credentials");
   const dir = run.home.state;
   const state = (file: string) => readFileSync(join(dir, file), "utf8").trim();
@@ -361,6 +449,9 @@ async function secrets(run: ModRun, baseline: Answer): Promise<void> {
     "management key": MANAGEMENT,
     "MCP access key": mcp,
     "launch turn key": turn,
+    "xAI-shaped key in SPLICE_LABEL_PRIVATE": LABEL_PROBE,
+    "Google-shaped key in cwd": CWD_PROBE,
+    "xAI-shaped key in served model name": MODEL_PROBE,
   };
   assert.equal(state("mgmt-key"), MANAGEMENT);
   assert.equal(state("terminal-key"), values["Authorization bearer"]);
@@ -373,12 +464,24 @@ async function secrets(run: ModRun, baseline: Answer): Promise<void> {
   assert.equal(mcpProbe.status, 404, "the scratch MCP bearer must pass auth before this missing-session response");
   await mcpProbe.text();
   console.log("  GET /mcp/mod-e2e-not-installed: passed access-key auth, no such session (404).");
+  console.log("  Injecting synthetic keys in a launch label, its cwd, and the model selected through the recipe; withholding the values.");
   const client = run.client("secret-probe", [`synthetic body marker ${mcp}`], {
-    env: { SPLICE_LABEL_AUDIT: "yes" }, headers: SECRET_HEADERS, interactive: true,
+    env: { SPLICE_LABEL_AUDIT: "yes" },
+    privateEnv: { SPLICE_LABEL_PRIVATE: `label containing ${LABEL_PROBE}` },
+    cwd: join(run.home.work, `work-${CWD_PROBE}`),
+    command: "claude-globex",
+    headers: SECRET_HEADERS, interactive: true,
   });
   try {
-    answer(await client.report, BASIC, baseline);
-    await run.recordThrough("secret-probe", es => complete(es));
+    const report = await client.report;
+    assert.ok(report.model?.includes(MODEL_PROBE), "the recipe did not select the credential-shaped model");
+    answer(report);
+    const events = await run.recordThrough("secret-probe", es => complete(es));
+    const start = events.find(e => e.name === "session.start");
+    assert.ok(start?.payload.cwd, "the recorder must receive the session.start cwd field");
+    assert.equal(start.payload.labels?.["audit"], "yes", "a safe launch label must survive");
+    const turn = events.find(e => e.name === "turn.start");
+    assert.ok(turn?.payload.model, "the recorder must receive the requested-model field");
     const dump = await until("recorder's $.sessions.list sample", () => {
       const rows = run.dump("recorder");
       return rows.some(e => e.key === "audit/sessions" && e.value.includes("secret-probe")) ? rows : undefined;
@@ -401,11 +504,17 @@ async function secrets(run: ModRun, baseline: Answer): Promise<void> {
     }
     assert.ok(surfaces.some(s => s.source.endsWith("/environ")));
     console.log(`  Searched recorder event dump, $.sessions.list(), all mod logs and stores, and live mod /proc environ/cmdline (${surfaces.length} surfaces).`);
+    const leaked: string[] = [];
     for (const [name, value] of Object.entries(values)) {
-      const hit = surfaces.find(s => s.data.includes(value));
-      assert.ok(!hit, `${name}: found in ${hit?.source}`);
-      console.log(`  ${name}: none found`);
+      const hits = surfaces.filter(s => s.data.includes(value));
+      if (hits.length) {
+        leaked.push(name);
+        console.log(`  ${name}: FOUND in ${hits.map(h => h.source.replace(run.home.root + "/", "")).join(", ")}`);
+      } else {
+        console.log(`  ${name}: none found`);
+      }
     }
+    assert.equal(leaked.length, 0, `raw synthetic credentials reached the mod: ${leaked.join(", ")}`);
   } finally {
     await client.close();
   }
@@ -427,6 +536,15 @@ export async function mods(argv: string[]): Promise<number> {
   };
   for (const signal of Object.keys(signals) as (keyof typeof signals)[]) process.on(signal, interrupted);
   let code = 0;
+  const results = new Map<number, "PASS" | "FAIL" | "SKIPPED">();
+  const check = async (n: number, probe: () => Promise<void | boolean>) => {
+    try {
+      results.set(n, await probe() === false ? "SKIPPED" : "PASS");
+    } catch (error) {
+      results.set(n, "FAIL");
+      throw error;
+    }
+  };
   try {
     await run.prepare(resolve(argv[1]));
     await run.start();
@@ -439,22 +557,34 @@ export async function mods(argv: string[]): Promise<number> {
     const baseline = answer(await run.client("baseline", ["before installing mods"]).report);
     const burst = answer(await run.client("burst-baseline", ["SCENARIO:burst"]).report, "x".repeat(4_000));
     console.log(`No-mod baseline: "${baseline.text}"; burst: ${burst.text.length} bytes.`);
-    await recordings(run, baseline);
-    await misbehaving(run, baseline, burst);
-    await optOut(run, baseline);
-    await changedAndStop(run, baseline);
-    await handover(run, baseline);
-    await timings(run, baseline);
-    await secrets(run, baseline);
+    await check(1, () => recordings(run, baseline));
+    await check(2, () => misbehaving(run, baseline, burst));
+    await check(3, () => optOut(run, baseline));
+    await check(4, () => changed(run, baseline));
+    await check(5, () => stops(run, baseline));
+    await check(6, () => handover(run, baseline));
+    await check(7, () => timings(run, baseline));
+    await check(8, () => secrets(run));
   } catch (error) {
     console.error(error);
-    console.error("Scratch daemon log tail:\n" + run.bootLog().slice(-5_000));
+    let tail = run.bootLog().slice(-5_000);
+    for (const probe of [LABEL_PROBE, CWD_PROBE, MODEL_PROBE]) tail = tail.replaceAll(probe, "[synthetic probe]");
+    console.error("Scratch daemon log tail:\n" + tail);
     code = 1;
   } finally {
     try { await run.cleanup(); }
     catch (error) { console.error(error); code = 1; }
     for (const signal of Object.keys(signals) as (keyof typeof signals)[]) process.off(signal, interrupted);
   }
-  if (code === 0) console.log("PASS: mods real run.");
-  return code;
+  for (let n = 1; n <= 8; n++) console.log(`Step ${n}: ${results.get(n) ?? "NOT RUN"}`);
+  if (code !== 0) {
+    console.log("FAIL: mods real run.");
+    return code;
+  }
+  if ([...results.values()].includes("SKIPPED")) {
+    console.log("INCOMPLETE: mods real run has skipped steps.");
+    return 77;
+  }
+  console.log("PASS: mods real run.");
+  return 0;
 }

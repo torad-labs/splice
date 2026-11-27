@@ -120,7 +120,7 @@ async function main(): Promise<void> {
   for (const prompt of JSON.parse(process.env.MOD_E2E_PROMPTS!) as string[]) {
     answers.push(await turn(url, headers, session, prompt));
   }
-  await Bun.write(Bun.stdout, JSON.stringify({ hooks, answers }) + "\n");
+  await Bun.write(Bun.stdout, JSON.stringify({ hooks, answers, model: process.env.ANTHROPIC_MODEL }) + "\n");
   if (!args.includes("-p")) {
     // The harness owns stdin. An open pipe models a client still sitting at its prompt.
     mkdirSync(project, { recursive: true });

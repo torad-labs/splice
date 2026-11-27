@@ -63,9 +63,10 @@ internal class ModPipe(
         wake.trySend(Unit)
     }
 
+    fun handoverLoss(): Long = queue.handoverLoss()
+
     fun close() {
-        // A written event may already have entered a hook. Count it, never replay it.
-        if (queue.close()) handover?.lost()
+        queue.close()
         replies.close()
         wake.close()
     }
@@ -107,8 +108,7 @@ internal class ModPipe(
         if (event == null) {
             queue.handled()
         } else if (!ModLine.write(stream, event.message())) {
-            queue.drop(pending)
-            queue.handled()
+            queue.dropWrite()
         }
         return true
     }

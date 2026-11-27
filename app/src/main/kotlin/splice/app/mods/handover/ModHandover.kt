@@ -75,12 +75,8 @@ internal class ModHandover(
         if (queued.trySend(delivery).isFailure) slots.decrementAndGet()
     }
 
-    fun lost() {
-        progress.updateAndGet { it?.copy(count = it.count + 1) }
-    }
-
     private fun reserve(): Boolean {
-        lost()
+        progress.updateAndGet { it?.copy(count = it.count + 1) }
         return slots.getAndUpdate { if (it < MOD_HANDOVER_CAPACITY) it + 1 else it } < MOD_HANDOVER_CAPACITY
     }
 
@@ -88,7 +84,8 @@ internal class ModHandover(
         ready.complete(starts)
     }
 
-    suspend fun finish() {
+    suspend fun finish(unconfirmedWrites: Long = 0L) {
+        progress.updateAndGet { it?.copy(count = it.count + unconfirmedWrites) }
         queued.close()
         var told = false
         try {

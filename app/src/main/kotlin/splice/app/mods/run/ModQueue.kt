@@ -36,6 +36,7 @@ internal class ModHandoverLoss {
 internal class ModQueue(private val drops: ModDrops, private val transferLoss: ModHandoverLoss?) {
     private val events = Channel<ModDelivery>(EVENT_CAPACITY)
     private var transferred = false
+    private var lostWrite = false
 
     @Volatile private var closed = false
 
@@ -89,12 +90,24 @@ internal class ModQueue(private val drops: ModDrops, private val transferLoss: M
     }
 
     @Synchronized
-    fun close(): Boolean {
+    fun dropWrite() {
+        val delivery = inFlight.getAndSet(null)?.delivery ?: return
+        drop(delivery)
+        if (transferred) lostWrite = true
+    }
+
+    /** The handover has fenced new writes. A remaining unacknowledged write is a loss at this deadline. */
+    @Synchronized
+    fun handoverLoss(): Long {
+        dropWrite()
+        return if (lostWrite) 1L else 0L
+    }
+
+    @Synchronized
+    fun close() {
         closeOffers()
-        val unconfirmed = inFlight.getAndSet(null)?.delivery
-        unconfirmed?.let(::drop)
+        dropWrite()
         while (true) drop(poll() ?: break)
-        return unconfirmed != null
     }
 
     private data class Flight(val delivery: ModDelivery, val at: Long)

@@ -30,6 +30,7 @@ internal class ModProcessSetup(
         pipe: ModPipe,
         stop: Deferred<String>,
     ): ModProcess? {
+        if (stop.isCompleted) return null
         if (!records.supported) throw IOException("mods run on Linux and macOS only")
         val data = paths.modsDir.toAbsolutePath().normalize().resolve("data").resolve(mod.name)
         ModPrivateDir.create(data)

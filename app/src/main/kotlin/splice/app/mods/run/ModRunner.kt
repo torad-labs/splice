@@ -2,8 +2,10 @@ package splice.app.mods.run
 
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import splice.app.mods.ModRuntime
 import splice.app.mods.ModRuntimeStatus
@@ -94,9 +96,13 @@ internal class ModRunner(
         try {
             withTimeoutOrNull(MOD_TEARDOWN_MS) { stopping.map(ModSupervisor::job).joinAll() }
         } finally {
-            handover?.finish()
+            try {
+                // A cancelled wait is also a deadline. Take the pipe results before finalizing the relay.
+                withContext(NonCancellable) { handover?.finish(stopping.sumOf(ModSupervisor::handoverLoss)) }
+            } finally {
+                scope.cancel()
+            }
         }
-        scope.cancel()
     }
 
     override fun of(name: String): ModRuntime? = roster[name]?.status()

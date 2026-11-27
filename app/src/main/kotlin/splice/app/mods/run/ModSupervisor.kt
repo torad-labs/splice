@@ -100,6 +100,9 @@ internal class ModSupervisor(
     }
 
     @Synchronized
+    fun handoverLoss(): Long = intake.handoverLoss()
+
+    @Synchronized
     override fun ready(process: ModProcess, loaded: ModLoad.Ready) {
         if (shutdown.isCompleted) return
         current = ModRuntime(
@@ -133,7 +136,7 @@ internal class ModSupervisor(
         val executable = executable() ?: return false
         setup.records.awaitGone(mod.name)
         bunPath = executable
-        val child = launch(executable) ?: return false
+        val child = setup.launch(mod, executable, output, intake, shutdown) ?: return false
         if (current.state == ModRuntimeState.RESTARTING) crashes.restarted()
         process = child
         val exit = child.run(shutdown, this)
@@ -155,9 +158,6 @@ internal class ModSupervisor(
     }
 
     private fun newPipe() = ModPipe(output.drops, output.log, output.clock, hub.deliveryLoss)
-
-    private fun launch(executable: Path): ModProcess? =
-        if (shutdown.isCompleted) null else setup.launch(mod, executable, output, intake, shutdown)
 
     private fun executable(): Path? {
         val verdict = mod.verify()

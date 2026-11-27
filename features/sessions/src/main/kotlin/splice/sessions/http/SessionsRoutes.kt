@@ -188,7 +188,8 @@ public class SessionsRoutes(
 
     private fun listingJson(held: String?): String = buildJsonObject {
         val listing = registry.list()
-        val rowFacts = facts.forRecords(listing.sessions)
+        val sessions = listing.bySession()
+        val rowFacts = facts.forRecords(sessions)
         val bound = BoundTeams(teams())
         // whether splice reads the conversations: off, the console shows no question a session waits on
         put("reading", viewEnabled())
@@ -199,7 +200,7 @@ public class SessionsRoutes(
         // An unreadable directory is not an empty one: the error rides beside the (empty) list.
         listing.error?.let { put("error", it) }
         val rows = GoneSessionRows(
-            listing.sessions.map { record ->
+            sessions.map { record ->
                 val gone = record.availability == SessionAvailability.GONE
                 val updatedAt = record.process.updatedAt ?: record.status.updatedAt ?: 0L
                 ListedRow(gone, updatedAt) { row(record, rowFacts, bound) }

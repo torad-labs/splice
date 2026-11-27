@@ -31,9 +31,17 @@ internal interface ModProcessObserver {
 
 internal sealed class ModExit {
     data class Failed(val why: String) : ModExit()
-    data class Incomplete(val why: String, val group: Long) : ModExit()
+    data class Incomplete(val end: ModGuardianEnd, val group: Long) : ModExit() {
+        val why: String get() = "${end.explanation}; group $group may still be running"
+    }
     data object Crashed : ModExit()
     data object Stopped : ModExit()
+}
+
+internal enum class ModGuardianEnd(val explanation: String) {
+    WAIT_EXPIRED("the guardian did not exit after stdin closed"),
+    KILLED("the guardian was killed"),
+    UNCONFIRMED("the guardian exited before confirming cleanup"),
 }
 
 internal class ModProcess(
@@ -127,14 +135,13 @@ internal class ModProcess(
         }
         val status = withTimeoutOrNull(EOF_GRACE_MS) { exited.await().exitValue() }
         pipe.close()
-        val failure = when {
-            status == null -> "the guardian did not exit after stdin closed"
-            status >= MOD_GUARDIAN_SIGNAL_EXIT -> "the guardian was killed"
-            status != 0 -> "the guardian exited before confirming cleanup"
+        val end = when {
+            status == null -> ModGuardianEnd.WAIT_EXPIRED
+            status >= MOD_GUARDIAN_SIGNAL_EXIT -> ModGuardianEnd.KILLED
+            status != 0 -> ModGuardianEnd.UNCONFIRMED
             else -> return null
         }
-        val group = pid
-        return ModExit.Incomplete("$failure; group $group may still be running", group)
+        return ModExit.Incomplete(end, pid)
     }
 
     private suspend fun write() {

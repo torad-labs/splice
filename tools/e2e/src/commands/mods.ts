@@ -291,15 +291,15 @@ async function handover(run: ModRun, baseline: Answer): Promise<boolean> {
   await run.stop();
   const { supervisor } = await run.start(true);
   await handoverTurn(run, baseline, supervisor, "handover-probe", "5");
-  await run.install("stderr-orphan", "stderr-orphan");
+  await run.install("stderrorphan", "stderr-orphan");
   await handoverTurn(run, baseline, supervisor, "handover-orphan", "6");
   return true;
 }
 
 async function orphanHoldingStderr(run: ModRun): Promise<number> {
-  const { pid: host } = await run.running("stderr-orphan");
+  const { pid: host } = await run.running("stderrorphan");
   const pid = await until("background sleep retaining stderr", () => {
-    const match = /background sleep pid=(\d+)/.exec(run.log("stderr-orphan"));
+    const match = /background sleep pid=(\d+)/.exec(run.log("stderrorphan"));
     if (match) return Number(match[1]);
   });
   const tree = run.processes();

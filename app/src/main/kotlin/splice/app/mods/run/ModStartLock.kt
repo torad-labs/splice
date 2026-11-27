@@ -10,7 +10,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
-private const val LOCK_POLL_MS = 25L // why: a lock held by another process has no wake-up, so it is polled
+private const val MOD_START_POLL_MS = 25L // why: a lock held by another process has no wake-up, so it is polled
 
 // The in-process half of every turn, one per lock file. A file lock belongs to the process, and closing any descriptor
 // for the file frees it (DaemonLock, DR-162), so threads of this process queue here and only the holder opens the file.
@@ -46,7 +46,7 @@ internal class ModStartLocks(private val directory: Path) {
         try {
             lock = channel.tryLock()
             while (lock == null && System.nanoTime() < deadline) {
-                Thread.sleep(LOCK_POLL_MS)
+                Thread.sleep(MOD_START_POLL_MS)
                 lock = channel.tryLock()
             }
         } finally {

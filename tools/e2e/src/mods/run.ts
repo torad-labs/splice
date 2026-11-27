@@ -8,12 +8,12 @@ import type { EventName, ModManifest } from "../../../../mods/contract/index.ts"
 import type { Answer } from "./fake-claude.ts";
 
 const repo = join(import.meta.dir, "../../../..");
-const names = ["recorder", "hang", "throw", "crash", "flood", "orphan", "unserved"] as const;
+const names = ["recorder", "hang", "throw", "crash", "flood", "orphan", "stderr-orphan", "unserved"] as const;
 type Fixture = typeof names[number];
 type Env = Record<string, string>;
 type Session = { session_id: string; labels: Env; availability: string };
 type Health = { ok: boolean; readyHeads: number; pid: number; launcher?: string };
-type ProcessRow = { pid: number; line: string; mod: boolean };
+type ProcessRow = { pid: number; parent: number; group: number; line: string; mod: boolean };
 export type ClientReport = { hooks: number; answers: Answer[]; model: string };
 export type Event = {
   name: EventName;
@@ -241,6 +241,10 @@ export class ModRun {
     return (await this.get<{ mods: Mod[] }>("/api/mods")).mods;
   }
 
+  async handoverDropped(): Promise<number> {
+    return (await this.get<{ handoverDropped?: number }>("/api/mods")).handoverDropped ?? 0;
+  }
+
   async sessions(): Promise<Session[]> {
     return (await this.get<{ sessions: Session[] }>("/api/sessions")).sessions;
   }
@@ -328,17 +332,20 @@ export class ModRun {
   }
 
   processes(): ProcessRow[] {
-    const ps = Bun.spawnSync(["ps", "-ww", "-eo", "pid=,ppid=,stat=,args="]);
+    const ps = Bun.spawnSync(["ps", "-ww", "-eo", "pid=,ppid=,pgid=,stat=,args="]);
     assert.equal(ps.exitCode, 0, ps.stderr.toString());
     return ps.stdout.toString().split("\n").flatMap(line => {
-      const match = /^\s*(\d+)\s+\d+\s+(\S+)\s+(.*)$/.exec(line);
-      if (!match || match[2]!.startsWith("Z") || !match[3]!.includes(this.home.root + "/")) return [];
-      return [{ pid: Number(match[1]), line: line.trim(), mod: match[3]!.includes(this.home.state + "/mods/host/") }];
+      const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line);
+      if (!match || match[4]!.startsWith("Z") || !match[5]!.includes(this.home.root + "/")) return [];
+      return [{
+        pid: Number(match[1]), parent: Number(match[2]), group: Number(match[3]),
+        line: line.trim(), mod: match[5]!.includes(this.home.state + "/mods/host/"),
+      }];
     });
   }
 
   ps(title: string, expected?: string[]): ProcessRow[] {
-    console.log(`$ ps -ww -eo pid,ppid,stat,args  # ${title}, scratch processes only`);
+    console.log(`$ ps -ww -eo pid,ppid,pgid,stat,args  # ${title}, scratch processes only`);
     const rows = this.processes();
     if (rows.length) for (const { line } of rows) console.log(`  ${line}`);
     else console.log("  none left");

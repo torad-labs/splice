@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { appendFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, readdirSync, readlinkSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { freePort } from "../../../console-own/splice.ts";
 import type { Answer } from "../mods/fake-claude.ts";
@@ -276,34 +276,64 @@ async function stops(run: ModRun, baseline: Answer): Promise<void> {
 }
 
 async function handover(run: ModRun, baseline: Answer): Promise<boolean> {
-  step(6, "Handover: an admitted streaming turn finishes on the old daemon, with the tail received once");
+  step(6, "Hand over two streaming turns under the real supervisor, one with an orphan holding stderr");
   await run.start();
   const probe = await run.daemon.api("/api/mods/handover", { method: "POST", body: "[]" });
   const body = await probe.text();
   if (probe.status === 404 || probe.status === 405) {
-    console.log(`SKIPPED: POST /api/mods/handover returned ${probe.status}; the mod event forwarding route is not in this jar. Rerun after the handover slice lands.`);
+    console.log(`SKIPPED: POST /api/mods/handover returned ${probe.status}; the mod event forwarding route is absent.`);
     return false;
   }
   assert.ok(probe.ok || probe.status === 400, `POST /api/mods/handover probe: ${probe.status} ${body}`);
+  for (const mod of await run.mods()) if (mod.name !== "recorder" && mod.state !== "disabled") {
+    await run.command("mod", "disable", mod.name);
+  }
   await run.stop();
-  const oldDaemon = await run.start(true);
+  const { supervisor } = await run.start(true);
+  await handoverTurn(run, baseline, supervisor, "handover-probe", "5");
+  await run.install("stderr-orphan", "stderr-orphan");
+  await handoverTurn(run, baseline, supervisor, "handover-orphan", "6");
+  return true;
+}
+
+async function orphanHoldingStderr(run: ModRun): Promise<number> {
+  const { pid: host } = await run.running("stderr-orphan");
+  const pid = await until("background sleep retaining stderr", () => {
+    const match = /background sleep pid=(\d+)/.exec(run.log("stderr-orphan"));
+    if (match) return Number(match[1]);
+  });
+  const tree = run.processes();
+  const child = tree.find(p => p.pid === pid);
+  assert.ok(child && child.parent !== host, "the sleep must outlive the shell that created it");
+  assert.equal(child.group, tree.find(p => p.pid === host)?.group);
+  assert.equal(readlinkSync(`/proc/${pid}/fd/2`), readlinkSync(`/proc/${host}/fd/2`));
+  console.log(`  Reparented sleep ${pid} still holds host ${host}'s stderr pipe.`);
+  return pid;
+}
+
+async function handoverTurn(run: ModRun, baseline: Answer, supervisor: number, session: string, gate: string): Promise<void> {
+  const { pid: oldDaemon } = await run.health();
   const old = await run.running("recorder");
-  const session = "handover-probe";
-  const client = run.client(session, ["SCENARIO:gate RUN:5"]);
+  const marker = join(run.data("recorder"), "previous-recorder");
+  await Bun.write(marker, String(old.pid));
+  const client = run.client(session, [`SCENARIO:gate RUN:${gate}`]);
   const prefix = await run.recordThrough(session, es => es.some(e => e.name === "stream.event") && !complete(es));
+  const orphan = session === "handover-orphan" ? await orphanHoldingStderr(run) : undefined;
+  const oldProcesses = run.ps("before HUP").filter(p => p.mod || p.pid === orphan);
   const retiredAt = run.bootLog().length;
-  console.log(`$ kill -HUP ${oldDaemon.supervisor}  # turn already streaming on daemon ${oldDaemon.pid}`);
-  run.killOwned(oldDaemon.supervisor, "SIGHUP");
-  const successor = await run.health(oldDaemon.pid);
+  console.log(`$ kill -HUP ${supervisor}  # turn already streaming on daemon ${oldDaemon}`);
+  const started = performance.now();
+  run.killOwned(supervisor, "SIGHUP");
+  const successor = await run.health(oldDaemon);
   const next = await run.running("recorder");
+  const readyMs = performance.now() - started;
   assert.notEqual(next.pid, old.pid);
   const during = run.ps("after takeover, before releasing the provider's stream");
-  assert.ok(!during.some(p => p.pid === old.pid), "the retired recorder survived takeover");
-  assert.ok(during.some(p => p.pid === oldDaemon.pid), "the old daemon did not keep its admitted turn");
+  for (const prior of oldProcesses) assert.ok(!during.some(p => p.pid === prior.pid), `old mod process ${prior.pid} survived takeover`);
+  assert.ok(during.some(p => p.pid === oldDaemon), "the old daemon did not keep its admitted turn");
   const running = (await run.mods()).filter(row => row.state === "running").map(row => row.pid).sort();
   assert.deepEqual(during.filter(p => p.mod).map(p => p.pid).sort(), running, "more than one host per running mod");
-  console.log(`  successor daemon pid=${successor.pid}; recorder pid ${old.pid} → ${next.pid}`);
-  await Bun.write(run.gate, "5");
+  await Bun.write(run.gate, gate);
   answer(await client.report, BASIC, baseline);
   const events = await run.recordThrough(session, es => complete(es));
   const turns = new Set(events.flatMap(e => e.payload.turn ? [e.payload.turn] : []));
@@ -316,20 +346,33 @@ async function handover(run: ModRun, baseline: Answer): Promise<boolean> {
   assert.equal(events.filter(e => e.name === "turn.start").length, 1);
   assert.equal(events.filter(e => e.name === "turn.complete").length, 1);
   await until("old daemon finished after releasing the held turn", () =>
-    run.processes().some(p => p.pid === oldDaemon.pid) ? undefined : true);
-  const retired = run.bootLog().slice(retiredAt).split("\n").find(line => /0 (?:mod )?events.*not delivered/.test(line));
-  assert.ok(retired, "retired daemon did not report zero undelivered events");
-  console.log(`  turn ${[...turns][0]}: ${seqs.length} frame events, zero duplicate or missing sequence numbers, one completion`);
-  console.log("  " + retired);
-  return true;
+    run.processes().some(p => p.pid === oldDaemon) ? undefined : true);
+  const finishedMs = performance.now() - started;
+  const witness = `startup pid=${next.pid}: previous recorder ${old.pid} was gone at registration`;
+  assert.ok(run.log("recorder").includes(witness), "successor recorder did not witness its predecessor gone at startup");
+  console.log(`  recorder.log: ${witness}`);
+  await Bun.write(marker, "");
+  const listed = await run.command("mod", "list");
+  const dropped = await run.handoverDropped();
+  if (dropped > 0) assert.ok(listed.includes(`Events dropped during daemon handover: ${dropped}.`));
+  else console.log("  Events dropped during daemon handover: 0 (GET /api/mods; CLI omits zero).");
+  const failed = run.bootLog().slice(retiredAt).split("\n").find(line => /[1-9]\d* events were not delivered across the handover/.test(line));
+  assert.ok(!failed, failed ?? "");
+  console.log(`  turn ${[...turns][0]}: stream.event seq=[${seqs.join(", ")}], no duplicates or gaps, one completion`);
+  console.log(`  ${orphan ? "Stderr-orphan handover" : "Handover"}: successor ${successor.pid} ready in ${(readyMs / 1_000).toFixed(2)} s; old daemon gone in ${(finishedMs / 1_000).toFixed(2)} s.`);
+  if (orphan) assert.ok(finishedMs < 20_000, "the stderr-orphan handover took at least 20 s");
+}
+
+function median(samples: number[]): number {
+  const sorted = samples.toSorted((a, b) => a - b);
+  const mid = (sorted.length - 1) / 2;
+  return (sorted[Math.floor(mid)]! + sorted[Math.ceil(mid)]!) / 2;
 }
 
 function latency(samples: number[]): string {
-  const sorted = samples.sort((a, b) => a - b);
-  const mid = (sorted.length - 1) / 2;
-  const median = (sorted[Math.floor(mid)]! + sorted[Math.ceil(mid)]!) / 2;
+  const sorted = samples.toSorted((a, b) => a - b);
   const p95 = sorted[Math.ceil(sorted.length * 0.95) - 1]!;
-  return `median ${median.toFixed(2)} ms, p95 ${p95.toFixed(2)} ms`;
+  return `median ${median(samples).toFixed(2)} ms, p95 ${p95.toFixed(2)} ms`;
 }
 
 function ticks(pid: number): number {
@@ -341,10 +384,13 @@ function ticks(pid: number): number {
 }
 
 async function recorder(run: ModRun, enabled: boolean): Promise<number | undefined> {
-  const row = await run.mod("recorder");
-  if (enabled && row.state === "disabled") await run.command("mod", "enable", "recorder");
-  if (!enabled && row.state !== "disabled") await run.command("mod", "disable", "recorder");
-  if (enabled) return (await run.running("recorder")).pid;
+  const row = (await run.mods()).find(mod => mod.name === "recorder");
+  if (enabled) {
+    if (!row) await run.install("recorder");
+    else if (row.state === "disabled") await run.command("mod", "enable", "recorder");
+    return (await run.running("recorder")).pid;
+  }
+  if (row) await run.command("mod", "remove", "recorder");
   await run.noMods();
 }
 
@@ -374,15 +420,38 @@ async function turnTimings(run: ModRun, baseline: Answer, daemon: number): Promi
   }
 }
 
-async function idleTimings(run: ModRun, baseline: Answer, daemon: number): Promise<void> {
+function sessionLedger(run: ModRun): Map<string, number> {
+  return new Map(files(join(run.home.state, "mods", "sessions")).map(path => [path, statSync(path).mtimeMs]));
+}
+
+async function sampleCpu(pids: number[], hz: number): Promise<number[]> {
+  const started = performance.now();
+  const before = pids.map(ticks);
+  await Bun.sleep(idleSeconds * 1_000);
+  const after = pids.map(ticks);
+  const seconds = (performance.now() - started) / 1_000;
+  assert.ok(seconds >= idleSeconds, "CPU window must last at least 60 s");
+  return after.map((end, i) => {
+    const delta = end - before[i]!;
+    assert.ok(delta >= 0);
+    const percent = 100 * delta / hz / seconds;
+    console.log(`    ${i === 0 ? "daemon" : "recorder Bun host"}: ${delta} ticks in ${seconds.toFixed(2)}s; ${percent.toFixed(3)}% of one CPU`);
+    return percent;
+  });
+}
+
+async function idleTimings(run: ModRun, baseline: Answer, daemon: number): Promise<number> {
   const clients: ReturnType<ModRun["client"]>[] = [];
   const idleCount = async () => (await run.sessions()).filter(row =>
     row.session_id?.startsWith("idle-") && row.availability !== "gone").length;
   const hz = Number(Bun.spawnSync(["getconf", "CLK_TCK"]).stdout.toString());
   assert.ok(hz > 0);
+  const medians: { count: number; noMod: number; loaded: number; host: number }[] = [];
   try {
     for (const count of [10, idleSessions]) {
-      console.log(`$ launch to ${count} registered clients  # batches of up to 8; one turn each, then idle`);
+      await recorder(run, false);
+      const beforeLaunch = sessionLedger(run);
+      console.log(`$ launch to ${count} registered clients with no mods installed  # one turn each, then idle`);
       while (clients.length < count) {
         const start = clients.length;
         const batch = Array.from({ length: Math.min(8, count - start) }, (_, j) =>
@@ -390,42 +459,53 @@ async function idleTimings(run: ModRun, baseline: Answer, daemon: number): Promi
         clients.push(...batch);
         for (const report of await Promise.all(batch.map(c => c.report))) answer(report, BASIC, baseline);
       }
-      const percentages: number[] = [];
-      // Reverse the load order at 100 sessions; leave the session count unchanged within each pair.
-      for (const withMod of count === 10 ? [false, true] : [true, false]) {
+      const samples = { noMod: [] as number[], loaded: [] as number[], host: [] as number[] };
+      const order = [false, true, true, false, false, true];
+      for (const [i, withMod] of order.entries()) {
         const mod = await recorder(run, withMod);
+        if (!withMod) assert.equal((await run.mods()).length, 0, "the baseline must have no installed mods");
         assert.equal(await idleCount(), count, "GET /api/sessions idle sample size");
+        const ledger = i === 0 ? beforeLaunch : sessionLedger(run);
         const pids = mod ? [daemon, mod] : [daemon];
-        console.log(`  N=${count} idle, ${mod ? "recorder loaded" : "no mod"}: /proc/{${pids.join(",")}}/stat, ${idleSeconds}s (CLK_TCK=${hz}).`);
-        const started = performance.now();
-        const before = pids.map(ticks);
-        await Bun.sleep(idleSeconds * 1_000);
-        const after = pids.map(ticks);
-        const seconds = (performance.now() - started) / 1_000;
+        console.log(`  N=${count}, sample ${i + 1}/6, ${mod ? "recorder loaded" : "no mod installed"}: /proc/{${pids.join(",")}}/stat, ${idleSeconds}s (CLK_TCK=${hz}).`);
+        const [cpu, host] = await sampleCpu(pids, hz);
         assert.equal(await idleCount(), count, "idle sessions must stay registered for the whole sample");
-        for (const [i, end] of after.entries()) {
-          const delta = end - before[i]!;
-          assert.ok(delta >= 0);
-          const percent = 100 * delta / hz / seconds;
-          if (i === 0) percentages[Number(withMod)] = percent;
-          console.log(`    ${i === 0 ? "daemon" : "recorder Bun host"}: utime+stime ${before[i]} → ${end} ticks in ${seconds.toFixed(2)}s; ${percent.toFixed(3)}% of one CPU`);
+        if (withMod) {
+          samples.loaded.push(cpu!);
+          samples.host.push(host!);
+        } else {
+          samples.noMod.push(cpu!);
+          assert.deepEqual(sessionLedger(run), ledger, "installed-mod-free turns and idle time must not write mod session ledger files");
+          console.log("    mods/sessions: no files written.");
         }
       }
-      console.log(`  N=${count} daemon CPU difference (loaded minus no mod): ${(percentages[1]! - percentages[0]!).toFixed(3)} percentage points.`);
+      assert.equal(samples.noMod.length, 3);
+      assert.equal(samples.loaded.length, 3);
+      medians.push({ count, noMod: median(samples.noMod), loaded: median(samples.loaded), host: median(samples.host) });
     }
     assert.equal((await run.health()).pid, daemon);
   } finally {
     await Promise.all(clients.map(c => c.close()));
   }
+  console.log("  CPU medians (% of one CPU; 3 samples per condition, 60 s each):");
+  console.log("  idle sessions | daemon, no mod | daemon, loaded | mod host | loaded minus no mod (pp)");
+  for (const { count, noMod, loaded, host } of medians) {
+    console.log(`  ${count} | ${noMod.toFixed(3)} | ${loaded.toFixed(3)} | ${host.toFixed(3)} | ${(loaded - noMod).toFixed(3)}`);
+  }
+  const [small, large] = medians;
+  return (large!.loaded - large!.noMod) - (small!.loaded - small!.noMod);
 }
 
 async function timings(run: ModRun, baseline: Answer): Promise<void> {
   step(7, "Interleaved turn latency and same-daemon CPU with 10 and 100 idle sessions");
-  for (const row of await run.mods()) if (row.state !== "disabled") await run.command("mod", "disable", row.name);
+  const budget = 1; // one percentage point is 0.6 CPU seconds per 60-second sample
+  console.log(`  Flat-cost criterion: 90 more idle sessions must not add more than ${budget} percentage point of incremental mod-related daemon CPU.`);
+  for (const row of await run.mods()) await run.command("mod", "remove", row.name);
   const { pid } = await run.health();
   await turnTimings(run, baseline, pid);
-  await idleTimings(run, baseline, pid);
-  await recorder(run, true);
+  const growth = await idleTimings(run, baseline, pid);
+  console.log(`  Growth in incremental daemon CPU from N=10 to N=100: ${growth.toFixed(3)} percentage points.`);
+  assert.ok(growth <= budget, "the samples did not show flat incremental mod cost within the stated margin");
 }
 
 function files(dir: string): string[] {
@@ -565,8 +645,11 @@ export async function mods(argv: string[]): Promise<number> {
     await check(4, () => changed(run, baseline));
     await check(5, () => stops(run, baseline));
     await check(6, () => handover(run, baseline));
-    await check(7, () => timings(run, baseline));
-    await check(8, () => secrets(run));
+    await check(7, () => timings(run, baseline)).catch(error => { console.error(error); code = 1; });
+    await check(8, async () => {
+      await recorder(run, true);
+      await secrets(run);
+    });
   } catch (error) {
     console.error(error);
     let tail = run.bootLog().slice(-5_000);

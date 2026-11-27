@@ -427,7 +427,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/mods/install/ModFiles.kt" to mapOf("Files.newOutputStream(" to 1),
     "app/src/main/kotlin/splice/app/mods/install/ModHashes.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/mods/install/ModStage.kt" to mapOf("Files.move(" to 1),
-    "app/src/main/kotlin/splice/app/mods/run/ModHostScript.kt" to mapOf("writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/mods/run/ModHostScript.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/mods/run/ModRunRecords.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/mods/run/ModLog.kt" to
         mapOf("Files.move(" to 1, "Files.write(" to 1, "createNew0600(" to 1),

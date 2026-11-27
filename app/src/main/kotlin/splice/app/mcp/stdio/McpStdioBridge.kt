@@ -14,9 +14,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import splice.app.WireJson
 import splice.core.terminal.TerminalOutput
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
@@ -87,7 +87,7 @@ internal class McpStdioBridge(
     }
 
     private suspend fun handle(line: String, out: TerminalOutput, scope: CoroutineScope, listening: McpStdioListening) {
-        val message = JsonScalars.objectOrNull(Json, line)
+        val message = WireJson.fields(line, STDIO_ROUTING_FIELDS)
         if (message == null) {
             out.line(replies.error(JsonNull, STDIO_PARSE_ERROR, "the line is not a JSON-RPC message"))
             return
@@ -95,11 +95,11 @@ internal class McpStdioBridge(
         val method = JsonScalars.str(message, STDIO_METHOD)
         when {
             method == STDIO_INITIALIZE -> {
-                deliver(message, out)
+                deliver(message, line, out)
                 listen(listening, out)
             }
-            method != null && STDIO_ID in message -> scope.launch { deliver(message, out) }
-            else -> deliver(message, out)
+            method != null && STDIO_ID in message -> scope.launch { deliver(message, line, out) }
+            else -> deliver(message, line, out)
         }
     }
 
@@ -109,10 +109,10 @@ internal class McpStdioBridge(
     }
 
     /** [message] handed to the server; a request it can't take answered with an error naming why. */
-    private suspend fun deliver(message: JsonObject, out: TerminalOutput) {
+    private suspend fun deliver(message: JsonObject, wire: String, out: TerminalOutput) {
         val request = message[STDIO_ID]?.takeIf { STDIO_METHOD in message }
         val why = try {
-            when (val sent = transport.send(message, out)) {
+            when (val sent = transport.send(message, wire, out)) {
                 McpStdioSent.Delivered -> null
                 is McpStdioSent.Refused -> "the MCP server '$name' answered HTTP ${sent.status}"
                 McpStdioSent.Unanswered -> "the MCP server '$name' took the request without answering it"
@@ -141,6 +141,8 @@ internal class McpStdioBridge(
         return failure == null
     }
 }
+
+private val STDIO_ROUTING_FIELDS = setOf(STDIO_METHOD, STDIO_ID)
 
 // JSON-RPC's code for a line that is not JSON.
 private const val STDIO_PARSE_ERROR = -32_700

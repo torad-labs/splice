@@ -177,7 +177,8 @@ class McpStdioBridgeEdgesTest {
 
         override suspend fun open(out: TerminalOutput): String? = null
 
-        override suspend fun send(message: JsonObject, out: TerminalOutput): McpStdioSent = answer(message)
+        override suspend fun send(message: JsonObject, wire: String, out: TerminalOutput): McpStdioSent =
+            answer(message)
 
         override suspend fun listen(out: TerminalOutput) = Unit
 

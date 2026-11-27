@@ -10,7 +10,11 @@ import java.net.URI
 
 /** Where a bridged server is: its [url], the [headers] each request carries (the MCP access key for a server Splice
  *  hosts, the person's own for theirs; never printed), and whether it speaks the older HTTP+SSE transport. */
-internal data class McpStdioTarget(val url: URI, val headers: Map<String, String>, val legacySse: Boolean = false)
+internal data class McpStdioTarget(
+    val url: URI,
+    val headers: Map<String, String>,
+    val legacySse: Boolean = false,
+)
 
 /** What became of one message handed to the server. */
 internal sealed class McpStdioSent {
@@ -30,8 +34,8 @@ internal interface McpStdioTransport {
      *  Why it could not, in words safe to print, or null when it could. */
     suspend fun open(out: TerminalOutput): String?
 
-    /** [message] handed to the server, and what it answers to it written to [out]. */
-    suspend fun send(message: JsonObject, out: TerminalOutput): McpStdioSent
+    /** [message] and its original [wire] spelling; what the server answers is written to [out]. */
+    suspend fun send(message: JsonObject, wire: String, out: TerminalOutput): McpStdioSent
 
     /** What the server sends on its own (notifications, its requests), written to [out] until the stream ends. */
     suspend fun listen(out: TerminalOutput)

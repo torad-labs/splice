@@ -7,16 +7,17 @@ holds, and something else writes the feed.
 - **Draw the first state from data inside the card.** Some apps pass a card's requests on and some do not, and a card
   that waits for its feed stays empty where they do not. Put the latest values in the code and draw them; the feed
   only updates them.
-- **Write the feed with `feed`.** Give `name` (1 to 40 letters, digits, `-` or `_`) and `data` (any JSON value except
-  `null`, at most 64 KiB). It replaces the value and stamps when it was written. Without `data`, `feed` reads it. Send
-  only what the card draws, such as the last 200 points and not the whole log. At most 64 feeds are kept, and a new one
+- **Write the feed with `feed`.** Give `name` (a letter or digit, then letters, digits, `-` or `_`; 40 at most) and
+  `data` (any JSON value but `null`, at most 64 KiB). It replaces the value and stamps when it was written. Without
+  `data`, `feed` reads it, and a feed nobody wrote answers `found: false`. Send only what the card draws, such as
+  the last 200 points and not the whole log. At most 64 feeds are kept, and a new one
   past that drops the one written longest ago. Feeds live in the daemon's memory: a restart empties them.
 - **Keep it fresh without a turn: a script.** Where you have a shell, leave a process
   running that writes the feed; it needs no key.
   - A value written once: `echo '{"done":12}' | splice feed build`.
   - A value written again and again: keep one process open, `splice feed <name> --follow`. It writes each line of
-    standard input as one JSON value, as it arrives, and ends when the input ends. A bad line is said on stderr and
-    skipped.
+    standard input as one JSON value, as it arrives, and ends when the input ends. A line that is not strict JSON
+    (`{"loss":0.31}`, never `loss=0.31` or `NaN`) is said on stderr with its number and skipped.
 
   ```sh
   tail -f metrics.jsonl | splice feed training --follow
@@ -30,8 +31,9 @@ holds, and something else writes the feed.
   where it runs and how to stop it.
 - **Watch it in the card.** The view gives the card two functions:
   - `watchFeed(name, onData, everyMs)` asks for the feed every `everyMs` (default 5000, never less than 1000) and calls
-    `onData(data, updated)` when the value changes: `data` is the parsed value and `updated` is a `Date`, when it was
-    written. It returns a function that stops it, and it stops by itself when the frame is torn down.
+    `onData(data, updated)` each time the feed was written since it last called it, with a new value or the same one
+    again: `data` is the parsed value and `updated` is a `Date`, when it was written, so a card that shows its
+    data's age moves it on. It returns a function that stops it, and it stops by itself when the frame is torn down.
   - `readFeed(name)` asks once and gives a promise of `{ data, updated }`, or `null`.
 
   ```js

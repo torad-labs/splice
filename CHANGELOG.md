@@ -153,16 +153,18 @@
   mode is on for Claude Desktop alone, and Settings > Modes gives such a mode an Every session switch: Default, On or
   Off.
 - **A drawn card can keep itself up to date: the `visual` mode's `feed`.** A feed is a small named JSON value (up to 64
-  KiB, 64 of them) that splice holds in memory with the time it was written. The model writes one with the `feed` tool, or
-  leaves a script running that writes it from a shell with no model turn: `echo '{"loss":0.31}' | splice feed training`,
-  or, for a value written again and again, `producer | splice feed training --follow`, which stays open and writes each
-  line it is given, so the script costs one process and not one per write. It asks the daemon with the management key
-  itself, so the script never holds a key. A card calls `watchFeed(name,
-  onData, everyMs)` or `readFeed(name)`, which the view gives it and which ask the app that frames the card to read the
-  feed (at most once a second), so the card reaches no network and keeps what it drew wherever the app does not pass the
-  call on. `GET /api/visual/feeds/<name>` gives the same value to an app that is not an MCP host, and `PUT` writes it.
-  `read_me` has a `live` module on drawing such a card, so a session pays nothing for it until it asks. A restart
-  empties the feeds.
+  KiB, 64 of them, held as text, so 4 MiB of values at most) that splice keeps in memory with the time it was written.
+  A value that is not strict JSON, `null` or too big is refused in words and leaves the old value. The model writes one
+  with the `feed` tool, or leaves a script running that writes it from a shell with no model turn:
+  `echo '{"loss":0.31}' | splice feed training`, or, for a value written again and again,
+  `producer | splice feed training --follow`, which stays open and writes each line it is given, so the script costs one
+  process and not one per write. The command reads the management key itself, so the script never holds a key, and it
+  holds no more than a little over 64 KiB of its input at once. A card calls `watchFeed(name, onData, everyMs)` or
+  `readFeed(name)`, which the view gives it and which ask the app that frames the card to read the feed (at most once a
+  second), so the card reaches no network and keeps what it drew wherever the app does not pass the call on.
+  `GET /api/visual/feeds/<name>` gives an app that is not an MCP host the same answer the tool gives, `found: false` for
+  a feed nobody wrote included, and `PUT` writes it. `read_me` has a `live` module on drawing such a card, which a bare
+  `read_me` leaves out, so a session pays nothing for it until it asks. A restart empties the feeds.
 - **The keyed team listener serves the door.** `/door/v1` answers on a team's server from the gateway's providers,
   with each person's allowlist applied to the provider a model resolves to, and a streamed turn's client is pinged
   at `[server] keepalive_seconds` when that is shorter than splice's own probe.

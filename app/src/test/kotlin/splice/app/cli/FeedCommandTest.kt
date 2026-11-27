@@ -1,19 +1,19 @@
 // `splice feed <name>` as a script meets it: the value piped in becomes the visual mode's feed, a read by the mode's
-// own tool then gives it back, and the script never holds or sees the management key. The daemon is a stand-in that
-// checks the key the command read from the state folder and hands each request to the real visual mode's routes.
+// own tool then gives it back, and the script never holds or sees the management key. The daemon is the real control
+// server with the real visual mode on it, behind its guard, reached with the key the command reads from the state
+// folder. A stand-in answers only the two things a running daemon cannot be made to do: lose its answer after the
+// value went up, and be a daemon from before feeds.
 package splice.app.cli
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
-import kotlinx.serialization.SerializationException
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -21,19 +21,22 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.control.ControlAuth
+import splice.app.control.ControlServer
+import splice.app.control.controlServerFor
+import splice.app.modes.DaemonModes
+import splice.app.modes.ModeMcp
+import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.mode.ModeSetting
 import splice.core.terminal.TerminalOutput
-import splice.modes.api.FoundMode
-import splice.modes.api.ModeAnswer
-import splice.modes.api.ModeCall
-import splice.modes.api.ModeCaller
 import splice.modes.api.ModeCatalogReader
-import splice.modes.api.ModeRequest
-import splice.modes.api.ModeRoute
-import splice.modes.api.ModeSession
-import splice.modes.api.ModeStore
+import java.io.ByteArrayInputStream
+import java.io.InputStream
+import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.ServerSocket
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -43,31 +46,44 @@ class FeedCommandTest {
 
     private val said = CopyOnWriteArrayList<String>()
     private val failed = CopyOnWriteArrayList<String>()
-    private lateinit var daemon: StandInDaemon
-
-    private val catalog = ModeCatalogReader(Thread.currentThread().contextClassLoader).read()
-    private val visual = checkNotNull(catalog.mode("visual"))
-    private val store = object : ModeStore {
-        override fun read(session: String): String? = null
-        override fun write(session: String, text: String) = Unit
-    }
-
-    @BeforeEach
-    fun start() {
-        daemon = StandInDaemon(key(), visual, store)
-    }
-
-    @AfterEach
-    fun stop() {
-        daemon.stop()
-    }
+    private lateinit var modes: DaemonModes
+    private lateinit var control: ControlServer
+    private var standIn: HttpServer? = null
 
     private fun statePaths(): StatePaths = StatePaths(baseOverride = tmp.resolve("state"))
 
     private fun key(): String = MgmtKey(statePaths()).get()
 
-    /** The command a script runs, its standard input [stdin], against the stand-in daemon (or none on `port`). */
-    private fun feed(name: String, stdin: String, port: Int = daemon.port, follow: Boolean = false): Boolean {
+    @BeforeEach
+    fun start() {
+        val catalog = ModeCatalogReader(Thread.currentThread().contextClassLoader).read()
+        modes = DaemonModes(catalog, mapOf("visual" to ModeSetting(on = true)), listOf("acme"), tmp.resolve("modes"))
+        val paths = statePaths()
+        control = controlServerFor(
+            0,
+            emptyMap(),
+            ConfigService(paths, envReader = { null }),
+            ControlAuth(MgmtKey(paths), {}),
+        )
+        control.ports.modes = modes
+        runBlocking { control.start() }
+    }
+
+    @AfterEach
+    fun stop() {
+        control.stop()
+        standIn?.stop(0)
+    }
+
+    /** The command a script runs, its standard input [stdin], against the daemon (or whatever is on [port]). */
+    private fun feed(
+        name: String,
+        stdin: String,
+        port: Int = control.listeningPort,
+        follow: Boolean = false,
+    ): Boolean = run(name, stdin.byteInputStream(), port, follow)
+
+    private fun run(name: String, stdin: InputStream, port: Int = control.listeningPort, follow: Boolean): Boolean {
         val env = mapOf(
             "SPLICE_STATE_DIR" to tmp.resolve("state").toString(),
             "SPLICE_CONTROL_PORT" to port.toString(),
@@ -77,25 +93,35 @@ class FeedCommandTest {
         return FeedCommand(
             TerminalOutput { said.add(it) },
             TerminalOutput { failed.add(it) },
-            stdin.byteInputStream(),
+            stdin,
         ).run(name, follow, { variable -> env[variable] })
     }
 
-    /** What the mode's `feed` tool answers for [name]: the read a card makes through its app. */
-    private fun read(name: String): JsonObject {
-        val session = ModeSession("card", null, "", "", ModeCaller.DESKTOP)
-        val input = JsonObject(mapOf("name" to JsonPrimitive(name)))
-        val answer = visual.handler.answer(ModeCall("feed", input, session, store))
-        assertTrue(answer is ModeAnswer.Text, "$answer")
-        return Json.parseToJsonElement(answer.text).jsonObject
+    /** What a card's host reads through the mode's MCP server: the `feed` tool's answer, parsed as the card does. */
+    private fun read(name: String): JsonObject = runBlocking {
+        val server = checkNotNull(ModeMcp { modes }.server("visual", "acme", "head"))
+        val answer = server.call("feed", JsonObject(mapOf("name" to JsonPrimitive(name))), "card-session")
+        assertEquals("false", answer.getValue("isError").toString(), "$answer")
+        val text = answer.getValue("content").jsonArray.single().jsonObject.getValue("text").jsonPrimitive.content
+        Json.parseToJsonElement(text).jsonObject
     }
+
+    private fun data(name: String): String = read(name).getValue("data").toString()
+
+    /** The line numbers of what was said, in the order it was said; a sentence with no line is left out. */
+    private fun lineNumbers(): List<Int> =
+        failed.mapNotNull { Regex("line (\\d+)").find(it)?.groupValues?.get(1)?.toInt() }
+
+    /** A port nothing listens on: bound, read and closed, so a connection to it is refused. (An HttpServer made and
+     *  stopped without being started keeps its socket bound, and the kernel takes the connection.) */
+    private fun closedPort(): Int = ServerSocket(0, 1, InetAddress.getLoopbackAddress()).use { it.localPort }
 
     @Test
     fun `a value piped in is the feed, and a read by the tool then gives it back`() {
         val ok = feed("training", """{"step":40,"loss":0.31}""" + "\n")
 
         assertTrue(ok, "$failed")
-        assertTrue(said.any { "training" in it }, "it says what it kept: $said")
+        assertTrue(said.single().startsWith("Feed training written at "), "it says what it kept: $said")
         val read = read("training")
         assertEquals("true", read.getValue("found").jsonPrimitive.content)
         assertEquals("""{"step":40,"loss":0.31}""", read.getValue("data").toString())
@@ -107,63 +133,101 @@ class FeedCommandTest {
         feed("training", """{"loss":1}""")
         feed("training", "not json at all")
         feed("training", "")
+        feed("training", "1\nhello\n", follow = true)
         val out = (said + failed).joinToString("\n")
         assertFalse(key() in out, "the key is not printed: $out")
     }
 
     @Test
-    fun `a value that is not JSON, or no value, is refused in words and the feed keeps what it had`() {
+    fun `a single value that is not strict JSON is refused in words, exits 1, and the feed keeps what it had`() {
+        assertTrue(feed("training", "[1,2]"))
+
+        for (value in listOf("hello", "01", "+1", "NaN", "{\"x\":hello}", "loss is 0.5", "\u000B1", "\"raw\ttab\"")) {
+            failed.clear()
+            assertFalse(feed("training", value), value)
+            assertTrue("JSON" in failed.single(), "$value: $failed")
+        }
+        assertEquals("[1,2]", data("training"))
+    }
+
+    @Test
+    fun `invalid UTF-8 is refused by both command forms without replacing the value`() {
+        val latin1 = "\"café\"".toByteArray(Charsets.ISO_8859_1)
+        assertTrue(feed("training", "7"))
+
+        for (follow in listOf(false, true)) {
+            failed.clear()
+            assertFalse(run("training", latin1.inputStream(), follow = follow))
+            assertTrue("UTF-8" in failed.single(), "$failed")
+            assertEquals("7", data("training"))
+        }
+        failed.clear()
+        assertFalse(run("training", (latin1 + "\r\n8".encodeToByteArray()).inputStream(), follow = true))
+        assertEquals(listOf(1), lineNumbers())
+        assertEquals("8", data("training"))
+    }
+
+    @Test
+    fun `follow reads CR LF and CRLF, including a CRLF across separate reads`() {
+        val source = object : ByteArrayInputStream("1\r2\r\nhello\n3\r\n4".encodeToByteArray()) {
+            override fun read(b: ByteArray, off: Int, len: Int): Int = super.read(b, off, minOf(len, 1))
+        }
+
+        assertFalse(run("training", source, follow = true))
+        assertEquals(listOf(3), lineNumbers(), "$failed")
+        assertEquals("4", data("training"))
+    }
+
+    @Test
+    fun `null or no value is refused in words, and the feed keeps what it had`() {
         assertTrue(feed("training", """{"loss":1}"""))
 
-        assertFalse(feed("training", "loss is 0.5"))
-        assertTrue(failed.any { "JSON" in it }, "$failed")
+        assertFalse(feed("training", "null"))
+        assertTrue("null" in failed.last(), "$failed")
         assertFalse(feed("training", "  \n"))
-        assertTrue(failed.any { "standard input" in it }, "$failed")
-        assertEquals("""{"loss":1}""", read("training").getValue("data").toString())
+        assertTrue("standard input" in failed.last(), "$failed")
+        assertEquals("""{"loss":1}""", data("training"))
     }
 
     @Test
     fun `a name or a size the mode refuses is told to the script as the mode words it`() {
         assertFalse(feed("has space", "1"))
-        assertTrue(failed.any { "letters, digits" in it }, "$failed")
+        assertTrue("letters, digits" in failed.last(), "$failed")
+        assertFalse(feed("_leading", "1"))
+        assertTrue("starting with a letter or a digit" in failed.last(), "$failed")
         assertFalse(feed("big", "\"" + "a".repeat(64 * 1024) + "\""))
-        assertTrue(failed.any { "64 KiB" in it }, "$failed")
+        assertTrue("65538 bytes" in failed.last() && "64 KiB" in failed.last(), "$failed")
         assertEquals("false", read("big").getValue("found").jsonPrimitive.content)
     }
 
     @Test
     fun `with follow, each line is one value written in the order it came, and the last is what a read gives`() {
-        val lines = (1..5).joinToString("\n") { """{"step":$it,"loss":${1.0 / it}}""" } + "\n"
+        val lines = (1..5).joinToString("\n") { """{"step":$it}""" } + "\n"
 
         assertTrue(feed("training", lines, follow = true), "$failed")
 
-        assertEquals((1..5).map { """{"step":$it,"loss":${1.0 / it}}""" }, daemon.written)
-        assertEquals(5, read("training").getValue("data").jsonObject.getValue("step").jsonPrimitive.content.toInt())
+        assertEquals("""{"step":5}""", data("training"))
         assertTrue(said.isEmpty() && failed.isEmpty(), "a stream that is kept says nothing: $said $failed")
     }
 
     @Test
-    fun `with follow, a bad line is said with its number and does not end the stream`() {
-        val lines = "{\"n\":1}\nnot json\n\n{\"n\":3}\n"
-
-        val every = feed("training", lines, follow = true)
+    fun `with follow, a value that is not strict JSON is said with its line, the next is written, and it exits 1`() {
+        val every = feed("training", "1\nhello\n01\n\n+1\nNaN\n{\"x\":hello}\nnull\n{\"n\":9}\n", follow = true)
 
         assertFalse(every, "a line was not kept, so the run says so")
-        assertEquals(listOf("{\"n\":1}", "{\"n\":3}"), daemon.written)
-        assertEquals(1, failed.size, "$failed")
-        assertTrue("line 2" in failed.single() && "JSON" in failed.single(), "$failed")
-        assertEquals(3, read("training").getValue("data").jsonObject.getValue("n").jsonPrimitive.content.toInt())
+        assertEquals(listOf(2, 3, 5, 6, 7, 8), lineNumbers(), "$failed")
+        assertTrue(failed.take(5).all { "JSON" in it }, "$failed")
+        assertTrue("null" in failed.last(), "$failed")
+        assertEquals("""{"n":9}""", data("training"), "the lines after a bad one were written")
     }
 
     @Test
-    fun `with follow, a line the mode refuses is said and the next is written`() {
-        val every = feed("has space", "1\n2\n", follow = true)
+    fun `with follow, only bad lines leave the old value, and the feed never holds text a card cannot parse`() {
+        assertTrue(feed("training", "7"))
 
-        assertFalse(every)
-        assertEquals(2, failed.size, "each refused line is said: $failed")
-        assertTrue(failed.all { "letters, digits" in it }, "$failed")
-        assertTrue(feed("training", "7\n", follow = true))
-        assertEquals("7", read("training").getValue("data").toString())
+        assertFalse(feed("training", "hello\n+1\n", follow = true))
+
+        assertEquals("7", data("training"))
     }
 
     @Test
@@ -172,78 +236,133 @@ class FeedCommandTest {
         assertTrue(feed("training", "\n\n", follow = true), "$failed")
         assertTrue(feed("training", "{\"last\":true}", follow = true), "$failed")
 
-        assertEquals(listOf("{\"last\":true}"), daemon.written)
+        assertEquals("""{"last":true}""", data("training"))
         assertTrue(said.isEmpty() && failed.isEmpty(), "$said $failed")
     }
 
     @Test
-    fun `with follow, a daemon that is not there is said once, whatever the lines after it`() {
-        val closed = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).also { it.stop(0) }.address.port
+    fun `a value read past what a feed holds is refused where it is read, and not read on`() {
+        val source = Endless(50L * 1024 * 1024)
 
-        assertFalse(feed("training", "1\n2\n3\n", port = closed, follow = true))
+        assertFalse(run("training", source, follow = false))
 
-        assertEquals(1, failed.size, "$failed")
-        assertTrue("line 1" in failed.single() && "not running" in failed.single(), "$failed")
+        assertTrue("past 65 KiB" in failed.single() && "nothing was written" in failed.single(), "$failed")
+        assertTrue(source.read <= 64 * 1024 + 1024 + 1, "it read ${source.read} bytes of 50 MiB")
+        assertEquals("false", read("training").getValue("found").jsonPrimitive.content)
     }
 
     @Test
-    fun `with no daemon listening it says so and fails`() {
-        val closed = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).also { it.stop(0) }.address.port
-        assertFalse(feed("training", "1", port = closed))
-        assertTrue(failed.any { "not running" in it }, "$failed")
+    fun `with follow, a line past what a feed holds is refused with its number once it is past, then it goes on`() {
+        val past = 64 * 1024 + 1024
+        val toldBy = ArrayList<Long>()
+        val source = Endless(4L * 1024 * 1024, tail = "\n{\"ok\":1}\n") { at ->
+            if (failed.isNotEmpty() && toldBy.isEmpty()) toldBy.add(at)
+        }
+
+        assertFalse(run("training", source, follow = true))
+
+        assertEquals(1, failed.size, "$failed")
+        assertTrue("line 1 " in failed.single() && "past 65 KiB" in failed.single(), "$failed")
+        assertTrue(toldBy.single() <= past + 8 * 1024L, "said after ${toldBy.single()} bytes of a 4 MiB line")
+        assertEquals("""{"ok":1}""", data("training"), "the next line was written")
+    }
+
+    @Test
+    fun `with follow, a daemon that is not there is said once, whatever the lines after it`() {
+        assertFalse(feed("training", "1\n2\n3\n", port = closedPort(), follow = true))
+
+        assertEquals(1, failed.size, "$failed")
+        assertTrue("line 1" in failed.single() && "not running" in failed.single(), "$failed")
+        assertTrue("nothing was written" in failed.single(), "$failed")
+    }
+
+    @Test
+    fun `with no daemon listening it says so, that nothing was written, and fails`() {
+        assertFalse(feed("training", "1", port = closedPort()))
+
+        assertTrue("not running" in failed.single() && "nothing was written" in failed.single(), "$failed")
+    }
+
+    @Test
+    fun `a reply lost after the value was sent is said as not known, never as nothing written`() {
+        val lost = standIn { exchange ->
+            // the value is taken and the connection closed with no answer, as a daemon that went down would
+            check(exchange.requestBody.readBytes().isNotEmpty())
+            exchange.close()
+        }
+
+        assertFalse(feed("lost", "1", port = lost))
+        assertTrue("not known" in failed.single() && "nothing was written" !in failed.single(), "$failed")
+        failed.clear()
+        assertFalse(feed("lost", "1\n2\n", port = lost, follow = true))
+        assertEquals(listOf(1), lineNumbers(), "a daemon that does not answer is said once: $failed")
+        assertTrue("not known" in failed.single(), "$failed")
+    }
+
+    @Test
+    fun `a partial success reply does not confirm that a feed was kept`() {
+        val lost = standIn { exchange ->
+            exchange.requestBody.use { it.readBytes() }
+            exchange.sendResponseHeaders(200, 100L)
+            exchange.responseBody.use { it.write("{\"sa".encodeToByteArray()) }
+        }
+
+        assertFalse(feed("lost", "1", port = lost))
+        assertTrue("not known" in failed.single() && "kept nothing" !in failed.single(), "$failed")
+    }
+
+    @Test
+    fun `a daemon from before feeds is said to be older, and nothing was written`() {
+        val older = standIn { exchange ->
+            check(exchange.requestBody.readBytes().isNotEmpty())
+            exchange.sendResponseHeaders(404, -1L)
+            exchange.close()
+        }
+
+        assertFalse(feed("training", "1", port = older))
+
+        assertTrue("older than this splice" in failed.single() && "nothing was written" in failed.single(), "$failed")
+    }
+
+    private fun standIn(answer: (HttpExchange) -> Unit): Int {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { answer(it) }
+        server.start()
+        standIn = server
+        return server.address.port
     }
 }
 
-/** A daemon's control port as far as feeds go: it checks the bearer key, then hands the request to the mode's route. */
-private class StandInDaemon(private val key: String, private val mode: FoundMode, private val store: ModeStore) {
-    private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-    val port: Int get() = server.address.port
+/** A standard input of [length] bytes of `a`, then [tail], made as it is read, that counts what was read and tells
+ *  [onRead] where it is; it is the stream a command must not hold whole. */
+private class Endless(
+    private val length: Long,
+    private val tail: String = "",
+    private val onRead: (Long) -> Unit = {},
+) : InputStream() {
+    var read = 0L
+        private set
+    private val after = tail.toByteArray()
 
-    /** The bodies of the writes it was handed, in the order they came. */
-    val written = CopyOnWriteArrayList<String>()
-
-    init {
-        server.createContext("/") { exchange -> answer(exchange) }
-        server.start()
-    }
-
-    private fun answer(exchange: HttpExchange) {
-        val (status, reply) = decide(exchange)
-        val bytes = reply.toByteArray()
-        exchange.sendResponseHeaders(status, if (bytes.isEmpty()) -1L else bytes.size.toLong())
-        if (bytes.isNotEmpty()) exchange.responseBody.use { it.write(bytes) }
-        exchange.close()
-    }
-
-    private fun decide(exchange: HttpExchange): Pair<Int, String> {
-        val body = exchange.requestBody.readBytes().decodeToString().takeIf(String::isNotBlank)
-        val parsed = body?.let(::json)
-        val route = routeOf(exchange)
-        return when {
-            exchange.requestHeaders.getFirst("Authorization") != "Bearer $key" -> 401 to error("unauthorized")
-            route == null -> 404 to ""
-            body != null && parsed == null -> 400 to error("the body is not JSON")
-            else -> handled(route, exchange, parsed)
+    override fun read(): Int {
+        onRead(read)
+        val next = when {
+            read < length -> 'a'.code
+            read - length < after.size -> after[(read - length).toInt()].toInt()
+            else -> -1
         }
+        if (next >= 0) read++
+        return next
     }
 
-    private fun handled(route: ModeRoute, exchange: HttpExchange, body: JsonElement?): Pair<Int, String> {
-        if (exchange.requestMethod == "PUT" && body != null) written.add(body.toString())
-        val request = ModeRequest(exchange.requestMethod, exchange.requestURI.path, emptyMap(), body, store)
-        return route.handler.handle(request).let { it.status to it.body.toString() }
+    override fun read(into: ByteArray, offset: Int, count: Int): Int {
+        if (count == 0) return 0
+        var filled = 0
+        while (filled < count) {
+            val next = read()
+            if (next < 0) break
+            into[offset + filled++] = next.toByte()
+        }
+        return if (filled == 0) -1 else filled
     }
-
-    private fun routeOf(exchange: HttpExchange): ModeRoute? = mode.handler.routes.firstOrNull {
-        it.method == exchange.requestMethod && exchange.requestURI.path.startsWith(it.path.substringBefore("{"))
-    }
-
-    private fun json(text: String): JsonElement? = try {
-        Json.parseToJsonElement(text)
-    } catch (_: SerializationException) {
-        null
-    }
-
-    private fun error(text: String): String = buildJsonObject { put("error", text) }.toString()
-
-    fun stop() = server.stop(0)
 }

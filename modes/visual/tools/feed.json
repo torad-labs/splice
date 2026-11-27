@@ -3,10 +3,10 @@
   "properties": {
     "name": {
       "type": "string",
-      "description": "Letters, digits, - or _; at most 40."
+      "description": "1-40 ASCII chars: letter/digit first, then -/_ too."
     },
     "data": {
-      "description": "The value to write, at most 64 KiB."
+      "description": "Any value but null, at most 64 KiB."
     }
   },
   "required": ["name"]

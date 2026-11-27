@@ -35,6 +35,7 @@ import splice.app.mcp.McpFrontCheck
 import splice.app.mcp.McpHarnessSyncSeams
 import splice.app.modes.ModeBoot
 import splice.client.desktop.DesktopAppConfig
+import splice.client.mcp.McpAccessKey
 import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -74,6 +75,9 @@ private class ModeDesktopProvider {
         pool.shutdownNow()
     }
 }
+
+private const val FEEDS_MODE = "[modes.visual]\non = true\nserver_routes = true"
+private const val FEED_PATH = "/api/visual/feeds/wire"
 
 /** The fixture's folders and the daemon's key, as a check reads them. */
 private data class ModeDesktopFixture(val tmp: Path, val env: EnvReader, val statePaths: StatePaths, val mgmt: String) {
@@ -124,6 +128,126 @@ class DesktopMcpModeDaemonTest {
             assertEquals("text/html;profile=mcp-app", page.str("mimeType"))
             assertEquals(resource("splice-modes/visual/resources/reply.html"), page.str("text"))
         }
+    }
+
+    @Test
+    fun `HTTP and stdio refuse malformed feed JSON without replacing the feed`(@TempDir tmp: Path) {
+        daemon(tmp, FEEDS_MODE) { fixture ->
+            post(fixture.mgmt, "/api/desktop/on")
+            assertEquals(200, feedPut(fixture, "7"))
+            val malformed = feedCall("\"raw\ttab\"")
+            val latin1 = feedCall("\"café\"").toByteArray(Charsets.ISO_8859_1)
+            assertEquals(400, feedRpc(fixture, malformed.encodeToByteArray()).first)
+            assertEquals(400, feedRpc(fixture, latin1).first)
+            feedAlias(fixture)
+
+            for (server in listOf("visual", "cards")) {
+                assertEquals(200, feedPut(fixture, "7"))
+                malformedStdio(fixture, server, malformed, latin1)
+                assertEquals("7", get(fixture.mgmt, FEED_PATH).getValue("data").toString(), server)
+
+                val value = """{"rows":[[1,2],{"label":"ready"}],"number":-0.2500e+02}"""
+                val answer = feedStdio(fixture, server, feedCall(value))
+                assertEquals("false", answer.getValue("result").jsonObject.getValue("isError").toString(), server)
+                assertEquals(value, get(fixture.mgmt, FEED_PATH).getValue("data").toString(), server)
+            }
+        }
+    }
+
+    @Test
+    fun `feed PUT and MCP agree on deep values and on Unicode in keys and values`(@TempDir tmp: Path) {
+        daemon(tmp, FEEDS_MODE) { fixture ->
+            post(fixture.mgmt, "/api/desktop/on")
+            assertEquals(200, feedPut(fixture, "7"))
+            val invalid = listOf(""""\uD800"""", """{"\uD800":1,"?":2}""", """{"nested":["\uDC00"]}""")
+            for (value in invalid) {
+                assertEquals(400, feedPut(fixture, value), value)
+                val (status, reply) = feedRpc(fixture, feedCall(value).encodeToByteArray())
+                val refused = when (status) {
+                    400 -> reply["error"]?.jsonObject?.get("code").toString() == "-32600"
+                    200 -> reply["result"]?.jsonObject?.get("isError").toString() == "true"
+                    else -> false
+                }
+                assertTrue(refused, "$value: HTTP $status: $reply")
+                assertEquals("7", get(fixture.mgmt, FEED_PATH).getValue("data").toString())
+            }
+
+            val unicode = """{"😃":"🚀","?":2}"""
+            assertEquals(200, feedPut(fixture, unicode))
+            val data = get(fixture.mgmt, FEED_PATH).getValue("data").jsonObject
+            assertEquals("🚀", data.getValue("😃").jsonPrimitive.content)
+            assertEquals("2", data.getValue("?").toString())
+
+            for (depth in listOf(510, 520)) {
+                val deep = "[".repeat(depth) + "0" + "]".repeat(depth)
+                assertEquals(200, feedPut(fixture, deep), "PUT depth $depth")
+                val (_, result) = feedRpc(fixture, feedCall(deep).encodeToByteArray())
+                val isError = result.getValue("result").jsonObject.getValue("isError")
+                assertEquals("false", isError.toString(), "MCP depth $depth")
+                var read = get(fixture.mgmt, FEED_PATH).getValue("data")
+                repeat(depth) { read = read.jsonArray.single() }
+                assertEquals("0", read.jsonPrimitive.content)
+            }
+        }
+    }
+
+    private suspend fun malformedStdio(
+        fixture: ModeDesktopFixture,
+        server: String,
+        malformed: String,
+        latin1: ByteArray,
+    ) {
+        val refusal = feedStdio(fixture, server, malformed)
+        assertEquals("92", refusal.getValue("id").jsonPrimitive.content)
+        assertTrue("error" in refusal, "$server: $refusal")
+
+        val errors = mutableListOf<String>()
+        val err = TerminalOutput { errors += it }
+        val badEncoding = McpStdioPipes(latin1.inputStream(), ByteArrayOutputStream())
+        assertEquals(1, bridge(fixture, err, badEncoding).run(listOf(server)))
+        assertTrue(errors.any { "UTF-8" in it }, "$server: $errors")
+    }
+
+    private suspend fun feedStdio(fixture: ModeDesktopFixture, server: String, request: String): JsonObject {
+        val stdout = ByteArrayOutputStream()
+        val errors = mutableListOf<String>()
+        val pipes = McpStdioPipes((request + "\n").byteInputStream(), stdout)
+        assertEquals(0, bridge(fixture, TerminalOutput { errors += it }, pipes).run(listOf(server)), "$server: $errors")
+        return json.parseToJsonElement(stdout.toString(Charsets.UTF_8).trim()).jsonObject
+    }
+
+    private fun feedAlias(fixture: ModeDesktopFixture) {
+        val bearer = JsonPrimitive("Bearer ${feedBearer(fixture)}")
+        Files.writeString(
+            fixture.home.resolve(".claude.json"),
+            """{"mcpServers":{"cards":{"type":"http","url":"http://127.0.0.1:$controlPort/mcp/visual","headers":""" +
+                """{"Authorization":$bearer}}}}""",
+        )
+    }
+
+    private fun feedBearer(fixture: ModeDesktopFixture): String =
+        McpAccessKey(stateDir = fixture.statePaths.stateDir, source = { fixture.mgmt })()
+
+    private fun feedCall(value: String): String =
+        """{"jsonrpc":"2.0","id":92,"method":"tools/call","params":""" +
+            """{"name":"feed","arguments":{"name":"wire","data":$value}}}"""
+
+    private suspend fun feedPut(fixture: ModeDesktopFixture, value: String): Int =
+        client.put("http://127.0.0.1:$controlPort$FEED_PATH") {
+            header("Authorization", "Bearer ${fixture.mgmt}")
+            header("Content-Type", "application/json")
+            setBody(value)
+        }.status.value
+
+    private suspend fun feedRpc(fixture: ModeDesktopFixture, bytes: ByteArray): Pair<Int, JsonObject> {
+        val key = feedBearer(fixture)
+        val reply = client.post("http://127.0.0.1:$controlPort/mcp/visual") {
+            header("Authorization", "Bearer $key")
+            header("Content-Type", "application/json")
+            header("Accept", "application/json, text/event-stream")
+            setBody(bytes)
+        }
+        return reply.status.value to json.parseToJsonElement(reply.bodyAsText()).jsonObject
     }
 
     // Before 0.7.0's on_for, visual shipped off for every caller, and this test began with Desktop listing no visual.

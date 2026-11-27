@@ -7,6 +7,7 @@ package splice.control.mcp
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.request.receive
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
@@ -20,18 +21,36 @@ import splice.client.mcp.MCP_CALLER_HEADER
 import splice.client.mcp.MCP_HEAD_HEADER
 import splice.http.SseChannelResponse
 import splice.http.SseWrite
+import java.nio.charset.CharacterCodingException
 
 private const val SESSION_HEADER = "Mcp-Session-Id"
 private const val PROTOCOL_HEADER = "MCP-Protocol-Version"
 private const val PING_MS = 15_000L
 
-public class McpRoutes(private val host: McpHost) {
+/** Which in-process servers require the original request to be valid UTF-8. */
+public fun interface McpUtf8Input {
+    public operator fun invoke(server: String): Boolean
+}
+
+public class McpRoutes(
+    private val host: McpHost,
+    private val utf8InProcess: McpUtf8Input = McpUtf8Input { false },
+) {
 
     public suspend fun post(call: ApplicationCall) {
         val name = call.parameters["name"].orEmpty()
         val headers = call.request.headers
-        val body = call.receiveText()
         val entry = McpEntryNames(headers[MCP_HEAD_HEADER], headers[MCP_CALLER_HEADER])
+        val body = try {
+            document(call, name, entry)
+        } catch (_: CharacterCodingException) {
+            call.respondText(
+                """{"jsonrpc":"2.0","id":0,"error":{"code":-32600,"message":"the body is not valid UTF-8 JSON"}}""",
+                ContentType.Application.Json,
+                HttpStatusCode.BadRequest,
+            )
+            return
+        }
         val reply = host.post(name, headers[SESSION_HEADER], body, headers[PROTOCOL_HEADER], entry)
         reply.sessionId?.let { call.response.header(SESSION_HEADER, it) }
         val answer = reply.body
@@ -41,6 +60,13 @@ public class McpRoutes(private val host: McpHost) {
             call.respondText(answer, ContentType.Application.Json, HttpStatusCode.fromValue(reply.status))
         }
     }
+
+    private suspend fun document(call: ApplicationCall, name: String, entry: McpEntryNames): String =
+        if (utf8InProcess(name) && host.answeredHere(name, entry.head, entry.caller)) {
+            call.receive<ByteArray>().decodeToString(throwOnInvalidSequence = true)
+        } else {
+            call.receiveText()
+        }
 
     public suspend fun stream(call: ApplicationCall) {
         val name = call.parameters["name"].orEmpty()

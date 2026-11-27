@@ -89,8 +89,6 @@ class VisualModeTest {
         val html = checkNotNull(checkNotNull(catalog.mode("visual")).resources.single().content)
         assertTrue(html.trimStart().startsWith("<!doctype html>"), html.take(40))
         assertTrue(listOf("ui/initialize", "ui/notifications/tool-input", "widget_code").all { it in html })
-        val helpers = listOf("window.watchFeed", "window.readFeed", "\"tools/call\"")
-        assertTrue(helpers.all { it in html }, "the view gives a card its feed helpers")
         val code = html.replace("https://modelcontextprotocol.io/extensions/apps/overview", "")
             .replace("https://invalid.example/", "")
         assertTrue(listOf("<script src", "<link ", "http://", "https://", "fetch(", "import(").none { it in code })
@@ -100,8 +98,11 @@ class VisualModeTest {
     fun `read_me gives the guidance and the modules asked for`() {
         val every = call("read_me")
         assertTrue(every is ModeAnswer.Text && "When a visual beats text" in every.text, "$every")
-        val modules = listOf("chart", "comparison", "diagram", "diff", "explainer", "tool", "page", "live")
+        val modules = listOf("chart", "comparison", "diagram", "diff", "explainer", "tool", "page")
         assertTrue(modules.all { "## Module: $it" in every.text }, every.text)
+        assertFalse("## Module: live" in every.text, "a bare read_me leaves out the live module")
+        val live = call("read_me", "modules" to JsonArray(listOf(JsonPrimitive("live"))))
+        assertTrue(live is ModeAnswer.Text && "## Module: live" in live.text && "splice feed" in live.text, "$live")
         assertTrue("--color-text-primary" in every.text, "it tells the model to use the host's theme")
 
         val chart = call("read_me", "modules" to JsonArray(listOf(JsonPrimitive("chart"))))
@@ -251,15 +252,41 @@ class VisualModeTest {
     }
 
     @Test
-    fun `a feed holds any JSON value but null, and null in data reads`() {
+    fun `a feed holds any JSON value but null, and null is refused by the tool and the route alike`() {
         val one = JsonArray(listOf(JsonPrimitive(1)))
         for (value in listOf(JsonPrimitive("ready"), JsonPrimitive(7), JsonPrimitive(true), one)) {
             feed("shape", value)
             assertEquals(value, readOf(feed("shape")).getValue("data"))
         }
-        val nothing = feed("shape", JsonNull)
-        assertEquals(one, readOf(nothing).getValue("data"), "null is a read, not a write")
-        assertEquals(400, put("/api/visual/feeds/shape", JsonNull).status)
+        val tool = feed("shape", JsonNull)
+        assertTrue(tool is ModeAnswer.Error && "null" in tool.text && "leave data out" in tool.text, "$tool")
+        val route = put("/api/visual/feeds/shape", JsonNull)
+        assertEquals(400, route.status)
+        assertTrue("null" in field(route, "error"), field(route, "error"))
+        assertEquals(one, readOf(feed("shape")).getValue("data"), "the old value stays")
+    }
+
+    // The daemon's own JSON parser reads a bare word, a leading zero, a plus sign and NaN as literals. A feed keeps
+    // only what a card's JSON.parse reads, so each is refused by the tool and the route, and what was there stays.
+    @Test
+    fun `a value that is not strict JSON is refused by the tool and the route, and what was there is kept`() {
+        feed("strict", JsonPrimitive(1))
+        val notStrict = listOf("hello", "01", "+1", "NaN", "Infinity", ".5", "1.", "0x10")
+        val nested = listOf("{\"x\":hello}", "[1,01]", "{\"a\":[{\"b\":+2}]}")
+        for (text in notStrict + nested) {
+            val lenient = Json.parseToJsonElement(text)
+            val tool = feed("strict", lenient)
+            assertTrue(tool is ModeAnswer.Error && "strict JSON" in tool.text, "$text: $tool")
+            val route = put("/api/visual/feeds/strict", lenient)
+            assertEquals(400, route.status, text)
+            assertTrue("strict JSON" in field(route, "error"), "$text: ${field(route, "error")}")
+        }
+        assertEquals(JsonPrimitive(1), readOf(feed("strict")).getValue("data"), "nothing changed what was there")
+        for (text in listOf("0", "-0.5e3", "1E+2", "true", "false", "\"a\\u00e9\"", "[]", "{\"a\":[1,{\"b\":null}]}")) {
+            assertTrue(feed("strict", Json.parseToJsonElement(text)) is ModeAnswer.Text, text)
+            val read = readOf(feed("strict"))
+            assertEquals(Json.parseToJsonElement(text), read.getValue("data"), text)
+        }
     }
 
     @Test
@@ -301,12 +328,17 @@ class VisualModeTest {
     }
 
     @Test
-    fun `the feeds route gives the value the tool reads, and 404 for a feed that is not there`() {
-        feed("build", JsonObject(mapOf("done" to JsonPrimitive(12))))
+    fun `the feeds route gives the bytes the tool reads, and found false the way the tool does for a feed not there`() {
+        feed("build", JsonObject(mapOf("done" to JsonPrimitive(12), "of" to JsonArray(listOf(JsonPrimitive("a"))))))
         val route = get("/api/visual/feeds/build")
         assertEquals(200, route.status)
-        assertEquals(readOf(feed("build")), route.body.jsonObject)
-        assertEquals(404, get("/api/visual/feeds/nobody_wrote_this").status)
+        assertEquals((feed("build") as ModeAnswer.Text).text, route.body.toString(), "the same text, byte for byte")
+        val data = Json.parseToJsonElement(route.body.toString()).jsonObject.getValue("data")
+        assertEquals("""{"done":12,"of":["a"]}""", data.toString())
+        val missing = get("/api/visual/feeds/nobody_wrote_this")
+        assertEquals(200, missing.status)
+        assertEquals((feed("nobody_wrote_this") as ModeAnswer.Text).text, missing.body.toString())
+        assertEquals("""{"name":"nobody_wrote_this","found":false}""", missing.body.toString())
     }
 
     @Test

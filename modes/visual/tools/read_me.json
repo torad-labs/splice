@@ -3,7 +3,7 @@
   "properties": {
     "modules": {
       "type": "array",
-      "description": "The kinds of visual you are about to draw. Leave it out to read every module.",
+      "description": "The kinds of visual you are about to draw. Leave it out for all but live.",
       "items": {
         "type": "string",
         "enum": ["chart", "comparison", "diagram", "diff", "explainer", "tool", "page", "live"]

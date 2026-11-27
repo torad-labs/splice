@@ -124,6 +124,8 @@ internal class ModSessionTracker(
     }
 
     private fun seeFirst(sighting: ModSessionSighting, launch: StoredModLaunch?, staged: ModEarlySession?) {
+        val known = ModSessionPair(sighting.id, sighting.owner)
+        if (launch == null && started.containsKey(known)) return
         val key = ModSessionPair(sighting.id, launch?.launch?.owner)
         // Serialize the first offers for this id, so the first event says seenBefore=false even on a race.
         pairs.compute(key.id) { _, existing ->

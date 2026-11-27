@@ -10,6 +10,7 @@ import splice.app.mods.ModRuntimeStatus
 import splice.app.mods.handover.ModAcceptedBatches
 import splice.app.mods.handover.ModHandover
 import splice.app.mods.handover.ModHandoverBatch
+import splice.app.mods.handover.ModReceipts
 import splice.app.mods.install.InstalledMods
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -75,7 +76,7 @@ internal class ModRunner(
         val sender = batch.sender
         val last = sender?.let(acceptedBatches::of) ?: -1L
         if (sender != null && batch.ordinal <= last) return true
-        if (batch.startsComplete) acceptedBatches.record(batch.accepted)
+        if (batch.startsComplete) acceptedBatches.record(ModReceipts(batch.accepted, batch.acceptedAt))
         batch.events.forEach(::receive)
         val confirmed = batch.uncertain?.takeIf { it.ordinal <= last }?.count ?: 0
         events.deliveryLoss.add((batch.dropped - confirmed).coerceAtLeast(0))

@@ -10,8 +10,12 @@ internal const val MOD_HANDOVER_CAPACITY = 4096 // why: bound the backlog while 
 internal const val MOD_HANDOVER_BATCH_SIZE = 64 // why: amortize local HTTP without holding the entire backlog in a body
 internal const val MOD_HANDOVER_DROPPED = "handoverDropped"
 
-// why: only a retrying sender from a recent daemon can repeat a batch, so a short list of senders bounds the receipts
-internal const val MOD_HANDOVER_RECEIPTS = 16
+// why: a retired daemon keeps retrying for up to 15 minutes, so a receipt outlives that by a margin and is never
+// dropped for being the seventeenth sender
+internal const val MOD_HANDOVER_RECEIPT_MS = 20L * 60 * 1000
+
+// why: only a runaway list could reach this; age, not count, is what ends a receipt
+internal const val MOD_HANDOVER_RECEIPT_CAP = 4096
 
 @Serializable
 internal data class ModHandoverBatch(
@@ -24,12 +28,14 @@ internal data class ModHandoverBatch(
     val uncertain: ModHandoverReceipt? = null,
     /** The last batch the sending daemon accepted from each earlier sender, so a retry of one is not told twice. */
     val accepted: Map<String, Long> = emptyMap(),
+    /** When each of those batches was first accepted, carried unchanged so the retry horizon never moves out. */
+    val acceptedAt: Map<String, Long> = emptyMap(),
 ) {
     fun valid(): Boolean = bounded() && events.all { it.event.name in ModHandoverEvents.names }
 
     private fun bounded(): Boolean =
         events.size + starts.size <= MOD_HANDOVER_BATCH_SIZE && (dropped >= 0 && ordinal >= 0) &&
-            accepted.size <= MOD_HANDOVER_RECEIPTS
+            accepted.size <= MOD_HANDOVER_RECEIPT_CAP && acceptedAt.size <= MOD_HANDOVER_RECEIPT_CAP
 }
 
 @Serializable

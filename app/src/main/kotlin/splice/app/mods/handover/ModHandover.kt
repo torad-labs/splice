@@ -41,7 +41,7 @@ internal class ModHandover(
     port: Int,
     private val key: MgmtKey,
     private val log: LogSink,
-    private val accepted: Map<String, Long> = emptyMap(),
+    private val accepted: ModReceipts = ModReceipts(),
 ) {
     private val url = "http://127.0.0.1:$port$MOD_HANDOVER_PATH"
     private val ready = CompletableDeferred<Collection<ModPendingSession>>()
@@ -139,7 +139,13 @@ internal class ModHandover(
         for (chunk in pending.asSequence().mapNotNull { it.entry }.chunked(MOD_HANDOVER_BATCH_SIZE)) {
             deliver(client, key, ModHandoverBatch(emptyList(), starts = chunk))
         }
-        deliver(client, key, ModHandoverBatch(emptyList(), startsComplete = true, accepted = accepted))
+        val last = ModHandoverBatch(
+            emptyList(),
+            startsComplete = true,
+            accepted = accepted.ordinals,
+            acceptedAt = accepted.at,
+        )
+        deliver(client, key, last)
     }
 
     private suspend fun deliver(client: HttpClient, key: String, batch: ModHandoverBatch) {

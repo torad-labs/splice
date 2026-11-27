@@ -169,8 +169,8 @@ internal class ControlPlane(
     internal val modLaunches = stores.modLaunches
     internal val modRunner = stores.modRunner
     internal val modSessions = stores.modSessions
-    internal val modTurns = splice.app.mods.sessions.ModObservationGate(modSessions, stores.modTurns)
-    internal val modTracking = splice.app.mods.sessions.ModSessionTracking(
+    internal val modTurns = splice.app.mods.events.ModObservationGate(modSessions, stores.modTurns)
+    internal val modTracking = splice.app.mods.ModSessionTracking(
         probeScope,
         stores.mods.presence,
         modSessions,

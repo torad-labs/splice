@@ -1,4 +1,4 @@
-package splice.app.mods.sessions
+package splice.app.mods
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -7,6 +7,8 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import splice.app.mods.sessions.ModLaunches
+import splice.app.mods.sessions.ModSessionTracker
 import splice.upstream.codemode.ProcessDispatchers
 
 /** The control listener opens first. A Bun host can subscribe once the old pairs have been recovered. */

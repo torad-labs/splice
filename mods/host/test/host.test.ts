@@ -12,6 +12,7 @@ const children = new Set<RunningMod>();
 class RunningMod {
   readonly #child;
   readonly #reader;
+  readonly #admitted;
   readonly #decoder = new TextDecoder();
   #buffer = "";
 
@@ -23,10 +24,16 @@ class RunningMod {
       stderr: "inherit",
     });
     this.#reader = this.#child.stdout.getReader();
+    this.#admitted = this.#write(JSON.stringify({ type: "start" }));
     children.add(this);
   }
 
   async raw(line: string) {
+    await this.#admitted;
+    await this.#write(line);
+  }
+
+  async #write(line: string) {
     this.#child.stdin.write(line + "\n");
     await this.#child.stdin.flush();
   }

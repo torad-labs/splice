@@ -33,6 +33,7 @@ internal class ModsMount(
     private val io: CoroutineDispatcher = ProcessDispatchers().io(),
 ) {
     fun register(route: Route) {
+        ModHandoverMount(ports, guard).register(route)
         route.route(MOD_CATALOG_PATH) {
             get { guard.guarded(call) { serve(call) { answer(call, ModRows(it).all()) } } }
             get("/{name}") { guard.guarded(call) { serve(call) { one(call, it) } } }

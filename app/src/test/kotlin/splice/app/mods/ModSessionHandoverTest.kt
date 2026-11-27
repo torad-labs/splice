@@ -227,6 +227,7 @@ private class SessionDaemon(private val home: Path, private val events: ModEvent
         [heads.claude]
         provider = "client"
         port = $head
+        discovery_prefix = "claude-splice--"
         pinned_model = "fixture"
     """.trimIndent()
 }

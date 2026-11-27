@@ -4,8 +4,8 @@ import kotlinx.serialization.Serializable
 import splice.app.mods.run.ModEvent
 
 internal const val MOD_HANDOVER_PATH = "/api/mods/handover"
-internal const val MOD_HANDOVER_CAPACITY = 4096
-internal const val MOD_HANDOVER_BATCH_SIZE = 64
+internal const val MOD_HANDOVER_CAPACITY = 4096 // why: bound the backlog while the successor opens its listener
+internal const val MOD_HANDOVER_BATCH_SIZE = 64 // why: amortize local HTTP without holding the entire backlog in a body
 internal const val MOD_HANDOVER_DROPPED = "handoverDropped"
 
 @Serializable

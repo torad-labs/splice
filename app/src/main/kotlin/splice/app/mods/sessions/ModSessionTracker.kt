@@ -32,8 +32,7 @@ internal class ModSessionTracker(
     // One entry per historical id. The flag remembers an ownerless start without retaining a synthetic pair.
     private val seen = ConcurrentHashMap<String, Boolean>()
     private val pairs = ConcurrentHashMap<String, MutableSet<String?>>()
-    private val processes = ConcurrentHashMap<Long, MutableMap<ModSessionPair, SessionProcess>>()
-    private val live = ConcurrentHashMap<ModSessionPair, ModLiveSession>()
+    private val active = ModActiveSessions()
     private var sweep: Job? = null
 
     private val writers = ReentrantReadWriteLock()
@@ -55,7 +54,7 @@ internal class ModSessionTracker(
         for (id in index.ids) seen[id] = id in index.ownerless
         for (entry in index.active) {
             pairs.getOrPut(entry.pair.id, ::mutableSetOf).add(entry.pair.owner)
-            track(entry, entry.pair.owner?.let(launches::stored))
+            active.track(entry, entry.pair.owner?.let(launches::stored))
             launches.forTurn(entry.pair.id, entry.pair.owner)
         }
         historyReady = true
@@ -67,7 +66,7 @@ internal class ModSessionTracker(
 
     suspend fun sweep() {
         while (ticker.awaitTick(SESSION_SWEEP_MS)) {
-            if (observing && hub.listening) endGone()
+            if (observing && hub.listening) active.expired(clock()).forEach(::finish)
         }
     }
 
@@ -115,13 +114,7 @@ internal class ModSessionTracker(
     }
 
     /** One row per id even when multiple live launch processes are serving it. */
-    fun active(): Map<String, ModLiveSession> {
-        val rows = mutableMapOf<String, ModLiveSession>()
-        for ((key, row) in live) {
-            rows.merge(key.id, row) { old, new -> if (old.launchedAt < new.launchedAt) new else old }
-        }
-        return rows
-    }
+    fun active(): Map<String, ModLiveSession> = active.rows()
 
     private fun open(
         key: ModSessionPair,
@@ -143,42 +136,8 @@ internal class ModSessionTracker(
         val entry = ModSessionEntry(key, at, context)
         ledger.save(entry)
         offer("session.start", entry, seenBefore)
-        track(entry, launch)
+        active.track(entry, launch)
         return true
-    }
-
-    private fun track(entry: ModSessionEntry, launch: StoredModLaunch?) {
-        val pid = launch?.launch?.pid ?: return
-        val birth = launch.processStart ?: return
-        val process = SessionProcess(birth, entry)
-        processes.compute(pid) { _, entries ->
-            live[entry.pair] = ModLiveSession(entry.context.labels, entry.context.off, launch.recordedAt)
-            (entries ?: mutableMapOf()).apply { put(entry.pair, process) }
-        }
-    }
-
-    private fun endGone() {
-        val ended = mutableListOf<ModSessionEntry>()
-        for (pid in processes.keys) {
-            val birth = ModLaunchProcess.birth(pid)
-            processes.computeIfPresent(pid) { _, entries -> endPairs(entries, birth, ended) }
-        }
-        // Opening holds the session key before the pid key. Close it only after releasing the pid key.
-        ended.forEach(::finish)
-    }
-
-    private fun endPairs(
-        entries: MutableMap<ModSessionPair, SessionProcess>,
-        birth: String?,
-        ended: MutableList<ModSessionEntry>,
-    ): MutableMap<ModSessionPair, SessionProcess>? {
-        entries.entries.removeIf { (key, process) ->
-            if (process.birth == birth) return@removeIf false
-            ended.add(process.entry.copy(at = clock(), ended = true))
-            live.remove(key)
-            true
-        }
-        return entries.takeIf { it.isNotEmpty() }
     }
 
     private fun finish(entry: ModSessionEntry) {
@@ -211,8 +170,6 @@ internal class ModSessionTracker(
             context.off,
         )
     }
-
-    private data class SessionProcess(val birth: String, val entry: ModSessionEntry)
 }
 
 internal data class ModLiveSession(val labels: JsonObject, val off: ModsOff?, val launchedAt: Long)

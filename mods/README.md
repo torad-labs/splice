@@ -89,119 +89,7 @@ Removed reviews. It will no longer receive events. Its source folder was left al
 No mods installed. Use splice mod install <folder|tarball> to add one.   (list, when empty)
 ```
 
-`splice mod list` prints a line such as:
-
-```
-reviews 0.1.0: enabled; running; dropped events: 0; Bun 1.3.1
-  Mod reviews: handlers observe only in this version of Splice.
-```
-
-The state is one of `starting`, `running`, `restarting`, `stuck`, `failed` or `disabled`.
-
-A mod installed while sessions are running hears their turns from then on. Splice does not replay a
-`session.start` for a session that began before the mod; sessions that start later announce themselves as usual.
-
-**On a team server**, installing, enabling, disabling and removing a mod need the machine's management key on the
-loopback control plane. A person holding a personal team key cannot do any of them; installing is the
-administrator's alone.
-
-### What is served
-
-- **Layout:** `.splice-mod/mod.json` and `hooks/hooks.json` as in [Layout](#layout); each module in `hooks.json`
-  exports `register(on)`.
-- **Events:** `mod.start`, `mod.stop`, `session.start` (with `seenBefore`), `session.end`, `turn.start`,
-  `request.send`, `stream.event`, `tool.call` (with its `{ server?, tool? }` filter), `response.receive` and
-  `turn.complete`. A handler's `.catch` is served too.
-- **The handle `# Writing a Splice mod
-
-A mod is a small folder of TypeScript that Splice runs beside your sessions and tells about them. This page has
-two parts. [What runs today](#what-runs-today) says what this version of Splice does with a mod: what it serves,
-what it refuses, how to install one and the limits it runs under. The rest of the page is the full contract, the
-shapes in [`contract/index.ts`](contract/index.ts), with worked JSON in
-[`contract/examples/`](contract/examples/) and an example mod in [`example/`](example/). Parts of that contract
-are not served yet, and each says so.
-
-Where a mod's files live, what it is shown and what it can reach are on
-[Disk and privacy](../docs/wiki/disk-and-privacy.md#mods).
-
-## What runs today
-
-### In short
-
-- Only TypeScript mods run, each in its own [Bun](https://bun.sh) process that Splice starts, watches and stops.
-- A mod observes. Handlers are told about sessions and turns; they cannot change, answer or slow a turn.
-- A mod is an ordinary process running as you. It is **not sandboxed**: it can read any file you can.
-
-### Bun
-
-Bun is required and is not bundled with Splice. Install it from <https://bun.sh>. At install Splice looks for Bun
-in `SPLICE_BUN`, then on `PATH`, and records the path it found with the mod. At each start it uses the recorded
-path if it is still an executable, then `SPLICE_BUN`, then `PATH`, then `~/.bun/bin/bun`. When it finds none, the
-mod is `failed` with `Bun not found`, and `splice mod install` says how to fix it:
-
-```
-Bun not found. Install Bun from https://bun.sh, then run splice mod enable <name>.
-```
-
-To point Splice at a particular Bun: `SPLICE_BUN=/path/to/bun splice mod install <folder-or-tarball>`. Splice
-starts Bun with a clean environment. A version-manager shim that adds variables back is caught at start, and the
-mod fails with `This Bun launcher adds environment variables. Set SPLICE_BUN to the Bun binary.` when Bun cannot
-drop them.
-
-### Installing and managing mods
-
-`splice mod` talks to the running daemon. Every command prints what it did.
-
-| command | what it does |
-| --- | --- |
-| `splice mod install <folder-or-tarball>` | Checks the folder's `mod.json` and `hooks/hooks.json`, copies the files into Splice's state, records the SHA-256 of every file, enables the mod and starts it. A mod already installed under that name is replaced. |
-| `splice mod install <folder> --link` | Records the folder by its path instead of copying it, so edits you make there run at the next start. A linked mod is **not hash-checked**. |
-| `splice mod list` | One line per installed mod: version, enabled or disabled, its state and why, the last handler error, dropped events by kind, and the Bun version; then its load notices. |
-| `splice mod disable <name>` | Stops the mod's process. It stays installed. |
-| `splice mod enable <name>` | Starts it again. A copied mod whose files changed since install is refused, naming the files. |
-| `splice mod enable <name> --accept` | Accepts the files as they are now: re-reads `mod.json`, records new hashes and starts the mod. |
-| `splice mod remove <name>` | Stops the mod and deletes its installed copy. A linked mod's folder is left alone. Its store and log stay on disk. |
-
-`install` prints, for the example mod in [`example/`](example/):
-
-```
-Installed reviews 0.1.0. Adds a row under each session that asks for a review, with buttons to approve it or ask for changes, and a page listing every open review.
-Declared capability: watch-sessions
-Declared capability: add-rows
-Declared capability: draw-ui
-Declared capability: answer-tools
-Copied into Splice state and recorded SHA-256 hashes.
-Mods run as you, not in a sandbox. Only TypeScript mods run for now.
-Mod reviews: handlers observe only in this version of Splice.
-Mod reviews: sessions.list is not served yet.
-Mod reviews: ui.render is not served yet.
-Mod reviews: $.ui is not served yet.
-Mod reviews: $.sessions.invalidate is not served yet.
-Mod reviews: $.ui.respond is not served yet.
-Mod reviews: pages: queue is declared but not served yet.
-Mod reviews: tools: resolve is declared but not served yet.
-Mod reviews: tools: board is declared but not served yet.
-Mod reviews: views: ui://reviews/board is declared but not served yet.
-It will hear turns from now on, including in sessions already running. No session.start is replayed; new sessions announce their start.
-```
-
-Its `session.start` handler runs. Its `tool.call` handlers load but never fire, because they filter for the mod's own
-tools, which no session is offered yet.
-
-With `--link`, the copy line reads `Linked to <path>; not hash-checked. It reads that folder at each start.` When
-the mod is still loading, the last line is `Still loading. See splice mod list for its state.`; when it could not
-start, `It is not running:` and why.
-
-The other commands print:
-
-```
-Disabled reviews. It will stop receiving events. To run it again: splice mod enable reviews.
-Accepted the current files and recorded new SHA-256 hashes.     (enable --accept only)
-Enabled reviews.                                                 (then the same notices and last line as install)
-Removed reviews. It will no longer receive events. Its installed copy was removed.
-Removed reviews. It will no longer receive events. Its source folder was left alone.   (a linked mod)
-No mods installed. Use splice mod install <folder|tarball> to add one.   (list, when empty)
-```
+If a mod left a store or logs behind, `splice mod remove` also prints the retained paths and a `trash` command.
 
 `splice mod list` prints a line such as:
 
@@ -226,7 +114,7 @@ administrator's alone.
 - **Events:** `mod.start`, `mod.stop`, `session.start` (with `seenBefore`), `session.end`, `turn.start`,
   `request.send`, `stream.event`, `tool.call` (with its `{ server?, tool? }` filter), `response.receive` and
   `turn.complete`. A handler's `.catch` is served too.
-:** `$.store`, `$.clock`, `$.log` and `$.sessions.list()`.
+- **The handle `$`:** `$.store`, `$.clock`, `$.log` and `$.sessions.list()`.
 
 ### What a handler is told
 
@@ -275,147 +163,7 @@ Events reach a handler frozen; calling `next(e)` runs the mod's next handler for
 Each of these is refused in words when the mod loads, and the mod's other handlers still run. The refusals appear
 in the install output, in `splice mod list` and in the mod's log, and they are passed to `mod.start` as `refused`,
 declarations included.
-The three `# Writing a Splice mod
-
-A mod is a small folder of TypeScript that Splice runs beside your sessions and tells about them. This page has
-two parts. [What runs today](#what-runs-today) says what this version of Splice does with a mod: what it serves,
-what it refuses, how to install one and the limits it runs under. The rest of the page is the full contract, the
-shapes in [`contract/index.ts`](contract/index.ts), with worked JSON in
-[`contract/examples/`](contract/examples/) and an example mod in [`example/`](example/). Parts of that contract
-are not served yet, and each says so.
-
-Where a mod's files live, what it is shown and what it can reach are on
-[Disk and privacy](../docs/wiki/disk-and-privacy.md#mods).
-
-## What runs today
-
-### In short
-
-- Only TypeScript mods run, each in its own [Bun](https://bun.sh) process that Splice starts, watches and stops.
-- A mod observes. Handlers are told about sessions and turns; they cannot change, answer or slow a turn.
-- A mod is an ordinary process running as you. It is **not sandboxed**: it can read any file you can.
-
-### Bun
-
-Bun is required and is not bundled with Splice. Install it from <https://bun.sh>. At install Splice looks for Bun
-in `SPLICE_BUN`, then on `PATH`, and records the path it found with the mod. At each start it uses the recorded
-path if it is still an executable, then `SPLICE_BUN`, then `PATH`, then `~/.bun/bin/bun`. When it finds none, the
-mod is `failed` with `Bun not found`, and `splice mod install` says how to fix it:
-
-```
-Bun not found. Install Bun from https://bun.sh, then run splice mod enable <name>.
-```
-
-To point Splice at a particular Bun: `SPLICE_BUN=/path/to/bun splice mod install <folder-or-tarball>`. Splice
-starts Bun with a clean environment. A version-manager shim that adds variables back is caught at start, and the
-mod fails with `This Bun launcher adds environment variables. Set SPLICE_BUN to the Bun binary.` when Bun cannot
-drop them.
-
-### Installing and managing mods
-
-`splice mod` talks to the running daemon. Every command prints what it did.
-
-| command | what it does |
-| --- | --- |
-| `splice mod install <folder-or-tarball>` | Checks the folder's `mod.json` and `hooks/hooks.json`, copies the files into Splice's state, records the SHA-256 of every file, enables the mod and starts it. A mod already installed under that name is replaced. |
-| `splice mod install <folder> --link` | Records the folder by its path instead of copying it, so edits you make there run at the next start. A linked mod is **not hash-checked**. |
-| `splice mod list` | One line per installed mod: version, enabled or disabled, its state and why, the last handler error, dropped events by kind, and the Bun version; then its load notices. |
-| `splice mod disable <name>` | Stops the mod's process. It stays installed. |
-| `splice mod enable <name>` | Starts it again. A copied mod whose files changed since install is refused, naming the files. |
-| `splice mod enable <name> --accept` | Accepts the files as they are now: re-reads `mod.json`, records new hashes and starts the mod. |
-| `splice mod remove <name>` | Stops the mod and deletes its installed copy. A linked mod's folder is left alone. Its store and log stay on disk. |
-
-`install` prints, for the example mod in [`example/`](example/):
-
-```
-Installed reviews 0.1.0. Adds a row under each session that asks for a review, with buttons to approve it or ask for changes, and a page listing every open review.
-Declared capability: watch-sessions
-Declared capability: add-rows
-Declared capability: draw-ui
-Declared capability: answer-tools
-Copied into Splice state and recorded SHA-256 hashes.
-Mods run as you, not in a sandbox. Only TypeScript mods run for now.
-Mod reviews: handlers observe only in this version of Splice.
-Mod reviews: sessions.list is not served yet.
-Mod reviews: ui.render is not served yet.
-Mod reviews: $.ui is not served yet.
-Mod reviews: $.sessions.invalidate is not served yet.
-Mod reviews: $.ui.respond is not served yet.
-Mod reviews: pages: queue is declared but not served yet.
-Mod reviews: tools: resolve is declared but not served yet.
-Mod reviews: tools: board is declared but not served yet.
-Mod reviews: views: ui://reviews/board is declared but not served yet.
-It will hear turns from now on, including in sessions already running. No session.start is replayed; new sessions announce their start.
-```
-
-Its `session.start` handler runs. Its `tool.call` handlers load but never fire, because they filter for the mod's own
-tools, which no session is offered yet.
-
-With `--link`, the copy line reads `Linked to <path>; not hash-checked. It reads that folder at each start.` When
-the mod is still loading, the last line is `Still loading. See splice mod list for its state.`; when it could not
-start, `It is not running:` and why.
-
-The other commands print:
-
-```
-Disabled reviews. It will stop receiving events. To run it again: splice mod enable reviews.
-Accepted the current files and recorded new SHA-256 hashes.     (enable --accept only)
-Enabled reviews.                                                 (then the same notices and last line as install)
-Removed reviews. It will no longer receive events. Its installed copy was removed.
-Removed reviews. It will no longer receive events. Its source folder was left alone.   (a linked mod)
-No mods installed. Use splice mod install <folder|tarball> to add one.   (list, when empty)
-```
-
-`splice mod list` prints a line such as:
-
-```
-reviews 0.1.0: enabled; running; dropped events: 0; Bun 1.3.1
-  Mod reviews: handlers observe only in this version of Splice.
-```
-
-The state is one of `starting`, `running`, `restarting`, `stuck`, `failed` or `disabled`.
-
-A mod installed while sessions are running hears their turns from then on. Splice does not replay a
-`session.start` for a session that began before the mod; sessions that start later announce themselves as usual.
-
-**On a team server**, installing, enabling, disabling and removing a mod need the machine's management key on the
-loopback control plane. A person holding a personal team key cannot do any of them; installing is the
-administrator's alone.
-
-### What is served
-
-- **Layout:** `.splice-mod/mod.json` and `hooks/hooks.json` as in [Layout](#layout); each module in `hooks.json`
-  exports `register(on)`.
-- **Events:** `mod.start`, `mod.stop`, `session.start` (with `seenBefore`), `session.end`, `turn.start`,
-  `request.send`, `stream.event`, `tool.call` (with its `{ server?, tool? }` filter), `response.receive` and
-  `turn.complete`. A handler's `.catch` is served too.
-- **The handle `$`:** `$.store`, `$.clock`, `$.log` and `$.sessions.list()`.
-
-### Handlers observe only
-
-Splice hands each event to the mod and goes on; it never waits for a handler, and a turn never waits for a mod.
-A handler's return value, and a changed event passed to `next()`, have no effect on anything. Splice says so when
-the mod loads, in the install output, in `splice mod list` and in the mod's log:
-
-```
-Mod <name>: handlers observe only in this version of Splice.
-```
-
-and the first time a handler for an event returns a value or passes a changed event to `next()`, it writes this
-once per event to the mod's log:
-
-```
-A handler for <event> passed a changed event to next() or returned a value; in this version of Splice that has no effect on the turn.
-```
-
-Events reach a handler frozen; calling `next(e)` runs the mod's next handler for that event.
-
-### What is not served
-
-Each of these is refused in words when the mod loads, and the mod's other handlers still run. The refusals appear
-in the install output, in `splice mod list` and in the mod's log, and they are passed to `mod.start` as `refused`,
-declarations included.
- members are listed for every mod, whether or not it uses them; an event or a declaration is listed
+The three handle refusals are listed for every mod, whether or not it uses them; an event or a declaration is listed
 only when the mod registers or declares it.
 
 | not served | what the mod is told |
@@ -460,6 +208,10 @@ disabled and failed ones included, from the installed manifest without running m
 `restartsInWindow`, `lastError`, and once loaded `notice`, `served`, `refused` and `declaredNotServed`. Reading it
 takes the management key or the console's key. `POST /api/mods`, `PUT /api/mods/<name>` and
 `DELETE /api/mods/<name>`, which `splice mod` uses, take the management key alone.
+
+After a daemon handover, `handoverDropped` counts drops the successor recorded, including event deliveries it did
+not confirm to the retiring daemon. A lost reply can leave a delivery unconfirmed even if the event arrived. If the
+successor cannot record the retiring daemon's count, the retiring daemon reports it in `daemon.log`.
 
 ## The contract
 

@@ -10,7 +10,6 @@ import splice.app.mods.ModRuntimeStatus
 import splice.app.mods.handover.ModAcceptedBatches
 import splice.app.mods.handover.ModHandover
 import splice.app.mods.handover.ModHandoverBatch
-import splice.app.mods.handover.ModReceipts
 import splice.app.mods.install.InstalledMods
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -66,17 +65,13 @@ internal class ModRunner(
         handover?.leave(starts)
     }
 
-    suspend fun finishHandover() {
-        handover?.finish()
-    }
-
     @Synchronized
     fun acceptHandover(batch: ModHandoverBatch): Boolean {
         if (phase != Phase.RUNNING || handoverStarts?.holds(batch) == true) return false
         val sender = batch.sender
         val last = sender?.let(acceptedBatches::of) ?: -1L
         if (sender != null && batch.ordinal <= last) return true
-        if (batch.startsComplete) acceptedBatches.record(ModReceipts(batch.accepted, batch.acceptedAt))
+        if (batch.startsComplete) acceptedBatches.record(batch.accepted, batch.acceptedAgeMs)
         batch.events.forEach(::receive)
         val confirmed = batch.uncertain?.takeIf { it.ordinal <= last }?.count ?: 0
         events.deliveryLoss.add((batch.dropped - confirmed).coerceAtLeast(0))
@@ -96,8 +91,11 @@ internal class ModRunner(
 
     suspend fun stop(reason: String = "daemon stop") {
         val stopping = fence(reason)
-        finishHandover()
-        withTimeoutOrNull(MOD_TEARDOWN_MS) { stopping.map(ModSupervisor::job).joinAll() }
+        try {
+            withTimeoutOrNull(MOD_TEARDOWN_MS) { stopping.map(ModSupervisor::job).joinAll() }
+        } finally {
+            handover?.finish()
+        }
         scope.cancel()
     }
 

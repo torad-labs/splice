@@ -236,14 +236,16 @@ class Hooks {
 
   async dispatch(name: string, payload: Payload, maxMs: number, abort?: AbortSignal) {
     const handlers = (this.#byEvent.get(name as EventName) ?? []).filter(binding => this.#matches(name, payload, binding.filter));
-    if (handlers.length === 0 || abort?.aborted) return;
+    if (abort?.aborted) return false;
+    if (handlers.length === 0) return true;
     const event = frozen(payload);
-    const finished = Promise.withResolvers<void>();
+    const finished = Promise.withResolvers<boolean>();
     let active = true;
-    const abandon = () => { active = false; finished.resolve(); };
+    const abandon = () => { active = false; finished.resolve(false); };
     const timer = setTimeout(() => {
       this.pipe.send({ type: "timeout", event: name, message: `handler exceeded ${maxMs / 1000} s; abandoned the event` });
-      abandon();
+      active = false;
+      finished.resolve(true);
     }, maxMs);
     abort?.addEventListener("abort", abandon, { once: true });
     const visit = async (index: number): Promise<void> => {
@@ -273,7 +275,7 @@ class Hooks {
       if (active) await follow();
     };
     try {
-      await Promise.race([visit(0), finished.promise]);
+      return await Promise.race([visit(0).then(() => true), finished.promise]);
     } finally {
       active = false;
       clearTimeout(timer);
@@ -382,16 +384,16 @@ class Host {
   }
 
   async #event(name: string, payload: Payload) {
+    let handled = false;
     try {
       await this.#started.promise;
-      if (name !== "mod.start" && name !== "mod.stop") {
-        await this.#hooks?.dispatch(name, payload, EVENT_MS, this.#abort.signal);
-      }
+      handled = name === "mod.start" || name === "mod.stop" ||
+        await this.#hooks?.dispatch(name, payload, EVENT_MS, this.#abort.signal) === true;
     } catch (error) {
       this.#pipe.send({ type: "error", event: name, message: diagnostic(error).message });
     } finally {
       this.#eventPending = false;
-      this.#pipe.send({ type: "handled" });
+      this.#pipe.send({ type: handled ? "handled" : "aborted" });
     }
   }
 
@@ -464,6 +466,6 @@ function stopOwnGroup(): Promise<void> {
 }
 
 const code = await main();
-// Let an EOF cleanup already in progress finish before releasing the group ID.
-if (cleanup) await cleanup;
+// Finish group cleanup even if the lifeline callback has not run yet.
+if (protocol !== null) await stopOwnGroup();
 process.exit(code);

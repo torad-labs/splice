@@ -2,6 +2,7 @@ package splice.app.mods.handover
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.json.JsonIgnoreUnknownKeys
 import splice.app.mods.run.ModEvent
 import splice.app.mods.sessions.ModSessionEntry
 
@@ -18,6 +19,7 @@ internal const val MOD_HANDOVER_RECEIPT_MS = 20L * 60 * 1000
 internal const val MOD_HANDOVER_RECEIPT_CAP = 4096
 
 @Serializable
+@JsonIgnoreUnknownKeys // An older retiree may still send a wall time; only its ordinal is used.
 internal data class ModHandoverBatch(
     val events: List<ModDelivery>,
     val dropped: Long = 0,
@@ -28,14 +30,14 @@ internal data class ModHandoverBatch(
     val uncertain: ModHandoverReceipt? = null,
     /** The last batch the sending daemon accepted from each earlier sender, so a retry of one is not told twice. */
     val accepted: Map<String, Long> = emptyMap(),
-    /** When each of those batches was first accepted, carried unchanged so the retry horizon never moves out. */
-    val acceptedAt: Map<String, Long> = emptyMap(),
+    /** Monotonic elapsed milliseconds since acceptance, measured by the sender at the time of transfer. */
+    val acceptedAgeMs: Map<String, Long> = emptyMap(),
 ) {
     fun valid(): Boolean = bounded() && events.all { it.event.name in ModHandoverEvents.names }
 
     private fun bounded(): Boolean =
         events.size + starts.size <= MOD_HANDOVER_BATCH_SIZE && (dropped >= 0 && ordinal >= 0) &&
-            accepted.size <= MOD_HANDOVER_RECEIPT_CAP && acceptedAt.size <= MOD_HANDOVER_RECEIPT_CAP
+            accepted.size <= MOD_HANDOVER_RECEIPT_CAP && acceptedAgeMs.size <= MOD_HANDOVER_RECEIPT_CAP
 }
 
 @Serializable

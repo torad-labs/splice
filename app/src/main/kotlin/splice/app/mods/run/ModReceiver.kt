@@ -48,6 +48,7 @@ internal class ModReceiver(
             "ready" -> ready(line)
             "load-failed" -> loaded.complete(ModLoad.Failed(field(line, "why")))
             "handled" -> pipe.handled()
+            "aborted" -> Unit // The stopping pipe still owns this delivery until close.
             "call" -> call(line)
             "log" -> log.write(JsonScalars.str(line, "message").orEmpty())
             "error", "timeout" -> error(line)

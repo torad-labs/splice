@@ -44,7 +44,7 @@ internal class ModHandoverTestRig(
         },
         clock = clock,
     )
-    private val next by lazy { ModEventsTestRig(root) }
+    private val next by lazy { ModEventsTestRig(root, clock = clock) }
     val key = MgmtKey(old.runner.paths, LogSink {})
     private val client = HttpClient(CIO)
     private val oldControl = control(old, 0)

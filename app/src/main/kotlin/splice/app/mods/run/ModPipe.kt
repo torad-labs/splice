@@ -64,7 +64,8 @@ internal class ModPipe(
     }
 
     fun close() {
-        queue.close()
+        // A written event may already have entered a hook. Count it, never replay it.
+        if (queue.close()) handover?.lost()
         replies.close()
         wake.close()
     }

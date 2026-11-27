@@ -83,6 +83,7 @@ internal class ModProcess(
                     incomplete = close(why, exited, writer)
                     withTimeoutOrNull(PIPE_DRAIN_MS) { joinAll(writer, stdout, stderr) }
                 } finally {
+                    pipe.close()
                     wiring.cancel()
                     output.log.reportDrops(flush = true)
                 }
@@ -134,7 +135,6 @@ internal class ModProcess(
             }
         }
         val status = withTimeoutOrNull(EOF_GRACE_MS) { exited.await().exitValue() }
-        pipe.close()
         val end = when {
             status == null -> ModGuardianEnd.WAIT_EXPIRED
             status >= MOD_GUARDIAN_SIGNAL_EXIT -> ModGuardianEnd.KILLED

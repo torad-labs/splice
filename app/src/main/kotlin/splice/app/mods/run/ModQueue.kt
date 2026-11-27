@@ -89,10 +89,12 @@ internal class ModQueue(private val drops: ModDrops, private val transferLoss: M
     }
 
     @Synchronized
-    fun close() {
+    fun close(): Boolean {
         closeOffers()
-        inFlight.getAndSet(null)?.delivery?.let(::drop)
+        val unconfirmed = inFlight.getAndSet(null)?.delivery
+        unconfirmed?.let(::drop)
         while (true) drop(poll() ?: break)
+        return unconfirmed != null
     }
 
     private data class Flight(val delivery: ModDelivery, val at: Long)

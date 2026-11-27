@@ -75,8 +75,12 @@ internal class ModHandover(
         if (queued.trySend(delivery).isFailure) slots.decrementAndGet()
     }
 
-    private fun reserve(): Boolean {
+    fun lost() {
         progress.updateAndGet { it?.copy(count = it.count + 1) }
+    }
+
+    private fun reserve(): Boolean {
+        lost()
         return slots.getAndUpdate { if (it < MOD_HANDOVER_CAPACITY) it + 1 else it } < MOD_HANDOVER_CAPACITY
     }
 
@@ -143,7 +147,6 @@ internal class ModHandover(
             emptyList(),
             startsComplete = true,
             accepted = accepted.ordinals,
-            acceptedAt = accepted.at,
         )
         deliver(client, key, last)
     }
@@ -152,7 +155,7 @@ internal class ModHandover(
         val numbered = batch.copy(sender = sender, ordinal = ordinal++)
         val receipt = ModHandoverReceipt(numbered.ordinal, batch.events.size)
         progress.updateAndGet { it?.copy(pending = receipt) }
-        while (withTimeoutOrNull(HANDOVER_ATTEMPT_MS) { post(client, key, numbered) } != true) {
+        while (withTimeoutOrNull(HANDOVER_ATTEMPT_MS) { post(client, key, aged(numbered)) } != true) {
             if (!waitingForSuccessor) {
                 log("[mods] waiting for the successor to accept the handover\n")
                 waitingForSuccessor = true
@@ -161,6 +164,9 @@ internal class ModHandover(
         }
         progress.updateAndGet { it?.copy(count = it.count - receipt.count, pending = null) }
     }
+
+    private fun aged(batch: ModHandoverBatch): ModHandoverBatch =
+        if (batch.startsComplete) batch.copy(acceptedAgeMs = accepted.ages()) else batch
 
     private suspend fun nextBatch(): List<ModDelivery>? {
         val first = prefix.removeFirstOrNull() ?: queued.receiveCatching().getOrNull() ?: return null

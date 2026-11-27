@@ -186,20 +186,21 @@ class ModHandoverFlushTest {
     }
 
     @Test
-    fun `a receipt past the retry window is forgotten and a recent carried one is kept`() = runBlocking {
-        ModHandoverTestRig(root).use { rig ->
+    fun `a wall clock jump does not expire a recent carried receipt or renew an old one`() = runBlocking {
+        val wall = AtomicLong(System.currentTimeMillis())
+        ModHandoverTestRig(root, WallClock(wall::get)).use { rig ->
             rig.installRecorder()
             rig.retire()
-            val now = System.currentTimeMillis()
             HttpClient(CIO).use { client ->
                 val carried = ModHandoverBatch(
                     emptyList(),
                     sender = "carrier",
                     startsComplete = true,
                     accepted = mapOf("old-a" to 3L, "old-b" to 3L),
-                    acceptedAt = mapOf("old-a" to now - 2 * MOD_HANDOVER_RECEIPT_MS, "old-b" to now - 600_000L),
+                    acceptedAgeMs = mapOf("old-a" to 2 * MOD_HANDOVER_RECEIPT_MS, "old-b" to 600_000L),
                 )
                 assertEquals(HttpStatusCode.NoContent, client.send(rig.handoverUrl, rig.key.get(), carried))
+                wall.addAndGet(2 * MOD_HANDOVER_RECEIPT_MS)
                 for (sender in listOf("old-a", "old-b")) {
                     val event = ModEvent("turn.complete", sender, JsonObject(mapOf("session" to JsonPrimitive(sender))))
                     val retry = ModHandoverBatch(listOf(ModDelivery(event)), sender = sender, ordinal = 3)
@@ -323,7 +324,7 @@ private class ChainDaemon(dir: Path) : AutoCloseable {
         next.open()
         rig.runner.runner.beginHandover(next.port, next.key)
         rig.runner.runner.leave()
-        rig.runner.runner.finishHandover()
+        rig.runner.runner.stop("handover")
         withTimeout(10_000) { next.starts.await() }
         server.stop()
     }

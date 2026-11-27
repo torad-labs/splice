@@ -18,8 +18,14 @@ public interface InProcessMcpServer {
      *  session id, the only name the transport has for who is calling. */
     public suspend fun call(tool: String, arguments: JsonObject, session: String?): JsonObject
 
-    /** A server-specific reader for the original request, or null to use the host's JSON-RPC reader. */
-    public val documentReader: McpDocumentReader? get() = null
+    /** Whether HTTP requests for this server must be decoded as UTF-8 without replacement. */
+    public val requiresUtf8: Boolean get() = false
+
+    /** Reads the original request, or returns null to use the host's JSON-RPC reader. */
+    public fun readDocument(document: String): DocumentRead? = null
+
+    /** A server-specific read; a null [message] refuses the request without trying another parser. */
+    public data class DocumentRead(val message: JsonObject?)
 
     /** `resources/list`'s `resources`: each `{uri, name, mimeType}`, with its `_meta` when it has one. */
     public fun resources(): JsonArray
@@ -30,11 +36,6 @@ public interface InProcessMcpServer {
     /** What the server tells a client of how to use it, which `initialize` gives as its `instructions`; null says
      *  nothing. */
     public fun instructions(): String? = null
-}
-
-/** Reads a server's original JSON-RPC request, or refuses it without falling back to another parser. */
-public fun interface McpDocumentReader {
-    public operator fun invoke(document: String): JsonObject?
 }
 
 /** The servers this daemon answers itself. [server] is the one called [name] for a client on [head] (the head its

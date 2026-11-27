@@ -120,6 +120,9 @@ public class McpHost(
     ): McpReply = own()?.post(name, sessionId, body, entry.head, entry.caller)
         ?: posts.post(name, sessionId, body, protocolVersion, entry.head)
 
+    internal fun requiresUtf8(name: String, entry: McpEntryNames): Boolean =
+        inProcess?.server(name, entry.head, entry.caller)?.requiresUtf8 == true
+
     /** Whether [name] is a server the daemon answers itself for a client on [head] that names itself [caller]: one with
      *  no notification stream to open and no session to end, since each of its answers is whole in the reply to its
      *  request. */

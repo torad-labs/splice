@@ -15,7 +15,6 @@ import kotlinx.serialization.json.jsonObject
 import splice.app.control.McpLaunchFolders
 import splice.app.control.api.mcp.McpAccessRoutes
 import splice.app.control.api.mcp.McpHarnessRoutes
-import splice.app.modes.VisualFeedWire
 import splice.control.mcp.McpHost
 import splice.control.mcp.McpRoutes
 import splice.control.mcp.hub.McpHubRoutes
@@ -33,7 +32,7 @@ internal class McpMount(
     log: LogSink = LogSink {},
     harnessesOverride: McpHarnessRoutes? = null,
 ) : ControlMount, BoundResource {
-    private val routes = McpRoutes(host, VisualFeedWire::isVisual)
+    private val routes = McpRoutes(host)
     private val hub = host.hub?.let(::McpHubRoutes)
     private val access = McpAccessRoutes(guard.mcpAccessKey)
     private val harnesses = harnessesOverride ?: statePaths?.let { McpHarnessRoutes(it, log = log) }

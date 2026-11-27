@@ -3,11 +3,10 @@ package splice.app.modes
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.app.wire.WireJson
-import splice.control.mcp.inprocess.McpDocumentReader
 import splice.modes.api.ModeRoute
 
 /** The visual ingress owns decoding its feed values; unrelated mode routes and servers keep their parser. */
-internal object VisualFeedWire : McpDocumentReader {
+internal object VisualFeedWire {
     private const val MODE = "visual"
     private const val VISUAL_FEED_ROUTE_PATH = "/api/visual/feeds/{name}"
 
@@ -16,7 +15,7 @@ internal object VisualFeedWire : McpDocumentReader {
     fun isPut(mode: String, route: ModeRoute): Boolean =
         isVisual(mode) && route.method == "PUT" && route.path == VISUAL_FEED_ROUTE_PATH
 
-    override fun invoke(document: String): JsonObject? {
+    fun readDocument(document: String): JsonObject? {
         val message = WireJson.read(document) as? JsonObject ?: return null
         // Only scalar ids may reach the host's reply encoder, which echoes the id.
         return message.takeIf { it["id"] == null || it["id"] is JsonPrimitive }

@@ -27,15 +27,7 @@ private const val SESSION_HEADER = "Mcp-Session-Id"
 private const val PROTOCOL_HEADER = "MCP-Protocol-Version"
 private const val PING_MS = 15_000L
 
-/** Which in-process servers require the original request to be valid UTF-8. */
-public fun interface McpUtf8Input {
-    public operator fun invoke(server: String): Boolean
-}
-
-public class McpRoutes(
-    private val host: McpHost,
-    private val utf8InProcess: McpUtf8Input = McpUtf8Input { false },
-) {
+public class McpRoutes(private val host: McpHost) {
 
     public suspend fun post(call: ApplicationCall) {
         val name = call.parameters["name"].orEmpty()
@@ -62,7 +54,7 @@ public class McpRoutes(
     }
 
     private suspend fun document(call: ApplicationCall, name: String, entry: McpEntryNames): String =
-        if (utf8InProcess(name) && host.answeredHere(name, entry.head, entry.caller)) {
+        if (host.requiresUtf8(name, entry)) {
             call.receive<ByteArray>().decodeToString(throwOnInvalidSequence = true)
         } else {
             call.receiveText()

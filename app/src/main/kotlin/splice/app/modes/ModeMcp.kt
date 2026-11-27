@@ -14,7 +14,7 @@ import kotlinx.serialization.json.put
 import splice.client.mcp.OwnMcpServers
 import splice.control.mcp.inprocess.InProcessMcp
 import splice.control.mcp.inprocess.InProcessMcpServer
-import splice.control.mcp.inprocess.McpDocumentReader
+import splice.control.mcp.inprocess.InProcessMcpServer.DocumentRead
 import splice.modes.api.FoundMode
 import splice.modes.api.ModeAnswer
 import splice.modes.api.ModeCall
@@ -84,8 +84,10 @@ internal class ModeMcpServer(
         },
     )
 
-    override val documentReader: McpDocumentReader?
-        get() = VisualFeedWire.takeIf { it.isVisual(mode.name) }
+    override val requiresUtf8: Boolean get() = VisualFeedWire.isVisual(mode.manifest.server)
+
+    override fun readDocument(document: String): DocumentRead? =
+        if (VisualFeedWire.isVisual(mode.name)) DocumentRead(VisualFeedWire.readDocument(document)) else null
 
     /** The handler's answer as a tool result. The session is the client's MCP session: the transport has no other
      *  name for the session, and it has neither the session's folder nor its model. */

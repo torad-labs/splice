@@ -86,9 +86,10 @@ step "head contract + packaging: mockchat2 (claude-mockchat2--mock-chat-2 @64k, 
 # ── 7c. the daemon's status line on a SCALED row ─────────────────────────────────────────────
 # Claude Code fixes its context window per process (the pinned row's) and splice scales the counts
 # it reports so any other row compacts at its own window, so the blob Claude Code pipes back is in
-# client units. On the 128k row of the 64k mockchat2 session, 32000 reported tokens are 64000
-# real ones: the bar must read the row's label and "64k/128k", not "32k/64k". The pinned row is the
-# control: nothing changes. Posted with the management bearer, as the installed status-line command does.
+# client units. A posted blob that matches no reply this daemon served carries no factor the daemon
+# can trust, so the 128k row of the 64k mockchat2 session shows its own label over the counts as
+# posted ("32k/64k"), never a guessed inverse. The pinned row is the control: nothing changes.
+# Posted with the management bearer, as the installed status-line command does.
 statusline_row() { # head model expected-fragment...
   local head="$1" model="$2" line; shift 2
   line="$(curl_mgmt --data-binary @- "http://127.0.0.1:$CONTROL_PORT/statusline/$head" <<EOF | strip_ansi
@@ -103,7 +104,7 @@ EOF
     grep -qF -- "$frag" <<<"$line" || { echo "status line lacks '$frag'"; return 1; }
   done
 }
-step "status line: the scaled 128k row shows its label and real window" statusline_row mockchat2 mock-chat-2-big "Chat 2 big (mock)" "64k/128k" "50%"
+step "status line: the scaled 128k row shows its label over the posted counts" statusline_row mockchat2 mock-chat-2-big "Chat 2 big (mock)" "32k/64k" "50%"
 step "status line: the pinned 64k row is untouched" statusline_row mockchat2 mock-chat-2 "Chat 2 (mock)" "32k/64k" "50%"
 
 # ── 8. the real wrapper: Claude Code itself, print mode, through the head, to the mock ───────

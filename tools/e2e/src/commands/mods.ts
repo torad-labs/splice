@@ -129,7 +129,7 @@ async function misbehaving(run: ModRun, baseline: Answer, burst: Answer): Promis
   step(2, "Hang, throw, SIGKILL mid-turn, and flood the log without changing any answer");
   for (const name of ["hang", "throw", "crash", "flood"] as const) await run.install(name, name);
   for (let i = 1; i <= 4; i++) {
-    const { pid, served } = await run.running("crash");
+    const { pid, served, dropped } = await run.running("crash");
     assert.deepEqual(served, ["request.send", "response.receive", "stream.event", "tool.call", "turn.complete", "turn.start"]);
     const id = `kill-probe-${i}`;
     const client = run.client(id, [`SCENARIO:gate RUN:${i}`], { env: { SPLICE_MODS_OFF: "hang" } });
@@ -138,16 +138,18 @@ async function misbehaving(run: ModRun, baseline: Answer, burst: Answer): Promis
     await until(message, () => run.log("crash").includes(message) ? true : undefined);
     const handlers = run.log("crash").split("\n").filter(line => line.includes(`crash fixture handling ${id} stream seq=`));
     assert.equal(handlers.length, 1, "the target must still be in its first stream handler");
-    assert.equal((await run.mod("crash")).dropped, 0, "later frames must be queued, not dropped");
+    assert.equal((await run.mod("crash")).dropped, dropped, "later frames must be queued, not newly dropped");
     const frames = pending.filter(e => e.name === "stream.event").length;
     console.log(`  crash.log: ${message}; ${frames - 1} later frame(s) queued behind that handler while upstream is paused.`);
     console.log(`$ kill -KILL ${pid}  # mod host while turn ${i} is open`);
     run.killOwned(pid, "SIGKILL");
     // Let the old process exit and report its death before letting the provider finish the same turn.
-    await until("killed mod state reflected in GET /api/mods", async () => {
+    const killed = await until("killed mod state reflected in GET /api/mods", async () => {
       const row = await run.mod("crash");
       if (i === 4 ? row.state === "failed" : row.state === "restarting" || (row.pid && row.pid !== pid)) return row;
     });
+    assert.ok(killed.dropped - dropped >= frames - 1, "killing the crash fixture must discard its queued stream frames");
+    console.log(`  GET /api/mods counted ${killed.dropped - dropped} queued event(s) lost on death.`);
     if (i === 3) {
       const listed = await run.command("mod", "list");
       assert.match(listed, /crash .*restarting.*exit code 137.*25 s/);

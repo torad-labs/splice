@@ -285,16 +285,10 @@ Kept in memory only, never on disk: the wire tap. The reasoning cache is kept on
 above and in [SECURITY.md](../../.github/SECURITY.md). A program splice starts writes its own files: `splice setup`
 can run rig's installer.
 
+### Where a mod's files live
 
-## Mods
-
-A mod is a folder of TypeScript you install with `splice mod install`. Splice runs each enabled mod in its own Bun
-process and tells it about sessions and turns. See [Writing a Splice mod](../../mods/README.md) for what a mod is
-told and what it can do. This section covers what a mod leaves on your disk, what it is shown, and what it can reach.
 `<state>` is the state directory (`~/.splice/state` on a new install) and `<logs>` the log directory
 (`~/.splice/logs`).
-
-### Where a mod's files live
 
 | File | What it holds | Who can read it | How long it stays | Written by |
 | --- | --- | --- | --- | --- |
@@ -305,6 +299,13 @@ told and what it can do. This section covers what a mod leaves on your disk, wha
 | `<logs>/mods/<name>.log` and `<name>.log.1` | The mod's log | Only you (0600) | Rotates at 8 MiB, keeping one older copy | `ModLog.kt` |
 | `<state>/mods/host/host.ts` and `<state>/mods/installed/tsconfig.json` | The small TypeScript host that ships inside Splice and loads every mod, and an empty `{}` config beside the installed copies so no file above them can redirect a mod's imports | Only you (0600) | Replaced when a daemon starts its first mod | `ModHostScript.kt` |
 | `<state>/mods/run/<name>.json` | The Bun process's PID and start time, so a later daemon can find and stop it after a crash | Only you (0600) | Left in place when the process exits. The next daemon start deletes it for each mod that is not enabled, and for a mod that is enabled it is replaced when that mod's process starts | `ModRunRecords.kt` |
+
+## Mods
+
+A mod is a folder of TypeScript you install with `splice mod install`. Splice runs each enabled mod in its own Bun
+process and tells it about sessions and turns. See [Writing a Splice mod](../../mods/README.md) for what a mod is
+told and what it can do. This section covers what a mod leaves on your disk, what it is shown, and what it can reach.
+See [Where a mod's files live](#where-a-mods-files-live) for its files and their retention.
 
 A linked mod (`splice mod install <folder> --link`) is not copied and not hashed. Splice reads that folder each time
 the mod starts, so whatever is in it then is what runs.
@@ -343,7 +344,7 @@ Splice keeps its own keys out of everything it hands a mod:
 
 - **Events and session rows.** A working directory, title or other text that contains a credential, or anything
   shaped like one (an API key, a bearer token, a JSON web token, a 64-character hex string), is replaced whole with
-  `[redacted]`. A label with such a key or value is left out.
+  `[redacted]`. A label with such a key is omitted; a label with such a value keeps its key and shows `[redacted]`.
 - **Environment.** The Bun process starts with an empty environment plus `PATH`, `HOME`, `LANG`, `TMPDIR` and three
   variables naming the mod and its folders. None of the daemon's keys or provider variables are passed on.
 - **The `$` handle.** It holds the mod's store, a clock, its log and a session list. It has no key, no address of

@@ -41,9 +41,11 @@ class DesktopFactsReadTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `a file with only other keys is read and said not to set either key`() {
+    fun `a file with only other keys is read and no file is said to set either key`() {
         val row = row("""{"permissions": {"deny": ["Bash(rm:*)"]}}""")
-        assertTrue("$file does not set processWrapper, and does not set parentSettingsBehavior" in row.said, row.said)
+        val none = "no managed settings file splice read sets processWrapper, and no managed settings file splice " +
+            "read sets parentSettingsBehavior"
+        assertTrue(none in row.said, row.said)
         assertTrue("Bash(rm" !in row.said, "what the file holds is not said: ${row.said}")
     }
 
@@ -62,7 +64,7 @@ class DesktopFactsReadTest(@param:TempDir private val tmp: Path) {
         assertTrue("nothing is at $file" in row(null).said, row(null).said)
         val broken = row("{ not json")
         assertTrue("$file could not be read" in broken.said, broken.said)
-        assertTrue("nothing is at" !in broken.said && "does not set" !in broken.said, broken.said)
+        assertTrue("nothing is at" !in broken.said && "file splice read sets" !in broken.said, broken.said)
     }
 
     @Test
@@ -74,21 +76,24 @@ class DesktopFactsReadTest(@param:TempDir private val tmp: Path) {
                 assumeFalse(Files.isReadable(locked), "a user that can read anything cannot show this")
                 val said = row(null, keep = true).said
                 assertTrue("$file could not be read" in said, said)
-                assertTrue("nothing is at" !in said && "does not set" !in said, said)
+                assertTrue("nothing is at" !in said && "file splice read sets" !in said, said)
             } finally {
                 Files.setPosixFilePermissions(locked, PosixFilePermissions.fromString("rwxr-xr-x"))
             }
         }
     }
 
+    // Claude Code merges each drop-in over the main file, so the row names the drop-in as the file holding the key.
     @Test
-    fun `a drop-in beside the file is named as unread, with or without a main file, and its keys are not read`() {
+    fun `a drop-in beside the file is read, with or without a main file, and named as the file holding its key`() {
         val dropIn = Files.createDirectories(folder.resolve("managed-settings.d")).resolve("10-org.json")
         Files.writeString(dropIn, """{"parentSettingsBehavior": "merge"}""")
-        for (text in listOf("""{"env": {}}""", null)) {
+        for (text in listOf("""{"env": {}, "parentSettingsBehavior": "first-wins"}""", null)) {
             val row = row(text)
-            assertTrue("Claude Code may also take managed settings from" in row.said && "$dropIn" in row.said, row.said)
-            assertTrue("$file sets parentSettingsBehavior" !in row.said, "only the main file is read: ${row.said}")
+            assertTrue("$dropIn sets parentSettingsBehavior to \"merge\"" in row.said, row.said)
+            val unread = row.said.split("; ").single { "which splice did not read" in it }
+            assertTrue("$dropIn" !in unread, "splice read it: ${row.said}")
+            assertTrue("$file sets parentSettingsBehavior" !in row.said, "the drop-in's value wins: ${row.said}")
         }
     }
 

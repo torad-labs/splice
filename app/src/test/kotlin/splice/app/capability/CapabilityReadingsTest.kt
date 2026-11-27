@@ -3,6 +3,7 @@
 package splice.app.capability
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -54,11 +55,18 @@ class CapabilityReadingsTest(@param:TempDir private val tmp: Path) {
         launch.toFile().setExecutable(true)
     }
 
-    private fun app(state: ManagedFile, unread: List<String> = emptyList(), mode: DesktopMode = DesktopMode.APP) =
-        bare().copy(
-            desktop = desktop(mode = mode)
-                .copy(managed = WrapperSettings(ManagedReading(managedFile, state, unread), launch)),
-        )
+    private fun app(
+        state: ManagedFile,
+        unread: List<String> = emptyList(),
+        mode: DesktopMode = DesktopMode.APP,
+        dropIns: List<Pair<Path, JsonObject>> = emptyList(),
+    ): Capabilities {
+        val read = listOfNotNull((state as? ManagedFile.Read)?.let { managedFile to it.settings }) + dropIns
+        val reading = ManagedReading(managedFile, state, read, unread)
+        return bare().copy(desktop = desktop(mode = mode).copy(managed = WrapperSettings(reading, launch)))
+    }
+
+    private fun dropIn(text: String) = Path.of(dropIn) to Json.parseToJsonElement(text).jsonObject
 
     private fun read(text: String) = ManagedFile.Read(Json.parseToJsonElement(text).jsonObject)
 
@@ -94,10 +102,11 @@ class CapabilityReadingsTest(@param:TempDir private val tmp: Path) {
             val facts = app(read("{$wrapper}"))
             val row = row(facts)!!
             assertEquals(ToolLevel.WARN, row.level)
-            assertTrue("does not set parentSettingsBehavior" in row.said, row.said)
-            assertTrue(row.fix.orEmpty().startsWith("edit it in place as an administrator so it holds both keys"))
+            assertTrue("no managed settings file splice read sets parentSettingsBehavior" in row.said, row.said)
+            assertTrue(row.fix.orEmpty().startsWith("make $managedFile hold "), row.fix)
+            assertTrue("parentSettingsBehavior \"merge\", editing it in place as an administrator" in row.fix.orEmpty())
             val item = items(facts).single()
-            assertTrue(row.said in item && "what to do: edit it in place" in item, item)
+            assertTrue(row.said in item && "what to do: make $managedFile hold" in item, item)
         }
     }
 
@@ -111,13 +120,15 @@ class CapabilityReadingsTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `first-wins in the file is named as it is, warned, and the item asks for both keys, never for an addition`() {
+    fun `first-wins in the file is named as it is, warned, and the item changes only that key, in that file`() {
         val facts = app(read("""{"processWrapper": "$launch", "parentSettingsBehavior": "first-wins"}"""))
         val row = row(facts)!!
         assertEquals(ToolLevel.WARN, row.level)
         assertTrue("sets parentSettingsBehavior to \"first-wins\"" in row.said, row.said)
-        assertTrue("add " !in row.fix.orEmpty(), row.fix)
-        assertTrue("a copy put in its place would lose its owner, its mode and its other keys" in items(facts).single())
+        assertTrue(row.fix.orEmpty().startsWith("make $managedFile hold parentSettingsBehavior \"merge\","), row.fix)
+        assertTrue("processWrapper \"" !in row.fix.orEmpty(), row.fix)
+        assertTrue(row.fix.orEmpty().endsWith("after a change, quit Claude Desktop entirely and reopen it"), row.fix)
+        assertTrue(row.fix.orEmpty() in items(facts).single())
     }
 
     @Test
@@ -128,10 +139,11 @@ class CapabilityReadingsTest(@param:TempDir private val tmp: Path) {
             assertEquals(emptyList<String>(), items(ok), "the file needs no edit, so there is no item")
         }
         assertEquals(null, row(app(right()))!!.fix)
-        assertTrue("check that none of the places" in row(app(right(), listOf(dropIn)))!!.fix.orEmpty())
+        assertEquals(null, row(app(right(), listOf(dropIn)))!!.fix, "nothing to edit, so no step and no restart")
         val noWrapper = app(read("""{"parentSettingsBehavior": "merge"}"""))
         assertEquals(ToolLevel.INFO, row(noWrapper)!!.level)
-        assertTrue("does not set processWrapper" in items(noWrapper).single(), items(noWrapper).toString())
+        val noFile = "no managed settings file splice read sets processWrapper"
+        assertTrue(noFile in items(noWrapper).single(), items(noWrapper).toString())
     }
 
     @Test
@@ -148,8 +160,8 @@ class CapabilityReadingsTest(@param:TempDir private val tmp: Path) {
         val row = row(facts)!!
         assertEquals(ToolLevel.INFO, row.level)
         assertTrue("nothing is at $managedFile" in row.said, row.said)
-        assertTrue(row.fix.orEmpty().startsWith("create it so it holds both keys"), row.fix)
-        assertTrue("create it so it holds both keys" in items(facts).single())
+        assertTrue(row.fix.orEmpty().startsWith("create $managedFile holding processWrapper"), row.fix)
+        assertTrue("create $managedFile holding" in items(facts).single())
     }
 
     @Test
@@ -159,10 +171,10 @@ class CapabilityReadingsTest(@param:TempDir private val tmp: Path) {
         assertEquals(ToolLevel.INFO, row.level)
         assertTrue("$managedFile could not be read" in row.said, row.said)
         assertTrue("splice does not say whether it exists or what it holds" in row.said, row.said)
-        for (untrue in listOf("does not set", "nothing is at")) {
+        for (untrue in listOf("file splice read sets", "nothing is at")) {
             assertTrue(untrue !in row.said, "${row.said} says \"$untrue\" of a file nobody read")
         }
-        assertTrue("look at it as an administrator" in items(facts).single())
+        assertTrue("as an administrator, editing it in place where it exists" in items(facts).single())
     }
 
     // A place splice did not read changes how the step is said, never whether a file that needs an edit is an item.
@@ -175,9 +187,9 @@ class CapabilityReadingsTest(@param:TempDir private val tmp: Path) {
             val named = "Claude Code may also take managed settings from $dropIn, which splice did not read: a value " +
                 "set there may be the one Claude Code takes"
             assertTrue(named in row.said, row.said)
-            assertTrue(row.fix.orEmpty().startsWith("check the places splice did not read first"), row.fix)
+            assertTrue(row.fix.orEmpty().startsWith("where none of the places splice did not read sets "), row.fix)
             val item = items(facts).single()
-            assertTrue(named in item && "check the places splice did not read first" in item, item)
+            assertTrue(named in item && "what to do: where none of the places splice did not read sets " in item, item)
         }
     }
 
@@ -187,7 +199,29 @@ class CapabilityReadingsTest(@param:TempDir private val tmp: Path) {
         val item = items(facts).single()
         assertTrue("sets processWrapper to a value that is not text" in item, item)
         assertTrue("sets parentSettingsBehavior to a value that is not text" in item, item)
-        assertTrue("s3cret" !in item && "does not set" !in item, item)
+        assertTrue("s3cret" !in item && "file splice read sets" !in item, item)
+    }
+
+    // Claude Code merges each drop-in over the main file, so the row and the item take the value the drop-in gives.
+    @Test
+    fun `a drop-in that sets merge over first-wins in the main file is a note and no item, and is named`() {
+        val main = read("""{"processWrapper": "$launch", "parentSettingsBehavior": "first-wins"}""")
+        val facts = app(main, dropIns = listOf(dropIn("""{"parentSettingsBehavior": "merge"}""")))
+        val row = row(facts)!!
+        assertEquals(ToolLevel.INFO, row.level)
+        assertTrue("$dropIn sets parentSettingsBehavior to \"merge\"" in row.said, row.said)
+        assertEquals(null, row.fix)
+        assertEquals(emptyList<String>(), items(facts))
+    }
+
+    @Test
+    fun `first-wins in a drop-in is the item to change, in that drop-in, not the main file`() {
+        val main = read("""{"processWrapper": "$launch", "parentSettingsBehavior": "merge"}""")
+        val facts = app(main, dropIns = listOf(dropIn("""{"parentSettingsBehavior": "first-wins"}""")))
+        val row = row(facts)!!
+        assertEquals(ToolLevel.WARN, row.level)
+        assertTrue(row.fix.orEmpty().startsWith("make $dropIn hold parentSettingsBehavior \"merge\""), row.fix)
+        assertTrue("make $managedFile" !in items(facts).single(), items(facts).toString())
     }
 
     @Test

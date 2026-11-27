@@ -38,8 +38,8 @@ internal class CapabilityTools(private val facts: Capabilities) {
         }
     }
 
-    /** Claude Code's managed settings for the Code tab, said while Desktop runs on splice in app mode: what splice
-     *  read, what it did not, and what Desktop does only where it read every place (WrapperSettings). */
+    /** Claude Code's managed settings for the Code tab, said while Desktop runs on splice in app mode: which file
+     *  splice read holds each key, the places it could not read, and the file to edit (WrapperSettings). */
     private fun managed(): ToolReading? {
         val managed = facts.desktop.managed?.takeIf { facts.desktop.mode == DesktopMode.APP } ?: return null
         return ToolReading(MANAGED_ROW, managed.level(), managed.said(), managed.pointed())

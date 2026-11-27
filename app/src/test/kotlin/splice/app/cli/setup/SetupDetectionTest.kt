@@ -84,7 +84,7 @@ class SetupDetectionTest {
     private fun otherWrapper(): WrapperSettings {
         val file = Path.of("/etc/claude-code/managed-settings.json")
         val settings = Json.parseToJsonElement("""{"processWrapper": "/usr/bin/other"}""").jsonObject
-        val reading = ManagedReading(file, ManagedFile.Read(settings), emptyList())
+        val reading = ManagedReading(file, ManagedFile.Read(settings), listOf(file to settings), emptyList())
         return WrapperSettings(reading, Path.of("/s/desktop-launch"))
     }
 

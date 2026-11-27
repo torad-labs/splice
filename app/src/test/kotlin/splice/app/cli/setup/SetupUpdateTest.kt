@@ -107,7 +107,9 @@ class SetupUpdateTest {
             runBlocking { update(said, facts = other).run() }
         }
         assertTrue("sets processWrapper to \"/usr/bin/other\"" in said, said.toString())
-        assertTrue("edit it in place as an administrator so it holds both keys" in said, said.toString())
+        val step = "make /etc/claude-code/managed-settings.json hold processWrapper \"/s/desktop-launch\", editing it"
+        assertTrue(step in said, said.toString())
+        assertTrue("after a change, quit Claude Desktop entirely and reopen it" in said, said.toString())
     }
 
     // A place splice did not read changes how the item is said, never whether a known mismatch is one.
@@ -125,7 +127,7 @@ class SetupUpdateTest {
         }
         assertFalse("Nothing new to set up" in said, said.toString())
         assertTrue("sets processWrapper to \"/usr/bin/other\"" in said && dropIn in said, said.toString())
-        assertTrue("check the places splice did not read first" in said, said.toString())
+        assertTrue("where none of the places splice did not read sets processWrapper, make " in said, said.toString())
     }
 
     // The main file needs no edit, so there is no item; an unread place may still win, so the update says it found
@@ -240,7 +242,8 @@ class SetupUpdateTest {
         launch: Path = Path.of("/s/desktop-launch"),
     ): WrapperSettings {
         val file = Path.of("/etc/claude-code/managed-settings.json")
-        val reading = ManagedReading(file, ManagedFile.Read(Json.parseToJsonElement(text).jsonObject), unread)
+        val settings = Json.parseToJsonElement(text).jsonObject
+        val reading = ManagedReading(file, ManagedFile.Read(settings), listOf(file to settings), unread)
         return WrapperSettings(reading, launch)
     }
 }

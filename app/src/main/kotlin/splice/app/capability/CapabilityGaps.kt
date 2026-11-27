@@ -36,9 +36,9 @@ internal class CapabilityGaps(private val facts: Capabilities, private val claud
         "Claude Desktop is on the older Code-tab-only door; `splice desktop on` puts all of Desktop on splice",
     ).takeIf { facts.desktop.mode == DesktopMode.STANDARD }
 
-    /** Claude Code's managed settings, an item wherever the file splice read does not hold both keys as wanted, could
-     *  not be read or is not there, or the launcher is not laid: what was found, the places it did not read, and the
-     *  step. Only root writes that file, so the item says what to do. */
+    /** Claude Code's managed settings, an item wherever the files splice read, merged, do not give both keys
+     *  as wanted, or the launcher is not laid: what was found, the places it did not read, and the file to edit. Only
+     *  root writes those files, so the item says what to do. */
     private fun managed(): Gap? {
         val managed = facts.desktop.managed?.takeIf { facts.desktop.mode == DesktopMode.APP } ?: return null
         if (managed.right && managed.laid) return null

@@ -2,7 +2,7 @@ package splice.app.modes
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import splice.app.WireJson
+import splice.app.wire.WireJson
 import splice.control.mcp.inprocess.McpDocumentReader
 import splice.modes.api.ModeRoute
 

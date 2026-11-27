@@ -13,7 +13,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.app.WireJson
+import splice.app.wire.WireJson
 import splice.core.wire.HttpStatus
 import splice.http.JsonReply
 import splice.modes.api.ModeRequest

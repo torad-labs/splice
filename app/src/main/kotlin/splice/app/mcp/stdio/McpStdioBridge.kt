@@ -16,7 +16,7 @@ import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import splice.app.WireJson
+import splice.app.wire.WireJson
 import splice.core.terminal.TerminalOutput
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText

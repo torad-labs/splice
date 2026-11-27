@@ -1,4 +1,4 @@
-package splice.app
+package splice.app.wire
 
 import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.JsonFactoryBuilder

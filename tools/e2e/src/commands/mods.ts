@@ -262,16 +262,17 @@ async function stops(run: ModRun, baseline: Answer): Promise<void> {
   const old = run.ps("before daemon SIGKILL").filter(p => p.mod);
   assert.ok(old.some(p => p.pid === orphan.pid));
   await run.killedDaemon(daemon.pid);
-  const survivors = run.ps("after daemon SIGKILL, before restart");
-  assert.ok(!survivors.some(p => p.pid === daemon.pid));
-  assert.ok(survivors.some(p => p.mod && p.pid === orphan.pid), "the blocked orphan must still be running");
+  await run.noMods();
+  const stopped = run.ps("after daemon SIGKILL, before starting any successor", []);
+  assert.ok(!stopped.some(p => p.pid === daemon.pid));
+  assert.ok(old.every(p => !stopped.some(now => now.pid === p.pid)), "a host outlived its daemon");
   const next = await run.start();
   assert.notEqual(next.pid, daemon.pid);
   const newOrphan = await run.running("orphan");
   const after = run.ps("after restarting against the same state");
   assert.ok(after.some(p => p.mod && p.pid === newOrphan.pid), "the successor did not start the enabled mod");
   assert.ok(old.every(p => !after.some(now => now.pid === p.pid)), "a host from the killed daemon is still running");
-  console.log(`  blocked orphan ${orphan.pid} was reaped; same-state successor started host ${newOrphan.pid}.`);
+  console.log(`  host ${orphan.pid} was gone before restart; same-state successor started host ${newOrphan.pid}.`);
   await run.command("mod", "remove", "orphan");
   await run.stop();
 }

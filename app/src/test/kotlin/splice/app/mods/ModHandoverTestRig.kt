@@ -21,13 +21,6 @@ import java.util.concurrent.TimeUnit
 
 private const val RECORDER = "recorder"
 
-private val backgroundSleep = """
-    if (!existsSync(path)) {
-      const child = Bun.spawnSync(["sh", "-c", "sleep 45 >/dev/null & echo $!"], {stderr:"inherit"});
-      writeFileSync(Bun.env.SPLICE_MOD_DATA + "/child", child.stdout);
-    }
-""".trimIndent()
-
 internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
     private val old = ModEventsTestRig(root)
     private val next by lazy { ModEventsTestRig(root) }
@@ -40,11 +33,7 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
 
     private var oldPid = 0L
 
-    suspend fun installRecorder(
-        slowStop: Boolean = false,
-        startRunner: Boolean = true,
-        backgroundChild: Boolean = false,
-    ) {
+    suspend fun installRecorder(slowStop: Boolean = false, startRunner: Boolean = true) {
         if (startRunner) old.runner.runner.start()
         oldControl.start()
         val source = old.runner.fixture(
@@ -60,7 +49,6 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
                   process.kill(previous, 0);
                   oldAlive = true;
                 } catch {}
-                ${if (backgroundChild) backgroundSleep else ""}
                 writeFileSync(path, String(process.pid));
                 $.log("started=" + JSON.stringify({pid: process.pid, oldAlive}));
               });
@@ -100,17 +88,6 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
     suspend fun through(event: String) = old.through(RECORDER, event)
 
     fun recorderProcess(): ProcessHandle = ProcessHandle.of(oldPid).orElseThrow()
-
-    fun backgroundChild(): ProcessHandle {
-        val pid = Files.readString(data("child")).trim().toLong()
-        return ProcessHandle.of(pid).orElseThrow()
-    }
-
-    fun serveOnSuccessor(session: String) = next.complete(session, next.launch())
-
-    suspend fun waitForBackgroundExit(child: ProcessHandle) {
-        old.runner.eventually { true.takeUnless { child.isAlive } }
-    }
 
     suspend fun retire(leave: Boolean = true) {
         val control = control(next)

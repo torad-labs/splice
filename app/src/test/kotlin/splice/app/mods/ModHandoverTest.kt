@@ -8,7 +8,6 @@ import io.ktor.client.request.post
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -37,7 +36,7 @@ class ModHandoverTest {
             rig.installRecorder()
             val turn = rig.startTurn("session")
             rig.holdRequest()
-            turn.requestSent(ObservedRequest(1, "model", 64, 2))
+            turn.requestSent(ObservedRequest(1, "model", 2))
             rig.through("request.send")
             turn.responseReceived(ObservedResponse(200, 1, 3))
 
@@ -97,43 +96,6 @@ class ModHandoverTest {
             rig.retire()
             rig.finish()
             assertFalse(old.isAlive)
-        }
-    }
-
-    @Test
-    fun `a reparented child holding stderr cannot keep a daemon from stopping`() = runBlocking {
-        ModHandoverTestRig(root).use { rig ->
-            rig.installRecorder(backgroundChild = true)
-            val child = rig.backgroundChild()
-            try {
-                assertTrue(child.isAlive)
-                withTimeout(6_000) { rig.finish() }
-                rig.waitForBackgroundExit(child)
-            } finally {
-                if (child.isAlive) child.destroyForcibly()
-            }
-        }
-    }
-
-    @Test
-    fun `a reparented child holding stderr cannot delay the successor turn`() = runBlocking {
-        ModHandoverTestRig(root).use { rig ->
-            rig.installRecorder(backgroundChild = true, slowStop = true)
-            val child = rig.backgroundChild()
-            try {
-                assertTrue(child.isAlive)
-                withTimeout(6_000) {
-                    rig.retire()
-                    rig.successorRecorderStart()
-                    rig.serveOnSuccessor("next-turn")
-                    val events = rig.through("turn.complete")
-                    assertEquals("next-turn", events.last().session)
-                    rig.finish()
-                }
-                rig.waitForBackgroundExit(child)
-            } finally {
-                if (child.isAlive) child.destroyForcibly()
-            }
         }
     }
 

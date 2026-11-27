@@ -51,33 +51,61 @@ class ModSessionHandoverTest {
     }
 
     @Test
-    fun `a successor serves the same launch without replaying its start and reports its exit`() = isolated {
+    fun `a background child holding stderr cannot keep the daemon from stopping`() = isolated {
+        val events = ModEventsTestRig(root)
+        SessionDaemon(root, events).use { daemon ->
+            daemon.start()
+            val child = daemon.installBackgroundChild()
+            try {
+                assertTrue(child.isAlive)
+                withTimeout(6_000) { daemon.stop() }
+                events.runner.eventually { true.takeUnless { child.isAlive } }
+            } finally {
+                if (child.isAlive) child.destroyForcibly()
+            }
+        }
+    }
+
+    @Test
+    fun `a successor serves while reaping the old mod and restores its launch without a replay`() = isolated {
         val events = ModEventsTestRig(root)
         val launch = ProcessBuilder("/bin/sleep", "60").start()
         try {
             SessionDaemon(root, events).use { old ->
                 old.start()
                 old.install()
-                val owner = old.launch(launch.pid())
-                old.turn("carried", owner)
-                events.through("recorder", "turn.complete", "carried")
-                withTimeout(6_000) { old.retire() }
-                assertTrue(AsyncFileIo.drain())
-
-                SessionDaemon(root, events).use { next ->
-                    next.start()
-                    next.awaitRecorder()
-                    next.turn("carried", owner)
-                    launch.destroyForcibly().waitFor()
-                    val received = events.through("recorder", "session.end", "carried")
-                        .filter { it.session == "carried" }
-                    assertEquals(1, received.count { it.name == "session.start" })
-                    assertEquals(2, received.count { it.name == "turn.complete" })
-                    assertEquals(1, received.count { it.name == "session.end" })
+                val child = old.installBackgroundChild()
+                try {
+                    assertTrue(child.isAlive)
+                    assertHandover(old, events, launch)
+                    events.runner.eventually { true.takeUnless { child.isAlive } }
+                } finally {
+                    if (child.isAlive) child.destroyForcibly()
                 }
             }
         } finally {
             launch.destroyForcibly().waitFor()
+        }
+    }
+
+    private suspend fun assertHandover(old: SessionDaemon, events: ModEventsTestRig, launch: Process) {
+        val owner = old.launch(launch.pid())
+        old.turn("carried", owner)
+        events.through("recorder", "turn.complete", "carried")
+        withTimeout(6_000) { old.retire() }
+        assertTrue(AsyncFileIo.drain())
+
+        SessionDaemon(root, events).use { next ->
+            withTimeout(10_000) {
+                next.start()
+                next.awaitRecorder()
+                next.turn("carried", owner)
+            }
+            launch.destroyForcibly().waitFor()
+            val received = events.through("recorder", "session.end", "carried").filter { it.session == "carried" }
+            assertEquals(1, received.count { it.name == "session.start" })
+            assertEquals(2, received.count { it.name == "turn.complete" })
+            assertEquals(1, received.count { it.name == "session.end" })
         }
     }
 
@@ -105,7 +133,37 @@ private class SessionDaemon(private val home: Path, private val events: ModEvent
         daemon.retire()
     }
 
+    suspend fun stop() {
+        daemon.stop()
+    }
+
     suspend fun install() = events.install(client, "recorder", base = base)
+
+    suspend fun installBackgroundChild(): ProcessHandle {
+        val source = events.runner.fixture(
+            "background",
+            """
+            import { existsSync, writeFileSync } from "node:fs";
+            export function register(on) {
+              on("mod.start", async () => {
+                const path = Bun.env.SPLICE_MOD_DATA + "/child";
+                if (existsSync(path)) return;
+                const child = Bun.spawnSync(["sh", "-c", "sleep 45 >/dev/null & echo $!"], { stderr: "inherit" });
+                writeFileSync(path, child.stdout);
+              });
+            }
+            """.trimIndent(),
+        )
+        events.runner.install(client, source, base = base)
+        val pidFile = paths.modsDir.resolve("data/background/child")
+        return events.runner.eventually {
+            if (Files.exists(pidFile)) {
+                Files.readString(pidFile).trim().toLongOrNull()?.let { ProcessHandle.of(it).orElse(null) }
+            } else {
+                null
+            }
+        }
+    }
 
     suspend fun awaitRecorder() {
         events.runner.eventually {
@@ -160,7 +218,7 @@ private class SessionDaemon(private val home: Path, private val events: ModEvent
         [providers.client]
         dialect = "anthropic-passthrough"
         base_url = "${upstream.baseUrl}"
-        auth = { kind = "forward" }
+        auth = { kind = "client" }
 
         [[providers.client.models]]
         id = "fixture"

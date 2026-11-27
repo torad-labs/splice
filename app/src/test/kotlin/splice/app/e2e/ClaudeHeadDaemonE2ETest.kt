@@ -63,7 +63,8 @@ internal class RecordingAnthropic {
 
     init {
         server.executor = pool
-        server.createContext("/") { ex -> handle(ex) }
+        // Discovery requests must not consume a scripted Messages reply.
+        server.createContext("/v1/messages") { ex -> handle(ex) }
         server.start()
     }
 

@@ -8,6 +8,7 @@ import splice.app.mods.events.ModEventText
 import splice.app.mods.sessions.ModLaunches
 import splice.app.mods.sessions.ModLiveSession
 import splice.app.mods.sessions.ModSessionTracker
+import splice.launch.LaunchModSettings
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
@@ -47,15 +48,24 @@ internal class ModCallRows(
         val id = record.sessionId?.takeIf { ':' !in it && scrubber.safe(it) } ?: return null
         val live = active[id]
         val settings = if (live == null) settings(record, id) else null
-        if ((live?.off ?: settings?.modsOff)?.suppresses(mod) == true) return null
+        if (optedOut(mod, id, live, settings)) return null
         val labels = live?.labels?.let(scrubber::labels) ?: settings?.labels?.let { scrubber.labels(it) }
         return row(id, title(record, id, scrubber), status(record), labels)
+    }
+
+    private fun optedOut(mod: String, id: String, live: ModLiveSession?, settings: LaunchModSettings?): Boolean {
+        val off = when {
+            live != null -> live.off
+            settings != null -> settings.modsOff
+            else -> launches.forSession(id)?.settings?.modsOff
+        }
+        return off?.suppresses(mod) == true
     }
 
     private fun title(record: SessionRecord, id: String, scrubber: ModEventText): String =
         record.name?.takeIf { it.isNotBlank() && scrubber.safe(it) } ?: id
 
-    private fun settings(record: SessionRecord, id: String): splice.launch.LaunchModSettings? {
+    private fun settings(record: SessionRecord, id: String): LaunchModSettings? {
         val pid = record.process.pid.takeUnless { record.availability == SessionAvailability.GONE }
         return launches.forRecord(id, pid)?.settings
     }

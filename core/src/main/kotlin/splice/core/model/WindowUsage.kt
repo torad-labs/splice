@@ -21,17 +21,12 @@ public class WindowUsage(private val catalog: ModelCatalog) {
         }
     }
 
-    private fun divisor(id: String, evidence: ClientWindow, declared: Long): Divisor = when (evidence) {
-        is ClientWindow.Stated -> Divisor(evidence.tokens, WindowSource.REQUEST)
-        is ClientWindow.Bound -> Divisor(evidence.tokens, WindowSource.HINT)
-        is ClientWindow.Hint -> {
-            val fixed = selectors.fixed(id)
-            when {
-                fixed != null -> Divisor(fixed, WindowSource.REQUEST)
-                evidence.tokens != null -> Divisor(evidence.tokens, WindowSource.HINT)
-                else -> Divisor(defaultWindow(id, declared), WindowSource.NONE)
-            }
-        }
+    private fun divisor(id: String, evidence: ClientWindow, declared: Long): WindowDivisor = when (evidence) {
+        is ClientWindow.Stated -> WindowDivisor(evidence.tokens, WindowSource.REQUEST)
+        is ClientWindow.Bound -> WindowDivisor(evidence.tokens, WindowSource.HINT)
+        is ClientWindow.Hint -> selectors.selected(id)
+            ?: evidence.tokens?.let { WindowDivisor(it, WindowSource.HINT) }
+            ?: WindowDivisor(defaultWindow(id, declared), WindowSource.NONE)
     }
 
     private fun defaultWindow(id: String, declared: Long): Long =
@@ -44,6 +39,6 @@ public class WindowUsage(private val catalog: ModelCatalog) {
 
     private fun learnedClaude(id: String, learned: Long?): Boolean =
         learned != null && learned > 0 && id.startsWith(CLIENT_OWN_ID_PREFIX) && !catalog.presented.selectorSized(id)
-
-    private data class Divisor(val tokens: Long, val source: WindowSource)
 }
+
+internal data class WindowDivisor(val tokens: Long, val source: WindowSource)

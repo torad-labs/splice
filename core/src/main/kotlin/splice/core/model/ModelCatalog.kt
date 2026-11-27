@@ -22,12 +22,8 @@ public const val CLAUDE_CODE_ONE_MILLION: Long = 1_000_000L
  *  the client's built-in table or its 200k default, and nothing we launch with can move it. */
 internal const val CLIENT_OWN_ID_PREFIX = "claude-"
 
-/** V4-232: the window Claude Code gives a Claude model it knows when the base URL is not Anthropic's,
- *  which is every head's (ANTHROPIC_BASE_URL is the head's own 127.0.0.1 port): its own table, never
- *  the env. Seen on 2.1.283 for claude-sonnet-4-6, claude-sonnet-5, claude-opus-4-6 and
- *  claude-haiku-4-5 alike (a native 1M window needs an api.anthropic.com base URL, cli `Os()`). The
- *  runtime-head e2e reads it off the real client at each pin. Mirror the client, never improve on it.
- *  The launch plants CLAUDE_CODE_AUTO_COMPACT_WINDOW no lower than it for a head that presents a row. */
+/** The ordinary client-table window. Native-million IDs can instead hold 1M behind the same gateway
+ *  ([ClaudeCodeNativeWindow]); a presented row follows the model it is presented as. */
 public const val CLIENT_TABLE_WINDOW: Long = 200_000L
 
 @Serializable
@@ -244,7 +240,7 @@ public data class ModelCatalog(
      *  summary, re-attached files) already read as 84% of a 272k window. */
     public val clientLaunchWindow: Long get() = contextWindowFor(pinnedModel)
 
-    /** The window the CLIENT will actually use for [id]: `[1m]` and presented rows have
+    /** The window used to size [id]: `[1m]` and presented rows have
      *  selector-owned windows. A `claude-` id ignores our launch env, but the session's status-line
      *  post reports its actual divisor; before that post, the declared window keeps the old raw
      *  fallback. Other ids use the per-session launch env when known. [requestWindow] is the window
@@ -340,19 +336,22 @@ public data class CatalogWindows(
 /** The window the client holds for a row of [catalog] with no reading off the request, in the order terminal turns keep
  *  ([ModelCatalog.clientContextWindowFor] puts a request's own reading ahead of it). */
 internal class SelectorWindow(private val catalog: ModelCatalog) {
-    fun fixed(id: String): Long? = when {
-        ModelTierSuffix.isOneMillion(catalog.unwrap(id)) -> CLAUDE_CODE_ONE_MILLION
-        // V4-232: a presented row is one the client knows, so its window is the client's table, and
-        // unlike a "claude-" id below we know that number, so the factor is honest rather than 1.0.
-        catalog.presented.covers(id) -> CLIENT_TABLE_WINDOW
-        // A Codex discovery wrapper starts with claude- but is not a Claude model from the
-        // client's own table. It gets the client's unknown-model 200k fallback, not this row's W.
-        catalog.windows.compactionReserveDefaults != null && id.startsWith(catalog.discoveryPrefix) ->
-            CLIENT_TABLE_WINDOW
-        else -> null
+    fun selected(id: String): WindowDivisor? {
+        if (ModelTierSuffix.isOneMillion(catalog.unwrap(id))) {
+            return WindowDivisor(CLAUDE_CODE_ONE_MILLION, WindowSource.REQUEST)
+        }
+        return catalog.presented.divisor(id) ?: wrapped(id)
     }
 
-    fun of(id: String, sessionWindow: Long?): Long = fixed(id) ?: when {
+    // A direct calibrated wrapper isn't in the client's native table.
+    private fun wrapped(id: String): WindowDivisor? =
+        if (catalog.windows.compactionReserveDefaults != null && id.startsWith(catalog.discoveryPrefix)) {
+            WindowDivisor(CLIENT_TABLE_WINDOW, WindowSource.REQUEST)
+        } else {
+            null
+        }
+
+    fun of(id: String, sessionWindow: Long?): Long = selected(id)?.tokens ?: when {
         id.startsWith(CLIENT_OWN_ID_PREFIX) -> sessionWindow?.takeIf { it > 0 } ?: catalog.contextWindowFor(id)
         // An env-governed id: the window is whatever THIS session's process was launched with.
         // [sessionWindow] is that value when the session has told us (ClientWindows, fed by its
@@ -386,9 +385,8 @@ public class PresentedRows internal constructor(models: List<ModelEntry>, privat
     /** settings.json `modelOverrides`: each presented Claude model -> the row id the client then sends. */
     public val overrides: Map<String, String> = models.mapNotNull { e -> e.clientModel?.let { it to e.id } }.toMap()
 
-    private val byId: Map<String, Boolean> =
-        models.associate { upstream(it.id) to (it.clientModel != null) } +
-            models.associate { raw(it.id) to (it.clientModel != null) }
+    private val byId: Map<String, ModelEntry> =
+        models.associateBy { upstream(it.id) } + models.associateBy { raw(it.id) }
 
     init {
         val named = models.mapNotNull { it.clientModel }
@@ -401,7 +399,19 @@ public class PresentedRows internal constructor(models: List<ModelEntry>, privat
     }
 
     /** Whether the client resolves [id] as the Claude model its row names. */
-    public fun covers(id: String): Boolean = (byId[raw(id)] ?: byId[upstream(id)]) == true
+    public fun covers(id: String): Boolean = modelFor(id) != null
+
+    internal fun divisor(id: String): WindowDivisor? = modelFor(id)?.let { presented ->
+        // The native window is plausible even without a beta, but the client can disable it.
+        val native = ClaudeCodeNativeWindow.of(presented)
+        if (native != null) {
+            WindowDivisor(native, WindowSource.HINT)
+        } else {
+            WindowDivisor(CLIENT_TABLE_WINDOW, WindowSource.REQUEST)
+        }
+    }
+
+    private fun modelFor(id: String): String? = (byId[raw(id)] ?: byId[upstream(id)])?.clientModel
 
     /** Selector-owned windows cannot teach a session's otherwise unknown process divisor. */
     public fun selectorSized(id: String): Boolean = ModelTierSuffix.isOneMillion(raw(id)) || covers(id)

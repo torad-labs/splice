@@ -536,14 +536,17 @@ class UsageScalingTest {
     }
 
     @Test
-    fun `a presented row sizes counts from the client model table without a recorded window`() {
+    fun `a native million presentation doubles the counts on a 500k row`() {
         val model = "presented"
-        val catalog = xai.copy(
-            models = listOf(ModelEntry(model, contextWindow = 500_000, clientModel = "claude-opus-5-5")),
-        )
-        val sizing = WindowUsage(catalog).of(model, ClientWindow.Hint())
-        val payload = wiring.usagePayloadBuilder(model, sizing)(Usage(100_000, 7, 0))
-        assertEquals(40_000L, payload["input_tokens"]?.jsonPrimitive?.content?.toLong())
+        for (presentedAs in listOf("claude-opus-5-5", "claude-mythos-preview")) {
+            val catalog = xai.copy(
+                models = listOf(ModelEntry(model, contextWindow = 500_000, clientModel = presentedAs)),
+            )
+            val sizing = WindowUsage(catalog).of(model, ClientWindow.Hint())
+            val payload = wiring.usagePayloadBuilder(model, sizing)(Usage(100_000, 7, 0))
+            assertEquals(200_000L, payload["input_tokens"]?.jsonPrimitive?.content?.toLong(), presentedAs)
+            assertEquals(1_000_000L, payload["context_window_size"]?.jsonPrimitive?.content?.toLong(), presentedAs)
+        }
     }
 
     @Test

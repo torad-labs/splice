@@ -1,7 +1,5 @@
-// A launch of a head whose row the client resolves as a Claude model it knows (client_model). Claude
-// Code 2.1.283 compacts against min(its window for the row, CLAUDE_CODE_AUTO_COMPACT_WINDOW) (bundle fn
-// `CT`), and for a presented row that window is its own table's 200k, so the env must not cap below it:
-// in real tokens the client's ceiling must be the runtime's own window, whatever side of 200k it is on.
+// A presented row uses the named model's own window: 200k for an ordinary model, or 1M for a native-million
+// model. The launch's compaction cap must leave room for that window so the scaled usage can fill the row.
 // The head's rows reach its OWN settings.json only: a launch through the wrapped `claude` writes the
 // operator's ~/.claude, and that file keeps exactly the overrides the operator wrote.
 package splice.launch.recipe
@@ -89,6 +87,13 @@ class PresentedRowLaunchTest(@param:TempDir private val tmp: Path) {
     @Test
     fun `a presented runtime over 200k compacts at its own ceiling too`() {
         assertEquals(245_760.0, realCeiling(catalog(245_760L)), 1e-6)
+    }
+
+    @Test
+    fun `the launch leaves room for a presented native million window`() {
+        val cat = catalog(500_000, clientModel = "claude-opus-5-5")
+        val env = service.launch(spec(cat), emptyList(), dangerouslySkipPermissions = false).env
+        assertEquals("1000000", env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"])
     }
 
     @Test

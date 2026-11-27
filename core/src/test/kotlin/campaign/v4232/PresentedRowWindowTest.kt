@@ -1,6 +1,6 @@
 // NEW: V4-232's window arithmetic for a row the client resolves as a Claude model it knows (client_model).
-// The client then sizes the row from its own table (200k behind any head's base URL), never from the
-// launch env, so usage scaling is what keeps the row compacting at the window the runtime serves.
+// It can use the named model's built-in window instead of the launch env. The ordinary model used
+// in this fixture has a 200k table window.
 package campaign.v4232
 
 import org.junit.jupiter.api.Assertions.assertEquals

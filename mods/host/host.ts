@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
-import { chmodSync, closeSync, mkdirSync, openSync, writeSync } from "node:fs";
-import { join, resolve, sep } from "node:path";
+import { chmodSync, closeSync, mkdirSync, openSync, realpathSync, writeSync } from "node:fs";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
   EventName, Filter, Handle, HooksFile, HostSessionRow, Json, ModError, ModLifecycle, ModManifest, ModStart, ModStop, On, Register,
@@ -45,6 +45,39 @@ function frozen<T>(value: T): T {
     for (const child of Object.values(value)) frozen(child);
   }
   return value;
+}
+
+/**
+ * A mod runs only code from its own folder. Splice hashes the installed copy, and nothing beside it is hashed, so an
+ * import that resolves elsewhere (an absolute path, a link, a tsconfig alias, a node_modules folder above the mod)
+ * would change what runs without changing what was checked. Bun's built-in modules (bun:, node:) are not files and
+ * stay available. The contract is imported as types, which Bun erases before resolving anything.
+ *
+ * Bun asks `onResolve` only about relative and absolute specifiers, so that hook names the importer and the line
+ * that reached outside. `onLoad` is told about every file Bun is about to read, after links and aliases are
+ * followed, so it is the check that holds; it fires only for a path outside the root.
+ */
+function confineImports(name: string, root: string) {
+  const prefix = root + sep;
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, match => "\\" + match);
+  const advice = "A mod may import only files inside its own folder and Bun's built-in modules (bun: and node:); " +
+    "put a dependency inside the mod, for example in its node_modules.";
+  Bun.plugin({
+    name: "splice-mod-root",
+    setup(build) {
+      build.onResolve({ filter: /^(?:\.\.?\/|\/)/ }, args => {
+        const importer = args.importer.startsWith(prefix) ? args.importer : join(root, "hooks");
+        const target = resolve(dirname(importer), args.path);
+        if (target === root || target.startsWith(prefix)) return undefined;
+        throw new Error(`Mod ${name}: ${relative(root, importer)} imports ${args.path}, which is outside the mod's folder. ${advice}`);
+      });
+      const outside = new RegExp("^(?!" + escaped + ")");
+      build.onLoad({ filter: outside, namespace: "file" }, args => {
+        throw new Error(`Mod ${name}: ${args.path} is outside the mod's folder, so it was not loaded. ` +
+          `An import reached it through a link, a tsconfig alias, a node_modules folder above the mod or a file: URL. ${advice}`);
+      });
+    },
+  });
 }
 
 class Pipe {
@@ -290,10 +323,12 @@ class Host {
     if (!(await this.#admission.promise)) return 0;
     let store: Store | undefined;
     try {
-      const manifest = await Bun.file(join(this.root, ".splice-mod/mod.json")).json() as ModManifest;
+      const root = realpathSync(this.root); // Bun reports real paths, and a linked mod's folder may be a link.
+      confineImports(this.name, root);
+      const manifest = await Bun.file(join(root, ".splice-mod/mod.json")).json() as ModManifest;
       store = new Store(this.data);
       const hooks = new Hooks(this.name, this.#pipe, this.#handle(store));
-      await this.#load(hooks.on);
+      await this.#load(hooks.on, root);
       if (this.#abort.signal.aborted) return 0;
       this.#hooks = hooks;
       const notice = `Mod ${this.name}: handlers observe only in this version of Splice.`;
@@ -304,7 +339,8 @@ class Host {
         type: "ready", events: hooks.events, notice, refused, declared_not_served: declared, version: Bun.version,
       });
       const lifecycle = { mod: this.name, version: manifest.version } satisfies ModLifecycle;
-      await hooks.dispatch("mod.start", { ...lifecycle, served: hooks.events, refused } satisfies ModStart, EVENT_MS, this.#abort.signal);
+      const start = { ...lifecycle, served: hooks.events, refused: [...refused, ...declared] } satisfies ModStart;
+      await hooks.dispatch("mod.start", start, EVENT_MS, this.#abort.signal);
       this.#started.resolve();
       const reason = await this.#stop.promise;
       await hooks.dispatch("mod.stop", { ...lifecycle, reason } satisfies ModStop, STOP_MS);
@@ -317,8 +353,8 @@ class Host {
     }
   }
 
-  async #load(on: On) {
-    const directory = resolve(this.root, "hooks");
+  async #load(on: On, root: string) {
+    const directory = resolve(root, "hooks");
     const file = Bun.file(join(directory, "hooks.json"));
     if (!await file.exists()) return;
     const { modules } = await file.json() as HooksFile;

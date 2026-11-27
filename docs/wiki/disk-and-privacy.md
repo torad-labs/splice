@@ -86,7 +86,7 @@ trace = "false"
 | `~/.splice/state/heads/<head>/capabilities/agent-calls/<sha256-session>.json` | With a capability the model calls: one file per session, named by the SHA-256 of its id. Each call the model made of a capability's tool, the messages the provider produced around it (with the worker's result, which can quote the session), and the tools it was offered, keyed by the SHA-256 of Claude Code's copy of the answer | Only you (0600) | Kept across restarts, so a restarted daemon puts every call back where the model made it. Written before the response that made the call ends. Nothing removes it yet: delete the folder to forget them | `AgentRecords.kt` |
 | `<state>/mods/mods.json` | Installed TypeScript mods' declarations, source and linked paths, Bun path and enabled switch. No mod code runs to list them | Only you (0600) | Rewritten at install, enable, disable and remove | `InstalledMods.kt` |
 | `<state>/mods/installed/<name>/`, `<name>.sha256.json` and temporary `.install-*` siblings | Files copied from the mod folder or tarball, including vendored dependencies; a record of file paths and SHA-256 hashes, source and time. Linked mods are not copied or hashed | Only you (0700 directories, 0600 hash record) | Removed on uninstall or replaced on reinstall. Temporary copies are cleared after the operation; an interrupted install may leave its staging directory | `ModFiles.kt`, `ModHashes.kt`, `ModStage.kt` |
-| `<state>/mods/host/host.ts` | The TypeScript host shipped in the Splice jar, shared by the Bun processes | Only you (0600) | Replaced at the first runnable mod's start in each daemon | `ModHostScript.kt` |
+| `<state>/mods/host/host.ts` and `<state>/mods/installed/tsconfig.json` | The TypeScript host shipped in the Splice jar, shared by the Bun processes, and an empty `{}` TypeScript config that stops Bun looking for import aliases in folders above the installed mods | Only you (0600) | Both replaced at the first runnable mod's start in each daemon | `ModHostScript.kt` |
 | `<state>/mods/run/<name>.json` | The Bun process's PID and birth time, to identify it after an unclean shutdown | Only you (0600) | Cleared after the process exits or the next daemon reaps it | `ModRunRecords.kt` |
 | `<state>/mods/data/<name>/store.sqlite` and SQLite's temporary journal | The mod's own JSON key/value data, not a copy of Splice state | Only you (owner-only directory and file) | Kept across stops and removal; 64 KiB per value and 16 MiB per store | `host.ts` |
 | `<logs>/mods/<name>.log` and `<name>.log.1` | The mod's log messages and stderr, load notices, handler and exit errors, and drop summaries | Only you (0600) | 200 lines and 256 KiB per second; rotates at 8 MiB with one older copy | `ModLog.kt` |
@@ -309,7 +309,7 @@ told and what it can do. This section covers what a mod leaves on your disk, wha
 | `<state>/mods/installed/<name>.sha256.json` | Beside the copy, never inside it: the SHA-256 of every file, the file count, the source and the install time. Splice checks the copy against it each time the mod starts | Only you (0600) | Removed with the copy; rewritten by `splice mod enable <name> --accept` |
 | `<state>/mods/data/<name>/store.sqlite` | The mod's `$.store`: the JSON values the mod chose to keep, nothing of Splice's | Only you (0700 directory, 0600 file) | Kept across restarts and across `splice mod remove` |
 | `<logs>/mods/<name>.log` and `<name>.log.1` | The mod's log | Only you (0600) | Rotates at 8 MiB, keeping one older copy |
-| `<state>/mods/host/host.ts` | The small TypeScript host that ships inside Splice and loads every mod | Only you (0600) | Replaced when a daemon starts its first mod |
+| `<state>/mods/host/host.ts` and `<state>/mods/installed/tsconfig.json` | The small TypeScript host that ships inside Splice and loads every mod, and an empty `{}` config beside the installed copies so no file above them can redirect a mod's imports | Only you (0600) | Replaced when a daemon starts its first mod |
 | `<state>/mods/run/<name>.json` | The Bun process's PID and start time, so a later daemon can find and stop it after a crash | Only you (0600) | Cleared when the process exits |
 
 A linked mod (`splice mod install <folder> --link`) is not copied and not hashed. Splice reads that folder each time
@@ -367,6 +367,12 @@ open, including `~/.config/splice/keys.toml`, your sign-ins under `~/.config/spl
 your state directory and your Claude Code transcripts; it can start programs and reach the network. Install a mod
 only when you would run its code yourself. Copied mods are hash-checked so a change to the installed files after
 install is caught at the next start; that guards against the copy changing, not against what the code does.
+
+Splice also refuses a mod's imports of files outside its own folder, so the files Splice hashed are the files that
+run: an absolute or `../` import, a link, a `tsconfig.json` alias or a `node_modules` folder above the mod fails the
+load, naming the file. Bun's own modules (`bun:`, `node:`) stay available. This keeps the code that loads honest; it is
+not a sandbox, and the mod's code can still read any file by other means (`fs`, `Bun.file`, a worker, a program it
+starts). A linked mod is held to its own folder the same way.
 
 ## Credentials and file modes
 

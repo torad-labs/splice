@@ -138,7 +138,8 @@ Events reach a handler frozen; calling `next(e)` runs the mod's next handler for
 ### What is not served
 
 Each of these is refused in words when the mod loads, and the mod's other handlers still run. The refusals appear
-in the install output, in `splice mod list` and in the mod's log, and they are passed to `mod.start` as `refused`.
+in the install output, in `splice mod list` and in the mod's log, and they are passed to `mod.start` as `refused`,
+declarations included.
 The five `$` members are listed for every mod, whether or not it uses them; an event or a declaration is listed
 only when the mod registers or declares it.
 
@@ -156,6 +157,14 @@ only when the mod registers or declares it.
 | `pages`, `commands`, `tools`, `views` in `mod.json` | `Mod <name>: pages: <page> is declared but not served yet.`, and likewise `commands: <name>`, `tools: <name>` and `views: <uri>` |
 
 No mod's tools are offered to a session yet, and no app draws a mod's pages, rows or views.
+
+### Imports
+
+A mod's modules may import only files inside the mod's own folder (its own `node_modules` included) and Bun's built-in
+modules (`bun:`, `node:`). An import that resolves anywhere else, by an absolute or `../` path, a link, a `tsconfig.json`
+alias, a `node_modules` folder above the mod or a `file:` URL, fails the load with
+`Mod <name>: <file> imports <specifier>, which is outside the mod's folder.` Splice hashes the installed copy, and this
+keeps the code that runs the code it hashed. It does not sandbox the mod.
 
 ### Limits
 

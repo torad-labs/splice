@@ -7,6 +7,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import splice.app.mods.events.ModEventText
+import splice.app.mods.events.ModSecretSources
 import splice.app.mods.events.ModTurns
 import splice.app.mods.sessions.ModLaunches
 import splice.app.mods.sessions.ModSessionLedger
@@ -22,7 +23,7 @@ import java.util.UUID
 
 internal class ModEventsTestRig(root: Path, private val env: Map<String, String> = System.getenv()) {
     val runner = RunnerTestRig(root, env)
-    val text = ModEventText(env)
+    val text = ModEventText(ModSecretSources(runner.paths.envReader, env.keys))
     val sessions = ModSessionTracker(
         runner.runner.events,
         ModSessionLedger(runner.paths.modsDir, runner.paths.stateDir, LogSink {}),

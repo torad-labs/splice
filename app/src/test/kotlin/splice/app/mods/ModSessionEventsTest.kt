@@ -46,6 +46,11 @@ class ModSessionEventsTest {
             val row = rig.rows("recorder").single()
             assertEquals("shared", row.getValue("id").jsonPrimitive.content)
             assertEquals("""{"worker":"two"}""", row["labels"].toString())
+
+            rig.complete("shared", two)
+            rig.complete("barrier", two)
+            val later = rig.through("recorder", "turn.complete", "barrier").drop(events.size)
+            assertEquals(listOf("turn.start", "turn.complete"), later.filter { it.session == "shared" }.map { it.name })
         } finally {
             rig.sessions.stop()
             rig.runner.runner.stop()

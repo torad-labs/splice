@@ -39,7 +39,7 @@ internal class HeadAdmission(
     private val driver: TurnDriver,
 ) {
     private val keyAccounts = KeyAccount(preparation.provider.auth, deps.quotaBundle)
-    private val observer = TurnObserverAdmission(deps.seams.reports.observers, preparation.provider.key)
+    private val observer = TurnObserverAdmission(deps.seams.reports.observers, preparation.provider.key, deps.log)
 
     private val refusals =
         preparation.provider.let { PreDriveRefusals(deps, admission, responses, driver, it.loginCommand, it.key) }

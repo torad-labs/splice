@@ -6,6 +6,5 @@
     "TICKET": "42"
   },
   "model": "upstream-model",
-  "round": 1,
-  "bytes": 762
+  "round": 1
 }

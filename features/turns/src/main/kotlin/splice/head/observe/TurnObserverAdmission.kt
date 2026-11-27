@@ -7,6 +7,7 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.ObservedTurn
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnObserverOffer
+import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.head.GatewayTurns
 import java.util.UUID
@@ -18,15 +19,18 @@ private const val OWNER_LENGTH = 36
 internal class TurnObserverAdmission(
     private val observers: TurnObservers,
     private val head: String,
+    log: LogSink,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
+    private val offers = observers.offerAudit ?: TurnObserverOffer(log)
+
     fun begin(call: ApplicationCall, perf: TurnPerf, meta: TurnMeta) {
         if (observers === NoTurnObservers) return
         val gateway = GatewayTurns.of(call)
         val owner = if (gateway?.listener?.servedTurn == null) launchOwner(call) else null
         val session = meta.scope.sessionId
         if (!observers.observingTurns) {
-            if (session != null && owner != null) TurnObserverOffer.isolated { observers.sessionSeen(session, owner) }
+            if (session != null && owner != null) offers.isolated { observers.sessionSeen(session, owner) }
             return
         }
         val facts = ObservedTurnFacts(
@@ -38,8 +42,8 @@ internal class TurnObserverAdmission(
             agent = call.request.headers[AGENT_HEADER]?.takeIf(String::isNotBlank),
             atEpochMs = clock(),
         )
-        perf.observed = TurnObserverOffer.isolated {
-            observers.begin(facts, ObservedCredentials(call.request.headers))?.let { ObservedTurn(it, clock) }
+        perf.observed = offers.isolated {
+            observers.begin(facts, ObservedCredentials(call.request.headers))?.let { ObservedTurn(it, clock, offers) }
         }
     }
 

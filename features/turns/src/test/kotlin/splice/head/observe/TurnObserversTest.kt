@@ -28,7 +28,9 @@ import splice.core.turn.ObservedToolCall
 import splice.core.turn.ObservedTurnEnd
 import splice.core.turn.ObservedUsage
 import splice.core.turn.TurnObservation
+import splice.core.turn.TurnObserverOffer
 import splice.core.turn.WatchdogBudget
+import splice.core.util.LogSink
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.GatewayTurn
@@ -84,7 +86,6 @@ class TurnObserversTest(@param:TempDir private val root: Path) {
             assertEquals(1, request.round)
             assertEquals(MODEL, request.model)
             assertEquals(posted.first(), posted.last(), "observing does not alter the upstream request")
-            assertEquals(posted.last().encodeToByteArray().size.toLong(), request.bytes)
             val response = events[2] as ObservedResponse
             assertEquals(200, response.status)
             assertEquals(1L, response.attempt)
@@ -178,20 +179,27 @@ class TurnObserversTest(@param:TempDir private val root: Path) {
 
     @Test
     fun `observer errors and cancellation cannot interrupt the client or later events`() = runTest {
+        val failures = CopyOnWriteArrayList<String>()
+        val audit = TurnObserverOffer(LogSink { failures.add(it) })
         val observer = Recorder(failOnEdges = true)
         val brokenStart = object : TurnObservers {
+            override val offerAudit = audit
             override fun begin(facts: ObservedTurnFacts): TurnObservation = throw AssertionError("observer failed")
+        }
+        val brokenEdges = object : TurnObservers by observer {
+            override val offerAudit = audit
         }
         withUpstream { upstream ->
             val plain = turn(upstream, "native", NoTurnObservers)
             val broken = turn(upstream, "native", brokenStart)
-            val throwing = turn(upstream, "native", observer)
+            val throwing = turn(upstream, "native", brokenEdges)
             assertEquals(200, plain.first)
             for (watched in listOf(broken, throwing)) {
                 assertEquals(plain.first, watched.first)
                 assertEquals(normalized(plain.second), normalized(watched.second))
             }
             assertEquals(OutcomeTag.OK.wire, (observer.finished.await().last() as ObservedTurnEnd).outcome)
+            assertEquals(listOf("[mods] turn observation failed; further failures omitted\n"), failures)
         }
     }
 

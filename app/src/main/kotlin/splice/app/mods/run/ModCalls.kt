@@ -19,31 +19,41 @@ internal interface ModSessions {
 internal class ModCallRows(
     private val sessions: SessionSource,
     private val launches: ModLaunches,
-    private val text: ModEventText = ModEventText(emptyMap()),
+    private val text: ModEventText = ModEventText(),
     private val tracked: ModSessionTracker? = null,
 ) : ModSessions {
     override fun list(mod: String): JsonArray {
         val listing = sessions.list()
         if (listing.error != null) throw java.io.IOException("could not read the session registry")
+        val scrubber = text.snapshot()
         val active = tracked?.active().orEmpty()
         val registered = listing.sessions.distinctBy(SessionRecord::sessionId)
         val registeredIds = registered.mapNotNull(SessionRecord::sessionId).toHashSet()
         val headless = active.mapNotNull { (id, row) ->
-            if (id in registeredIds || row.off?.suppresses(mod) == true) null else row(id, id, "working", row.labels)
+            if (id in registeredIds || row.off?.suppresses(mod) == true) null else headless(id, row, scrubber)
         }
-        return JsonArray(registered.mapNotNull { row(it, mod, active) } + headless)
+        return JsonArray(registered.mapNotNull { row(it, mod, active, scrubber) } + headless)
     }
 
-    private fun row(record: SessionRecord, mod: String, active: Map<String, ModLiveSession>): JsonObject? {
-        val id = record.sessionId?.takeIf { ':' !in it && text.safe(it) } ?: return null
+    private fun headless(id: String, session: ModLiveSession, scrubber: ModEventText): JsonObject? =
+        id.takeIf { scrubber.safe(it) }?.let { row(id, id, "working", scrubber.labels(session.labels)) }
+
+    private fun row(
+        record: SessionRecord,
+        mod: String,
+        active: Map<String, ModLiveSession>,
+        scrubber: ModEventText,
+    ): JsonObject? {
+        val id = record.sessionId?.takeIf { ':' !in it && scrubber.safe(it) } ?: return null
         val live = active[id]
         val settings = if (live == null) settings(record, id) else null
         if ((live?.off ?: settings?.modsOff)?.suppresses(mod) == true) return null
-        return row(id, title(record, id), status(record), live?.labels ?: settings?.labels?.let { text.labels(it) })
+        val labels = live?.labels?.let(scrubber::labels) ?: settings?.labels?.let { scrubber.labels(it) }
+        return row(id, title(record, id, scrubber), status(record), labels)
     }
 
-    private fun title(record: SessionRecord, id: String): String =
-        record.name?.takeIf { it.isNotBlank() && text.safe(it) } ?: id
+    private fun title(record: SessionRecord, id: String, scrubber: ModEventText): String =
+        record.name?.takeIf { it.isNotBlank() && scrubber.safe(it) } ?: id
 
     private fun settings(record: SessionRecord, id: String): splice.launch.LaunchModSettings? {
         val pid = record.process.pid.takeUnless { record.availability == SessionAvailability.GONE }

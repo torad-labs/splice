@@ -415,7 +415,6 @@ export interface RequestSend extends TurnEvent {
   /** The upstream model. */
   readonly model: string;
   readonly round: number;
-  readonly bytes: number;
 }
 
 /** One frame sent to the client, with no frame data. */

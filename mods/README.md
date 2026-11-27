@@ -344,7 +344,7 @@ the types of `e`, `next(e)` and the handler's answer, including in `.catch`.
 | `launch.prepare` | | Per process, before it starts: `session` when known, `cwd`, `labels`, `env`, `args`, `mcp`. To change the launch, pass a changed `e` to `next`. |
 | `sessions.list` | | Splice is assembling normalized rows: `surface`, `allRows`. Wrap `await next(e)` to add rows or change them; `allRows` says whether the reader asked for mod rows. The legacy HTTP response does not use this chain's output. |
 | `turn.start` | | A turn began: `head`, requested `model`, `compact`, and `agent` (null when absent). |
-| `request.send` | | One logical request round: upstream `model`, `round`, request `bytes`. |
+| `request.send` | | One logical request round: upstream `model` and `round`. |
 | `stream.event` | | One client SSE frame: `seq`, `type`, `bytes`. |
 | `tool.call` | `{ server?, tool? }` | A model opened a tool block: `caller: "model"`, tool call `id`, `server` (null for native tools), `tool`. It does not say that the tool ran. |
 | `response.receive` | | One HTTP response: requested `model`, `status`, transport `attempt`. |

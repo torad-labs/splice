@@ -292,6 +292,82 @@ above and in [SECURITY.md](../../.github/SECURITY.md). A program splice starts w
 can run rig's installer.
 
 
+## Mods
+
+A mod is a folder of TypeScript you install with `splice mod install`. Splice runs each enabled mod in its own Bun
+process and tells it about sessions and turns. See [Writing a Splice mod](../../mods/README.md) for what a mod is
+told and what it can do. This section covers what a mod leaves on your disk, what it is shown, and what it can reach.
+`<state>` is the state directory (`~/.splice/state` on a new install) and `<logs>` the log directory
+(`~/.splice/logs`).
+
+### Where a mod's files live
+
+| Place | What it holds | Who can read it | How long |
+| --- | --- | --- | --- |
+| `<state>/mods/mods.json` | The installed mods' declarations from `mod.json`, where each was installed from, the Bun path recorded at install, and whether each is enabled. A linked mod is recorded by its folder's path only | Only you (0600) | Rewritten at install, enable, disable and remove |
+| `<state>/mods/installed/<name>/` | The copy of an installed mod's files, including any dependencies it vendors | Only you (0700) | Removed by `splice mod remove`, replaced by a reinstall |
+| `<state>/mods/installed/<name>.sha256.json` | Beside the copy, never inside it: the SHA-256 of every file, the file count, the source and the install time. Splice checks the copy against it each time the mod starts | Only you (0600) | Removed with the copy; rewritten by `splice mod enable <name> --accept` |
+| `<state>/mods/data/<name>/store.sqlite` | The mod's `$.store`: the JSON values the mod chose to keep, nothing of Splice's | Only you (0700 directory, 0600 file) | Kept across restarts and across `splice mod remove` |
+| `<logs>/mods/<name>.log` and `<name>.log.1` | The mod's log | Only you (0600) | Rotates at 8 MiB, keeping one older copy |
+| `<state>/mods/host/host.ts` | The small TypeScript host that ships inside Splice and loads every mod | Only you (0600) | Replaced when a daemon starts its first mod |
+| `<state>/mods/run/<name>.json` | The Bun process's PID and start time, so a later daemon can find and stop it after a crash | Only you (0600) | Cleared when the process exits |
+
+A linked mod (`splice mod install <folder> --link`) is not copied and not hashed. Splice reads that folder each time
+the mod starts, so whatever is in it then is what runs.
+
+### The store
+
+`$.store` is a small SQLite key/value file per mod at `<state>/mods/data/<name>/store.sqlite`. Each value is JSON of
+at most 64 KiB, and the whole store is capped at 16 MiB. A write past either limit fails inside the mod with
+"The mod store accepts JSON values of at most 64 KiB." or "The mod store is full (16 MiB).".
+
+The store outlives the mod's process, a daemon restart and `splice mod remove`, so a mod you reinstall finds its data
+again. To delete it, remove the mod first so nothing has the file open, then move its folder to the trash:
+
+```bash
+splice mod remove <name>
+trash ~/.splice/state/mods/data/<name>
+```
+
+### The log
+
+Each mod writes to `<logs>/mods/<name>.log`. It holds:
+
+- the mod's own `$.log(...)` lines, and its stderr (`console.log` and `console.error` both land there);
+- lifecycle notices: what loaded, what the mod registered that is not served, a restart and why, a failure and why;
+- handler failures: a handler that threw or ran past its 5 s limit, named by event;
+- drop summaries, such as `Dropped 12 events or pipe lines and 0 log lines.`
+
+A mod can write at most 200 lines and 256 KiB per second; what goes past is counted as dropped log lines. When the
+file reaches 8 MiB it becomes `<name>.log.1`, replacing the older copy, so a mod's log never takes more than about
+16 MiB. Removing a mod leaves its log; delete both files to forget it.
+
+### What a mod receives
+
+A mod is told metadata only. Its events carry ids, the working directory, model names, counts, sizes, timings,
+token totals, outcomes, tool names and the session's labels. They never carry a request or response body, stream
+text, a tool's arguments or result, or a credential. Labels you set at launch with `SPLICE_LABEL_<KEY>` are
+included on every event of that session, and in the rows `$.sessions.list()` returns.
+
+Splice keeps its own keys out of everything it hands a mod:
+
+- **Events and session rows.** A working directory, title or other text that contains a credential, or anything
+  shaped like one (an API key, a bearer token, a JSON web token, a 64-character hex string), is replaced whole with
+  `[redacted]`. A label with such a key or value is left out.
+- **Environment.** The Bun process starts with an empty environment plus `PATH`, `HOME`, `LANG`, `TMPDIR` and three
+  variables naming the mod and its folders. None of the daemon's keys or provider variables are passed on.
+- **The `$` handle.** It holds the mod's store, a clock, its log and a session list. It has no key, no address of
+  a provider and no route into a turn.
+
+### A mod is not sandboxed
+
+A mod is an ordinary process running as you. It is **not sandboxed**. Splice keeping its keys out of a mod's
+events, environment and handle does not stop the mod from reading them another way: it can open any file you can
+open, including `~/.config/splice/keys.toml`, your sign-ins under `~/.config/splice/auth/`, the management key in
+your state directory and your Claude Code transcripts; it can start programs and reach the network. Install a mod
+only when you would run its code yourself. Copied mods are hash-checked so a change to the installed files after
+install is caught at the next start; that guards against the copy changing, not against what the code does.
+
 ## Credentials and file modes
 
 Every credential Splice writes is created owner-only (0600) and written atomically: the bytes go to an owner-only temporary file beside the target, which is then renamed over it, so a token file is never readable by other accounts, even for a moment, and a concurrent reader never sees half a file. The state and log directories are made owner-only (0700) each time the daemon starts.

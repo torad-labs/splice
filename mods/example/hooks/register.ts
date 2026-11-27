@@ -1,4 +1,6 @@
-// An example mod written against the contract. It does not run: Splice serves no mod events yet.
+// An example mod written against the contract. Installed today, its served event handlers (session.start) run as
+// observers. Its tool.call handlers load but never fire, because no session is offered the mod's own tools yet, and
+// its sessions.list and ui.render handlers are refused at load (mods/README.md, "What runs today").
 // It shows the three shapes together: a lifecycle hook (session.start), rows with actions
 // (sessions.list and the resolve tool behind its buttons) and a page (ui.render).
 import type { Json, ModSessionRow, Register, UiRenderAnswer } from "../../contract/index.ts";

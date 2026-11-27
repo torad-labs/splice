@@ -33,6 +33,12 @@ internal class ModReceiver(
     @Volatile var lastError: String? = null
         private set
 
+    @Volatile var hostExit: Int? = null
+        private set
+
+    @Volatile var hostPid: Long? = null
+        private set
+
     fun stdout(text: String?) {
         val line = text?.let(ModLine::decode)
         if (line == null) drops.transport() else receive(line)
@@ -51,6 +57,7 @@ internal class ModReceiver(
     }
 
     private fun receiveDrop(line: JsonObject) = when (JsonScalars.str(line, "type")) {
+        "host-exit" -> { hostExit = JsonScalars.str(line, "code")?.toIntOrNull() }
         "dropped" -> drops.transport(count(line))
         "log-dropped" -> drops.log(count(line))
         else -> drops.transport()
@@ -66,6 +73,7 @@ internal class ModReceiver(
     }
 
     private fun ready(line: JsonObject) {
+        hostPid = JsonScalars.str(line, "pid")?.toLongOrNull()
         val ready = ModLoad.Ready(
             events = strings(line, "events").toSet(),
             notice = field(line, "notice"),

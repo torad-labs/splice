@@ -49,7 +49,12 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
 
     private var oldPid = 0L
 
-    suspend fun installRecorder(slowStop: Boolean = false, startRunner: Boolean = true, linked: Boolean = false) {
+    suspend fun installRecorder(
+        slowStop: Boolean = false,
+        startRunner: Boolean = true,
+        linked: Boolean = false,
+        withHelper: Boolean = false,
+    ) {
         if (startRunner) old.runner.runner.start()
         oldControl.start()
         val source = old.runner.fixture(
@@ -65,6 +70,7 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
                   process.kill(previous, 0);
                   oldAlive = true;
                 } catch {}
+                ${helperAtStart(withHelper)}
                 writeFileSync(path, String(process.pid));
                 $.log("started=" + JSON.stringify({pid: process.pid, oldAlive}));
               });
@@ -94,6 +100,19 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
         old.runner.install(client, source, linked = linked, base = url(oldControl.listeningPort))
         if (startRunner) oldPid = starts(1).single().pid
     }
+
+    private fun helperAtStart(enabled: Boolean): String = """
+        const file = Bun.env.SPLICE_MOD_DATA + "/handover-helper";
+        if (existsSync(file)) {
+          try {
+            process.kill(Number(readFileSync(file, "utf8")), 0);
+            oldAlive = true;
+          } catch {}
+        } else if ($enabled) {
+          const helper = Bun.spawn(["/bin/sleep", "60"], { stderr: "inherit" });
+          writeFileSync(file, String(helper.pid));
+        }
+    """.trimIndent()
 
     fun holdRequest() {
         Files.writeString(data("hold"), "")
@@ -127,6 +146,9 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
     }
 
     fun recorderProcess(): ProcessHandle = ProcessHandle.of(oldPid).orElseThrow()
+
+    fun helperProcess(): ProcessHandle =
+        ProcessHandle.of(Files.readString(data("handover-helper")).toLong()).orElseThrow()
 
     suspend fun retire(leave: Boolean = true) {
         val port = TestPorts.reserve()

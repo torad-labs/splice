@@ -205,6 +205,25 @@ class ModHandoverTest {
     }
 
     @Test
+    fun `the successor starts after a helper of a killed Bun host is gone`() = runBlocking {
+        ModHandoverTestRig(root).use { rig ->
+            rig.installRecorder(withHelper = true)
+            val old = rig.recorderProcess()
+            val helper = rig.helperProcess()
+            try {
+                assertTrue(helper.isAlive)
+                assertTrue(old.destroyForcibly())
+                rig.retire()
+                assertFalse(rig.successorRecorderStart().oldProcessAlive)
+                assertFalse(helper.isAlive)
+                rig.finish()
+            } finally {
+                if (helper.isAlive) helper.destroyForcibly()
+            }
+        }
+    }
+
+    @Test
     fun `the successor recorder starts only after the old process is gone`() = runBlocking {
         ModHandoverTestRig(root).use { rig ->
             rig.installRecorder(slowStop = true)

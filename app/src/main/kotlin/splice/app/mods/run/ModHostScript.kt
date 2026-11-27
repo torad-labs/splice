@@ -18,15 +18,19 @@ internal class ModHostScript(modsDir: Path) {
     @Synchronized
     fun install(): Path {
         if (!ready) {
-            val resource = javaClass.classLoader.getResourceAsStream("splice/mods/host.ts")
-                ?: throw IOException("the mod host is missing from this Splice build")
-            val bytes = resource.use { it.readBytes() }
             ModPrivateDir.create(file.parent)
             ModPrivateDir.create(installed)
-            SecureFile.writeAtomic0600(file, bytes)
+            extract(file)
+            extract(file.resolveSibling("guard.pl"))
             SecureFile.writeAtomic0600(installed.resolve("tsconfig.json"), "{}\n")
             ready = true
         }
         return file
+    }
+
+    private fun extract(target: Path) {
+        val resource = javaClass.classLoader.getResourceAsStream("splice/mods/${target.fileName}")
+            ?: throw IOException("the packaged mod file ${target.fileName} is missing")
+        SecureFile.writeAtomic0600(target, resource.use { it.readBytes() })
     }
 }

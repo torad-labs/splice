@@ -4,98 +4,65 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import splice.app.mods.install.ModPrivateDir
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
-import splice.core.util.SecureFile
-import java.nio.file.Files
+import java.io.IOException
 import java.nio.file.Path
-import java.time.Instant
 
-// why: give the retiring owner its own EOF, TERM, and KILL window before taking over its record.
-private const val OLD_OWNER_GRACE_MS = 6000L
+// why: the retiring daemon gets its own stop hook and cleanup window before the successor needs to act.
+private const val MOD_PREVIOUS_OWNER_GRACE_MS = 6000L
+private const val MOD_START_TURN_MS = 5000L // why: a launch stuck holding its turn must not block its successor
 
-@Serializable
-private data class ModRunRecord(val pid: Long, val birth: String, val grouped: Boolean = false)
+internal class ModRunRecords(
+    modsDir: Path,
+    private val log: LogSink,
+    private val ownership: ModGroupOwnership = ModGroupOwnership(ModProcessTable(log = log)),
+) {
+    private val files = ModRunFiles(modsDir, log)
+    private val locks = ModStartLocks(files.directory)
 
-internal data class ModRunOwner(val handle: ProcessHandle, val grouped: Boolean)
+    val supported: Boolean get() = ownership.supported
 
-internal class ModRunRecords(modsDir: Path, private val log: LogSink) {
-    private val directory = modsDir.resolve("run")
+    fun tree(owner: ModRunOwner): ModProcessTree = ModProcessTree(owner, ownership)
 
-    fun save(name: String, handle: ProcessHandle, grouped: Boolean) {
-        val birth = handle.info().startInstant().orElse(null)
-            ?: if (handle.isAlive) error("could not identify Bun's process birth") else return
-        ModPrivateDir.create(directory)
-        val record = ModRunRecord(handle.pid(), birth.toString(), grouped)
-        SecureFile.writeAtomic0600(file(name), Json.encodeToString(record))
-    }
+    fun turn(name: String): ModStartTurn =
+        locks.acquire(name, MOD_START_TURN_MS) ?: throw IOException("another start of mod $name is in progress")
 
     fun previous(name: String): ModRunOwner? {
-        val path = file(name)
-        return if (Files.exists(path)) liveProcess(path) else null
+        val owner = files.read(name) ?: return null
+        return when (ownership.claim(owner)) {
+            ModGroupClaim.Gone, ModGroupClaim.Reused -> null
+            ModGroupClaim.Unreadable -> throw IOException("the previous mod group cannot be verified")
+            ModGroupClaim.Held, ModGroupClaim.Draining -> owner
+        }
     }
 
     suspend fun awaitPrevious(owner: ModRunOwner) {
-        val handle = owner.handle
-        if (!handle.isAlive) return
-        val exited = withTimeoutOrNull(OLD_OWNER_GRACE_MS) { handle.onExit().await() }
-        if (exited == null || owner.grouped) ModProcessTree(handle, grouped = owner.grouped).terminate()
+        val leader = ModProcessIdentity.open(owner.leader)
+        if (leader != null) withTimeoutOrNull(MOD_PREVIOUS_OWNER_GRACE_MS) { leader.onExit().await() }
+        if (!tree(owner).terminate()) throw IOException("the previous mod group has not stopped")
     }
 
     fun requireGone(name: String) {
-        val path = file(name)
-        if (Files.exists(path) && liveProcess(path)?.handle?.isAlive == true) {
-            throw java.io.IOException("the previous Bun process is still alive")
-        }
+        if (previous(name) != null) throw IOException("the previous mod group has not stopped")
     }
+
+    fun begin(name: String, leader: ModIdentity): ModRunOwner =
+        ModRunOwner(leader, grouped = true).also { files.write(name, it) }
 
     suspend fun reap(except: Set<String>): Unit = coroutineScope {
-        val files = Cancellables.runCatchingBestEffort {
-            if (!Files.isDirectory(directory)) {
-                emptyList()
-            } else {
-                Files.newDirectoryStream(directory, "*.json").use { it.toList() }
-            }
-        }.getOrElse {
-            log("[mods] cannot read Bun process records: ${SafeFailureText.render(it)}\n")
-            return@coroutineScope
-        }
-        for (path in files) {
-            if (path.fileName.toString().removeSuffix(".json") !in except) launch { reap(path) }
+        for (name in files.names()) {
+            if (name !in except) launch { reap(name) }
         }
     }
 
-    private suspend fun reap(path: Path) {
-        val owner = Cancellables.runCatchingBestEffort { liveProcess(path) }.getOrElse {
-            log("[mods] cannot read ${path.fileName}: ${SafeFailureText.render(it)}\n")
-            null
-        }
+    private suspend fun reap(name: String) {
         Cancellables.runCatchingBestEffort {
-            if (owner != null) ModProcessTree(owner.handle, grouped = owner.grouped).terminate()
-        }.onFailure {
-            log("[mods] cannot stop Bun from ${path.fileName}: ${SafeFailureText.render(it)}\n")
-        }
-        if (owner?.handle?.isAlive != true) clean(path)
-    }
-
-    private fun liveProcess(path: Path): ModRunOwner? {
-        val record = Json.decodeFromString<ModRunRecord>(Files.readString(path))
-        if (record.pid == ProcessHandle.current().pid()) return null
-        val birth = Instant.parse(record.birth)
-        return ProcessHandle.of(record.pid).orElse(null)
-            ?.takeIf { it.info().startInstant().orElse(null) == birth }
-            ?.let { ModRunOwner(it, record.grouped) }
-    }
-
-    private fun file(name: String): Path = directory.resolve("$name.json")
-
-    private fun clean(path: Path) {
-        Cancellables.runCatchingCancellable { Files.deleteIfExists(path) }.onFailure {
-            log("[mods] cannot clear ${path.fileName}: ${SafeFailureText.render(it)}\n")
-        }
+            turn(name).use {
+                val owner = previous(name)
+                if (owner == null || tree(owner).terminate()) files.clear(name)
+            }
+        }.onFailure { log("[mods] cannot reap $name: ${SafeFailureText.render(it)}\n") }
     }
 }

@@ -336,7 +336,8 @@ class Host {
         .map(member => this.#notServed(member).message)];
       const declared = this.#declarations(manifest);
       this.#pipe.send({
-        type: "ready", events: hooks.events, notice, refused, declared_not_served: declared, version: Bun.version,
+        type: "ready", events: hooks.events, notice, refused, declared_not_served: declared,
+        version: Bun.version, pid: process.pid,
       });
       const lifecycle = { mod: this.name, version: manifest.version } satisfies ModLifecycle;
       const start = { ...lifecycle, served: hooks.events, refused: [...refused, ...declared] } satisfies ModStart;

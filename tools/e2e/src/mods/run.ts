@@ -340,7 +340,8 @@ export class ModRun {
       if (!match || match[4]!.startsWith("Z") || !match[5]!.includes(this.home.root + "/")) return [];
       return [{
         pid: Number(match[1]), parent: Number(match[2]), group: Number(match[3]),
-        line: line.trim(), mod: match[5]!.includes(this.home.state + "/mods/host/"),
+        line: line.trim(), mod: match[5]!.includes(this.home.state + "/mods/host/host.ts") &&
+          !match[5]!.startsWith("/usr/bin/perl "),
       }];
     });
   }

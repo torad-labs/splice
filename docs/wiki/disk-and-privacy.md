@@ -297,8 +297,8 @@ can run rig's installer.
 | `<state>/mods/installed/<name>.sha256.json` | Beside the copy, never inside it: the SHA-256 of every file, the file count, the source and the install time. Splice checks the copy against it each time the mod starts | Only you (0600) | Removed with the copy; rewritten by `splice mod enable <name> --accept` | `ModHashes.kt` |
 | `<state>/mods/data/<name>/store.sqlite` | The mod's `$.store`: the JSON values the mod chose to keep, nothing of Splice's | Only you (0700 directory, 0600 file) | Kept across restarts and across `splice mod remove` | `host.ts` |
 | `<logs>/mods/<name>.log` and `<name>.log.1` | The mod's log | Only you (0600) | Rotates at 8 MiB, keeping one older copy | `ModLog.kt` |
-| `<state>/mods/host/host.ts` and `<state>/mods/installed/tsconfig.json` | The small TypeScript host that ships inside Splice and loads every mod, and an empty `{}` config beside the installed copies so no file above them can redirect a mod's imports | Only you (0600) | Replaced when a daemon starts its first mod | `ModHostScript.kt` |
-| `<state>/mods/run/<name>.json` | The Bun process's PID and start time, so a later daemon can find and stop it after a crash | Only you (0600) | Left in place when the process exits. The next daemon start deletes it for each mod that is not enabled, and for a mod that is enabled it is replaced when that mod's process starts | `ModRunRecords.kt` |
+| `<state>/mods/host/host.ts`, `<state>/mods/host/guard.pl`, and `<state>/mods/installed/tsconfig.json` | The bundled host and its process guardian, and an empty `{}` config beside the installed copies so no file above them can redirect a mod's imports | Only you (0600) | Replaced when a daemon starts its first mod | `ModHostScript.kt` |
+| `<state>/mods/run/<name>.json` and an empty `<name>.lock` | The PID and start time of the process-group guardian, and the lock that gives one start of the mod its turn | Only you (0600) | The record is replaced on the next start, or cleared if the mod is disabled and its group is gone. The empty lock file is retained so simultaneous starts use the same lock | `ModRunFiles.kt`, `ModStartLock.kt` |
 
 ## Mods
 

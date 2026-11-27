@@ -156,7 +156,7 @@ internal class ModSupervisor(
     private fun newPipe() = ModPipe(output.drops, output.log, output.clock, hub.deliveryLoss)
 
     private fun launch(executable: Path): ModProcess? =
-        if (shutdown.isCompleted) null else setup.launch(mod, executable, output, intake)
+        if (shutdown.isCompleted) null else setup.launch(mod, executable, output, intake, shutdown)
 
     private fun executable(): Path? {
         val verdict = mod.verify()

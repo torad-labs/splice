@@ -39,17 +39,17 @@ internal class ModProcess(
     private val calls: ModCalls,
     private val output: ModOutput,
     val pipe: ModPipe,
-    io: CoroutineDispatcher,
+    private val io: CoroutineDispatcher,
+    private val tree: ModProcessTree,
 ) {
-    private val tree = ModProcessTree(process.toHandle(), grouped = true)
     private val receiver = ModReceiver(name, pipe, calls, output.log, output.drops)
     private val pipes = io.limitedParallelism(PIPE_LANES)
-    val pid: Long get() = process.pid()
+    val pid: Long get() = receiver.hostPid ?: process.pid()
     val lastError: String? get() = receiver.lastError
 
     fun exitReason(): String {
         val detail = receiver.lastStderr?.let { ", \"$it\"" }.orEmpty()
-        return "exit code ${process.exitValue()}$detail"
+        return "exit code ${receiver.hostExit ?: process.exitValue()}$detail"
     }
 
     suspend fun run(stop: CompletableDeferred<String>, observer: ModProcessObserver): ModExit {
@@ -108,10 +108,9 @@ internal class ModProcess(
     }
 
     private suspend fun close(reason: String, exited: Deferred<Process>) {
-        tree.capture()
         pipe.finish(reason)
         if (process.isAlive) withTimeoutOrNull(EOF_GRACE_MS) { exited.await() }
-        tree.terminate()
+        if (!tree.terminate()) output.log.write("A process of this mod could not be stopped and is left running.")
         pipe.close()
     }
 

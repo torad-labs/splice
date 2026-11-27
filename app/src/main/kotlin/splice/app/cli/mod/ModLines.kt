@@ -6,6 +6,7 @@ import splice.app.mods.MOD_RUNTIME_STATE_FIELD
 import splice.app.mods.handover.MOD_HANDOVER_DROPPED
 import splice.app.mods.install.BUN_NOT_FOUND
 import splice.core.util.JsonScalars
+import java.nio.file.Path
 
 private const val SESSION_NOTICE = "No session.start is replayed; new sessions announce their start."
 
@@ -40,9 +41,17 @@ internal class ModLines {
         if (dropped > 0) append("\nEvents dropped during daemon handover: $dropped.")
     }
 
-    fun remove(row: JsonObject): String {
+    /** [kept] are the store folder and log files still on disk; a reinstall finds the store again. */
+    fun remove(row: JsonObject, kept: List<Path>): String = buildString {
         val after = if (linked(row)) "Its source folder was left alone." else "Its installed copy was removed."
-        return "Removed ${name(row)}. It will no longer receive events. $after"
+        append("Removed ${name(row)}. It will no longer receive events. $after")
+        if (kept.isNotEmpty()) {
+            appendLine()
+            appendLine("Kept on disk: its data store and its log. A reinstall finds the store again.")
+            append("To delete them, run: trash ")
+            // Single quotes, with an embedded quote written as '\'' so the printed command pastes safely.
+            append(kept.joinToString(" ") { "'" + it.toString().replace("'", "'\\''") + "'" })
+        }
     }
 
     fun switch(row: JsonObject, enabled: Boolean, accept: Boolean): String = buildString {

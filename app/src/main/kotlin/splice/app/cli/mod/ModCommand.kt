@@ -9,8 +9,10 @@ import splice.app.cli.peer.PeerExit
 import splice.app.mods.MOD_CATALOG_PATH
 import splice.app.mods.ModNames
 import splice.app.mods.install.ModBun
+import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
+import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
 
@@ -18,7 +20,7 @@ internal const val MOD_USAGE =
     "install <folder|tarball> [--link] | list | remove <name> | enable <name> [--accept] | disable <name>"
 
 internal class ModCommand(
-    env: EnvReader = EnvReader(System::getenv),
+    private val env: EnvReader = EnvReader(System::getenv),
     out: TerminalOutput = TerminalOutput(::println),
     private val err: TerminalOutput = TerminalOutput(System.err::println),
 ) {
@@ -73,7 +75,17 @@ internal class ModCommand(
 
     private fun remove(args: List<String>): Int? {
         val name = args.singleOrNull()?.takeIf(ModNames::isModName) ?: return null
-        return ask.managed(ControlRequest("DELETE", "$MOD_CATALOG_PATH/$name"), line = lines::remove)
+        return ask.managed(ControlRequest("DELETE", "$MOD_CATALOG_PATH/$name")) { row ->
+            lines.remove(row, keptFiles(name))
+        }
+    }
+
+    /** The store folder and log files a removed mod leaves on disk, as the daemon's own paths name them. */
+    private fun keptFiles(name: String): List<Path> {
+        val paths = StatePaths(envReader = env)
+        val store = paths.modsDir.resolve("data").resolve(name)
+        val logs = listOf("$name.log", "$name.log.1").map { paths.logsDir.resolve("mods").resolve(it) }
+        return (listOf(store) + logs).filter(Files::exists)
     }
 
     private fun switch(args: List<String>, enabled: Boolean): Int? {

@@ -71,6 +71,7 @@ class HeadlessDoorLaunchDaemonTest {
         assertEquals(home.toString(), row.field("cwd"))
         assertEquals("""{"role":"worker"}""", row.getValue("labels").toString())
         assertEquals(row, sessionRows(mgmt, "?kind=all").single())
+        assertTrue(Files.notExists(home.resolve(".splice/state/mods/sessions")), "a session row needs no mod ledger")
     }
 
     @Test

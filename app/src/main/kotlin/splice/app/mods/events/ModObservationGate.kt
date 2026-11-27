@@ -6,17 +6,12 @@ import splice.head.observe.ObservedCredentials
 import splice.head.observe.ObservedTurnFacts
 import splice.head.observe.TurnObservers
 
-/** An empty roster stops at admission, before launch lookups, session validation, or credential scrubbing. */
+/** An empty roster skips mod projection and history; admission still joins owned launches for session rows. */
 internal class ModObservationGate(
     private val sessions: ModSessionTracker,
     private val turns: TurnObservers,
 ) : TurnObservers by turns {
-    override val observingSessions: Boolean get() = sessions.observing
-    override val observingTurns: Boolean get() = observingSessions && turns.observingTurns
-
-    override fun sessionSeen(sessionId: String, launchOwner: String?) {
-        if (observingSessions) turns.sessionSeen(sessionId, launchOwner)
-    }
+    override val observingTurns: Boolean get() = sessions.observing && turns.observingTurns
 
     override fun begin(facts: ObservedTurnFacts): TurnObservation? =
         if (observingSessions) turns.begin(facts) else null

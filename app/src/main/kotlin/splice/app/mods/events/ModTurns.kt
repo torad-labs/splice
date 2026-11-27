@@ -27,7 +27,7 @@ internal class ModTurns(
 
     override fun sessionSeen(sessionId: String, launchOwner: String?) {
         val launch = launches.forTurn(sessionId, launchOwner)
-        sessions.see(sessionId, launch?.owner?.let(launches::stored))
+        if (sessions.observing) sessions.see(sessionId, launch?.owner?.let(launches::stored))
     }
 
     override fun begin(facts: ObservedTurnFacts): TurnObservation? = project(facts, null)

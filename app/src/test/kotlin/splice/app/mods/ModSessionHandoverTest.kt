@@ -95,26 +95,34 @@ class ModSessionHandoverTest {
             daemon.start()
             daemon.install()
         }
-        val launches = Files.createDirectories(events.runner.paths.modsDir.resolve("launches"))
-        val pipe = launches.resolve("00000000-0000-0000-0000-000000000000.json")
-        check(ProcessBuilder("mkfifo", pipe.toString()).start().waitFor() == 0)
-        val entered = root.resolve("opened")
-        val writer = ProcessBuilder(
-            "sh",
-            "-c",
-            """exec 3>"$1"; touch "$2"; read -r line""",
-            "fixture",
-            pipe.toString(),
-            entered.toString(),
-        ).start()
-        try {
+        HeldModHistory(root, events).use { history ->
             SessionDaemon(root, events).use { daemon ->
                 daemon.start()
-                events.runner.eventually { true.takeIf { Files.exists(entered) } }
+                history.awaitRead()
                 withTimeout(3_000) { daemon.retire() }
             }
-        } finally {
-            writer.destroyForcibly().waitFor()
+        }
+    }
+
+    @Test
+    fun `a real turn admitted before Bun starts reaches the recorder after recovery`() = isolated {
+        val events = ModEventsTestRig(root)
+        SessionDaemon(root, events).use { daemon ->
+            daemon.start()
+            daemon.install()
+        }
+        HeldModHistory(root, events).use { history ->
+            SessionDaemon(root, events).use { daemon ->
+                daemon.start()
+                history.awaitRead()
+                val owner = daemon.launch(ProcessHandle.current().pid())
+                daemon.turn("early", owner)
+                history.release()
+                val received = events.through("recorder", "turn.complete", "early").filter { it.session == "early" }
+                assertEquals("session.start", received.first().name)
+                assertEquals(1, received.count { it.name == "turn.start" })
+                assertEquals(1, received.count { it.name == "turn.complete" })
+            }
         }
     }
 
@@ -141,6 +149,38 @@ class ModSessionHandoverTest {
 
     private fun isolated(test: suspend () -> Unit) {
         DesktopManagedPolicy.within(root.resolve("etc/managed-settings.json")) { runBlocking { test() } }
+    }
+}
+
+/** A real history read that cannot finish until the test closes the other end of the FIFO. */
+private class HeldModHistory(root: Path, private val events: ModEventsTestRig) : AutoCloseable {
+    private val entered = root.resolve("opened")
+    private val writer: Process
+
+    init {
+        val launches = Files.createDirectories(events.runner.paths.modsDir.resolve("launches"))
+        val pipe = launches.resolve("00000000-0000-0000-0000-000000000000.json")
+        check(ProcessBuilder("mkfifo", pipe.toString()).start().waitFor() == 0)
+        writer = ProcessBuilder(
+            "sh",
+            "-c",
+            """exec 3>"$1"; touch "$2"; read -r line""",
+            "fixture",
+            pipe.toString(),
+            entered.toString(),
+        ).start()
+    }
+
+    suspend fun awaitRead() {
+        events.runner.eventually { true.takeIf { Files.exists(entered) } }
+    }
+
+    fun release() {
+        writer.outputStream.close()
+    }
+
+    override fun close() {
+        writer.destroyForcibly().waitFor()
     }
 }
 

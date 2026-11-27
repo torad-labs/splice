@@ -107,7 +107,10 @@ internal class ModSessionTracker(
         val read = writers.readLock()
         if (read.tryLock()) {
             try {
-                if (admitting) seeFirst(sighting, launch, staged)
+                if (admitting) {
+                    seeFirst(sighting, launch, staged)
+                    staged?.resolve()
+                }
             } finally {
                 read.unlock()
             }

@@ -16,6 +16,8 @@ private const val MOD_LINE_BYTES = 256 * 1024 // why: bound memory for a broken 
 
 internal fun interface ModEventProjection {
     operator fun invoke(): ModEvent?
+
+    val unresolved: Boolean get() = false
 }
 
 internal fun interface ModEventAudience {
@@ -30,6 +32,8 @@ internal data class ModEvent(
     @Transient private val projection: ModEventProjection? = null,
     @Transient val audience: ModEventAudience? = null,
 ) {
+    val unresolved: Boolean get() = projection?.unresolved == true
+
     /** Only the pipe writer or handover sender projects a pending event. */
     fun sealed(): ModEvent? = if (projection == null) this else projection()
 

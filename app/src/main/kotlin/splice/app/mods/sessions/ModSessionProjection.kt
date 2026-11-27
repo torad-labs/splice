@@ -65,6 +65,13 @@ internal class ModEarlySession(val sighting: ModSessionSighting, private val lau
     ModEventAudience {
     @Volatile var projection: ModSessionProjection? = null
 
+    @Volatile private var recovered = false
+    override val unresolved: Boolean get() = !recovered
+
+    fun resolve() {
+        recovered = true
+    }
+
     override fun invoke(): ModEvent? = projection?.invoke()
 
     override fun options(): ModsOff? = sighting.owner?.let(launches::stored)?.launch?.settings?.modsOff

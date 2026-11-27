@@ -32,8 +32,8 @@ internal class ModAcceptedBatches {
     fun record(ordinals: Map<String, Long>, ages: Map<String, Long>) {
         val now = TimeSource.Monotonic.markNow()
         ordinals.forEach { (sender, ordinal) ->
-            val age = ages[sender] ?: 0L
-            if (age in 0 until MOD_HANDOVER_RECEIPT_MS) {
+            val age = ages.getValue(sender)
+            if (age < MOD_HANDOVER_RECEIPT_MS) {
                 record(sender, ModAcceptedBatch(ordinal, now - age.milliseconds))
             }
         }

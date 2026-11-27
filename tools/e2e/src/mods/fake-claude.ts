@@ -23,7 +23,8 @@ async function sessionStart(args: string[], session: string, source: string, tra
   for (const value of values) {
     const overlay = JSON.parse(existsSync(value) ? readFileSync(value, "utf8") : value) as Overlay;
     for (const group of overlay.hooks?.SessionStart ?? []) {
-      if (group.matcher && !new RegExp(`^(${group.matcher})$`).test(source)) continue;
+      // Splice emits literal SessionStart sources (startup and resume) for this fixture.
+      if (group.matcher && group.matcher !== source) continue;
       for (const hook of group.hooks) {
         assert.equal(hook.type, "command");
         const child = Bun.spawn(["/bin/sh", "-c", hook.command], {

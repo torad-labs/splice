@@ -109,7 +109,7 @@ internal class ModHandover(scope: CoroutineScope, port: Int, private val key: Mg
             val events = nextBatch() ?: break
             slots.addAndGet(-events.size)
             // An event the host hides on purpose was handled, not missed. It is sealed here, off the turn's thread.
-            val sealed = events.mapNotNull { delivery -> delivery.event.sealed()?.let { delivery.copy(event = it) } }
+            val sealed = events.mapNotNull(ModDelivery::sealed)
             outstanding.addAndGet(sealed.size.toLong() - events.size)
             if (sealed.isNotEmpty()) {
                 deliver(client, key, ModHandoverBatch(sealed))

@@ -7,6 +7,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.launch.ModsOff
 import java.io.BufferedInputStream
 import java.io.InputStream
 import java.io.OutputStream
@@ -17,12 +18,17 @@ internal fun interface ModEventProjection {
     operator fun invoke(): ModEvent?
 }
 
+internal fun interface ModEventAudience {
+    fun options(): ModsOff?
+}
+
 @Serializable
 internal data class ModEvent(
     val name: String,
     val sessionId: String?,
     val payload: JsonObject,
     @Transient private val projection: ModEventProjection? = null,
+    @Transient val audience: ModEventAudience? = null,
 ) {
     /** Only the pipe writer or handover sender projects a pending event. */
     fun sealed(): ModEvent? = if (projection == null) this else projection()

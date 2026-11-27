@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.app.mods.run.ModEvent
+import splice.app.mods.run.ModEventAudience
 import splice.app.mods.run.ModEventHub
 import splice.core.turn.ObservedRequest
 import splice.core.turn.ObservedResponse
@@ -16,10 +17,12 @@ import splice.launch.ModsOff
 
 private const val MOD_EVENT_MODEL_FIELD = "model"
 
+internal data class ModTurnSettings(val off: ModsOff?, val labels: Map<String, String>)
+
 internal data class TurnFields(
     val turn: String,
     val session: String?,
-    val labels: Map<String, String>,
+    val settings: Lazy<ModTurnSettings>,
     val facts: ObservedTurnFacts,
 )
 
@@ -36,7 +39,8 @@ internal class ModTurn(
     private val scrubber by lazy { text.snapshot() }
     private val asked by lazy { clean(facts.model) }
     private val session by lazy { fields.session?.takeIf(scrubber::safe) }
-    private val labels by lazy { scrubber.labels(fields.labels) }
+    private val labels by lazy { scrubber.labels(fields.settings.value.labels) }
+    private val audience = ModEventAudience { fields.settings.value.off }
 
     override val wantsFrames: Boolean get() = hub.listening("stream.event", off)
     override val wantsRequests: Boolean get() = hub.listening("request.send", off)
@@ -95,7 +99,7 @@ internal class ModTurn(
 
     private inline fun emit(name: String, at: Long, crossinline payload: JsonObjectBuilder.() -> Unit) {
         if (!hub.listening(name, off)) return
-        hub.offer(name, off) {
+        hub.offer(name, off, audience) {
             ModEvent(
                 name,
                 session,

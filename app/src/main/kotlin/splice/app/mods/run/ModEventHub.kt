@@ -36,8 +36,13 @@ internal class ModEventHub {
         }
     }
 
-    fun offer(name: String, modsOff: ModsOff?, projection: ModEventProjection) {
-        offer(ModEvent(name, null, emptyPayload, projection), modsOff)
+    fun offer(
+        name: String,
+        modsOff: ModsOff?,
+        audience: ModEventAudience? = null,
+        projection: ModEventProjection,
+    ) {
+        offer(ModEvent(name, null, emptyPayload, projection, audience), modsOff)
     }
 
     /** Use the settings of the event's own launch, not the latest launch seen for the session. */

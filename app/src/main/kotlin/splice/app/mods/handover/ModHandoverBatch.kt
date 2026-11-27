@@ -36,7 +36,18 @@ internal data class ModDelivery(
     val offNames: Set<String> = emptySet(),
     val only: String? = null,
     @Transient val received: Boolean = false,
-)
+) {
+    fun sealed(): ModDelivery? {
+        val options = event.audience?.options()
+        if (options?.all == true || only?.let { options?.suppresses(it) } == true) return null
+        val sealed = event.sealed() ?: return null
+        return if (options == null && sealed === event) {
+            this
+        } else {
+            copy(event = sealed, offNames = offNames + options?.names.orEmpty())
+        }
+    }
+}
 
 internal object ModHandoverEvents {
     val names = setOf(

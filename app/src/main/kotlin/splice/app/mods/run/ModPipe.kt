@@ -103,7 +103,7 @@ internal class ModPipe(
     private fun writeEvent(stream: OutputStream): Boolean {
         val names = subscriptions?.takeIf { queue.writingSince == 0L } ?: return false
         val pending = queue.take(clock()) ?: return false
-        val event = pending.event.takeIf { it.name in names }?.sealed()
+        val event = pending.takeIf { it.event.name in names }?.sealed()?.event
         if (event == null) {
             queue.handled()
         } else if (!ModLine.write(stream, event.message())) {

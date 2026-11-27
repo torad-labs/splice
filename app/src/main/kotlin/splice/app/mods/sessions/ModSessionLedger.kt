@@ -72,6 +72,7 @@ internal class ModSessionLedger(
             val pair = key(file) ?: return@visit
             val launch = pair.owner?.let(launches::stored)
             val entry = launch?.let { read(file) }?.takeUnless(ModSessionEntry::ended)
+            currentCoroutineContext().ensureActive()
             if (entry == null && expired(file, cutoff)) {
                 Files.deleteIfExists(file)
             } else {

@@ -50,9 +50,22 @@ internal class ModTurns(
         // A session association may only narrow delivery; it cannot supply labels for an unproved launch.
         val off = (launch ?: bound)?.settings?.modsOff
         if (turnEvents.none { hub.listening(it, off) }) return null
-        val labels = launch?.settings?.labels.orEmpty()
+        val settings = turnSettings(facts, session, ModTurnSettings(off, launch?.settings?.labels.orEmpty()))
         val id = "$turnPrefix-${sequence.incrementAndGet()}"
-        return ModTurn(hub, off, TurnFields(id, session, labels, facts), scrubber).also { it.started() }
+        return ModTurn(hub, off, TurnFields(id, session, settings, facts), scrubber).also { it.started() }
+    }
+
+    private fun turnSettings(
+        facts: ObservedTurnFacts,
+        session: String?,
+        known: ModTurnSettings,
+    ): Lazy<ModTurnSettings> {
+        if (sessions.observing) return lazyOf(known)
+        return lazy {
+            val launch = launches.forTurn(session, facts.launchOwner)
+            val bound = if (facts.launchOwner == null) session?.let(launches::forSession) else null
+            ModTurnSettings((launch ?: bound)?.settings?.modsOff ?: known.off, launch?.settings?.labels ?: known.labels)
+        }
     }
 
     private val turnEvents = listOf(

@@ -37,7 +37,8 @@ internal class ModLaunches(
     private val sessions = ConcurrentHashMap<String, SessionLaunches>()
     private val ordering = AtomicLong(Long.MIN_VALUE)
     private val lastPrune = AtomicLong(Long.MIN_VALUE)
-    private var accepting = true
+
+    @Volatile private var accepting = true
 
     /** After the daemon owns its state, before serving routes. */
     fun restore() {
@@ -45,6 +46,7 @@ internal class ModLaunches(
             log("[mods] could not read previous launch settings\n")
             emptyList()
         }
+        if (!accepting) return
         restored.forEach(::remember)
         ordering.accumulateAndGet(restored.maxOfOrNull { it.recordedAt } ?: Long.MIN_VALUE, ::maxOf)
         queuePrune()

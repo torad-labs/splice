@@ -87,7 +87,7 @@ internal class ModRunner(
     fun acceptHandover(batch: ModHandoverBatch): Boolean {
         if (phase != Phase.RUNNING) return false
         val sender = batch.sender
-        val last = acceptedBatches[sender] ?: -1
+        val last = sender?.let(acceptedBatches::get) ?: -1L
         if (sender != null && batch.ordinal <= last) return true
         batch.events.forEach(::receive)
         val confirmed = batch.uncertain?.takeIf { it.ordinal <= last }?.count ?: 0

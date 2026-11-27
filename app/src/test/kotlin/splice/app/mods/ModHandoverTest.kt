@@ -108,6 +108,21 @@ class ModHandoverTest {
     }
 
     @Test
+    fun `a new session on the successor starts before its first turn is delivered`() = runBlocking {
+        ModHandoverTestRig(root).use { rig ->
+            rig.installRecorder()
+            rig.retire(leave = false)
+            rig.openSuccessor()
+            rig.successorTurn("early").completed(ObservedTurnEnd("ok", ObservedUsage(0, 0, 0, 0), 1, 2))
+            rig.releaseRelay()
+            rig.recoverSessions()
+            rig.finish()
+            val events = rig.through("turn.complete", "early").filter { it.session == "early" }
+            assertEquals(listOf("session.start", "turn.start", "turn.complete"), events.map { it.name })
+        }
+    }
+
+    @Test
     fun `the old turn tail reaches a successor that opens its socket late`() = runBlocking {
         ModHandoverTestRig(root).use { rig ->
             rig.installRecorder()

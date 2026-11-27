@@ -112,7 +112,7 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
         Files.deleteIfExists(old.runner.paths.modsDir.resolve("sessions/$session.$owner.json"))
     }
 
-    suspend fun through(event: String) = old.through(RECORDER, event)
+    suspend fun through(event: String, session: String? = null) = old.through(RECORDER, event, session)
 
     suspend fun awaitMods(client: HttpClient, state: String) = old.runner.eventually {
         val answer = client.get(modsUrl) { bearerAuth(key.get()) }

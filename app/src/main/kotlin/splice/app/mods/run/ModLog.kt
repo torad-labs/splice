@@ -65,6 +65,7 @@ internal class ModLog(
 
     private inline fun keepingLog(block: () -> Unit) {
         Cancellables.runCatchingBestEffort(block).onFailure {
+            size = null
             drops.log()
             if (!unavailable) {
                 daemonLog("[mods] cannot write ${file.fileName}: ${SafeFailureText.render(it)}\n")

@@ -94,10 +94,9 @@ internal class TurnRoundRun(
         drive.retry ?: TurnRetry(RetryLedger(), TurnWaits { afterMs, _, _ -> upstream.retryWaiter.wait(afterMs) })
 
     // The audit still sees exactly the bytes this round POSTs, and the wire tap reads the text only when a tap is
-    // actually open. Only an observed round counts its UTF-8 length here; the perf row still uses the transport's
-    // observation of the bytes it sent.
+    // actually open. Observation here names the logical round, before any transport encodes its request.
     private fun recordPost(drive: TurnDrive, body: RoundBody) {
         wireTap?.record(drive.meta, body.text, drive.sentTurnId())
-        drive.perf.observed?.let { if (it.wantsRequests) it.requestSent(drive.upstreamModel, body.byteSize()) }
+        drive.perf.observed?.let { if (it.wantsRequests) it.requestSent(drive.upstreamModel) }
     }
 }

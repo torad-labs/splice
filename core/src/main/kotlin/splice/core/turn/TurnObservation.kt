@@ -13,8 +13,8 @@ public interface TurnObservation {
     public fun completed(facts: ObservedTurnEnd)
 }
 
-/** A logical round, before transport retries. Counts the uncompressed UTF-8 request bytes. */
-public data class ObservedRequest(val round: Int, val model: String, val bytes: Long, val atEpochMs: Long)
+/** A logical round, before transport retries and before the transport encodes its body. */
+public data class ObservedRequest(val round: Int, val model: String, val atEpochMs: Long)
 
 /** The original HTTP status, before body processing. Attempt is the one-based turn-wide transport ordinal. */
 public data class ObservedResponse(val status: Int, val attempt: Long, val atEpochMs: Long)

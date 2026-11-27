@@ -12,7 +12,6 @@ import splice.core.turn.ObservedStreamFrame
 import splice.core.turn.ObservedToolCall
 import splice.core.turn.ObservedTurnEnd
 import splice.core.turn.TurnObservation
-import splice.head.observe.ObservedCredentials
 import splice.head.observe.ObservedTurnFacts
 import splice.launch.ModsOff
 
@@ -23,7 +22,6 @@ internal data class TurnFields(
     val session: String?,
     val labels: JsonObject,
     val facts: ObservedTurnFacts,
-    val credentials: ObservedCredentials?,
 )
 
 /** The host receives only the contract's scalars, never the request, frame, tool input or response body. */
@@ -49,7 +47,6 @@ internal class ModTurn(
     override fun requestSent(facts: ObservedRequest) = emit("request.send", facts.atEpochMs) {
         put(MOD_EVENT_MODEL_FIELD, clean(facts.model))
         put("round", facts.round)
-        put("bytes", facts.bytes)
     }
 
     override fun responseReceived(facts: ObservedResponse) = emit("response.receive", facts.atEpochMs) {
@@ -89,7 +86,7 @@ internal class ModTurn(
         )
     }
 
-    private fun clean(value: String): String = text.text(value, fields.credentials)
+    private fun clean(value: String): String = text.text(value)
 
     private inline fun emit(name: String, at: Long, payload: JsonObjectBuilder.() -> Unit) {
         if (!hub.listening(name, off)) return

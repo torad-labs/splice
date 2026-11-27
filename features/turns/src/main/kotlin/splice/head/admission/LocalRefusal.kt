@@ -50,7 +50,7 @@ internal class PreDriveRefusals(
     /** The head's run of refusals before any upstream turn (2026-11-09 audit), read degraded on /health: each refusal
      *  here counts, and an admitted turn ends it. */
     val streak = RefusalStreak(head, deps.log, deps.traffic.upstream.retryWall)
-    private val observer = TurnObserverAdmission(deps.seams.reports.observers, head)
+    private val observer = TurnObserverAdmission(deps.seams.reports.observers, head, deps.log)
 
     /** A defect that escaped the request's own handling (HeadAdmission's door): its kind and the splice line it came
      *  from go to daemon.log (never its message, which may quote the transcript), its request row ends unexpected, and

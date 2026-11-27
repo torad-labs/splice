@@ -1,33 +1,47 @@
 package splice.app.mods.events
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.head.observe.ObservedCredentials
 import splice.upstream.transport.HeaderRedaction
 
-/** Nothing that reads credentials is visible to the mod. Text that contains one is omitted as a whole. */
-internal class ModEventText(env: Map<String, String>, known: Collection<String> = emptyList()) {
-    @Volatile private var secrets = (known + env.filterKeys { HeaderRedaction.isSecret(it) || "LOGIN" in it }.values)
-        .filter(String::isNotBlank).toSet()
+/** An immutable scrubber for one boundary: no file or environment reads while offering its events. */
+internal class ModEventText(
+    private val source: ModSecretSources? = null,
+    private val secrets: Set<String> = emptySet(),
+    private val request: ObservedCredentials? = null,
+) {
+    fun snapshot(credentials: ObservedCredentials? = null): ModEventText =
+        if (source == null && credentials == null) {
+            this
+        } else {
+            ModEventText(secrets = source?.read() ?: secrets, request = credentials)
+        }
 
-    fun remember(values: Collection<String>) {
-        secrets = secrets + values.filter(String::isNotBlank)
-    }
-    private val shape = Regex(
-        """(?i)(?:[0-9a-f]{64}|(?<![\w-])(?:sk-|gh[pousr]_|github_pat_|xox[baprs]-|ya29\.)[\w.-]+|""" +
-            """\bbearer\s+\S+|eyJ[\w-]+\.eyJ[\w-]+\.[\w-]+)""",
-    )
+    fun text(value: String): String = if (safe(value)) value else HeaderRedaction.REDACTED
 
-    fun text(value: String, request: ObservedCredentials? = null): String =
-        if (safe(value, request)) value else HeaderRedaction.REDACTED
-
-    fun labels(values: Map<String, String>, request: ObservedCredentials? = null): JsonObject = buildJsonObject {
+    fun labels(values: Map<String, String>): JsonObject = buildJsonObject {
         for ((key, value) in values) {
-            if (safe(key, request) && safe(value, request)) put(key, value)
+            if (safe(key)) put(key, text(value))
         }
     }
 
-    fun safe(value: String, request: ObservedCredentials? = null): Boolean =
-        !shape.containsMatchIn(value) && secrets.none { it in value } && request?.containsIn(value) != true
+    fun labels(values: JsonObject): JsonObject = labels(
+        values.mapNotNull { (key, value) ->
+            (value as? JsonPrimitive)?.takeIf { it.isString }?.let { key to it.content }
+        }.toMap(),
+    )
+
+    fun safe(value: String): Boolean =
+        !ModCredentialShapes.pattern.containsMatchIn(value) &&
+            secrets.none { it in value } && request?.containsIn(value) != true
+}
+
+private object ModCredentialShapes {
+    val pattern = Regex(
+        """(?i)(?:[0-9a-f]{64}|(?<![\w-])(?:sk-|gh[pousr]_|github_pat_|xox[baprs]-|ya29\.)[\w.-]+|""" +
+            """AIza[\w-]{35}|xai-[\w-]{16,}|\bbearer\s+\S+|eyJ[\w-]+\.eyJ[\w-]+\.[\w-]+)""",
+    )
 }

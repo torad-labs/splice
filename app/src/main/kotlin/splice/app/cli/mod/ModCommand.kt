@@ -85,7 +85,7 @@ internal class ModCommand(
         val paths = StatePaths(envReader = env)
         val store = paths.modsDir.resolve("data").resolve(name)
         val logs = listOf("$name.log", "$name.log.1").map { paths.logsDir.resolve("mods").resolve(it) }
-        return (listOf(store) + logs).filter(Files::exists)
+        return (listOf(store) + logs).map(Path::toAbsolutePath).filter(Files::exists)
     }
 
     private fun switch(args: List<String>, enabled: Boolean): Int? {

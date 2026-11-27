@@ -26,6 +26,7 @@ import splice.app.e2e.AnthropicFrames
 import splice.app.e2e.RecordingAnthropic
 import splice.client.mcp.McpAccessKey
 import splice.core.auth.RefreshAttempt
+import splice.core.client.FOREGROUND_OWNER_HEADER
 import splice.core.client.LAUNCH_OWNER_HEADER
 import splice.core.client.SESSION_HEADER
 import splice.core.config.KeyStore
@@ -50,12 +51,40 @@ class ModSecretsTest {
     private val shapedKeys = listOf("xai-${"k".repeat(24)}", "AIza${"e".repeat(35)}")
 
     @Test
-    fun `credentials never reach mod events sessions or environment even when added after boot`() = UserHome.within(
-        root,
-    ) {
-        DesktopManagedPolicy.within(root.resolve("etc/managed-settings.json")) {
-            runBlocking { assertSecretBoundary() }
+    fun `credentials never reach mod events sessions or environment even when added after boot`() =
+        inScratchHome { assertSecretBoundary() }
+
+    @Test
+    fun `a launch with mods off stays silent when its HTTP turn omits the owner header`() = inScratchHome {
+        withRecorder(emptyMap()) { rig, client, daemon ->
+            val owner = launch(client, daemon, emptyList(), "quiet", modsOff = "1")
+            bindStartup(client, daemon, owner, "silent")
+            val headers = mapOf("Authorization" to "Bearer $auth", LAUNCH_PROOF_HEADER to daemon.turnKey)
+            daemon.upstream.enqueue(AnthropicFrames.text("Quiet"))
+            assertTrue("message_stop" in turn(client, daemon.head, headers, "quiet", "silent"))
+            // An ordinary turn proves the recorder was active and had already drained the first turn's offers.
+            daemon.upstream.enqueue(AnthropicFrames.text("Visible"))
+            assertTrue("message_stop" in turn(client, daemon.head, headers, "visible", "sentinel"))
+            assertEquals(
+                setOf("sentinel"),
+                rig.through("recorder", "turn.complete", "sentinel").map(RecordedModEvent::session).toSet(),
+            )
         }
+    }
+
+    private fun inScratchHome(scenario: suspend () -> Unit) = UserHome.within(root) {
+        DesktopManagedPolicy.within(root.resolve("etc/managed-settings.json")) {
+            runBlocking { scenario() }
+        }
+    }
+
+    private suspend fun bindStartup(client: HttpClient, daemon: RecorderDaemon, owner: String, session: String) {
+        val response = client.post("${daemon.base}/hooks/resume/claude") {
+            bearerAuth(daemon.turnKey)
+            header(FOREGROUND_OWNER_HEADER, owner)
+            setBody("""{"source":"startup","session_id":"$session"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
     }
 
     private suspend fun assertSecretBoundary() {
@@ -64,12 +93,26 @@ class ModSecretsTest {
             "ANTHROPIC_API_KEY" to "fake-environment-key-3984",
             "MOD_TEST_PROVIDER_LOGIN" to "fake-provider-login-3984",
         )
+        withRecorder(env) { rig, client, daemon ->
+            val state = rig.runner.paths
+            val mcp = McpAccessKey(state.stateDir, state.mgmtKeyFile, {}) { daemon.management }.invoke()
+            val values = listOf(auth, api, cookie, daemon.management, daemon.turnKey, mcp, lateKey) +
+                env.values + shapedKeys
+            KeyStore(KeyStorePath.defaultPath(state.envReader)).write("MOD_TEST_LATE_LOGIN", lateKey)
+            val owner = launch(client, daemon, values, "job-$lateKey-tree")
+            daemon.upstream.enqueue(AnthropicFrames.toolUse(api, "mcp__notes__read"))
+            assertTrue("message_stop" in turn(client, daemon.head, callerHeaders(daemon.turnKey, owner), mcp))
+            assertRecorded(rig, values)
+        }
+    }
+
+    private suspend fun withRecorder(
+        env: Map<String, String>,
+        scenario: suspend (ModEventsTestRig, HttpClient, RecorderDaemon) -> Unit,
+    ) {
         val rig = ModEventsTestRig(root, System.getenv() + env)
         val state = rig.runner.paths
         val mgmt = MgmtKey(state)
-        val turnKey = TurnKey(mgmt).get()
-        val mcp = McpAccessKey(state.stateDir, state.mgmtKeyFile, {}, mgmt::get).invoke()
-        val values = listOf(auth, api, cookie, mgmt.get(), turnKey, mcp, lateKey) + env.values + shapedKeys
         val control = TestPorts.reserve()
         val head = TestPorts.reserve()
         val upstream = RecordingAnthropic()
@@ -83,13 +126,9 @@ class ModSecretsTest {
         try {
             daemon.start()
             awaitListening(control, head)
-            KeyStore(KeyStorePath.defaultPath(state.envReader)).write("MOD_TEST_LATE_LOGIN", lateKey)
             HttpClient(CIO).use { client ->
                 rig.install(client, "recorder", base = base)
-                val owner = launch(client, base, mgmt.get(), values, "job-$lateKey-tree")
-                upstream.enqueue(AnthropicFrames.toolUse(api, "mcp__notes__read"))
-                assertTrue("message_stop" in turn(client, head, callerHeaders(turnKey, owner), mcp))
-                assertRecorded(rig, values)
+                scenario(rig, client, RecorderDaemon(base, head, mgmt.get(), TurnKey(mgmt).get(), upstream))
             }
         } finally {
             daemon.stop()
@@ -120,10 +159,16 @@ class ModSecretsTest {
         }
     }
 
-    private suspend fun turn(client: HttpClient, head: Int, headers: Map<String, String>, echo: String): String {
+    private suspend fun turn(
+        client: HttpClient,
+        head: Int,
+        headers: Map<String, String>,
+        echo: String,
+        session: String = "session-secret-test",
+    ): String {
         val answer = client.post("http://127.0.0.1:$head/v1/messages") {
             headers.forEach { (name, value) -> header(name, value) }
-            header(SESSION_HEADER, "session-secret-test")
+            header(SESSION_HEADER, session)
             header("Content-Type", "application/json")
             setBody(
                 """{"model":"fixture","max_tokens":16,"stream":true,""" +
@@ -136,28 +181,37 @@ class ModSecretsTest {
 
     private suspend fun launch(
         client: HttpClient,
-        base: String,
-        management: String,
+        daemon: RecorderDaemon,
         secrets: List<String>,
-        cwdSecret: String,
+        workingDir: String,
+        modsOff: String? = null,
     ): String {
-        val cwd = Files.createDirectory(root.resolve(cwdSecret))
+        val cwd = Files.createDirectory(root.resolve(workingDir))
         val result = client.submitForm(
-            "$base/launch/claude",
+            "${daemon.base}/launch/claude",
             Parameters.build {
                 append("cwd", cwd.toString())
                 append("launch", ProcessHandle.current().pid().toString())
                 append("label", "SAFE=keep")
+                if (modsOff != null) append("modsOff", modsOff)
                 secrets.forEachIndexed { i, secret -> append("label", "COPY_$i=embedded-$secret-value") }
             },
         ) {
-            bearerAuth(management)
+            bearerAuth(daemon.management)
             accept(ContentType.parse("text/x-splice-launch"))
         }
         assertEquals(HttpStatusCode.OK, result.status)
         return result.bodyAsText().lineSequence().single { it.startsWith("E SPLICE_FOREGROUND_OWNER=") }
             .substringAfter('=')
     }
+
+    private data class RecorderDaemon(
+        val base: String,
+        val head: Int,
+        val management: String,
+        val turnKey: String,
+        val upstream: RecordingAnthropic,
+    )
 
     private fun topology(control: Int, head: Int, upstream: String): String = """
         [daemon]

@@ -16,11 +16,7 @@ internal class ModDrops {
     private val transport = LongAdder()
     private val log = LongAdder()
 
-    fun register(names: Set<String>) {
-        for (name in names) events.computeIfAbsent(name) { LongAdder() }
-    }
-
-    fun event(name: String) { events[name]?.increment() }
+    fun event(name: String) { events.computeIfAbsent(name) { LongAdder() }.increment() }
     fun transport(count: Long = 1) { transport.add(count) }
     fun log(count: Long = 1) { log.add(count) }
     fun byEvent(): Map<String, Long> = events.mapValues { it.value.sum() }.filterValues { it > 0 }
@@ -42,6 +38,8 @@ internal class ModQueue(private val drops: ModDrops, private val transferLoss: M
     private var transferred = false
 
     @Volatile private var closed = false
+
+    @Volatile var subscriptions: Set<String>? = null
 
     private val used = AtomicInteger()
     private val inFlight = AtomicReference<Flight?>()
@@ -82,7 +80,10 @@ internal class ModQueue(private val drops: ModDrops, private val transferLoss: M
 
     fun handled() { inFlight.set(null) }
 
+    fun subscribes(name: String): Boolean = subscriptions?.contains(name) != false
+
     fun drop(delivery: ModDelivery) {
+        if (!subscribes(delivery.event.name)) return
         drops.event(delivery.event.name)
         if (delivery.received) transferLoss?.add()
     }

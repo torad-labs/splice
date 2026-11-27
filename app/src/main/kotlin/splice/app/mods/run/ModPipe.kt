@@ -25,12 +25,11 @@ internal class ModPipe(
 
     @Volatile private var handover: ModHandover? = null
 
-    @Volatile private var subscriptions: Set<String>? = null
-
     val pending: Boolean get() = queue.pending
     val writingSince: Long get() = queue.writingSince
 
     fun offer(delivery: ModDelivery) {
+        if (!queue.subscribes(delivery.event.name)) return
         if (queue.offer(delivery)) {
             wake.trySend(Unit)
         } else {
@@ -45,7 +44,7 @@ internal class ModPipe(
     }
 
     fun loaded(names: Set<String>) {
-        subscriptions = names
+        queue.subscriptions = names
         wake.trySend(Unit)
     }
 
@@ -101,7 +100,7 @@ internal class ModPipe(
     }
 
     private fun writeEvent(stream: OutputStream): Boolean {
-        val names = subscriptions?.takeIf { queue.writingSince == 0L } ?: return false
+        val names = queue.subscriptions?.takeIf { queue.writingSince == 0L } ?: return false
         val pending = queue.take(clock()) ?: return false
         val event = pending.takeIf { it.event.name in names }?.sealed()?.event
         if (event == null) {

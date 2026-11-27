@@ -53,6 +53,8 @@ internal class ModEarlySessions(private val hub: ModEventHub) {
                 val ahead = ModEarlySession(sighting, launches)
                 waiting.addLast(ahead)
                 hub.offer(MOD_SESSION_START, null, ahead, ahead)
+            } else {
+                hub.deliveryLoss.add()
             }
             true
         }

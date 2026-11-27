@@ -107,7 +107,6 @@ internal class ModSupervisor(
             pid = process.pid,
             loaded = ModLoadFacts(loaded.notice, loaded.events, loaded.refused, loaded.declared, loaded.version),
         )
-        output.drops.register(loaded.events)
         process.pipe.loaded(loaded.events)
         hub.bind(ModListener(mod.name, process.pipe), loaded.events)
         settled.complete(Unit)

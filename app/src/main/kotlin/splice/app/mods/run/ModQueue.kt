@@ -4,6 +4,7 @@ import kotlinx.coroutines.channels.Channel
 import splice.app.mods.handover.ModDelivery
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.atomic.LongAdder
 
@@ -27,11 +28,16 @@ internal class ModDrops {
     fun logCount(): Long = log.sum()
 }
 
-internal fun interface ModDeliveryLoss {
-    fun lost()
+internal class ModHandoverLoss {
+    private val missed = AtomicLong()
+    val count: Long get() = missed.get()
+
+    fun add(count: Long = 1) {
+        missed.addAndGet(count)
+    }
 }
 
-internal class ModQueue(private val drops: ModDrops, private val transferLoss: ModDeliveryLoss?) {
+internal class ModQueue(private val drops: ModDrops, private val transferLoss: ModHandoverLoss?) {
     private val events = Channel<ModDelivery>(EVENT_CAPACITY)
     private var transferred = false
 
@@ -78,7 +84,7 @@ internal class ModQueue(private val drops: ModDrops, private val transferLoss: M
 
     fun drop(delivery: ModDelivery) {
         drops.event(delivery.event.name)
-        if (delivery.received) transferLoss?.lost()
+        if (delivery.received) transferLoss?.add()
     }
 
     @Synchronized

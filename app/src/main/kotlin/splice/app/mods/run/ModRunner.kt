@@ -91,7 +91,7 @@ internal class ModRunner(
         if (sender != null && batch.ordinal <= last) return true
         batch.events.forEach(::receive)
         val confirmed = batch.uncertain?.takeIf { it.ordinal <= last }?.count ?: 0
-        events.countHandoverLoss((batch.dropped - confirmed).coerceAtLeast(0))
+        events.deliveryLoss.add((batch.dropped - confirmed).coerceAtLeast(0))
         handoverStarts?.accept(batch)
         if (sender != null) acceptedBatches[sender] = batch.ordinal
         return true
@@ -102,7 +102,7 @@ internal class ModRunner(
         if (target == null) {
             roster.values.forEach { it.receive(event) }
         } else {
-            roster[target]?.receive(event) ?: events.countHandoverLoss(1)
+            roster[target]?.receive(event) ?: events.deliveryLoss.add(1)
         }
     }
 

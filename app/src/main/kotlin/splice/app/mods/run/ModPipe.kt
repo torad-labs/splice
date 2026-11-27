@@ -15,7 +15,7 @@ internal class ModPipe(
     private val drops: ModDrops,
     private val log: ModLog,
     private val clock: WallClock,
-    transferLoss: ModDeliveryLoss? = null,
+    transferLoss: ModHandoverLoss? = null,
 ) {
     private val queue = ModQueue(drops, transferLoss)
     private val wake = Channel<Unit>(Channel.CONFLATED)

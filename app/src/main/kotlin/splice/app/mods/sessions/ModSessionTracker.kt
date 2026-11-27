@@ -9,7 +9,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import splice.app.mods.events.ModEventText
-import splice.app.mods.handover.MOD_HANDOVER_CAPACITY
 import splice.app.mods.run.ModEventHub
 import splice.core.util.WallClock
 import splice.launch.LaunchNotice
@@ -22,7 +21,6 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 
 // why: end a gone process promptly without waking a watcher for every session.
 private const val SESSION_SWEEP_MS = 5_000L
-private const val SESSION_START = "session.start"
 private const val SESSION_FENCE_MS = 500L // why: only in-memory turn offers may still hold the fence
 
 /** The session id names history; a launch names the lifetime of one process serving it. */
@@ -38,7 +36,7 @@ internal class ModSessionTracker(
     private val pairs = ConcurrentHashMap<String, MutableSet<String?>>()
     private val active = ModActiveSessions()
     private val started = ConcurrentHashMap<ModSessionPair, ModPendingSession>()
-    private val early = ArrayDeque<ModEarlySession>()
+    private val early = ModEarlySessions(hub)
     val confirmations: Collection<ModPendingSession> get() = started.values
     private var sweep: Job? = null
 
@@ -46,15 +44,13 @@ internal class ModSessionTracker(
 
     @Volatile private var accepting = true
 
-    @Volatile private var historyReady = true
-
     private var presence: StateFlow<Boolean>? = null
     val admitting: Boolean get() = accepting && presence?.value != false
-    val observing: Boolean get() = admitting && historyReady
+    val observing: Boolean get() = admitting && early.ready
 
     fun follow(roster: StateFlow<Boolean>) {
         presence = roster
-        historyReady = false
+        early.hold()
     }
 
     suspend fun restore(launches: ModLaunches, confirmed: List<ModSessionEntry> = emptyList()) {
@@ -65,10 +61,7 @@ internal class ModSessionTracker(
         for (entry in index.active + confirmed) remember(entry, launches)
         while (accepting) {
             currentCoroutineContext().ensureActive()
-            // Do not let a newer sighting take the start from one already on the pipe.
-            val next = synchronized(early) {
-                early.removeFirstOrNull().also { if (it == null) historyReady = true }
-            } ?: break
+            val next = early.poll() ?: break
             admit(next.sighting, launches, next)
         }
     }
@@ -105,18 +98,7 @@ internal class ModSessionTracker(
 
     fun see(sighting: ModSessionSighting, launches: ModLaunches) {
         if (!admitting || !ledger.valid(sighting.id)) return
-        if (!historyReady) {
-            synchronized(early) {
-                if (!historyReady) {
-                    if (early.size == MOD_HANDOVER_CAPACITY) return
-                    val ahead = ModEarlySession(sighting, launches)
-                    early.addLast(ahead)
-                    hub.offer(SESSION_START, null, ahead, ahead)
-                    return
-                }
-            }
-        }
-        admit(sighting, launches)
+        if (!early.stage(sighting, launches)) admit(sighting, launches)
     }
 
     private fun admit(sighting: ModSessionSighting, launches: ModLaunches, staged: ModEarlySession? = null) {
@@ -167,10 +149,10 @@ internal class ModSessionTracker(
             lazy { opening(key, at, notice, sighting.cwd, current.snapshot()) },
         )
         ledger.save(pending)
-        if (hub.listening(SESSION_START, pending.off)) started[key] = pending
-        val projection = ModSessionProjection(SESSION_START, pending, previous != null)
+        if (hub.listening(MOD_SESSION_START, pending.off)) started[key] = pending
+        val projection = ModSessionProjection(MOD_SESSION_START, pending, previous != null)
         if (staged == null) {
-            hub.offer(SESSION_START, pending.off, projection = projection)
+            hub.offer(MOD_SESSION_START, pending.off, projection = projection)
         } else {
             staged.projection = projection
         }

@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.sessions.registry.PidIdentity
 import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
 import java.nio.file.Files
@@ -89,6 +90,13 @@ class SessionsRoutesTest {
             routeOf = { pid -> SessionRoute.Head(if (pid == 11L) "old" else "new") },
             pidAlive = { true },
             clock = { now },
+            identity = object : PidIdentity {
+                override fun hostDomain(): String? = null
+
+                override fun procStart(pid: Long): String? = null
+
+                override fun startedAt(pid: Long): Long = if (pid == 11L) now - 5_000 else now - 2_000
+            },
         )
         val facts = SessionRowFacts(labelsOf = SessionLabelsOf { mapOf("process" to it.head.orEmpty()) })
         val body = Json.parseToJsonElement(SessionsRoutes(registry, TestTranscripts(), facts = facts).sessionsJson())

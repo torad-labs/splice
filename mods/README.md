@@ -209,9 +209,13 @@ disabled and failed ones included, from the installed manifest without running m
 takes the management key or the console's key. `POST /api/mods`, `PUT /api/mods/<name>` and
 `DELETE /api/mods/<name>`, which `splice mod` uses, take the management key alone.
 
-After a daemon handover, `handoverDropped` counts drops the successor recorded, including event deliveries it did
-not confirm to the retiring daemon. A lost reply can leave a delivery unconfirmed even if the event arrived. If the
+After a daemon handover, `handoverDropped` counts events the successor could not deliver and events the retiring
+daemon could not transfer. Retrying a transfer after a lost reply does not send its events to mods twice. If the
 successor cannot record the retiring daemon's count, the retiring daemon reports it in `daemon.log`.
+
+Killing the old daemon with SIGKILL is a crash, not a graceful handover. Events still queued in its memory can be lost
+without a count, and a `session.start` whose history had not been saved can be sent again with `seenBefore: true`.
+The successor still clears the old mod's processes before starting a replacement.
 
 ## The contract
 

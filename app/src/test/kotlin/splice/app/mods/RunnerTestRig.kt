@@ -35,13 +35,14 @@ internal class RunnerTestRig(
     val home: Path,
     env: Map<String, String> = System.getenv(),
     retryWait: Waiter = ProcessWaiter(),
+    daemonLog: LogSink = LogSink {},
 ) {
     val paths = StatePaths(baseOverride = home.resolve("state"), envReader = { name ->
         if (name == "HOME") home.toString() else env[name]
     })
     private val key = MgmtKey(paths, LogSink {})
     val mods = InstalledMods(paths)
-    val runner = ModRunner(paths, mods, LogSink {}, waiter = retryWait)
+    val runner = ModRunner(paths, mods, daemonLog, waiter = retryWait)
     private val ports = ConsolePorts().apply { this.mods = this@RunnerTestRig.mods }
     val mount = ModsMount(ports, ControlAuth(key, LogSink {}).guard())
 

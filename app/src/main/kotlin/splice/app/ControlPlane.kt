@@ -175,10 +175,12 @@ internal class ControlPlane(
         stores.mods.presence,
         modSessions,
         modLaunches,
-    )
+        splice.app.mods.handover.ModHandoverStarts(statePaths.envReader(splice.app.daemon.SPLICE_SUCCEEDS) != null),
+    ).also { modRunner.handoverStarts = it.starts }
 
-    internal fun prepareModObservations(providers: Map<String, splice.core.topology.ProviderConfig>) {
+    internal suspend fun prepareModObservations(providers: Map<String, splice.core.topology.ProviderConfig>) {
         stores.rememberModCredentials(providers)
+        modRunner.start(recoveredSessions = modTracking.ready)
     }
     internal val sessionFallbacks = stores.sessionFallbacks
     internal val playgroundProviders = stores.playgroundProviders
@@ -255,7 +257,7 @@ internal class ControlPlane(
         // door (this machine's, on this control port, or a `[remote.*]` one) is placed on it (door-sessions).
         val doors = LaunchDoors(topology.launches.remote, controlPort)
         val sessions = sessionWiring.source(home, heads, doors, console, foregroundTools)
-        modRunner.start(ModCallRows(sessions, modLaunches, stores.modText, modSessions), modTracking.ready)
+        modRunner.attachSessions(ModCallRows(sessions, modLaunches, stores.modText, modSessions))
         val signals = health.signals(heads, sessions, probes, home)
         val guard = parts.guard()
         val listen = adopted.control(controlPort)

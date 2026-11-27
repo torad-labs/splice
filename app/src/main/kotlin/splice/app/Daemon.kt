@@ -496,11 +496,11 @@ public class Daemon(
         val routes = heads.values.map { it.head } + providers.running()
         val kept = headShutdown.retireHeads(routes, HEAD_STOP_BUDGET_MS, log) {
             controlPlane.ownership.leave()
-            controlPlane.modRunner.leave()
         }
         val handedOver = System.nanoTime()
         controlPlane.modLaunches.stop()
         controlPlane.modTracking.stop()
+        controlPlane.modRunner.leave(controlPlane.modSessions.confirmations)
         closeBackground()
         // #525 (2026-11-13): the lock is freed when this returns, and the next daemon boots from there. No line said
         // how long this daemon still held it: the stretch from the heads' hand-over to the next daemon's first line

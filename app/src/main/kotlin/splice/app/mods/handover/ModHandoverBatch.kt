@@ -1,7 +1,9 @@
 package splice.app.mods.handover
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import splice.app.mods.run.ModEvent
+import splice.app.mods.sessions.ModSessionEntry
 
 internal const val MOD_HANDOVER_PATH = "/api/mods/handover"
 internal const val MOD_HANDOVER_CAPACITY = 4096 // why: bound the backlog while the successor opens its listener
@@ -9,11 +11,23 @@ internal const val MOD_HANDOVER_BATCH_SIZE = 64 // why: amortize local HTTP with
 internal const val MOD_HANDOVER_DROPPED = "handoverDropped"
 
 @Serializable
-internal data class ModHandoverBatch(val events: List<ModDelivery>, val dropped: Long = 0) {
-    fun valid(): Boolean =
-        events.size <= MOD_HANDOVER_BATCH_SIZE && dropped >= 0 &&
-            events.all { it.event.name in ModHandoverEvents.names }
+internal data class ModHandoverBatch(
+    val events: List<ModDelivery>,
+    val dropped: Long = 0,
+    val sender: String? = null,
+    val ordinal: Long = 0,
+    val starts: List<ModSessionEntry> = emptyList(),
+    val startsComplete: Boolean = false,
+    val uncertain: ModHandoverReceipt? = null,
+) {
+    fun valid(): Boolean = bounded() && events.all { it.event.name in ModHandoverEvents.names }
+
+    private fun bounded(): Boolean =
+        events.size + starts.size <= MOD_HANDOVER_BATCH_SIZE && (dropped >= 0 && ordinal >= 0)
 }
+
+@Serializable
+internal data class ModHandoverReceipt(val ordinal: Long, val count: Int)
 
 @Serializable
 internal data class ModDelivery(
@@ -21,6 +35,7 @@ internal data class ModDelivery(
     val offAll: Boolean = false,
     val offNames: Set<String> = emptySet(),
     val only: String? = null,
+    @Transient val received: Boolean = false,
 )
 
 internal object ModHandoverEvents {

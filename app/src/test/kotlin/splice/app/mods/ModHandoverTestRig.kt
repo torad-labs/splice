@@ -2,17 +2,24 @@ package splice.app.mods
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import splice.app.control.ControlAuth
 import splice.app.control.ControlServer
-import splice.app.control.controlServerWith
-import splice.app.control.topologyHealthFor
+import splice.app.control.controlServerFor
+import splice.app.mods.handover.ModHandoverStarts
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
+import splice.core.testing.TestPorts
 import splice.core.util.AsyncFileIo
 import splice.core.util.LogSink
 import java.nio.file.Files
@@ -22,18 +29,26 @@ import java.util.concurrent.TimeUnit
 private const val RECORDER = "recorder"
 
 internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
-    private val old = ModEventsTestRig(root)
+    private val relayWaiting = CompletableDeferred<Unit>()
+    private val old = ModEventsTestRig(
+        root,
+        daemonLog = LogSink {
+            if ("waiting for the successor to accept the handover" in it) relayWaiting.complete(Unit)
+        },
+    )
     private val next by lazy { ModEventsTestRig(root) }
     val key = MgmtKey(old.runner.paths, LogSink {})
     private val client = HttpClient(CIO)
-    private val oldControl = control(old)
+    private val oldControl = control(old, 0)
+    private val confirmation = ModHandoverStarts(true)
+    private val boot = CompletableDeferred<Unit>()
     private var nextControl: ControlServer? = null
     val modsUrl get() = "${url(checkNotNull(nextControl).listeningPort)}/api/mods"
     val handoverUrl get() = "$modsUrl/handover"
 
     private var oldPid = 0L
 
-    suspend fun installRecorder(slowStop: Boolean = false, startRunner: Boolean = true) {
+    suspend fun installRecorder(slowStop: Boolean = false, startRunner: Boolean = true, linked: Boolean = false) {
         if (startRunner) old.runner.runner.start()
         oldControl.start()
         val source = old.runner.fixture(
@@ -71,7 +86,7 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
             }
             """.trimIndent(),
         )
-        old.runner.install(client, source, base = url(oldControl.listeningPort))
+        old.runner.install(client, source, linked = linked, base = url(oldControl.listeningPort))
         if (startRunner) oldPid = starts(1).single().pid
     }
 
@@ -83,28 +98,63 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
         Files.writeString(data("release"), "")
     }
 
-    fun startTurn(session: String) = checkNotNull(old.begin(session, old.launch()))
+    fun launchOwner(): String = old.launch(ProcessHandle.current().pid())
+
+    fun startTurn(session: String, owner: String = old.launch()) = checkNotNull(old.begin(session, owner))
+
+    fun successorTurn(session: String, owner: String? = null) = checkNotNull(next.begin(session, owner))
+
+    fun breakReplacement() {
+        Files.writeString(root.resolve("recorder/hooks/register.ts"), "throw new Error('replacement failed to load');")
+    }
+
+    fun forgetLedger(session: String, owner: String) {
+        Files.deleteIfExists(old.runner.paths.modsDir.resolve("sessions/$session.$owner.json"))
+    }
 
     suspend fun through(event: String) = old.through(RECORDER, event)
+
+    suspend fun awaitMods(client: HttpClient, state: String) = old.runner.eventually {
+        val answer = client.get(modsUrl) { bearerAuth(key.get()) }
+        val rows = Json.parseToJsonElement(answer.bodyAsText()).jsonObject
+        rows.takeIf { it.getValue("mods").jsonArray.single().jsonObject["state"]?.jsonPrimitive?.content == state }
+    }
 
     fun recorderProcess(): ProcessHandle = ProcessHandle.of(oldPid).orElseThrow()
 
     suspend fun retire(leave: Boolean = true) {
-        val control = control(next)
-        nextControl = control
-        control.start()
-        old.runner.runner.beginHandover(control.listeningPort, key)
+        val port = TestPorts.reserve()
+        nextControl = control(next, port)
+        old.runner.runner.beginHandover(port, key)
         old.sessions.stop()
         check(AsyncFileIo.drain())
         if (leave) leave()
     }
 
-    suspend fun leave() {
+    fun releaseRelay() = old.runner.runner.leave(old.sessions.confirmations)
+
+    suspend fun awaitRelayWaiting() {
+        withTimeout(5_000) { relayWaiting.await() }
+    }
+
+    suspend fun openSuccessor() {
         oldControl.stop()
         next.launches.restore()
-        next.sessions.restore(next.launches)
-        next.runner.runner.start()
-        old.runner.runner.leave()
+        next.sessions.follow(next.runner.mods.presence)
+        next.runner.runner.handoverStarts = confirmation
+        next.runner.runner.start(recoveredSessions = boot)
+        checkNotNull(nextControl).start()
+    }
+
+    suspend fun recoverSessions() {
+        next.sessions.restore(next.launches, confirmation.await())
+        boot.complete(Unit)
+    }
+
+    suspend fun leave() {
+        releaseRelay()
+        openSuccessor()
+        recoverSessions()
     }
 
     suspend fun finish() = old.runner.runner.stop("handover")
@@ -145,10 +195,10 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
             .toList().takeIf { it.size >= count }
     }
 
-    private fun control(rig: ModEventsTestRig) = controlServerWith(
+    private fun control(rig: ModEventsTestRig, port: Int) = controlServerFor(
+        port = port,
         heads = emptyMap(),
         config = ConfigService(rig.runner.paths),
-        health = topologyHealthFor(emptyMap()),
         auth = ControlAuth(mgmtKey = key, log = LogSink {}),
     ).apply {
         ports.mods = rig.runner.mods
@@ -163,6 +213,7 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
         oldControl.stop()
         old.runner.runner.stop()
         nextControl?.stop()
+        boot.complete(Unit)
         next.runner.runner.stop()
         client.close()
     }

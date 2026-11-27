@@ -11,14 +11,21 @@ import java.io.OutputStream
 
 private const val REPLY_CAPACITY = 16 // why: session calls share one writer and cannot grow unbounded
 
-internal class ModPipe(private val drops: ModDrops, private val log: ModLog, private val clock: WallClock) {
-    private val queue = ModQueue(drops)
+internal class ModPipe(
+    private val drops: ModDrops,
+    private val log: ModLog,
+    private val clock: WallClock,
+    transferLoss: ModDeliveryLoss? = null,
+) {
+    private val queue = ModQueue(drops, transferLoss)
     private val wake = Channel<Unit>(Channel.CONFLATED)
     private val replies = Channel<Pair<Long, JsonObject>>(REPLY_CAPACITY)
 
     @Volatile private var reason: String? = null
 
     @Volatile private var handover: ModHandover? = null
+
+    @Volatile private var subscriptions: Set<String>? = null
 
     val pending: Boolean get() = queue.pending
     val writingSince: Long get() = queue.writingSince
@@ -27,13 +34,19 @@ internal class ModPipe(private val drops: ModDrops, private val log: ModLog, pri
         if (queue.offer(delivery)) {
             wake.trySend(Unit)
         } else {
-            handover?.offer(delivery)
+            val forwarder = handover
+            if (forwarder == null) queue.drop(delivery) else forwarder.offer(delivery)
         }
     }
 
     fun handOver(forwarder: ModHandover) {
         handover = forwarder
         queue.handOver().forEach(forwarder::prefix)
+    }
+
+    fun loaded(names: Set<String>) {
+        subscriptions = names
+        wake.trySend(Unit)
     }
 
     fun reply(id: Long, value: JsonObject) {
@@ -59,6 +72,7 @@ internal class ModPipe(private val drops: ModDrops, private val log: ModLog, pri
 
     suspend fun write(output: OutputStream, calls: ModCalls) {
         output.use { stream ->
+            if (reason != null) return
             ModLine.write(stream, buildJsonObject { put("type", "start") })
             while (reason == null || queue.writingSince != 0L) {
                 log.reportDrops()
@@ -87,14 +101,13 @@ internal class ModPipe(private val drops: ModDrops, private val log: ModLog, pri
     }
 
     private fun writeEvent(stream: OutputStream): Boolean {
-        if (queue.writingSince != 0L) return false
-        val pending = queue.take() ?: return false
-        queue.writing(clock())
-        val event = pending.sealed()
+        val names = subscriptions?.takeIf { queue.writingSince == 0L } ?: return false
+        val pending = queue.take(clock()) ?: return false
+        val event = pending.event.takeIf { it.name in names }?.sealed()
         if (event == null) {
             queue.handled()
         } else if (!ModLine.write(stream, event.message())) {
-            drops.event(event.name)
+            queue.drop(pending)
             queue.handled()
         }
         return true

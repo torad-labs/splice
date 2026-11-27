@@ -3,13 +3,16 @@ package splice.app.mods
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import splice.app.mods.handover.ModHandoverStarts
 import splice.app.mods.sessions.ModLaunches
 import splice.app.mods.sessions.ModSessionTracker
 import splice.upstream.codemode.ProcessDispatchers
+
+private const val HISTORY_STOP_MS = 500L // why: a blocked history read cannot hold the daemon lock
 
 /** The control listener opens first. A Bun host can subscribe once the old pairs have been recovered. */
 internal class ModSessionTracking(
@@ -17,6 +20,7 @@ internal class ModSessionTracking(
     private val presence: StateFlow<Boolean>,
     private val sessions: ModSessionTracker,
     private val launches: ModLaunches,
+    val starts: ModHandoverStarts,
 ) {
     val ready = CompletableDeferred<Unit>()
     private var work: Job? = null
@@ -35,7 +39,7 @@ internal class ModSessionTracking(
                 presence.collectLatest { installed ->
                     if (installed) {
                         if (!ready.isCompleted) {
-                            sessions.restore(launches)
+                            sessions.restore(launches, starts.await())
                             ready.complete(Unit)
                         }
                         sessions.sweep()
@@ -48,8 +52,10 @@ internal class ModSessionTracking(
     }
 
     suspend fun stop() {
-        fence()?.cancelAndJoin()
         sessions.stop()
+        val history = fence()
+        history?.cancel()
+        withTimeoutOrNull(HISTORY_STOP_MS) { history?.join() }
         ready.complete(Unit)
     }
 

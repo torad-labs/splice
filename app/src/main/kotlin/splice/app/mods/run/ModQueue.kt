@@ -4,7 +4,7 @@ import kotlinx.coroutines.channels.Channel
 import splice.app.mods.handover.ModDelivery
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.atomic.LongAdder
 
 private const val EVENT_CAPACITY = 2048 // why: a slow mod keeps a bounded prefix
@@ -27,18 +27,22 @@ internal class ModDrops {
     fun logCount(): Long = log.sum()
 }
 
-internal class ModQueue(private val drops: ModDrops) {
+internal fun interface ModDeliveryLoss {
+    fun lost()
+}
+
+internal class ModQueue(private val drops: ModDrops, private val transferLoss: ModDeliveryLoss?) {
     private val events = Channel<ModDelivery>(EVENT_CAPACITY)
     private var transferred = false
 
     @Volatile private var closed = false
 
     private val used = AtomicInteger()
-    private val inFlight = AtomicLong()
+    private val inFlight = AtomicReference<Flight?>()
     private val highVolume = setOf("stream.event", "request.send", "response.receive")
 
     val pending: Boolean get() = used.get() != 0
-    val writingSince: Long get() = inFlight.get()
+    val writingSince: Long get() = inFlight.get()?.at ?: 0
 
     /** Only an atomic reservation and a trySend: no lock, serialization or I/O on the producer. */
     fun offer(delivery: ModDelivery): Boolean {
@@ -49,12 +53,15 @@ internal class ModQueue(private val drops: ModDrops) {
         if (sent?.isSuccess == true) return true
         if (reserved) used.decrementAndGet()
         if (sent?.isClosed == true || closed) return false
-        drops.event(name)
+        drop(delivery)
         return true
     }
 
     @Synchronized
-    fun take(): ModEvent? = if (transferred) null else poll()?.event
+    fun take(at: Long): ModDelivery? {
+        if (transferred) return null
+        return poll()?.also { inFlight.set(Flight(it, at)) }
+    }
 
     @Synchronized
     fun handOver(): List<ModDelivery> {
@@ -67,14 +74,21 @@ internal class ModQueue(private val drops: ModDrops) {
 
     private fun poll(): ModDelivery? = events.tryReceive().getOrNull()?.also { used.decrementAndGet() }
 
-    fun writing(at: Long) { inFlight.set(at) }
-    fun handled() { inFlight.set(0) }
+    fun handled() { inFlight.set(null) }
+
+    fun drop(delivery: ModDelivery) {
+        drops.event(delivery.event.name)
+        if (delivery.received) transferLoss?.lost()
+    }
 
     @Synchronized
     fun close() {
         closeOffers()
-        while (true) drops.event(poll()?.event?.name ?: break)
+        inFlight.getAndSet(null)?.delivery?.let(::drop)
+        while (true) drop(poll() ?: break)
     }
+
+    private data class Flight(val delivery: ModDelivery, val at: Long)
 
     private fun closeOffers() {
         events.close()

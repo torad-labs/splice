@@ -11,11 +11,11 @@ internal class ModObservationGate(
     private val sessions: ModSessionTracker,
     private val turns: TurnObservers,
 ) : TurnObservers by turns {
-    override val observingTurns: Boolean get() = sessions.observing && turns.observingTurns
+    override val observingTurns: Boolean get() = sessions.admitting && turns.observingTurns
 
     override fun begin(facts: ObservedTurnFacts): TurnObservation? =
-        if (sessions.observing) turns.begin(facts) else null
+        if (sessions.admitting) turns.begin(facts) else null
 
     override fun begin(facts: ObservedTurnFacts, credentials: ObservedCredentials): TurnObservation? =
-        if (sessions.observing) turns.begin(facts, credentials) else null
+        if (sessions.admitting) turns.begin(facts, credentials) else null
 }

@@ -4,9 +4,18 @@ import kotlinx.serialization.json.JsonObject
 import splice.app.mods.handover.ModDelivery
 import splice.app.mods.handover.ModHandover
 import splice.launch.ModsOff
+import java.util.concurrent.atomic.AtomicLong
 
 /** Subscriptions are published off the turn path. A turn only reads an immutable snapshot and offers. */
 internal class ModEventHub {
+    private val handoverLoss = AtomicLong()
+    val handoverDropped: Long get() = handoverLoss.get()
+    val deliveryLoss = ModDeliveryLoss { handoverLoss.incrementAndGet() }
+
+    fun countHandoverLoss(count: Long) {
+        handoverLoss.addAndGet(count)
+    }
+
     private val emptyPayload = JsonObject(emptyMap())
 
     @Volatile private var byEvent = emptyMap<String, List<ModListener>>()
@@ -66,9 +75,10 @@ internal class ModEventHub {
 
     @Synchronized
     fun bind(listener: ModListener, events: Set<String>) {
-        byEvent = byEvent.toMutableMap().apply {
-            for (event in events) put(event, get(event).orEmpty() + listener)
-        }
+        byEvent = byEvent.mapValues { (_, listeners) -> listeners - listener }
+            .filterValues(List<ModListener>::isNotEmpty).toMutableMap().apply {
+                for (event in events) put(event, get(event).orEmpty() + listener)
+            }
     }
 
     @Synchronized

@@ -14,6 +14,7 @@ import splice.app.mods.ModRuntime
 import splice.app.mods.ModRuntimeState
 import splice.app.mods.handover.ModDelivery
 import splice.app.mods.handover.ModHandover
+import splice.app.mods.handover.ModHandoverEvents
 import splice.app.mods.install.HashVerdict
 import splice.app.mods.install.InstalledMod
 import splice.core.util.Cancellables
@@ -34,7 +35,7 @@ internal class ModSupervisor(
 ) : ModProcessObserver {
     private val shutdown = CompletableDeferred<String>()
     private val crashes = ModCrashes(output.clock)
-    private val inbox = ModHandoverInbox(mod.name)
+    private var intake = newPipe()
     val settled = CompletableDeferred<Unit>()
     val job = scope.launch(start = CoroutineStart.LAZY) {
         try {
@@ -78,14 +79,24 @@ internal class ModSupervisor(
         )
     }
 
+    fun arm() {
+        hub.bind(ModListener(mod.name, intake), ModHandoverEvents.names)
+    }
+
     @Synchronized
-    fun receive(delivery: ModDelivery): Boolean = inbox.offer(delivery)
+    fun receive(delivery: ModDelivery) {
+        if (delivery.only != null && delivery.only != mod.name) return
+        if (delivery.offAll || mod.name in delivery.offNames) return
+        intake.offer(delivery.copy(only = mod.name, received = true))
+    }
 
     @Synchronized
     fun stop(reason: String, forwarding: ModHandover? = null) {
-        inbox.close(forwarding)
         shutdown.complete(reason)
-        process?.let { hub.unbind(ModListener(mod.name, it.pipe)) }
+        hub.unbind(ModListener(mod.name, intake))
+        if (forwarding != null) intake.handOver(forwarding)
+        intake.finish(reason)
+        if (process == null) intake.close()
     }
 
     @Synchronized
@@ -97,14 +108,13 @@ internal class ModSupervisor(
             loaded = ModLoadFacts(loaded.notice, loaded.events, loaded.refused, loaded.declared, loaded.version),
         )
         output.drops.register(loaded.events)
-        inbox.bind(process.pipe, loaded.events)
+        process.pipe.loaded(loaded.events)
         hub.bind(ModListener(mod.name, process.pipe), loaded.events)
         settled.complete(Unit)
     }
 
     @Synchronized
     override fun disconnected(process: ModProcess) {
-        inbox.close()
         hub.unbind(ModListener(mod.name, process.pipe))
     }
 
@@ -121,7 +131,7 @@ internal class ModSupervisor(
 
     private suspend fun attempt(): Boolean {
         val executable = executable() ?: return false
-        previous()?.let { setup.records.awaitPrevious(it) }
+        setup.records.previous(mod.name)?.let { setup.records.awaitPrevious(it) }
         bunPath = executable
         val child = launch(executable) ?: return false
         if (current.state == ModRuntimeState.RESTARTING) crashes.restarted()
@@ -137,13 +147,16 @@ internal class ModSupervisor(
     }
 
     @Synchronized
-    private fun previous(): ModRunOwner? =
-        if (shutdown.isCompleted) null else setup.records.previous(mod.name)
+    private fun rearm() {
+        if (shutdown.isCompleted) return
+        intake = newPipe()
+        arm()
+    }
 
-    // The retirement fence cannot pass a spawn without its PID record, even if ready is still pending.
-    @Synchronized
+    private fun newPipe() = ModPipe(output.drops, output.log, output.clock, hub.deliveryLoss)
+
     private fun launch(executable: Path): ModProcess? =
-        if (shutdown.isCompleted) null else setup.launch(mod, executable, output)
+        if (shutdown.isCompleted) null else setup.launch(mod, executable, output, intake)
 
     private fun executable(): Path? {
         val verdict = mod.verify()
@@ -172,12 +185,13 @@ internal class ModSupervisor(
             } finally {
                 pause.cancel()
             }
-        }
+        }.also { if (it) rearm() }
     }
 
     @Synchronized
     private fun fail(why: String): Boolean {
-        inbox.close()
+        hub.unbind(ModListener(mod.name, intake))
+        intake.close()
         current = current.copy(state = ModRuntimeState.FAILED, why = "Mod ${mod.name}: $why", pid = null)
         output.log.write(checkNotNull(current.why))
         return false

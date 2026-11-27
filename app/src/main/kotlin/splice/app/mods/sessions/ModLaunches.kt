@@ -71,8 +71,8 @@ internal class ModLaunches(
         if (names.isEmpty()) names else names - installed.names()
 
     override fun sessionStarted(owner: String?, sessionId: String, cwd: String) {
-        val launch = forTurn(sessionId, owner, served = false)
-        sessionEvents?.see(sessionId, launch?.owner?.let(::stored), clock(), cwd)
+        forTurn(sessionId, owner, served = false)
+        sessionEvents?.see(ModSessionSighting(sessionId, owner, clock(), cwd), this)
     }
 
     fun stored(owner: String): StoredModLaunch? = launches[owner]

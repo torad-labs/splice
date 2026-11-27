@@ -88,6 +88,36 @@ class ModSessionHandoverTest {
         }
     }
 
+    @Test
+    fun `retirement returns even while mod startup is blocked on a history read`() = isolated {
+        val events = ModEventsTestRig(root)
+        SessionDaemon(root, events).use { daemon ->
+            daemon.start()
+            daemon.install()
+        }
+        val launches = Files.createDirectories(events.runner.paths.modsDir.resolve("launches"))
+        val pipe = launches.resolve("00000000-0000-0000-0000-000000000000.json")
+        check(ProcessBuilder("mkfifo", pipe.toString()).start().waitFor() == 0)
+        val entered = root.resolve("opened")
+        val writer = ProcessBuilder(
+            "sh",
+            "-c",
+            """exec 3>"$1"; touch "$2"; read -r line""",
+            "fixture",
+            pipe.toString(),
+            entered.toString(),
+        ).start()
+        try {
+            SessionDaemon(root, events).use { daemon ->
+                daemon.start()
+                events.runner.eventually { true.takeIf { Files.exists(entered) } }
+                withTimeout(3_000) { daemon.retire() }
+            }
+        } finally {
+            writer.destroyForcibly().waitFor()
+        }
+    }
+
     private suspend fun assertHandover(old: SessionDaemon, events: ModEventsTestRig, launch: Process) {
         val owner = old.launch(launch.pid())
         old.turn("carried", owner)

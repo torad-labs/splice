@@ -2,12 +2,17 @@ package splice.app.mods.sessions
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.app.mods.events.ModEventText
+import splice.app.mods.handover.MOD_HANDOVER_CAPACITY
 import splice.app.mods.run.ModEvent
 import splice.app.mods.run.ModEventHub
 import splice.core.util.WallClock
@@ -16,11 +21,12 @@ import splice.launch.ModsOff
 import splice.upstream.Ticker
 import splice.upstream.codemode.ProcessTicker
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantReadWriteLock
-import kotlin.concurrent.write
 
 // why: end a gone process promptly without waking a watcher for every session.
 private const val SESSION_SWEEP_MS = 5_000L
+private const val SESSION_FENCE_MS = 500L // why: only in-memory turn offers may still hold the fence
 
 /** The session id names history; a launch names the lifetime of one process serving it. */
 internal class ModSessionTracker(
@@ -34,6 +40,9 @@ internal class ModSessionTracker(
     private val seen = ConcurrentHashMap<String, Boolean>()
     private val pairs = ConcurrentHashMap<String, MutableSet<String?>>()
     private val active = ModActiveSessions()
+    private val started = ConcurrentHashMap<ModSessionPair, ModPendingSession>()
+    private val early = Channel<ModSessionSighting>(MOD_HANDOVER_CAPACITY)
+    val confirmations: Collection<ModPendingSession> get() = started.values
     private var sweep: Job? = null
 
     private val writers = ReentrantReadWriteLock()
@@ -43,24 +52,38 @@ internal class ModSessionTracker(
     @Volatile private var historyReady = true
 
     private var presence: StateFlow<Boolean>? = null
-    val observing: Boolean get() = accepting && historyReady && presence?.value != false
+    val admitting: Boolean get() = accepting && presence?.value != false
+    val observing: Boolean get() = admitting && historyReady
 
     fun follow(roster: StateFlow<Boolean>) {
         presence = roster
         historyReady = false
     }
 
-    suspend fun restore(launches: ModLaunches) {
+    suspend fun restore(launches: ModLaunches, confirmed: List<ModSessionEntry> = emptyList()) {
         val index = ledger.restore(clock(), launches)
+        currentCoroutineContext().ensureActive()
+        if (!accepting) return
         for (id in index.ids) seen[id] = id in index.ownerless
-        for (entry in index.active) {
-            pairs.getOrPut(entry.pair.id, ::mutableSetOf).add(entry.pair.owner)
-            val pending = ModPendingSession(entry.pair, entry.context.off, lazyOf(entry))
-            active.track(pending, entry.pair.owner?.let(launches::stored))
-            // Restored session.start entries may be hooks without an admitted turn.
-            launches.forTurn(entry.pair.id, entry.pair.owner, served = false)
-        }
+        for (entry in index.active + confirmed) remember(entry, launches)
         historyReady = true
+        early.close()
+        while (true) {
+            val next = early.tryReceive().getOrNull() ?: break
+            see(next, launches)
+        }
+    }
+
+    private fun remember(entry: ModSessionEntry, launches: ModLaunches) {
+        val key = entry.pair
+        seen.merge(key.id, key.owner == null) { old, fresh -> old || fresh }
+        val pending = ModPendingSession(key, entry.context.off, lazyOf(entry))
+        started[key] = pending
+        val owner = key.owner ?: return
+        pairs.getOrPut(key.id, ::mutableSetOf).add(owner)
+        active.track(pending, launches.stored(owner))
+        // Restored session.start entries may be hooks without an admitted turn.
+        launches.forTurn(key.id, owner, served = false)
     }
 
     fun start(scope: CoroutineScope) {
@@ -76,40 +99,32 @@ internal class ModSessionTracker(
     suspend fun stop() {
         accepting = false
         sweep?.cancel()
-        sweep?.join()
-        writers.write { /* A start already admitted must queue its ledger write before lock release. */ }
+        withTimeoutOrNull(SESSION_FENCE_MS) { sweep?.join() }
+        val fence = writers.writeLock()
+        if (fence.tryLock(SESSION_FENCE_MS, TimeUnit.MILLISECONDS)) fence.unlock()
     }
 
-    fun see(
-        id: String,
-        launch: StoredModLaunch?,
-        at: Long = clock(),
-        cwd: String? = null,
-        scrubber: ModEventText? = null,
-    ) {
-        if (!observing || !ledger.valid(id)) return
+    fun see(sighting: ModSessionSighting, launches: ModLaunches) {
+        if (!admitting || !ledger.valid(sighting.id)) return
+        if (!historyReady && early.trySend(sighting).isSuccess) return
+        val launch = sighting.owner?.let(launches::stored)
         if (launch == null && !hub.listening) return
         val read = writers.readLock()
         if (read.tryLock()) {
             try {
-                if (observing) seeFirst(ModSessionPair(id, launch?.launch?.owner), at, launch, cwd, scrubber)
+                if (observing) seeFirst(sighting, launch)
             } finally {
                 read.unlock()
             }
         }
     }
 
-    private fun seeFirst(
-        key: ModSessionPair,
-        at: Long,
-        launch: StoredModLaunch?,
-        cwd: String?,
-        scrubber: ModEventText?,
-    ) {
+    private fun seeFirst(sighting: ModSessionSighting, launch: StoredModLaunch?) {
+        val key = ModSessionPair(sighting.id, launch?.launch?.owner)
         // Serialize the first offers for this id, so the first event says seenBefore=false even on a race.
         pairs.compute(key.id) { _, existing ->
             val owners = existing ?: mutableSetOf()
-            if (key.owner !in owners && open(key, at, launch, cwd, scrubber)) {
+            if (key.owner !in owners && open(key, sighting, launch)) {
                 key.owner?.let(owners::add)
             }
             owners.takeIf { it.isNotEmpty() }
@@ -121,12 +136,11 @@ internal class ModSessionTracker(
 
     private fun open(
         key: ModSessionPair,
-        at: Long,
+        sighting: ModSessionSighting,
         launch: StoredModLaunch?,
-        cwd: String?,
-        scrubber: ModEventText?,
     ): Boolean {
-        val current = scrubber ?: text
+        val current = sighting.scrubber ?: text
+        val at = sighting.at ?: clock()
         if (!current.safe(key.id)) return false
         val previous = if (key.owner == null) seen.put(key.id, true) else seen.putIfAbsent(key.id, false)
         if (key.owner == null && previous == true) return false
@@ -134,9 +148,10 @@ internal class ModSessionTracker(
         val pending = ModPendingSession(
             key,
             notice?.settings?.modsOff,
-            lazy { opening(key, at, notice, cwd, current.snapshot()) },
+            lazy { opening(key, at, notice, sighting.cwd, current.snapshot()) },
         )
         ledger.save(pending)
+        if (hub.listening("session.start", pending.off)) started[key] = pending
         offer("session.start", pending, previous != null)
         active.track(pending, launch)
         return true
@@ -163,6 +178,8 @@ internal class ModSessionTracker(
         val at = clock()
         val end = ModPendingSession(key, start.off, lazy { ended(start.entry, at) })
         pairs.computeIfPresent(key.id) { _, owners ->
+            if (!accepting) return@computeIfPresent owners
+            started.remove(key)
             ledger.save(end)
             offer("session.end", end)
             owners.remove(key.owner)
@@ -201,5 +218,13 @@ internal class ModSessionTracker(
         }
     }
 }
+
+internal data class ModSessionSighting(
+    val id: String,
+    val owner: String?,
+    val at: Long? = null,
+    val cwd: String? = null,
+    val scrubber: ModEventText? = null,
+)
 
 internal data class ModLiveSession(val labels: JsonObject, val off: ModsOff?, val launchedAt: Long)

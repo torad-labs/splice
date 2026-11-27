@@ -25,8 +25,9 @@ internal class ModEventsTestRig(
     root: Path,
     env: Map<String, String> = System.getenv(),
     overrideText: ModEventText? = null,
+    daemonLog: LogSink = LogSink {},
 ) {
-    val runner = RunnerTestRig(root, env)
+    val runner = RunnerTestRig(root, env, daemonLog = daemonLog)
     val text = overrideText ?: ModEventText(ModSecretSources(runner.paths.envReader, env.keys))
     val sessions = ModSessionTracker(
         runner.runner.events,

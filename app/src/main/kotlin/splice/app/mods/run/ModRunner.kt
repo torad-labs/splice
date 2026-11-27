@@ -20,10 +20,10 @@ import splice.upstream.Waiter
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.codemode.ProcessWaiter
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 
 // why: a remote install can report starting instead of waiting for a hung load
 private const val CHANGE_WAIT_MS = 10_000L
+private const val MOD_TEARDOWN_MS = 9000L // why: leave blocked ownership work to the next daemon's reap
 
 internal class ModRunner(
     private val paths: StatePaths,
@@ -38,11 +38,12 @@ internal class ModRunner(
     private val setup = ModProcessSetup(paths, log, calls, installed.bun, io)
     private val scope = LifecycleScope(io)
     private val roster = ConcurrentHashMap<String, ModSupervisor>()
-    private val handoverLoss = AtomicLong()
+    private val acceptedBatches = mutableMapOf<String, Long>()
     private var handover: ModHandover? = null
     private var startup: Job? = null
+    var handoverStarts: splice.app.mods.handover.ModHandoverStarts? = null
 
-    override val handoverDropped: Long get() = handoverLoss.get()
+    override val handoverDropped: Long get() = events.handoverDropped
 
     private enum class Phase { NEW, REAPING, RUNNING, STOPPED }
     private var phase = Phase.NEW
@@ -70,8 +71,12 @@ internal class ModRunner(
         fence("handover", forwarding)
     }
 
-    fun leave() {
-        handover?.leave()
+    fun attachSessions(sessions: ModSessions) {
+        calls.sessions = sessions
+    }
+
+    fun leave(starts: Collection<splice.app.mods.sessions.ModPendingSession> = emptyList()) {
+        handover?.leave(starts)
     }
 
     suspend fun finishHandover() {
@@ -81,20 +86,30 @@ internal class ModRunner(
     @Synchronized
     fun acceptHandover(batch: ModHandoverBatch): Boolean {
         if (phase != Phase.RUNNING) return false
-        var dropped = batch.dropped
-        for (event in batch.events) {
-            for (supervisor in roster.values) {
-                if (!supervisor.receive(event)) dropped++
-            }
-        }
-        handoverLoss.addAndGet(dropped)
+        val sender = batch.sender
+        val last = acceptedBatches[sender] ?: -1
+        if (sender != null && batch.ordinal <= last) return true
+        batch.events.forEach(::receive)
+        val confirmed = batch.uncertain?.takeIf { it.ordinal <= last }?.count ?: 0
+        events.countHandoverLoss((batch.dropped - confirmed).coerceAtLeast(0))
+        handoverStarts?.accept(batch)
+        if (sender != null) acceptedBatches[sender] = batch.ordinal
         return true
+    }
+
+    private fun receive(event: splice.app.mods.handover.ModDelivery) {
+        val target = event.only
+        if (target == null) {
+            roster.values.forEach { it.receive(event) }
+        } else {
+            roster[target]?.receive(event) ?: events.countHandoverLoss(1)
+        }
     }
 
     suspend fun stop(reason: String = "daemon stop") {
         val stopping = fence(reason)
         finishHandover()
-        stopping.map(ModSupervisor::job).joinAll()
+        withTimeoutOrNull(MOD_TEARDOWN_MS) { stopping.map(ModSupervisor::job).joinAll() }
         scope.cancel()
     }
 
@@ -122,7 +137,10 @@ internal class ModRunner(
             events,
             output,
             waiter,
-        ).also { it.job.start() }
+        ).also {
+            it.arm()
+            it.job.start()
+        }
     }
 
     override suspend fun settled(name: String) {

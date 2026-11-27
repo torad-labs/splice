@@ -2,6 +2,7 @@ package splice.app.mods.events
 
 import splice.app.mods.run.ModEventHub
 import splice.app.mods.sessions.ModLaunches
+import splice.app.mods.sessions.ModSessionSighting
 import splice.app.mods.sessions.ModSessionTracker
 import splice.core.turn.TurnObservation
 import splice.core.turn.TurnObserverOffer
@@ -26,8 +27,8 @@ internal class ModTurns(
     override val observingTurns: Boolean get() = hub.listening
 
     override fun sessionSeen(sessionId: String, launchOwner: String?) {
-        val launch = launches.forTurn(sessionId, launchOwner)
-        if (sessions.observing) sessions.see(sessionId, launch?.owner?.let(launches::stored))
+        launches.forTurn(sessionId, launchOwner)
+        if (sessions.admitting) sessions.see(ModSessionSighting(sessionId, launchOwner), launches)
     }
 
     override fun begin(facts: ObservedTurnFacts): TurnObservation? = project(facts, null)
@@ -42,10 +43,8 @@ internal class ModTurns(
         val bound = if (facts.launchOwner == null) session?.let(launches::forSession) else null
         if (session != null && bound == null) {
             sessions.see(
-                session,
-                launch?.owner?.let(launches::stored),
-                facts.atEpochMs,
-                scrubber = scrubber,
+                ModSessionSighting(session, facts.launchOwner, facts.atEpochMs, scrubber = scrubber),
+                launches,
             )
         }
         // A session association may only narrow delivery; it cannot supply labels for an unproved launch.

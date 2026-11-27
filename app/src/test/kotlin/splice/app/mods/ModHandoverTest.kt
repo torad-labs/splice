@@ -81,8 +81,64 @@ class ModHandoverTest {
                 val response = client.get(rig.modsUrl) { bearerAuth(rig.key.get()) }
                 assertEquals(HttpStatusCode.OK, response.status)
                 val mods = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+                val dropped = mods.getValue("handoverDropped").jsonPrimitive.long
+                assertTrue(dropped >= 1)
+                assertTrue("Events dropped during daemon handover: $dropped." in ModLines().list(mods))
+            }
+        }
+    }
+
+    @Test
+    fun `a start missing from disk is not replayed and an early successor turn is delivered`() = runBlocking {
+        ModHandoverTestRig(root).use { rig ->
+            rig.installRecorder()
+            val owner = rig.launchOwner()
+            rig.startTurn("same", owner)
+            rig.through("turn.start")
+            rig.retire(leave = false)
+            rig.forgetLedger("same", owner)
+            rig.openSuccessor()
+            rig.successorTurn("same", owner).completed(ObservedTurnEnd("ok", ObservedUsage(0, 0, 0, 0), 1, 2))
+            rig.releaseRelay()
+            rig.recoverSessions()
+            rig.finish()
+            val events = rig.through("turn.complete")
+            assertEquals(listOf("session.start", "turn.start", "turn.start", "turn.complete"), events.map { it.name })
+        }
+    }
+
+    @Test
+    fun `the old turn tail reaches a successor that opens its socket late`() = runBlocking {
+        ModHandoverTestRig(root).use { rig ->
+            rig.installRecorder()
+            val turn = rig.startTurn("held")
+            rig.through("turn.start")
+            rig.retire(leave = false)
+            turn.completed(ObservedTurnEnd("ok", ObservedUsage(0, 0, 0, 0), 1, 2))
+            rig.releaseRelay()
+            rig.awaitRelayWaiting()
+            rig.openSuccessor()
+            rig.recoverSessions()
+            rig.finish()
+            assertEquals(1, rig.through("turn.complete").count { it.name == "turn.complete" })
+        }
+    }
+
+    @Test
+    fun `an accepted event appears in handover drops when the replacement cannot load`() = runBlocking {
+        ModHandoverTestRig(root).use { rig ->
+            rig.installRecorder(linked = true)
+            val turn = rig.startTurn("held")
+            rig.through("turn.start")
+            rig.retire(leave = false)
+            rig.breakReplacement()
+            turn.completed(ObservedTurnEnd("ok", ObservedUsage(0, 0, 0, 0), 1, 2))
+            rig.leave()
+            rig.finish()
+
+            HttpClient(CIO).use { client ->
+                val mods = rig.awaitMods(client, "failed")
                 assertEquals(1L, mods.getValue("handoverDropped").jsonPrimitive.long)
-                assertTrue("Events dropped during daemon handover: 1." in ModLines().list(mods))
             }
         }
     }

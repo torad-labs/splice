@@ -18,6 +18,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
@@ -37,6 +38,32 @@ import java.util.concurrent.Executors
 
 class ModHandoverFlushTest {
     @TempDir lateinit var root: Path
+
+    @Test
+    fun `a retried receipt does not tell the mod twice`() = runBlocking {
+        ModHandoverTestRig(root).use { rig ->
+            rig.installRecorder()
+            rig.retire()
+            HttpClient(CIO).use { client ->
+                val payload = JsonObject(mapOf("session" to JsonPrimitive("repeated")))
+                val event = ModEvent("turn.complete", "repeated", payload)
+                val receipt = ModHandoverBatch(listOf(ModDelivery(event)), sender = "old", ordinal = 1)
+                repeat(2) {
+                    val response = client.post(rig.handoverUrl) {
+                        bearerAuth(rig.key.get())
+                        contentType(ContentType.Application.Json)
+                        setBody(Json.encodeToString(receipt))
+                    }
+                    assertEquals(HttpStatusCode.NoContent, response.status)
+                }
+            }
+            rig.successorTurn("barrier").completed(
+                splice.core.turn.ObservedTurnEnd("ok", splice.core.turn.ObservedUsage(0, 0, 0, 0), 1, 2),
+            )
+            val events = rig.through("turn.complete", "barrier")
+            assertEquals(1, events.count { it.name == "turn.complete" && it.session == "repeated" })
+        }
+    }
 
     @Test
     fun `the successor reports an unconfirmed event when the old daemon cuts its flush short`() = runBlocking {

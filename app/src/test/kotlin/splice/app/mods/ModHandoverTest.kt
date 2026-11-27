@@ -25,6 +25,8 @@ import splice.core.turn.ObservedStreamFrame
 import splice.core.turn.ObservedToolCall
 import splice.core.turn.ObservedTurnEnd
 import splice.core.turn.ObservedUsage
+import splice.launch.LaunchModSettings
+import splice.launch.ModsOff
 import java.nio.file.Path
 
 class ModHandoverTest {
@@ -119,6 +121,23 @@ class ModHandoverTest {
             rig.finish()
             val events = rig.through("turn.complete", "early").filter { it.session == "early" }
             assertEquals(listOf("session.start", "turn.start", "turn.complete"), events.map { it.name })
+        }
+    }
+
+    @Test
+    fun `an early turn keeps its original launch opt out`() = runBlocking {
+        ModHandoverTestRig(root).use { rig ->
+            rig.installRecorder()
+            val off = rig.launchOwner(LaunchModSettings(modsOff = ModsOff(names = setOf("recorder"))))
+            rig.retire(leave = false)
+            rig.openSuccessor()
+            val end = ObservedTurnEnd("ok", ObservedUsage(0, 0, 0, 0), 1, 2)
+            rig.successorTurn("quiet", off).completed(end)
+            rig.successorTurn("visible").completed(end)
+            rig.releaseRelay()
+            rig.recoverSessions()
+            rig.finish()
+            assertTrue(rig.through("turn.complete", "visible").none { it.session == "quiet" })
         }
     }
 

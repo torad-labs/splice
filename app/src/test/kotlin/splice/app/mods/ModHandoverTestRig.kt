@@ -22,6 +22,7 @@ import splice.core.config.MgmtKey
 import splice.core.testing.TestPorts
 import splice.core.util.AsyncFileIo
 import splice.core.util.LogSink
+import splice.launch.LaunchModSettings
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
@@ -98,7 +99,8 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
         Files.writeString(data("release"), "")
     }
 
-    fun launchOwner(): String = old.launch(ProcessHandle.current().pid())
+    fun launchOwner(settings: LaunchModSettings = LaunchModSettings()): String =
+        old.launch(ProcessHandle.current().pid(), settings)
 
     fun startTurn(session: String, owner: String = old.launch()) = checkNotNull(old.begin(session, owner))
 
@@ -139,7 +141,6 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
 
     suspend fun openSuccessor() {
         oldControl.stop()
-        next.launches.restore()
         next.sessions.follow(next.runner.mods.presence)
         next.runner.runner.handoverStarts = confirmation
         next.runner.runner.start(recoveredSessions = boot)
@@ -147,6 +148,7 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
     }
 
     suspend fun recoverSessions() {
+        next.launches.restore()
         next.sessions.restore(next.launches, confirmation.await())
         boot.complete(Unit)
     }

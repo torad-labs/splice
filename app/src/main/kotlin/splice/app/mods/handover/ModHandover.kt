@@ -22,7 +22,7 @@ import splice.core.util.SafeFailureText
 import splice.upstream.codemode.ProcessWaiter
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 // why: finishing the retired daemon cannot wait indefinitely for a successor that never opens.
 private const val HANDOVER_FLUSH_MS = 12_000L
@@ -43,14 +43,12 @@ internal class ModHandover(scope: CoroutineScope, port: Int, private val key: Mg
 
     @Volatile private var ordinal = 0L
 
-    @Volatile private var unconfirmed: ModHandoverReceipt? = null
-
     private val waiter = ProcessWaiter()
     private var waitingForSuccessor = false
     private val queued = Channel<ModDelivery>(MOD_HANDOVER_CAPACITY)
     private val prefix = ArrayDeque<ModDelivery>()
     private val slots = AtomicInteger()
-    private val outstanding = AtomicLong()
+    private val progress = AtomicReference<RelayProgress?>(RelayProgress(0))
     private var lastFailure: String? = null
     private val worker = scope.launch {
         val starts = ready.await()
@@ -72,7 +70,7 @@ internal class ModHandover(scope: CoroutineScope, port: Int, private val key: Mg
     }
 
     private fun reserve(): Boolean {
-        outstanding.incrementAndGet()
+        progress.updateAndGet { it?.copy(count = it.count + 1) }
         return slots.getAndUpdate { if (it < MOD_HANDOVER_CAPACITY) it + 1 else it } < MOD_HANDOVER_CAPACITY
     }
 
@@ -84,19 +82,19 @@ internal class ModHandover(scope: CoroutineScope, port: Int, private val key: Mg
         queued.close()
         if (withTimeoutOrNull(HANDOVER_FLUSH_MS) { worker.join() } == null) worker.cancel()
         // Exactly one report, after the writer is gone: a second one could count the same events twice.
-        val missing = outstanding.getAndSet(0)
-        if (missing > 0 && !report(missing)) {
+        val missing = progress.getAndSet(null) ?: return
+        if (missing.count > 0 && !report(missing)) {
             val why = lastFailure?.let { ": $it" }.orEmpty()
-            log("[mods] $missing events were not delivered across the handover$why\n")
+            log("[mods] ${missing.count} events were not delivered across the handover$why\n")
         }
     }
 
     /** True only when the successor answered that it recorded [count]. A successor that never opened cannot. */
-    private suspend fun report(count: Long): Boolean {
+    private suspend fun report(missing: RelayProgress): Boolean {
         if (!ready.isCompleted) return false
         val recorded = withTimeoutOrNull(HANDOVER_REPORT_MS) {
             HttpClient(Java) { followRedirects = false }.use { client ->
-                val loss = ModHandoverBatch(emptyList(), count, sender, ordinal, uncertain = unconfirmed)
+                val loss = ModHandoverBatch(emptyList(), missing.count, sender, ordinal, uncertain = missing.pending)
                 post(client, key.get(), loss)
             }
         }
@@ -110,11 +108,8 @@ internal class ModHandover(scope: CoroutineScope, port: Int, private val key: Mg
             slots.addAndGet(-events.size)
             // An event the host hides on purpose was handled, not missed. It is sealed here, off the turn's thread.
             val sealed = events.mapNotNull(ModDelivery::sealed)
-            outstanding.addAndGet(sealed.size.toLong() - events.size)
-            if (sealed.isNotEmpty()) {
-                deliver(client, key, ModHandoverBatch(sealed))
-                outstanding.addAndGet(-sealed.size.toLong())
-            }
+            progress.updateAndGet { it?.copy(count = it.count + sealed.size - events.size) }
+            if (sealed.isNotEmpty()) deliver(client, key, ModHandoverBatch(sealed))
         }
     }
 
@@ -127,7 +122,8 @@ internal class ModHandover(scope: CoroutineScope, port: Int, private val key: Mg
 
     private suspend fun deliver(client: HttpClient, key: String, batch: ModHandoverBatch) {
         val numbered = batch.copy(sender = sender, ordinal = ordinal++)
-        unconfirmed = ModHandoverReceipt(numbered.ordinal, batch.events.size)
+        val receipt = ModHandoverReceipt(numbered.ordinal, batch.events.size)
+        progress.updateAndGet { it?.copy(pending = receipt) }
         while (withTimeoutOrNull(HANDOVER_ATTEMPT_MS) { post(client, key, numbered) } != true) {
             if (!waitingForSuccessor) {
                 log("[mods] waiting for the successor to accept the handover\n")
@@ -135,7 +131,7 @@ internal class ModHandover(scope: CoroutineScope, port: Int, private val key: Mg
             }
             waiter.wait(HANDOVER_RETRY_MS)
         }
-        unconfirmed = null
+        progress.updateAndGet { it?.copy(count = it.count - receipt.count, pending = null) }
     }
 
     private suspend fun nextBatch(): List<ModDelivery>? {
@@ -147,6 +143,8 @@ internal class ModHandover(scope: CoroutineScope, port: Int, private val key: Mg
             }
         }
     }
+
+    private data class RelayProgress(val count: Long, val pending: ModHandoverReceipt? = null)
 
     private suspend fun post(client: HttpClient, key: String, batch: ModHandoverBatch): Boolean =
         Cancellables.runCatchingCancellable {

@@ -167,16 +167,18 @@
 - **`splice desktop wrapper` asks for both managed settings, and says only what splice read.** Claude Code's managed
   settings need `"parentSettingsBehavior": "merge"` beside `processWrapper`: without it in the source that wins,
   Claude Code drops the policy Claude Desktop hands each Code session, and Desktop warns in every one. `--print`,
-  `--check`, the doctor's `managed settings` row and the upgrade item say the same things: both keys wanted; the file
-  read (each key's string, a value that is not text, or absent), could not be read (splice then does not say whether it
-  exists), or nothing at its path, which a link to nothing, here or in a folder above, is not; the other places Claude
-  Code may take managed settings from (its remote settings, the macOS plists, the Windows HKLM and HKCU values, each
-  drop-in), named without being read; whether the launcher is laid; and what Desktop does, always as the condition,
-  since splice never reads every source. What to do is to check those places, and to edit the file in place only
-  where it does not hold both keys. `--check` exits 0 when the launcher, found where the daemon lays it, is laid and
-  the file names it, and nothing more. The upgrade lists an item whenever the file splice read does not hold both
-  keys, could not be read or is not there, or the launcher is not laid; `setup --update` says it found nothing new only
-  in what splice checked.
+  `--check`, the doctor's `managed settings` row and the upgrade item say the same things: both keys wanted; for each
+  key, the file whose value Claude Code's merge of the main file and its `managed-settings.d` drop-ins gives (a string,
+  or a value that is not text), or that no file sets it; the main file's state where splice did not read it (could not
+  be read, so splice does not say whether it exists, or nothing at its path, which a link to nothing, here or in a
+  folder above, is not); the places splice could not read (its remote settings, the macOS plists, the Windows HKLM and
+  HKCU values, a drop-in folder it can't list or a drop-in that is no JSON object), named; whether the launcher is
+  laid; and what Desktop does, always as the condition. What to do names the file to edit: a key held with another
+  value is changed in the file that holds it, a key no file holds is added to the main file, on the condition that no
+  unread place sets it; where both keys come out as wanted there is no step and no restart, and a restart is said only
+  as following a change. `--check` exits 0 when the launcher, found where the daemon lays it, is laid and the merged
+  files name it, and nothing more. The upgrade lists an item whenever the merged files do not give both keys, or the
+  launcher is not laid; `setup --update` says it found nothing new only in what splice checked.
 - **A command-auth provider signs in from the terminal or the console**, and `splice doctor` reports on it.
 - **A provider's declared effort vocabulary names its models' reasoning levels.** An openai-chat provider whose
   endpoint lists nothing about reasoning (a team gateway, a llama.cpp server) had no effort control in Claude Desktop's

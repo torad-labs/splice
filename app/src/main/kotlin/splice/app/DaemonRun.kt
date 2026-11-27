@@ -132,13 +132,16 @@ internal class DaemonRun(
             boundary.runCatchingDaemonBoundary { daemon.retire() }
             release(lock)
         }
-        coroutineScope {
-            val finishing = launch { boundary.runCatchingDaemonBoundary { daemon.finish(RETIRED_FINISH_MS) } }
-            select<Unit> {
-                shutdownSignal.onAwait { }
-                finishing.onJoin { }
+        // Kept turns get their full drain window; cleanup still has the same ceiling as an ordinary stop.
+        process.runBoundedTeardown(RETIRED_FINISH_MS + stopDeadlineMs + TEARDOWN_TAIL_GRACE_MS, hardHalt) {
+            coroutineScope {
+                val finishing = launch { boundary.runCatchingDaemonBoundary { daemon.finish(RETIRED_FINISH_MS) } }
+                select<Unit> {
+                    shutdownSignal.onAwait { }
+                    finishing.onJoin { }
+                }
+                finishing.cancel()
             }
-            finishing.cancel()
         }
     }
 

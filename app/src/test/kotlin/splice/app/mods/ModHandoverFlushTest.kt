@@ -66,6 +66,25 @@ class ModHandoverFlushTest {
     }
 
     @Test
+    fun `an acknowledged delivery without a recipient is counted`() = runBlocking {
+        ModHandoverTestRig(root).use { rig ->
+            rig.retire()
+            HttpClient(CIO).use { client ->
+                val event = ModEvent("turn.complete", "lost", JsonObject(emptyMap()))
+                val response = client.post(rig.handoverUrl) {
+                    bearerAuth(rig.key.get())
+                    contentType(ContentType.Application.Json)
+                    setBody(Json.encodeToString(ModHandoverBatch(listOf(ModDelivery(event)))))
+                }
+                assertEquals(HttpStatusCode.NoContent, response.status)
+                val catalog = client.get(rig.modsUrl) { bearerAuth(rig.key.get()) }
+                val mods = Json.parseToJsonElement(catalog.bodyAsText()).jsonObject
+                assertEquals(1L, mods.getValue("handoverDropped").jsonPrimitive.long)
+            }
+        }
+    }
+
+    @Test
     fun `the successor reports an unconfirmed event when the old daemon cuts its flush short`() = runBlocking {
         ModHandoverTestRig(root).use { rig ->
             rig.installRecorder()

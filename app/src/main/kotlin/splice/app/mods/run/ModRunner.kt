@@ -99,10 +99,10 @@ internal class ModRunner(
 
     private fun receive(event: splice.app.mods.handover.ModDelivery) {
         val target = event.only
-        if (target == null) {
-            roster.values.forEach { it.receive(event) }
-        } else {
-            roster[target]?.receive(event) ?: events.deliveryLoss.add(1)
+        when {
+            target != null -> roster[target]?.receive(event) ?: events.deliveryLoss.add()
+            roster.isEmpty() -> events.deliveryLoss.add()
+            else -> roster.values.forEach { it.receive(event) }
         }
     }
 

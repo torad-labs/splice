@@ -1,4 +1,4 @@
-package splice.sessions.http
+package splice.sessions.http.transcript
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.JsonObject
@@ -90,10 +90,17 @@ private class TranscriptAsk(
 }
 
 /** Owns the transcript page cursor protocol and its HTTP reply, independently of session listings. */
-internal class SessionTranscriptReply(private val transcripts: SessionTranscripts, private val roots: TranscriptRoots) {
+internal class SessionTranscriptReply(
+    private val transcripts: SessionTranscripts,
+    private val trees: TranscriptTrees,
+) {
+    fun interface TranscriptTrees {
+        fun forHead(head: String?): List<Path>
+    }
+
     fun read(sessionId: String, record: SessionRecord?, cursor: String?, limit: Int?, before: String?): JsonReply {
         val ask = TranscriptAsk(
-            roots.treesFor(record?.head),
+            trees.forHead(record?.head),
             cursor,
             limit ?: DEFAULT_TRANSCRIPT_PAGE,
             before,

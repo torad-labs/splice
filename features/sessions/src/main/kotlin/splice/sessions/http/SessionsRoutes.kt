@@ -35,6 +35,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
 import splice.http.JsonReply
+import splice.sessions.http.transcript.SessionTranscriptReply
 import splice.sessions.listing.GoneSessionRows
 import splice.sessions.listing.ListedRow
 import splice.sessions.note.PeerVersions
@@ -104,7 +105,7 @@ public class SessionsRoutes(
 
     /** Each row's last, model and title, kept against its transcript file's stamp. */
     private val transcriptFields = RowTranscriptFields(transcripts, viewEnabled, titleOf)
-    private val transcriptReply = SessionTranscriptReply(transcripts, roots)
+    private val transcriptReply = SessionTranscriptReply(transcripts, roots::treesFor)
 
     /** [held] is the mark of the gone sessions' rows the reader already holds, from an earlier answer's `gone_mark`. */
     public fun sessionsJson(held: String? = null): String = asks.listing().use { listingJson(held) }

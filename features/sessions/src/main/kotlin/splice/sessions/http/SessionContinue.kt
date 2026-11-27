@@ -96,14 +96,6 @@ private const val FEEDBACK_HELD = "it holds a feedback draft that has not been s
 private const val FEEDBACK_UNSENT =
     "$FEEDBACK_HELD, and its /exit would ask whether to send or discard it; do that in its terminal first"
 private const val RELAUNCH_NO_HEAD = "it runs on no splice command, so there is none to relaunch it on"
-private const val RELAUNCH_NONE = "this Continue on relaunches nothing; relaunch it from Sessions"
-
-/** A Continue on that only moves sessions, such as the manager's: it relaunches none. */
-private object NoRelaunches : SessionRelaunches {
-    override fun model(record: SessionRecord): String? = null
-
-    override fun command(record: SessionRecord, model: String?): StartCommand = StartCommand.Refused(RELAUNCH_NONE)
-}
 
 public class SessionContinue(
     private val drive: SessionDrive,
@@ -463,15 +455,4 @@ public class SessionContinue(
  *  the session's client. */
 public fun interface MovingSessionModel {
     public operator fun invoke(record: SessionRecord): String?
-}
-
-/** How a running session is started again as it was (a relaunch, Oct 26, 2026): the model its row reports, and the
- *  command it was started with, read back from its own process. */
-public interface SessionRelaunches {
-    /** The model [record]'s row reports it runs on, read before its client ends: what it goes on with. */
-    public fun model(record: SessionRecord): String?
-
-    /** The argv that starts [record]'s session again as it was started, resumed by its id on [model] when known, or
-     *  why splice cannot start it that way. */
-    public fun command(record: SessionRecord, model: String?): StartCommand
 }

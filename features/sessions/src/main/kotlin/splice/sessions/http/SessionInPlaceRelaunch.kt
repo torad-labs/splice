@@ -4,9 +4,28 @@ import io.ktor.http.HttpStatusCode
 import splice.core.session.SessionPane
 import splice.core.util.Cancellables
 import splice.http.JsonReply
+import splice.sessions.registry.SessionRecord
 
+private const val RELAUNCH_NONE = "this Continue on relaunches nothing; relaunch it from Sessions"
 private const val RELAUNCH_UNHELD =
     "its pane could not be kept open, so it would not come back where it runs; nothing was ended"
+
+/** How a running session is started again as it was: the model its row reports and the command it was started with. */
+public interface SessionRelaunches {
+    /** The model [record]'s row reports it runs on, read before its client ends: what it goes on with. */
+    public fun model(record: SessionRecord): String?
+
+    /** The argv that starts [record]'s session again as it was started, resumed by its id on [model] when known, or
+     *  why splice cannot start it that way. */
+    public fun command(record: SessionRecord, model: String?): StartCommand
+}
+
+/** A Continue on that only moves sessions, such as the manager's: it relaunches none. */
+internal object NoRelaunches : SessionRelaunches {
+    override fun model(record: SessionRecord): String? = null
+
+    override fun command(record: SessionRecord, model: String?): StartCommand = StartCommand.Refused(RELAUNCH_NONE)
+}
 
 /** Keeps a relaunch in the session's existing pane while its client is replaced. */
 internal class SessionInPlaceRelaunch(

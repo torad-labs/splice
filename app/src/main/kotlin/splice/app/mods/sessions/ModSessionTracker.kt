@@ -2,7 +2,6 @@ package splice.app.mods.sessions
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.StateFlow
@@ -39,7 +38,7 @@ internal class ModSessionTracker(
     private val pairs = ConcurrentHashMap<String, MutableSet<String?>>()
     private val active = ModActiveSessions()
     private val started = ConcurrentHashMap<ModSessionPair, ModPendingSession>()
-    private val early = Channel<ModEarlySession>(MOD_HANDOVER_CAPACITY)
+    private val early = ArrayDeque<ModEarlySession>()
     val confirmations: Collection<ModPendingSession> get() = started.values
     private var sweep: Job? = null
 
@@ -64,11 +63,13 @@ internal class ModSessionTracker(
         if (!accepting) return
         for (id in index.ids) seen[id] = id in index.ownerless
         for (entry in index.active + confirmed) remember(entry, launches)
-        historyReady = true
-        early.close()
-        while (true) {
-            val next = early.tryReceive().getOrNull() ?: break
-            see(next.sighting, launches, next)
+        while (accepting) {
+            currentCoroutineContext().ensureActive()
+            // Do not let a newer sighting take the start from one already on the pipe.
+            val next = synchronized(early) {
+                early.removeFirstOrNull().also { if (it == null) historyReady = true }
+            } ?: break
+            admit(next.sighting, launches, next)
         }
     }
 
@@ -102,21 +103,29 @@ internal class ModSessionTracker(
         if (fence.tryLock(SESSION_FENCE_MS, TimeUnit.MILLISECONDS)) fence.unlock()
     }
 
-    fun see(sighting: ModSessionSighting, launches: ModLaunches, staged: ModEarlySession? = null) {
+    fun see(sighting: ModSessionSighting, launches: ModLaunches) {
         if (!admitting || !ledger.valid(sighting.id)) return
         if (!historyReady) {
-            val ahead = ModEarlySession(sighting, launches)
-            if (early.trySend(ahead).isSuccess) {
-                hub.offer(SESSION_START, null, ahead, ahead)
-                return
+            synchronized(early) {
+                if (!historyReady) {
+                    if (early.size == MOD_HANDOVER_CAPACITY) return
+                    val ahead = ModEarlySession(sighting, launches)
+                    early.addLast(ahead)
+                    hub.offer(SESSION_START, null, ahead, ahead)
+                    return
+                }
             }
         }
+        admit(sighting, launches)
+    }
+
+    private fun admit(sighting: ModSessionSighting, launches: ModLaunches, staged: ModEarlySession? = null) {
         val launch = sighting.owner?.let(launches::stored)
         if (launch == null && !hub.listening) return
         val read = writers.readLock()
         if (read.tryLock()) {
             try {
-                if (observing) seeFirst(sighting, launch, staged)
+                if (admitting) seeFirst(sighting, launch, staged)
             } finally {
                 read.unlock()
             }

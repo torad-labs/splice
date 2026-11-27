@@ -188,12 +188,14 @@ internal class ModSupervisor(
         }.also { if (it) rearm() }
     }
 
-    @Synchronized
     private fun fail(why: String): Boolean {
-        hub.unbind(ModListener(mod.name, intake))
-        intake.close()
-        current = current.copy(state = ModRuntimeState.FAILED, why = "Mod ${mod.name}: $why", pid = null)
-        output.log.write(checkNotNull(current.why))
+        val message = "Mod ${mod.name}: $why"
+        synchronized(this) {
+            hub.unbind(ModListener(mod.name, intake))
+            intake.close()
+            current = current.copy(state = ModRuntimeState.FAILED, why = message, pid = null)
+        }
+        output.log.write(message)
         return false
     }
 }

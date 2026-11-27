@@ -118,10 +118,12 @@ class ModSessionHandoverTest {
                 val owner = daemon.launch(ProcessHandle.current().pid())
                 daemon.turn("early", owner)
                 history.release()
-                val received = events.through("recorder", "turn.complete", "early").filter { it.session == "early" }
-                assertEquals("session.start", received.first().name)
-                assertEquals(1, received.count { it.name == "turn.start" })
-                assertEquals(1, received.count { it.name == "turn.complete" })
+                daemon.turn("early", owner)
+                daemon.turn("barrier", owner)
+                val received = events.through("recorder", "turn.complete", "barrier").filter { it.session == "early" }
+                val edges = received.map { it.name }.filter { it == "session.start" || it.startsWith("turn.") }
+                val turnEdges = listOf("turn.start", "turn.complete")
+                assertEquals(listOf("session.start") + turnEdges + turnEdges, edges)
             }
         }
     }

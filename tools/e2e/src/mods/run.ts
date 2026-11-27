@@ -164,6 +164,7 @@ export class ModRun {
   async start(supervised = false): Promise<{ pid: number; supervisor: number }> {
     const argv = supervised ? [
       "systemd-socket-activate", "--fdname=control:head-acme:head-globex",
+      ...Object.keys(this.env).map(key => `--setenv=${key}`),
       ...[this.daemon.port, ...this.ports].flatMap(port => ["-l", `127.0.0.1:${port}`]),
       this.splice, "daemon",
     ] : [this.splice, "daemon"];

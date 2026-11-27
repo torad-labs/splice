@@ -36,17 +36,21 @@ public enum class SessionAvailability { LIVE, STALE, GONE }
  *  a missing directory is genuinely no sessions, a permission failure or a file in its place is
  *  not, and both callers say which (review 2026-09-14). */
 public data class SessionListing(val sessions: List<SessionRecord>, val error: String? = null) {
-    /** A session id gets one row: use the newest registration still here, or the newest ended one. */
+    /** One row per id: the last process to start that is still here, otherwise the most recently updated ended row. */
     public fun bySession(): List<SessionRecord> {
         val selected = HashMap<String, SessionRecord>()
         for (record in sessions) {
             val id = record.sessionId ?: continue
             val before = selected.putIfAbsent(id, record)
-            if (before?.availability == SessionAvailability.GONE && record.availability != SessionAvailability.GONE) {
-                selected[id] = record
-            }
+            if (before != null && supersedes(record, before)) selected[id] = record
         }
         return sessions.filter { record -> record.sessionId == null || selected.remove(record.sessionId, record) }
+    }
+
+    private fun supersedes(record: SessionRecord, before: SessionRecord): Boolean = when {
+        record.availability == SessionAvailability.GONE -> false
+        before.availability == SessionAvailability.GONE -> true
+        else -> compareValues(record.process.startedAt, before.process.startedAt) > 0
     }
 }
 

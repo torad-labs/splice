@@ -73,6 +73,35 @@ class SessionsRoutesTest {
     }
 
     @Test
+    fun `the newest launch owns the row even if another live process updated more recently`(@TempDir dir: Path) {
+        Files.writeString(
+            dir.resolve("11.json"),
+            """{"pid":11,"sessionId":"shared","name":"older client","cwd":"/old","startedAt":${now - 5_000},""" +
+                """"updatedAt":$now}""",
+        )
+        Files.writeString(
+            dir.resolve("12.json"),
+            """{"pid":12,"sessionId":"shared","name":"newer client","cwd":"/new","startedAt":${now - 2000},""" +
+                """"updatedAt":${now - 1000}}""",
+        )
+        val registry = SessionRegistry(
+            sessionsDir = dir,
+            routeOf = { pid -> SessionRoute.Head(if (pid == 11L) "old" else "new") },
+            pidAlive = { true },
+            clock = { now },
+        )
+        val facts = SessionRowFacts(labelsOf = SessionLabelsOf { mapOf("process" to it.head.orEmpty()) })
+        val body = Json.parseToJsonElement(SessionsRoutes(registry, TestTranscripts(), facts = facts).sessionsJson())
+        val row = body.jsonObject.getValue("sessions").jsonArray.single().jsonObject
+        assertEquals("shared", row.getValue("session_id").jsonPrimitive.content)
+        assertEquals("newer client", row.getValue("name").jsonPrimitive.content)
+        assertEquals("/new", row.getValue("cwd").jsonPrimitive.content)
+        assertEquals("new", row.getValue("head").jsonPrimitive.content)
+        assertEquals("new", row.getValue("labels").jsonObject.getValue("process").jsonPrimitive.content)
+        assertEquals("live", row.getValue("availability").jsonPrimitive.content)
+    }
+
+    @Test
     fun `sessions json names the listed versions a note is sent to, by peerProtocol 1 and 2-1-282 or later`(
         @TempDir dir: Path,
     ) {

@@ -141,6 +141,7 @@ internal class ModSupervisor(
         process = null
         return when (exit) {
             is ModExit.Failed -> fail("could not load: ${exit.why}")
+            is ModExit.Incomplete -> fail(exit.why, exit.group)
             ModExit.Crashed -> restart(child.exitReason())
             ModExit.Stopped -> false
         }
@@ -188,12 +189,12 @@ internal class ModSupervisor(
         }.also { if (it) rearm() }
     }
 
-    private fun fail(why: String): Boolean {
+    private fun fail(why: String, group: Long? = null): Boolean {
         val message = "Mod ${mod.name}: $why"
         synchronized(this) {
             hub.unbind(ModListener(mod.name, intake))
             intake.close()
-            current = current.copy(state = ModRuntimeState.FAILED, why = message, pid = null)
+            current = current.copy(state = ModRuntimeState.FAILED, why = message, pid = group)
         }
         output.log.write(message)
         return false

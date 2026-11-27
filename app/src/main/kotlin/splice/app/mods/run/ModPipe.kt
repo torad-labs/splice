@@ -73,7 +73,7 @@ internal class ModPipe(
         output.use { stream ->
             if (reason != null) return
             ModLine.write(stream, buildJsonObject { put("type", "start") })
-            while (reason == null || queue.writingSince != 0L) {
+            while (reason == null) {
                 log.reportDrops()
                 if (!writeAvailable(stream, calls) && wake.receiveCatching().isClosed) return
             }

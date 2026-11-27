@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { chmodSync, closeSync, mkdirSync, openSync, realpathSync, writeSync } from "node:fs";
+import { chmodSync, closeSync, createReadStream, mkdirSync, openSync, realpathSync, writeSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
@@ -12,6 +12,7 @@ const STORE_BYTES = 16 * 1024 * 1024;
 const EVENT_MS = 5000;
 const STOP_MS = 2000;
 const SESSION_CALLS = 16;
+const protocol = process.argv[2] === undefined ? null : Number(process.argv[2]);
 const served = new Set<string>([
   "mod.start", "mod.stop", "session.start", "session.end", "turn.start", "request.send",
   "stream.event", "tool.call", "response.receive", "turn.complete",
@@ -128,7 +129,8 @@ class Pipe {
   async read(receive: (message: Payload) => void) {
     const buffer = new Uint8Array(LINE_BYTES);
     let used = 0;
-    for await (const chunk of Bun.stdin.stream()) {
+    const input = protocol === null ? Bun.stdin.stream() : createReadStream("", { fd: protocol });
+    for await (const chunk of input) {
       let offset = 0;
       while (offset < chunk.length) {
         const newline = chunk.indexOf(10, offset);
@@ -448,7 +450,7 @@ function cleanEnvironment() {
   }).execve;
   if (!replace) throw new Error("This Bun launcher adds environment variables. Set SPLICE_BUN to the Bun binary.");
   replace.call(process, process.execPath, [
-    process.execPath, "--config=/dev/null", "--no-env-file", "--no-install", import.meta.path,
+    process.execPath, "--config=/dev/null", "--no-env-file", "--no-install", import.meta.path, ...process.argv.slice(2),
   ], sanitized);
 }
 
@@ -457,6 +459,7 @@ async function main() {
     cleanEnvironment();
     const { SPLICE_MOD_NAME: name, SPLICE_MOD_ROOT: root, SPLICE_MOD_DATA: data } = process.env;
     if (!name || !root || !data) throw new Error("The mod host must be started by Splice.");
+    if (protocol !== null) void Bun.stdin.arrayBuffer().then(stopOwnGroup, stopOwnGroup);
     return await new Host(name, root, data).run();
   } catch (error) {
     new Pipe().send({ type: "load-failed", why: diagnostic(error).message });
@@ -464,4 +467,19 @@ async function main() {
   }
 }
 
-process.exit(await main());
+let cleanup: Promise<void> | undefined;
+function stopOwnGroup(): Promise<void> {
+  // In a guarded run this live host leads its own group. Keep that ID pinned
+  // until the last signal, even if the guardian was killed and cannot reap us.
+  return cleanup ??= (async () => {
+    process.on("SIGTERM", () => {});
+    process.kill(-process.pid, "SIGTERM");
+    await Bun.sleep(250);
+    process.kill(-process.pid, "SIGKILL");
+  })();
+}
+
+const code = await main();
+// Do not let normal host exit race a lifeline EOF and leave helpers behind.
+if (protocol !== null) await stopOwnGroup();
+process.exit(code);

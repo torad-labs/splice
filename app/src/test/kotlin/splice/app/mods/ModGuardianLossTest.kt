@@ -1,18 +1,12 @@
 package splice.app.mods
 
-import io.ktor.client.request.bearerAuth
-import io.ktor.client.request.put
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.HttpStatusCode
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -56,15 +50,42 @@ class ModGuardianLossTest {
                 assertTrue(why.contains("guardian was killed"), why)
                 assertTrue(why.contains("group ${mod.host.pid()} may still be running"), why)
 
-                val enable = client.put("/api/mods/watched") {
-                    bearerAuth(rig.key.get())
-                    setBody("""{"enabled":true}""")
-                }
-                assertEquals(HttpStatusCode.OK, enable.status)
-                val refused = Json.parseToJsonElement(enable.bodyAsText()).jsonObject
+                val refused = rig.enable(client, "watched")
                 assertEquals("failed", refused.getValue("state").jsonPrimitive.content)
                 assertTrue(mod.host.isAlive)
                 assertTrue(mod.helper.isAlive)
+
+                mod.releaseHost()
+                rig.eventually { true.takeUnless { mod.host.isAlive || mod.helper.isAlive } }
+                val restarted = rig.enable(client, "watched")
+                assertEquals("running", restarted.getValue("state").jsonPrimitive.content)
+                assertNotEquals(mod.host.pid(), restarted.getValue("pid").jsonPrimitive.long)
+            }
+        } finally {
+            rig.runner.stop()
+        }
+    }
+
+    @Test
+    fun `a guardian that does not exit after EOF is reported without signalling it`() = testApplication {
+        val rig = RunnerTestRig(root)
+        application { routing { rig.mount.register(this) } }
+        rig.runner.start()
+        try {
+            val row = rig.install(client, fixture(rig, held = true))
+            processes(rig, row.getValue("pid").jsonPrimitive.long).use { mod ->
+                mod.pauseGuardian()
+                try {
+                    val failure = rig.disable(client, "watched")
+                    val why = failure.getValue("why").jsonPrimitive.content
+                    assertEquals("failed", failure.getValue("state").jsonPrimitive.content)
+                    assertTrue(why.contains("did not exit after stdin closed"), why)
+                    assertTrue(why.contains("group ${mod.host.pid()} may still be running"), why)
+                    assertTrue(mod.host.isAlive)
+                } finally {
+                    mod.resumeGuardian()
+                }
+                rig.eventually { true.takeUnless { mod.host.isAlive || mod.helper.isAlive } }
             }
         } finally {
             rig.runner.stop()
@@ -105,8 +126,20 @@ private class ModGuardianFixture(pid: Long, helperPid: Long, private val release
         assertTrue(guardian.destroyForcibly())
     }
 
-    override fun close() {
+    fun pauseGuardian() = signal("STOP")
+
+    fun resumeGuardian() = signal("CONT")
+
+    private fun signal(signal: String) {
+        assertEquals(0, ProcessBuilder("/bin/kill", "-$signal", guardian.pid().toString()).start().waitFor())
+    }
+
+    fun releaseHost() {
         Files.writeString(release, "")
+    }
+
+    override fun close() {
+        releaseHost()
         if (host.isAlive) host.destroyForcibly()
         if (helper.isAlive) helper.destroyForcibly()
     }

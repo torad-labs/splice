@@ -18,6 +18,8 @@ Where a mod's files live, what it is shown and what it can reach are on
 - A mod observes. Handlers are told about sessions and turns; they cannot change, answer or slow a turn.
 - Mods run as you, **not in a sandbox**. Splice stops the host and processes that stay in its group. A process that
   deliberately leaves the group, for example by starting a new session, is the mod's responsibility.
+  If a guardian is killed above a stuck host or does not exit after its pipe closes, Splice reports the group and refuses
+  to start another copy until it is gone.
 
 ### Bun
 

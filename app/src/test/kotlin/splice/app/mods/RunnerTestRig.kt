@@ -78,10 +78,14 @@ internal class RunnerTestRig(
         return Json.parseToJsonElement(body).jsonObject
     }
 
-    suspend fun disable(client: HttpClient, name: String): JsonObject {
+    suspend fun disable(client: HttpClient, name: String): JsonObject = setEnabled(client, name, false)
+
+    suspend fun enable(client: HttpClient, name: String): JsonObject = setEnabled(client, name, true)
+
+    private suspend fun setEnabled(client: HttpClient, name: String, enabled: Boolean): JsonObject {
         val response = client.put("/api/mods/$name") {
             bearerAuth(key.get())
-            setBody("""{"enabled":false}""")
+            setBody("""{"enabled":$enabled}""")
         }
         assertEquals(HttpStatusCode.OK, response.status)
         return Json.parseToJsonElement(response.bodyAsText()).jsonObject

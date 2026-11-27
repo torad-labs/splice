@@ -22,6 +22,7 @@ private const val LOAD_MS = 30_000L // why: an import that never registers canno
 private const val PIPE_DRAIN_MS = 1000L // why: a foreign process may still hold the write end
 private const val EOF_GRACE_MS = 4000L // why: allow the guardian to close its group after the host's stop hook
 private const val GUARDIAN_START_MS = 5000L // why: an unsuccessful spawn must not hold the mod's pipe
+private const val MOD_GUARDIAN_SIGNAL_EXIT = 128 // why: Unix Process reports a signal as 128 plus its number
 
 internal interface ModProcessObserver {
     fun ready(process: ModProcess, loaded: ModLoad.Ready)
@@ -30,6 +31,7 @@ internal interface ModProcessObserver {
 
 internal sealed class ModExit {
     data class Failed(val why: String) : ModExit()
+    data class Incomplete(val why: String, val group: Long) : ModExit()
     data object Crashed : ModExit()
     data object Stopped : ModExit()
 }
@@ -52,7 +54,7 @@ internal class ModProcess(
 
     fun exitReason(): String {
         val detail = receiver.lastStderr?.let { ", \"$it\"" }.orEmpty()
-        return "exit code ${process.exitValue()}$detail"
+        return "exit code ${receiver.hostExit ?: process.exitValue()}$detail"
     }
 
     suspend fun run(stop: CompletableDeferred<String>, observer: ModProcessObserver): ModExit {
@@ -62,14 +64,15 @@ internal class ModProcess(
         val writer = wiring.launch { io("write") { write() } }
         val stdout = wiring.launch { io("read stdout") { ModLineReader(process.inputStream).drain(receiver::stdout) } }
         val stderr = wiring.launch { io("read stderr") { ModLineReader(process.errorStream).drain(receiver::stderr) } }
-        return try {
+        var incomplete: ModExit.Incomplete? = null
+        val outcome = try {
             supervise(stop, exited, stdout, observer)
         } finally {
             withContext(NonCancellable) {
                 observer.disconnected(this@ModProcess)
                 val why = if (stop.isCompleted) stop.await() else "daemon stop"
                 try {
-                    close(why, exited)
+                    incomplete = close(why, exited, writer)
                     withTimeoutOrNull(PIPE_DRAIN_MS) { joinAll(writer, stdout, stderr) }
                 } finally {
                     wiring.cancel()
@@ -77,6 +80,7 @@ internal class ModProcess(
                 }
             }
         }
+        return incomplete ?: outcome
     }
 
     private suspend fun supervise(
@@ -110,17 +114,27 @@ internal class ModProcess(
         }
     }
 
-    private suspend fun close(reason: String, exited: Deferred<Process>) {
+    private suspend fun close(reason: String, exited: Deferred<Process>, writer: Job): ModExit.Incomplete? {
         pipe.finish(reason)
-        if (process.isAlive) withTimeoutOrNull(EOF_GRACE_MS) { exited.await() }
-        if (process.isAlive) {
-            // Process.destroy may close JDK streams behind a blocked writer. It owns only this direct child.
-            Thread.startVirtualThread { process.destroy() }
-            if (withTimeoutOrNull(PIPE_DRAIN_MS) { exited.await() } == null) {
-                output.log.write("The guardian of this mod is still running (PID ${process.pid()}).")
+        if (withTimeoutOrNull(PIPE_DRAIN_MS) { writer.join() } == null) {
+            // Close only the input. A blocked JDK writer may hold its stream monitor, so do not join this close.
+            Thread.startVirtualThread {
+                Cancellables.discard(
+                    Cancellables.runCatchingCancellable { process.outputStream.close() },
+                    "the guardian's exit below tells us whether closing its input worked",
+                )
             }
         }
+        val status = withTimeoutOrNull(EOF_GRACE_MS) { exited.await().exitValue() }
         pipe.close()
+        val failure = when {
+            status == null -> "the guardian did not exit after stdin closed"
+            status >= MOD_GUARDIAN_SIGNAL_EXIT -> "the guardian was killed"
+            status != 0 -> "the guardian exited before confirming cleanup"
+            else -> return null
+        }
+        val group = pid
+        return ModExit.Incomplete("$failure; group $group may still be running", group)
     }
 
     private suspend fun write() {

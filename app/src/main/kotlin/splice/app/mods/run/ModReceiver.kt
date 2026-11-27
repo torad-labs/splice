@@ -35,6 +35,9 @@ internal class ModReceiver(
 
     val child = CompletableDeferred<Long>()
 
+    @Volatile var hostExit: Int? = null
+        private set
+
     fun stdout(text: String?) {
         val line = text?.let(ModLine::decode)
         if (line == null) drops.transport() else receive(line)
@@ -54,6 +57,7 @@ internal class ModReceiver(
 
     private fun receiveDrop(line: JsonObject) = when (JsonScalars.str(line, "type")) {
         "guardian" -> JsonScalars.str(line, "pid")?.toLongOrNull()?.let(child::complete)
+        "host-exit" -> { hostExit = JsonScalars.str(line, "code")?.toIntOrNull() }
         "dropped" -> drops.transport(count(line))
         "log-dropped" -> drops.log(count(line))
         else -> drops.transport()

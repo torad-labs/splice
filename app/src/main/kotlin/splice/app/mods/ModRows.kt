@@ -62,6 +62,7 @@ internal class ModRows(private val mods: InstalledMods) {
     }
 
     private fun status(mod: InstalledMod, reported: ModRuntime?, bun: String?): ModRuntime = when {
+        reported?.state == ModRuntimeState.FAILED && reported.pid != null -> reported
         !mod.enabled -> (reported ?: ModRuntime(ModRuntimeState.DISABLED))
             .copy(state = ModRuntimeState.DISABLED, why = null, pid = null)
         reported != null -> reported

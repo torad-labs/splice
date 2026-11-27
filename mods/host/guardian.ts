@@ -9,6 +9,13 @@ const symbols = {
   posix_spawnattr_setflags: { returns: "i32", args: ["ptr", "i16"] },
   posix_spawnattr_setpgroup: { returns: "i32", args: ["ptr", "i32"] },
   posix_spawnattr_destroy: { returns: "i32", args: ["ptr"] },
+  posix_spawn_file_actions_init: { returns: "i32", args: ["ptr"] },
+  posix_spawn_file_actions_adddup2: { returns: "i32", args: ["ptr", "i32", "i32"] },
+  posix_spawn_file_actions_addclose: { returns: "i32", args: ["ptr", "i32"] },
+  posix_spawn_file_actions_destroy: { returns: "i32", args: ["ptr"] },
+  pipe: { returns: "i32", args: ["ptr"] },
+  dup: { returns: "i32", args: ["i32"] },
+  close: { returns: "i32", args: ["i32"] },
   posix_spawn: { returns: "i32", args: ["ptr", "ptr", "ptr", "ptr", "ptr", "ptr"] },
   poll: { returns: "i32", args: ["ptr", "u32", "i32"] },
   waitid: { returns: "i32", args: ["i32", "i32", "ptr", "i32"] },
@@ -43,8 +50,8 @@ const STOP_HOOK_MS = 2100;
 const TERM_GRACE_MS = 250;
 const REAP_MS = 1000;
 
-function spawnHost() {
-  const command = process.argv.slice(2);
+function spawnHost(protocol: number, life: Int32Array) {
+  const command = [...process.argv.slice(2), String(protocol)];
   const encoder = new TextEncoder();
   function vector(strings: string[]) {
     const bytes = strings.map(s => encoder.encode(s + "\0"));
@@ -59,9 +66,21 @@ function spawnHost() {
   try {
     requireZero(c.posix_spawnattr_setflags(ptr(attrs), 2), "POSIX_SPAWN_SETPGROUP");
     requireZero(c.posix_spawnattr_setpgroup(ptr(attrs), 0), "set child group");
-    requireZero(c.posix_spawn(
-      ptr(child), ptr(argv.bytes[0]!), null, ptr(attrs), ptr(argv.pointers), ptr(envp.pointers),
-    ), "start mod host");
+    const files = new BigUint64Array(128);
+    requireZero(c.posix_spawn_file_actions_init(ptr(files)), "init host descriptors");
+    try {
+      // The host reads protocol from a duplicate of our stdin, but its own stdin
+      // is the lifeline. Only the guardian owns the write end.
+      requireZero(c.posix_spawn_file_actions_adddup2(ptr(files), life[0]!, 0), "set host stdin");
+      for (const fd of life) {
+        requireZero(c.posix_spawn_file_actions_addclose(ptr(files), fd), "close inherited lifeline end");
+      }
+      requireZero(c.posix_spawn(
+        ptr(child), ptr(argv.bytes[0]!), ptr(files), ptr(attrs), ptr(argv.pointers), ptr(envp.pointers),
+      ), "start mod host");
+    } finally {
+      c.posix_spawn_file_actions_destroy(ptr(files));
+    }
   } finally {
     c.posix_spawnattr_destroy(ptr(attrs));
   }
@@ -73,9 +92,6 @@ const info = new BigUint64Array(16); // siginfo_t; si_signo is the first int on 
 const poll = new Int16Array(4); // pollfd: i32 fd, i16 events, i16 revents
 poll[2] = 0x01; // POLLIN arms the pipe's read filter on Darwin too
 const CLOSED = 0x08 | 0x10 | 0x20; // POLLERR, POLLHUP, POLLNVAL
-let stopping = false;
-process.on("SIGTERM", () => { stopping = true; });
-
 function exited(host: number): boolean {
   info.fill(0n);
   requireZero(c.waitid(P_PID, host, ptr(info), WNOHANG | WEXITED | WNOWAIT), "watch mod host");
@@ -103,15 +119,32 @@ async function guard(): Promise<number> {
   if (c.setsid() < 0) throw new Error("could not isolate the mod session");
   // The daemon records our identity before it opens this gate.
   if (readSync(0, new Uint8Array(1), 0, 1, null) !== 1) return 0;
-  const host = spawnHost();
+  const life = new Int32Array(2);
+  requireZero(c.pipe(ptr(life)), "open host lifeline");
+  try {
+    const protocol = c.dup(0);
+    if (protocol < 0) throw new Error("could not pass the protocol pipe to the host");
+    let host: number;
+    try {
+      host = spawnHost(protocol, life);
+    } finally {
+      c.close(protocol);
+    }
+    return await keep(host);
+  } finally {
+    for (const fd of life) c.close(fd);
+  }
+}
+
+async function keep(host: number): Promise<number> {
   try {
     writeSync(1, JSON.stringify({ type: "guardian", pid: host }) + "\n");
-    while (!stopping && !exited(host)) {
+    while (!exited(host)) {
       const signalled = c.poll(ptr(poll), 1, POLL_MS) > 0;
       if (signalled && (poll[3]! & CLOSED)) {
         // The host reads the same pipe; do not consume any of its protocol bytes.
         const until = performance.now() + STOP_HOOK_MS;
-        while (!stopping && !exited(host) && performance.now() < until) await Bun.sleep(20);
+        while (!exited(host) && performance.now() < until) await Bun.sleep(20);
         break;
       }
       // A busy host may leave data pending. Polling it must not turn into a spin.
@@ -125,4 +158,7 @@ async function guard(): Promise<number> {
   return stopHost(host);
 }
 
-process.exitCode = await guard();
+const code = await guard();
+// A host can itself exit from SIGKILL. Only a killed guardian exits from a signal;
+// its normal exit carries the host status on the pipe instead.
+writeSync(1, JSON.stringify({ type: "host-exit", code }) + "\n");

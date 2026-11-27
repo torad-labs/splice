@@ -63,7 +63,7 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
         val source = old.runner.fixture(
             RECORDER,
             """
-            import { existsSync, readFileSync, writeFileSync } from "node:fs";
+            import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
             export function register(on) {
               on("mod.start", async ($) => {
                 const path = Bun.env.SPLICE_MOD_DATA + "/previous-pid";
@@ -90,6 +90,7 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
               for (const name of ["session.start", "session.end", "turn.start", "request.send", "response.receive",
                                   "stream.event", "tool.call", "turn.complete"]) {
                 on(name, async ($, e) => {
+                  ${recordStartup()}
                   $.log("event=" + JSON.stringify({name, payload:e}));
                   const data = Bun.env.SPLICE_MOD_DATA;
                   if (name === "request.send" && existsSync(data + "/hold")) {
@@ -102,6 +103,22 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
         )
         old.runner.install(client, source, linked = linked, base = url(oldControl.listeningPort))
         if (startRunner) oldPid = starts(1).single().pid
+    }
+
+    private fun recordStartup(): String = """
+        if (name === "turn.complete" && e.session?.startsWith("startup-")) {
+          appendFileSync(Bun.env.SPLICE_MOD_DATA + "/startup-events", e.session + "\n");
+          return;
+        }
+    """.trimIndent()
+
+    suspend fun recordedStartups(count: Int): List<String> = old.runner.eventually {
+        val file = data("startup-events")
+        if (Files.exists(file)) Files.readAllLines(file).takeIf { it.size >= count } else null
+    }
+
+    suspend fun awaitConfirmations() {
+        confirmation.await()
     }
 
     private fun helperAtStart(enabled: Boolean, detached: Boolean): String = """

@@ -10,6 +10,9 @@ internal const val MOD_HANDOVER_CAPACITY = 4096 // why: bound the backlog while 
 internal const val MOD_HANDOVER_BATCH_SIZE = 64 // why: amortize local HTTP without holding the entire backlog in a body
 internal const val MOD_HANDOVER_DROPPED = "handoverDropped"
 
+// why: only a retrying sender from a recent daemon can repeat a batch, so a short list of senders bounds the receipts
+internal const val MOD_HANDOVER_RECEIPTS = 16
+
 @Serializable
 internal data class ModHandoverBatch(
     val events: List<ModDelivery>,
@@ -19,11 +22,14 @@ internal data class ModHandoverBatch(
     val starts: List<ModSessionEntry> = emptyList(),
     val startsComplete: Boolean = false,
     val uncertain: ModHandoverReceipt? = null,
+    /** The last batch the sending daemon accepted from each earlier sender, so a retry of one is not told twice. */
+    val accepted: Map<String, Long> = emptyMap(),
 ) {
     fun valid(): Boolean = bounded() && events.all { it.event.name in ModHandoverEvents.names }
 
     private fun bounded(): Boolean =
-        events.size + starts.size <= MOD_HANDOVER_BATCH_SIZE && (dropped >= 0 && ordinal >= 0)
+        events.size + starts.size <= MOD_HANDOVER_BATCH_SIZE && (dropped >= 0 && ordinal >= 0) &&
+            accepted.size <= MOD_HANDOVER_RECEIPTS
 }
 
 @Serializable

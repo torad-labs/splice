@@ -175,7 +175,9 @@ internal class ControlPlane(
         stores.mods.presence,
         modSessions,
         modLaunches,
-        splice.app.mods.handover.ModHandoverStarts(statePaths.envReader(splice.app.daemon.SPLICE_SUCCEEDS) != null),
+        statePaths.envReader(splice.app.daemon.SPLICE_SUCCEEDS).let { predecessor ->
+            splice.app.mods.handover.ModHandoverStarts(predecessor != null, predecessor?.toLongOrNull())
+        },
     ).also { modRunner.handoverStarts = it.starts }
 
     internal fun prepareModObservations(providers: Map<String, splice.core.topology.ProviderConfig>) {

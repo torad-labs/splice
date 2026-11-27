@@ -2,7 +2,9 @@ package splice.app.mods
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -34,12 +36,13 @@ internal class ModSessionTracking(
     fun start() {
         if (stopped) return
         work = scope.launch(ProcessDispatchers().io()) {
+            val confirmations = async(start = CoroutineStart.UNDISPATCHED) { starts.await() }
             try {
                 launches.restore()
                 presence.collectLatest { installed ->
                     if (installed) {
                         if (!ready.isCompleted) {
-                            sessions.restore(launches, starts.await())
+                            sessions.restore(launches, confirmations.await())
                             ready.complete(Unit)
                         }
                         sessions.sweep()

@@ -34,7 +34,11 @@ internal class ModHandoverMount(private val ports: ConsolePorts, private val gua
                 "This daemon has not loaded its mod runner.",
             )
             batch?.valid() != true -> error(call, HttpStatusCode.BadRequest, "Invalid mod handover batch.")
-            !runner.acceptHandover(batch) -> error(call, HttpStatusCode.ServiceUnavailable, "This daemon is stopping.")
+            !runner.acceptHandover(batch) -> error(
+                call,
+                HttpStatusCode.ServiceUnavailable,
+                "This daemon is not taking handover batches yet, or is stopping.",
+            )
             else -> JsonReply(HttpStatusCode.NoContent, "").send(call)
         }
     }

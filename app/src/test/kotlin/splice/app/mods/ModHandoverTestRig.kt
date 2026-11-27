@@ -16,6 +16,7 @@ import kotlinx.serialization.json.long
 import splice.app.control.ControlAuth
 import splice.app.control.ControlServer
 import splice.app.control.controlServerFor
+import splice.app.mods.handover.MOD_HANDOVER_PATH
 import splice.app.mods.handover.ModHandoverStarts
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
@@ -41,11 +42,12 @@ internal class ModHandoverTestRig(private val root: Path) : AutoCloseable {
     val key = MgmtKey(old.runner.paths, LogSink {})
     private val client = HttpClient(CIO)
     private val oldControl = control(old, 0)
-    private val confirmation = ModHandoverStarts(true)
+    private val confirmation = ModHandoverStarts(true, ProcessHandle.current().pid())
     private val boot = CompletableDeferred<Unit>()
     private var nextControl: ControlServer? = null
     val modsUrl get() = "${url(checkNotNull(nextControl).listeningPort)}/api/mods"
     val handoverUrl get() = "$modsUrl/handover"
+    val oldHandoverUrl get() = "${url(oldControl.listeningPort)}$MOD_HANDOVER_PATH"
 
     private var oldPid = 0L
 

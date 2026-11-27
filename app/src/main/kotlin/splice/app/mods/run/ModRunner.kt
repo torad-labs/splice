@@ -7,6 +7,7 @@ import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.withTimeoutOrNull
 import splice.app.mods.ModRuntime
 import splice.app.mods.ModRuntimeStatus
+import splice.app.mods.handover.ModAcceptedBatches
 import splice.app.mods.handover.ModHandover
 import splice.app.mods.handover.ModHandoverBatch
 import splice.app.mods.install.InstalledMods
@@ -37,7 +38,7 @@ internal class ModRunner(
     private val setup = ModProcessSetup(paths, log, calls, installed.bun, io)
     private val scope = LifecycleScope(io)
     private val roster = ConcurrentHashMap<String, ModSupervisor>()
-    private val acceptedBatches = mutableMapOf<String, Long>()
+    private val acceptedBatches = ModAcceptedBatches()
     private var handover: ModHandover? = null
     private var startup: Job? = null
     var handoverStarts: splice.app.mods.handover.ModHandoverStarts? = null
@@ -49,7 +50,8 @@ internal class ModRunner(
 
     @Synchronized
     fun beginHandover(port: Int, key: MgmtKey) {
-        val forwarding = ModHandover(scope, port, key, log)
+        // The fence below ends what this daemon accepts, so the list handed on is final.
+        val forwarding = ModHandover(scope, port, key, log, acceptedBatches.snapshot())
         handover = forwarding
         events.handOver(forwarding)
         fence("handover", forwarding)
@@ -69,15 +71,16 @@ internal class ModRunner(
 
     @Synchronized
     fun acceptHandover(batch: ModHandoverBatch): Boolean {
-        if (phase != Phase.RUNNING) return false
+        if (phase != Phase.RUNNING || handoverStarts?.holds(batch) == true) return false
         val sender = batch.sender
-        val last = sender?.let(acceptedBatches::get) ?: -1L
+        val last = sender?.let(acceptedBatches::of) ?: -1L
         if (sender != null && batch.ordinal <= last) return true
+        if (batch.startsComplete) acceptedBatches.record(batch.accepted)
         batch.events.forEach(::receive)
         val confirmed = batch.uncertain?.takeIf { it.ordinal <= last }?.count ?: 0
         events.deliveryLoss.add((batch.dropped - confirmed).coerceAtLeast(0))
         handoverStarts?.accept(batch)
-        if (sender != null) acceptedBatches[sender] = batch.ordinal
+        if (sender != null) acceptedBatches.record(sender, batch.ordinal)
         return true
     }
 

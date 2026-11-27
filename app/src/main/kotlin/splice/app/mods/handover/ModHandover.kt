@@ -36,10 +36,16 @@ private const val HANDOVER_RETRY_MS = 100L // why: do not spin on a refused loca
 private const val HANDOVER_REPORT_MS = 1000L
 
 /** A single ordered writer retries the same receipt identity, not a new delivery. */
-internal class ModHandover(scope: CoroutineScope, port: Int, private val key: MgmtKey, private val log: LogSink) {
+internal class ModHandover(
+    scope: CoroutineScope,
+    port: Int,
+    private val key: MgmtKey,
+    private val log: LogSink,
+    private val accepted: Map<String, Long> = emptyMap(),
+) {
     private val url = "http://127.0.0.1:$port$MOD_HANDOVER_PATH"
     private val ready = CompletableDeferred<Collection<ModPendingSession>>()
-    private val sender = UUID.randomUUID().toString()
+    private val sender = "${ProcessHandle.current().pid()}/${UUID.randomUUID()}"
 
     @Volatile private var ordinal = 0L
 
@@ -80,12 +86,21 @@ internal class ModHandover(scope: CoroutineScope, port: Int, private val key: Mg
 
     suspend fun finish() {
         queued.close()
-        if (withTimeoutOrNull(HANDOVER_FLUSH_MS) { worker.join() } == null) worker.cancel()
-        // Exactly one report, after the writer is gone: a second one could count the same events twice.
-        val missing = progress.getAndSet(null) ?: return
-        if (missing.count > 0 && !report(missing)) {
-            val why = lastFailure?.let { ": $it" }.orEmpty()
-            log("[mods] ${missing.count} events were not delivered across the handover$why\n")
+        var told = false
+        try {
+            if (withTimeoutOrNull(HANDOVER_FLUSH_MS) { worker.join() } == null) worker.cancel()
+            val missing = progress.get() ?: return
+            told = missing.count <= 0 || report(missing)
+        } finally {
+            // The count is taken only here, after the report was confirmed or has failed: a stop that cancels the wait
+            // or the POST must not erase it, so what the successor was not told goes to the log. One report only, after
+            // the writer is gone: a second one could count the same events twice.
+            worker.cancel()
+            val missing = progress.getAndSet(null)?.count ?: 0
+            if (!told && missing > 0) {
+                val why = lastFailure ?: "the daemon stop ended the flush"
+                log("[mods] $missing events were not delivered across the handover: $why\n")
+            }
         }
     }
 
@@ -107,8 +122,15 @@ internal class ModHandover(scope: CoroutineScope, port: Int, private val key: Mg
             val events = nextBatch() ?: break
             slots.addAndGet(-events.size)
             // An event the host hides on purpose was handled, not missed. It is sealed here, off the turn's thread.
-            val sealed = events.mapNotNull(ModDelivery::sealed)
-            progress.updateAndGet { it?.copy(count = it.count + sealed.size - events.size) }
+            val sealed = ArrayList<ModDelivery>(events.size)
+            var handled = 0
+            for (event in events) {
+                // A retired history read can leave a start which could not be decided. It is a loss, not an opt-out.
+                if (event.event.unresolved) continue
+                val one = event.sealed()
+                if (one != null) sealed.add(one) else handled++
+            }
+            progress.updateAndGet { it?.copy(count = it.count - handled) }
             if (sealed.isNotEmpty()) deliver(client, key, ModHandoverBatch(sealed))
         }
     }
@@ -117,7 +139,7 @@ internal class ModHandover(scope: CoroutineScope, port: Int, private val key: Mg
         for (chunk in pending.asSequence().mapNotNull { it.entry }.chunked(MOD_HANDOVER_BATCH_SIZE)) {
             deliver(client, key, ModHandoverBatch(emptyList(), starts = chunk))
         }
-        deliver(client, key, ModHandoverBatch(emptyList(), startsComplete = true))
+        deliver(client, key, ModHandoverBatch(emptyList(), startsComplete = true, accepted = accepted))
     }
 
     private suspend fun deliver(client: HttpClient, key: String, batch: ModHandoverBatch) {

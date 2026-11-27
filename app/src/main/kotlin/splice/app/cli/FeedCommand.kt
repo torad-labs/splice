@@ -39,7 +39,7 @@ private const val FEED_CHUNK_BYTES = 8 * 1024
 
 private const val FEED_NEWLINE = '\n'.code.toByte()
 private const val FEED_RETURN = '\r'.code.toByte()
-private const val JSON_WHITESPACE = " \t\r\n"
+private const val FEED_JSON_WHITESPACE = " \t\r\n"
 private const val FEED_BAD_UTF8 = "the input is not valid UTF-8 JSON, so nothing was written"
 
 private const val FEED_NO_KEY =
@@ -203,7 +203,7 @@ internal class FeedCommand(
     }
 
     private fun decode(bytes: ByteArray, size: Int = bytes.size): String? = try {
-        bytes.decodeToString(endIndex = size, throwOnInvalidSequence = true).trim { it in JSON_WHITESPACE }
+        bytes.decodeToString(endIndex = size, throwOnInvalidSequence = true).trim { it in FEED_JSON_WHITESPACE }
     } catch (_: CharacterCodingException) {
         null
     }

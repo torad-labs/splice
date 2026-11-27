@@ -17,7 +17,8 @@ internal const val MOD_RUNTIME_STATE_FIELD = "state"
 /** The catalog carries the declaration unmodified, alongside current process state. */
 internal class ModRows(private val mods: InstalledMods) {
     fun all(): JsonObject = buildJsonObject {
-        put(MOD_HANDOVER_DROPPED, mods.runtime.handoverDropped)
+        val dropped = mods.runtime.handoverDropped
+        if (dropped > 0) put(MOD_HANDOVER_DROPPED, dropped)
         putJsonArray("mods") { mods.all().sortedBy(InstalledMod::name).forEach { add(row(it)) } }
     }
 

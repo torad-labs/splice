@@ -487,9 +487,8 @@ public class Daemon(
         // A hosted MCP child takes up to two seconds to die. It dies first, while the heads still take turns: after
         // them, that wait was part of the stretch in which no daemon serves (2.4 to 2.5 s of it in eight of the
         // thirteen hand-overs of Nov 12, 2026).
+        controlPlane.modRunner.beginHandover(config.getConfig().controlPort, mgmtKey)
         controlPlane.ownership.quiet()
-        controlPlane.modSessions.stop()
-        controlPlane.modRunner.beginStop("handover")
         headProbes.fenceStarts()
         controlPlane.ownership.fence()
         closeListeners()
@@ -497,9 +496,11 @@ public class Daemon(
         val routes = heads.values.map { it.head } + providers.running()
         val kept = headShutdown.retireHeads(routes, HEAD_STOP_BUDGET_MS, log) {
             controlPlane.ownership.leave()
+            controlPlane.modRunner.leave()
         }
         val handedOver = System.nanoTime()
-        controlPlane.modRunner.stop("handover")
+        controlPlane.modLaunches.stop()
+        controlPlane.modSessions.stop()
         closeBackground()
         // #525 (2026-11-13): the lock is freed when this returns, and the next daemon boots from there. No line said
         // how long this daemon still held it: the stretch from the heads' hand-over to the next daemon's first line
@@ -515,6 +516,7 @@ public class Daemon(
     public suspend fun finish(withinMs: Long) {
         val routes = heads.values.map { it.head } + providers.running()
         headShutdown.finishHeads(routes, withinMs, log) { controlPlane.ownership.close() }
+        controlPlane.modRunner.stop("handover")
     }
 
     public suspend fun stop(): Unit = stopLock.withLock {
@@ -541,6 +543,7 @@ public class Daemon(
             val routes = heads.values.map { it.head } + providers.running()
             val headBudgetMs = (HEAD_STOP_BUDGET_MS - listenersMs).coerceAtLeast(0L)
             headShutdown.stopHeads(routes, headBudgetMs, log) { controlPlane.ownership.close() }
+            controlPlane.modLaunches.stop()
             controlPlane.modSessions.stop()
             controlPlane.modRunner.stop()
 

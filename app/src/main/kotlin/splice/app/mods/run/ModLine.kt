@@ -1,5 +1,6 @@
 package splice.app.mods.run
 
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -11,6 +12,7 @@ import java.io.OutputStream
 
 private const val MOD_LINE_BYTES = 256 * 1024 // why: bound memory for a broken or flooding peer
 
+@Serializable
 internal data class ModEvent(val name: String, val sessionId: String?, val payload: JsonObject) {
     fun message(): JsonObject = buildJsonObject {
         put("type", "event")

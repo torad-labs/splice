@@ -5,6 +5,7 @@ import splice.app.mods.install.InstalledMod
 import splice.app.mods.install.ModBun
 import splice.app.mods.install.ModPrivateDir
 import splice.core.config.StatePaths
+import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import java.nio.file.Path
@@ -26,7 +27,11 @@ internal class ModProcessSetup(
         ModPrivateDir.create(data)
         val command = env.command(mod, executable, script.install().toAbsolutePath().normalize(), data)
         val pipe = ModPipe(output.drops, output.log, output.clock)
-        return ModProcess(command.start(), records, mod.name, calls, output, pipe, io)
+        val child = command.start()
+        Cancellables.runCatchingCancellable { records.save(mod.name, child.toHandle()) }.onFailure {
+            child.destroyForcibly()
+        }.getOrThrow()
+        return ModProcess(child, mod.name, calls, output, pipe, io)
     }
 }
 

@@ -269,6 +269,7 @@ class Hooks {
 class Host {
   readonly #pipe = new Pipe();
   readonly #stop = Promise.withResolvers<string>();
+  readonly #admission = Promise.withResolvers<boolean>();
   readonly #started = Promise.withResolvers<void>();
   readonly #abort = new AbortController();
   #hooks?: Hooks;
@@ -285,6 +286,8 @@ class Host {
       this.#pipe.close();
       this.#shutdown("daemon stop");
     });
+    // The owner writes our pid and birth before releasing us to run installed code.
+    if (!(await this.#admission.promise)) return 0;
     let store: Store | undefined;
     try {
       const manifest = await Bun.file(join(this.root, ".splice-mod/mod.json")).json() as ModManifest;
@@ -329,7 +332,8 @@ class Host {
   }
 
   #receive(message: Payload) {
-    if (message.type === "reply") this.#pipe.reply(message);
+    if (message.type === "start") this.#admission.resolve(true);
+    else if (message.type === "reply") this.#pipe.reply(message);
     else if (message.type === "stop") this.#shutdown(typeof message.reason === "string" ? message.reason : "daemon stop");
     else if (message.type === "event" && typeof message.name === "string" && object(message.payload) && !this.#eventPending) {
       this.#eventPending = true;
@@ -354,6 +358,7 @@ class Host {
   }
 
   #shutdown(reason: string) {
+    this.#admission.resolve(false);
     this.#stop.resolve(reason);
     this.#abort.abort();
   }

@@ -15,6 +15,8 @@ import splice.launch.ModsOff
 import splice.upstream.Ticker
 import splice.upstream.codemode.ProcessTicker
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.write
 
 // why: end a gone process promptly without waking a watcher for every session.
 private const val SESSION_SWEEP_MS = 5_000L
@@ -32,6 +34,8 @@ internal class ModSessionTracker(
     private val processes = ConcurrentHashMap<Long, MutableMap<ModSessionPair, SessionProcess>>()
     private val live = ConcurrentHashMap<ModSessionPair, ModLiveSession>()
     private var sweep: Job? = null
+
+    private val writers = ReentrantReadWriteLock()
 
     @Volatile private var accepting = true
 
@@ -58,6 +62,7 @@ internal class ModSessionTracker(
         accepting = false
         sweep?.cancel()
         sweep?.join()
+        writers.write { /* A start already admitted must queue its ledger write before lock release. */ }
     }
 
     fun see(
@@ -70,9 +75,25 @@ internal class ModSessionTracker(
         if (!accepting || !ledger.valid(id)) return
         if (launch == null && !hub.listening) return
         if (!text.safe(id, credentialIn)) return
-        val key = ModSessionPair(id, launch?.launch?.owner)
+        val read = writers.readLock()
+        if (read.tryLock()) {
+            try {
+                if (accepting) seeFirst(ModSessionPair(id, launch?.launch?.owner), at, launch, cwd, credentialIn)
+            } finally {
+                read.unlock()
+            }
+        }
+    }
+
+    private fun seeFirst(
+        key: ModSessionPair,
+        at: Long,
+        launch: StoredModLaunch?,
+        cwd: String?,
+        credentialIn: ObservedCredentials?,
+    ) {
         // Serialize the first offers for this id, so the first event says seenBefore=false even on a race.
-        val owners = pairs.computeIfAbsent(id) { mutableSetOf() }
+        val owners = pairs.computeIfAbsent(key.id) { mutableSetOf() }
         synchronized(owners) {
             if (owners.add(key.owner)) open(key, at, launch, cwd, credentialIn)
         }

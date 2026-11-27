@@ -3,6 +3,7 @@ package splice.app.cli.mod
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.app.mods.MOD_RUNTIME_STATE_FIELD
+import splice.app.mods.handover.MOD_HANDOVER_DROPPED
 import splice.app.mods.install.BUN_NOT_FOUND
 import splice.core.util.JsonScalars
 
@@ -30,13 +31,15 @@ internal class ModLines {
         append(next(row))
     }
 
-    fun list(body: JsonObject): String {
+    fun list(body: JsonObject): String = buildString {
         val mods = (body["mods"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
-        return if (mods.isEmpty()) {
-            "No mods installed. Use splice mod install <folder|tarball> to add one."
+        if (mods.isEmpty()) {
+            append("No mods installed. Use splice mod install <folder|tarball> to add one.")
         } else {
-            mods.joinToString("\n", transform = ::line)
+            append(mods.joinToString("\n", transform = ::line))
         }
+        val dropped = value(body, MOD_HANDOVER_DROPPED).toLongOrNull() ?: 0
+        if (dropped > 0) append("\nEvents dropped during daemon handover: $dropped.")
     }
 
     fun remove(row: JsonObject): String {

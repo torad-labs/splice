@@ -314,6 +314,7 @@ internal class ControlPlane(
         srv.ports.desktop = desktop
         srv.ports.modes = modes
         srv.ports.mods = stores.mods
+        srv.ports.modRunner = modRunner
         srv.ports.quotaReadFailures = quotaReadFailures
         srv.ports.sessionFallbacks = sessionFallbacks
         srv.ports.lifecycle.keyRotation = KeyRotation(daemon.mgmtKey, daemon.mcpAccess, statePaths, log)

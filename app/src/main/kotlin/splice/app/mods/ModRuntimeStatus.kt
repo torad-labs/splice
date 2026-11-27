@@ -2,6 +2,7 @@ package splice.app.mods
 
 /** Runner-owned status. Reads take no file or process I/O; a change asks the runner to reconcile the roster. */
 internal interface ModRuntimeStatus {
+    val handoverDropped: Long get() = 0
     fun of(name: String): ModRuntime?
     fun changed(name: String)
     suspend fun settled(name: String) = Unit

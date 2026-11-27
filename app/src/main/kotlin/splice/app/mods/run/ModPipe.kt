@@ -4,6 +4,8 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.app.mods.handover.ModDelivery
+import splice.app.mods.handover.ModHandover
 import splice.core.util.WallClock
 import java.io.OutputStream
 
@@ -15,12 +17,23 @@ internal class ModPipe(private val drops: ModDrops, private val log: ModLog, pri
     private val replies = Channel<Pair<Long, JsonObject>>(REPLY_CAPACITY)
 
     @Volatile private var reason: String? = null
+
+    @Volatile private var handover: ModHandover? = null
+
     val pending: Boolean get() = queue.pending
     val writingSince: Long get() = queue.writingSince
 
-    fun offer(event: ModEvent) {
-        queue.offer(event)
-        wake.trySend(Unit)
+    fun offer(delivery: ModDelivery) {
+        if (queue.offer(delivery)) {
+            wake.trySend(Unit)
+        } else {
+            handover?.offer(delivery)
+        }
+    }
+
+    fun handOver(forwarder: ModHandover) {
+        handover = forwarder
+        queue.handOver().forEach(forwarder::prefix)
     }
 
     fun reply(id: Long, value: JsonObject) {
@@ -46,7 +59,8 @@ internal class ModPipe(private val drops: ModDrops, private val log: ModLog, pri
 
     suspend fun write(output: OutputStream, calls: ModCalls) {
         output.use { stream ->
-            while (reason == null) {
+            ModLine.write(stream, buildJsonObject { put("type", "start") })
+            while (reason == null || queue.writingSince != 0L) {
                 log.reportDrops()
                 if (!writeAvailable(stream, calls) && wake.receiveCatching().isClosed) return
             }
@@ -61,7 +75,7 @@ internal class ModPipe(private val drops: ModDrops, private val log: ModLog, pri
     }
 
     private fun writeAvailable(stream: OutputStream, calls: ModCalls): Boolean =
-        writeReply(stream, calls) || writeEvent(stream)
+        writeReply(stream, calls) || (reason == null && writeEvent(stream))
 
     private fun writeReply(stream: OutputStream, calls: ModCalls): Boolean {
         val (id, reply) = replies.tryReceive().getOrNull() ?: return false

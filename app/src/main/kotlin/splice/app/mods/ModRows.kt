@@ -7,6 +7,7 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import splice.app.mods.handover.MOD_HANDOVER_DROPPED
 import splice.app.mods.install.BUN_NOT_FOUND
 import splice.app.mods.install.InstalledMod
 import splice.app.mods.install.InstalledMods
@@ -16,6 +17,7 @@ internal const val MOD_RUNTIME_STATE_FIELD = "state"
 /** The catalog carries the declaration unmodified, alongside current process state. */
 internal class ModRows(private val mods: InstalledMods) {
     fun all(): JsonObject = buildJsonObject {
+        put(MOD_HANDOVER_DROPPED, mods.runtime.handoverDropped)
         putJsonArray("mods") { mods.all().sortedBy(InstalledMod::name).forEach { add(row(it)) } }
     }
 

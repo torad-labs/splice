@@ -59,6 +59,7 @@ public class ConsolePorts {
 
     /** The management route and launches share the daemon's installed mod roster. */
     internal var mods: splice.app.mods.install.InstalledMods? = null
+    internal var modRunner: splice.app.mods.run.ModRunner? = null
 
     /** The same launch settings the daemon's launch and resume routes write. */
     internal var modLaunches: splice.app.mods.sessions.ModLaunches? = null

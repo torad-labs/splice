@@ -1,6 +1,7 @@
 package splice.app.mods.run
 
 import kotlinx.coroutines.channels.Channel
+import splice.app.mods.handover.ModDelivery
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -27,7 +28,11 @@ internal class ModDrops {
 }
 
 internal class ModQueue(private val drops: ModDrops) {
-    private val events = Channel<ModEvent>(EVENT_CAPACITY)
+    private val events = Channel<ModDelivery>(EVENT_CAPACITY)
+    private var transferred = false
+
+    @Volatile private var closed = false
+
     private val used = AtomicInteger()
     private val inFlight = AtomicLong()
     private val highVolume = setOf("stream.event", "request.send", "response.receive")
@@ -36,22 +41,43 @@ internal class ModQueue(private val drops: ModDrops) {
     val writingSince: Long get() = inFlight.get()
 
     /** Only an atomic reservation and a trySend: no lock, serialization or I/O on the producer. */
-    fun offer(event: ModEvent): Boolean {
-        val bound = if (event.name in highVolume) EVENT_CAPACITY - EDGE_RESERVE else EVENT_CAPACITY
+    fun offer(delivery: ModDelivery): Boolean {
+        val name = delivery.event.name
+        val bound = if (name in highVolume) EVENT_CAPACITY - EDGE_RESERVE else EVENT_CAPACITY
         val reserved = used.getAndUpdate { if (it < bound) it + 1 else it } < bound
-        if (reserved && events.trySend(event).isSuccess) return true
+        val sent = if (reserved) events.trySend(delivery) else null
+        if (sent?.isSuccess == true) return true
         if (reserved) used.decrementAndGet()
-        drops.event(event.name)
-        return false
+        if (sent?.isClosed == true || closed) return false
+        drops.event(name)
+        return true
     }
 
-    fun take(): ModEvent? = events.tryReceive().getOrNull()?.also { used.decrementAndGet() }
+    @Synchronized
+    fun take(): ModEvent? = if (transferred) null else poll()?.event
+
+    @Synchronized
+    fun handOver(): List<ModDelivery> {
+        transferred = true
+        closeOffers()
+        return buildList {
+            while (true) add(poll() ?: break)
+        }
+    }
+
+    private fun poll(): ModDelivery? = events.tryReceive().getOrNull()?.also { used.decrementAndGet() }
 
     fun writing(at: Long) { inFlight.set(at) }
     fun handled() { inFlight.set(0) }
 
+    @Synchronized
     fun close() {
+        closeOffers()
+        while (true) drops.event(poll()?.event?.name ?: break)
+    }
+
+    private fun closeOffers() {
         events.close()
-        while (true) drops.event(take()?.name ?: break)
+        closed = true
     }
 }

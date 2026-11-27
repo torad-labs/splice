@@ -108,9 +108,9 @@ internal class ModSupervisor(
 
     private suspend fun attempt(): Boolean {
         val executable = executable() ?: return false
-        if (shutdown.isCompleted) return false
+        previous()?.let { setup.records.awaitPrevious(it) }
         bunPath = executable
-        val child = setup.launch(mod, executable, output)
+        val child = launch(executable) ?: return false
         if (current.state == ModRuntimeState.RESTARTING) crashes.restarted()
         process = child
         val exit = child.run(shutdown, this)
@@ -122,6 +122,15 @@ internal class ModSupervisor(
             ModExit.Stopped -> false
         }
     }
+
+    @Synchronized
+    private fun previous(): ProcessHandle? =
+        if (shutdown.isCompleted) null else setup.records.previous(mod.name)
+
+    // The retirement fence cannot pass a spawn without its PID record, even if ready is still pending.
+    @Synchronized
+    private fun launch(executable: Path): ModProcess? =
+        if (shutdown.isCompleted) null else setup.launch(mod, executable, output)
 
     private fun executable(): Path? {
         val verdict = mod.verify()

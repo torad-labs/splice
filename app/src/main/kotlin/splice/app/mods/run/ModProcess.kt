@@ -32,7 +32,6 @@ internal sealed class ModExit {
 
 internal class ModProcess(
     private val process: Process,
-    private val records: ModRunRecords,
     private val name: String,
     private val calls: ModCalls,
     private val output: ModOutput,
@@ -56,7 +55,6 @@ internal class ModProcess(
         val stdout = launch(pipes) { io("read stdout") { ModLineReader(process.inputStream).drain(receiver::stdout) } }
         val stderr = launch(pipes) { io("read stderr") { ModLineReader(process.errorStream).drain(receiver::stderr) } }
         try {
-            records.save(name, process.toHandle())
             supervise(stop, exited, stdout, observer)
         } finally {
             withContext(NonCancellable) {
@@ -108,7 +106,6 @@ internal class ModProcess(
         if (process.isAlive) withTimeoutOrNull(EOF_GRACE_MS) { exited.await() }
         tree.terminate()
         pipe.close()
-        if (!process.isAlive) records.clear(name)
     }
 
     private inline fun io(action: String, body: () -> Unit) {

@@ -10,6 +10,7 @@ import splice.app.control.ConsolePorts
 import splice.app.control.server.ServerMount
 import splice.app.modes.ModesMount
 import splice.app.mods.ModsMount
+import splice.app.mods.handover.ModHandoverMount
 
 internal fun interface ControlMount {
     fun register(route: Route)
@@ -27,12 +28,14 @@ internal class StandaloneMounts(ports: ConsolePorts, guard: ControlGuard) {
     private val consolePilot = ConsolePilotMount(guard)
     private val modes = ModesMount(ports, guard)
     private val mods = ModsMount(ports, guard)
+    private val modHandover = ModHandoverMount(ports, guard)
     private val serverMode = ServerMount(ports, guard)
 
     val rows: List<ControlMount> = listOf(
         ControlMount(consolePilot::register),
         ControlMount(modes::register),
         ControlMount(mods::register),
+        ControlMount(modHandover::register),
         ControlMount(serverMode::register),
     )
     val last: ControlMount = ControlMount(modes::registerRoutes)

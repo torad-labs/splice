@@ -38,6 +38,7 @@ internal class ModLaunches(
     private val sessions = ConcurrentHashMap<String, StoredModLaunch>()
     private val ordering = AtomicLong(Long.MIN_VALUE)
     private val lastPrune = AtomicLong(Long.MIN_VALUE)
+    private var accepting = true
 
     /** After the daemon owns its state, before serving routes. */
     fun restore() {
@@ -50,7 +51,14 @@ internal class ModLaunches(
         queuePrune()
     }
 
+    @Synchronized
+    fun stop() {
+        accepting = false
+    }
+
+    @Synchronized
     override fun launched(launch: LaunchNotice) {
+        if (!accepting) return
         val at = clock()
         val order = ordering.updateAndGet { previous -> maxOf(at, previous + 1) }
         val record = StoredModLaunch(launch, order, launch.pid?.let(ModLaunchProcess::birth))
@@ -107,15 +115,13 @@ internal class ModLaunches(
     private fun prune(now: Long) {
         for (record in launches.values) {
             val gone = record.goneAt
-            if (gone == null && !record.isAlive()) markGone(record, now)
+            if (gone == null && !record.isAlive()) {
+                val ended = record.copy(goneAt = now)
+                files.write(ended)
+                launches.replace(record.launch.owner, record, ended)
+            }
             if (gone != null && gone <= now - TimeUnit.DAYS.toMillis(1)) remove(record)
         }
-    }
-
-    private fun markGone(record: StoredModLaunch, now: Long) {
-        val gone = record.copy(goneAt = now)
-        files.write(gone)
-        launches.replace(record.launch.owner, record, gone)
     }
 
     private fun remove(record: StoredModLaunch) {

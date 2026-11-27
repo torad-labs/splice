@@ -68,7 +68,7 @@ private val MODELS = listOf("claude-opus-5", "claude-sonnet-4-5-20250929", "clau
 
 private sealed class Said(val text: String) {
     class Plain(text: String) : Said(text)
-    class Overflow(text: String, val limit: Long?) : Said(text)
+    class Overflow(text: String, val limit: Long?, val input: Long? = null) : Said(text)
     class Model(text: String, val name: String) : Said(text)
 }
 
@@ -129,7 +129,7 @@ private fun said(random: Random): Said = when (random.nextInt(4)) {
     0 -> {
         val limit = random.nextLong(8_000, 2_000_000)
         val sent = limit + random.nextLong(1, 90_000)
-        Said.Overflow("prompt is too long: $sent tokens > $limit maximum", limit)
+        Said.Overflow("prompt is too long: $sent tokens > $limit maximum", limit, sent)
     }
     1 -> listOf(
         Said.Overflow("prompt is too long", null),
@@ -204,7 +204,7 @@ private fun requestRow(c: Case, words: ProviderWords?): FailureCause.Provider {
 /** A 400: an overflow carries the limit its words named, and anything else is a rejected request. */
 private fun badRequestRow(c: Case, words: ProviderWords?): FailureCause.Provider =
     (c.said as? Said.Overflow)
-        ?.let { FailureCause.Provider.TooLong(it.limit, false, words) }
+        ?.let { FailureCause.Provider.TooLong(it.limit, false, words, inputTokens = it.input) }
         ?: FailureCause.Provider.Rejected(false, words)
 
 /** The rows about the provider's own side. */

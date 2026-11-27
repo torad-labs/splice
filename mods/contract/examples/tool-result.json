@@ -1,0 +1,14 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "1 review(s) open."
+    },
+    {
+      "type": "resource_link",
+      "uri": "ui://reviews/board",
+      "name": "board",
+      "mimeType": "text/html;profile=mcp-app"
+    }
+  ]
+}

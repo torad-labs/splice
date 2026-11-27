@@ -187,6 +187,8 @@
   model takes.
 
 ### Fixed
+- **An oversized compaction can finish.** Claude Code can drop the oldest rounds and try a shorter summary request
+  whether Splice or the model refused the original. A first exchange still stops with the same message.
 - **`claude` on the door launches with what a head's launch sets, and your settings files can't undo it.** A launch on
   the door (`claude`, `splice launch claude` and door commands) now sets the client's timers and wall header from the
   walls of its providers and heads (a `splice.toml` with providers and no heads included), so a long turn or

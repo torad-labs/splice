@@ -12,7 +12,9 @@ package splice.app.failure
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -98,9 +100,15 @@ private const val MUSE_NAME = "Muse"
 
 /** llama-server's 503 while it loads the model, and its 400 for a prompt past the context it has. */
 private const val LLAMA_LOADING = """{"error":{"code":503,"message":"Loading model","type":"unavailable_error"}}"""
+private val COMPACTION_TURN = buildJsonObject {
+    put("system", "Your task is to create a detailed summary of this conversation.")
+    put("messages", Json.parseToJsonElement(LATER_EXCHANGE).jsonObject.getValue("messages"))
+}
+
 private const val LLAMA_CONTEXT =
     """{"error":{"code":400,"message":"the request exceeds the available context size. try increasing the """ +
-        """context size or enable context shift","type":"exceed_context_size_error","n_ctx":4096}}"""
+        """context size or enable context shift","type":"exceed_context_size_error","n_ctx":4096,""" +
+        """"n_prompt_tokens":4608}}"""
 
 class ReadOnceThroughHeadsTest {
     // Slice 2 finding 21: in 105 of 120 runs of a cut that landed before its text, the client saw no text and the line
@@ -252,6 +260,65 @@ class ReadOnceThroughHeadsTest {
 
             assertLine(answer, "This prompt is too long for")
             assertLine(answer, "holds 4,096 tokens")
+        }
+    }
+
+    @Test
+    fun `a local runtime tells the client its input size and leaves room for a summary`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(reply { status(400); body(LLAMA_CONTEXT) })
+            val local = localChat(replies = HeadReplies.localChat)
+
+            val answer = local.client.send(ClientRequest(maxTokens = 256, extra = COMPACTION_TURN))
+
+            assertEquals(400, answer.status)
+            assertEquals("false", answer.shouldRetry)
+            assertLine(answer, "prompt is too long: 4608 tokens > 3840")
+        }
+    }
+
+    @Test
+    fun `a summary budget that cannot fit does not ask the client to trim rounds`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp) {
+            val refusal = reply { status(400); body(LLAMA_CONTEXT) }
+            provider.script(refusal, refusal)
+            val local = localChat(replies = HeadReplies.localChat)
+
+            for (maxTokens in listOf(4096, 8192)) {
+                val answer = local.client.send(ClientRequest(maxTokens = maxTokens, extra = COMPACTION_TURN))
+
+                assertEquals(400, answer.status)
+                assertEquals("false", answer.shouldRetry)
+                val line = lineOf(answer)
+                assertTrue("to summarize. Its model holds 4,096 tokens." in line, line)
+                assertFalse("prompt is too long" in line, line)
+            }
+        }
+    }
+
+    @Test
+    fun `DeepSeek on Messages reports its window and reserves the provider's larger summary allowance`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            val refusal = reply {
+                status(400)
+                body(
+                    """{"error":{"message":"This model's maximum context length is 131072 tokens. """ +
+                        """However, you requested 131074 tokens (99074 in the messages, 32000 in the completion).",""" +
+                        """"type":"invalid_request_error","param":null,"code":"invalid_request_error"}}""",
+                )
+            }
+            provider.script(refusal, refusal)
+            val client = anthropic(replies = HeadReplies.deepSeek).client
+
+            val ordinary = client.send(ClientRequest(extra = Json.parseToJsonElement(LATER_EXCHANGE).jsonObject))
+            assertEquals(400, ordinary.status)
+            assertLine(ordinary, "Its model holds 131,072 tokens.")
+
+            val compact = client.send(ClientRequest(maxTokens = 16_000, extra = COMPACTION_TURN))
+            assertEquals(400, compact.status)
+            assertLine(compact, "prompt is too long: 99074 tokens > 99072")
         }
     }
 

@@ -256,7 +256,8 @@ internal class HeadAdmission(
         admitted.retainRequest()
         val meta = prepared.built.meta
         val otherLogin = (deps.quotaBundle.activePool?.members?.size ?: 0) > 1
-        val voice = resends.voiceOf(driver.voice, meta.scope, meta.compact, !prepared.hasPriorExchange, otherLogin)
+        val request = admission.compactionPreflight.requestFacts(meta, prepared.hasPriorExchange, otherLogin)
+        val voice = resends.voiceOf(driver.voice, meta.scope, request)
         val inputs = TurnInputs(
             prepared.built,
             TurnSlot(

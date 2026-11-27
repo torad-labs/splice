@@ -1,0 +1,6 @@
+{
+  "surface": "console",
+  "slot": { "kind": "page", "page": "board" },
+  "width": 1200,
+  "theme": "dark"
+}

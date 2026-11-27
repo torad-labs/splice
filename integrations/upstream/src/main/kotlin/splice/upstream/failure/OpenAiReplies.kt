@@ -89,11 +89,21 @@ public object OpenAiReplies {
     /** A 400: an overflow by code or by its words, a missing model, a content-policy code, else a rejected request. */
     private fun badRequest(error: OpenAiError, said: ProviderWords?): FailureCause.Provider = when {
         error.names(CONTEXT_LENGTH_EXCEEDED) || ReplyFacts.overflows("${error.code} ${error.message.orEmpty()}") ->
-            FailureCause.Provider.TooLong(ReplyFacts.contextLimit(error.message), whileAnswering = false, said)
+            overflow(error.message.orEmpty(), said)
         error.names(MODEL_NOT_FOUND) -> missing(error, said)
         CONTENT_POLICY.any(error::names) -> FailureCause.Provider.Refused(RefusedBy.POLICY, said)
         else -> FailureCause.Provider.Rejected(staleReasoning = false, said)
     }
+
+    private fun overflow(message: String, said: ProviderWords?): FailureCause.Provider.TooLong =
+        FailureCause.Provider.TooLong(
+            CONTEXT_LIMIT.find(message)?.groupValues?.get(1)?.replace(",", "")?.toLongOrNull(),
+            whileAnswering = false,
+            said,
+            inputTokens = INPUT_SIZE.find(message)?.let { it.groups[1] ?: it.groups[2] }
+                ?.value?.replace(",", "")?.toLongOrNull(),
+            outputTokens = OUTPUT_SIZE.find(message)?.groupValues?.get(1)?.replace(",", "")?.toLongOrNull(),
+        )
 
     /** A 5xx. A capacity code (the backend's server_is_overloaded and slow_down, codex-rs PR #31058, or any code
      *  spelling an overload) is an overload whatever the 5xx, as the shared classifier read it; 503 is one too, and a
@@ -181,6 +191,13 @@ private class Stated(private val reply: FailedReply?) {
 
 private const val MODEL_NOT_FOUND = "model_not_found"
 private const val CONTEXT_LENGTH_EXCEEDED = "context_length_exceeded"
+private val CONTEXT_LIMIT = Regex("""(?i)maximum context length is\s*([\d,]{1,12})""")
+
+// Read the messages, not the total including completion, so the reply allowance is not counted twice.
+private val INPUT_SIZE = Regex(
+    """(?i)messages resulted in\s+([\d,]{1,12})\s+tokens?|\b([\d,]{1,12})(?:\s+tokens?)?\s+in (?:the )?messages""",
+)
+private val OUTPUT_SIZE = Regex("""(?i)\b(\d[\d,]*)\s+in (?:the )?completion\b""")
 private const val INSUFFICIENT_QUOTA = "insufficient_quota"
 
 // why: the last status in the 5xx class, so the range below covers every failure status an HTTP reply can carry.

@@ -65,8 +65,8 @@ internal class PendingSse(
 
     /** The emitter's error ending (failure-handling slice 2). [unsent] is what the failure is while the status is still
      *  splice's to choose, so a prompt that outgrew the window answers with its own status and [body] whatever its line
-     *  says: a compaction's and a first message's lines leave out the words a client compacts on (final-design.md
-     *  section 11), and they keep today's 400. Once the stream is chosen, [frame] goes out in band like any other. */
+     *  says. A first exchange has no compaction trigger; a compaction gives a trim size when a shorter request can fit.
+     *  Both keep the same 400. Once the stream is chosen, [frame] goes out in band like any other. */
     suspend fun ending(frame: String, unsent: WireAnswer, body: String) {
         settle(
             frame,

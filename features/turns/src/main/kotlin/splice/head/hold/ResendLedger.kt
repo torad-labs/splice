@@ -44,15 +44,13 @@ internal class ResendLedger(private val clock: ElapsedClock, private val capacit
     fun voiceOf(
         voice: HeadVoice,
         scope: TurnScope,
-        compaction: Boolean,
-        firstExchange: Boolean,
-        otherLogin: Boolean,
+        request: RequestFacts,
     ): TurnVoice {
         val repeated = repeated(scope.sessionId, scope.messagesHash)
         val heard = EndingHeard { answer ->
             if (answer.clientResends && !answer.handedOver) endedForResend(scope.sessionId, scope.messagesHash)
         }
-        return voice.turn(RequestFacts(compaction, firstExchange, repeated, otherLogin), heard)
+        return voice.turn(request.copy(repeated = repeated), heard)
     }
 
     private fun forgetExpired() {

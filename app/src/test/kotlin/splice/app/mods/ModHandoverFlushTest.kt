@@ -82,6 +82,46 @@ class ModHandoverFlushTest {
     }
 
     @Test
+    fun `cancelling the mod job wait still reports the outstanding write to the successor`() = runBlocking {
+        val ticks = AtomicLong(1)
+        val clock = WallClock { ticks.getAndAdd(31_000) }
+        ModHandoverTestRig(root, clock, holdStart = true).use { rig ->
+            rig.installRecorder()
+            HttpClient(CIO).use { client ->
+                val events = lostReply("cancelled-write").events + lostReply("unwritten-tail").events
+                val accepted = client.send(rig.oldHandoverUrl, rig.key.get(), ModHandoverBatch(events))
+                assertEquals(HttpStatusCode.NoContent, accepted)
+                rig.awaitMods(client, "stuck", at = rig.oldModsUrl)
+                withPausedGuardian(rig.recorderProcess()) {
+                    rig.retire()
+                    val stopping = launch(start = CoroutineStart.UNDISPATCHED) { rig.finish() }
+                    stopping.cancelAndJoin()
+                    val response = client.get(rig.modsUrl) { bearerAuth(rig.key.get()) }
+                    assertEquals(HttpStatusCode.OK, response.status)
+                    val catalog = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+                    assertEquals(1L, catalog["handoverDropped"]?.jsonPrimitive?.long ?: 0L)
+                }
+                val delivered = barrier(rig)
+                assertEquals(1, delivered.count { it.session == "unwritten-tail" })
+                assertEquals(0, delivered.count { it.session == "cancelled-write" })
+            }
+        }
+    }
+
+    @Test
+    fun `handover rejects receipts without monotonic ages`() = runBlocking {
+        ModHandoverTestRig(root).use { rig ->
+            rig.installRecorder()
+            HttpClient(CIO).use { client ->
+                val prefix = """{"events":[],"startsComplete":true,"accepted":{"earlier":3}"""
+                for (body in listOf("$prefix}", """$prefix,"acceptedAt":{"earlier":1}}""")) {
+                    assertEquals(HttpStatusCode.BadRequest, client.relay(rig.oldHandoverUrl, rig.key.get(), body))
+                }
+            }
+        }
+    }
+
+    @Test
     fun `a retried receipt does not tell the mod twice`() = runBlocking {
         ModHandoverTestRig(root).use { rig ->
             rig.installRecorder()
@@ -389,6 +429,19 @@ private class ChangingHandover(
     }
 
     private data class Target(val url: String, val key: String)
+}
+
+private suspend fun withPausedGuardian(host: ProcessHandle, block: suspend () -> Unit) {
+    val guardian = host.parent().orElseThrow()
+    fun signal(name: String) {
+        assertEquals(0, ProcessBuilder("/bin/kill", "-$name", guardian.pid().toString()).start().waitFor())
+    }
+    signal("STOP")
+    try {
+        block()
+    } finally {
+        signal("CONT")
+    }
 }
 
 private suspend fun HttpClient.relay(url: String, key: String, body: String) = post(url) {

@@ -86,16 +86,17 @@ step "head contract + packaging: mockchat2 (claude-mockchat2--mock-chat-2 @64k, 
 # ── 7c. the daemon's status line on a SCALED row ─────────────────────────────────────────────
 # Claude Code fixes its context window per process (the pinned row's) and splice scales the counts
 # it reports so any other row compacts at its own window, so the blob Claude Code pipes back is in
-# client units. A posted blob that matches no reply this daemon served carries no factor the daemon
-# can trust, so the 128k row of the 64k mockchat2 session shows its own label over the counts as
-# posted ("32k/64k"), never a guessed inverse. The pinned row is the control: nothing changes.
+# client units. The daemon reads a post back to real units only from a reply it served, so the
+# scaled check drives a real turn on the 128k row of the 64k mockchat2 session first: the mock bills
+# 12 input tokens, the reply reports 6 (64k client / 128k row), and posting those 6 back must read
+# "12/128k" under the row's label, not the client's 6/64k. A post that matches no served reply
+# carries no factor the daemon can trust and is shown as sent: the pinned row is that control.
 # Posted with the management bearer, as the installed status-line command does.
-statusline_row() { # head model expected-fragment...
-  local head="$1" model="$2" line; shift 2
+statusline_row() { # head model session usage-json expected-fragment...
+  local head="$1" model="$2" session="$3" usage="$4" line; shift 4
   line="$(curl_mgmt --data-binary @- "http://127.0.0.1:$CONTROL_PORT/statusline/$head" <<EOF | strip_ansi
-{"model":{"id":"$model","display_name":"$model"},
- "context_window":{"context_window_size":64000,"used_percentage":50,
-   "current_usage":{"input_tokens":2000,"cache_read_input_tokens":30000,"cache_creation_input_tokens":0}}}
+{"session_id":"$session","model":{"id":"$model","display_name":"$model"},
+ "context_window":{"context_window_size":64000,"used_percentage":50,"current_usage":$usage}}
 EOF
 )"
   printf '%s\n' "$line"
@@ -104,8 +105,19 @@ EOF
     grep -qF -- "$frag" <<<"$line" || { echo "status line lacks '$frag'"; return 1; }
   done
 }
-step "status line: the scaled 128k row shows its label over the posted counts" statusline_row mockchat2 mock-chat-2-big "Chat 2 big (mock)" "32k/64k" "50%"
-step "status line: the pinned 64k row is untouched" statusline_row mockchat2 mock-chat-2 "Chat 2 (mock)" "32k/64k" "50%"
+scaled_row() {
+  local session="statusline-scaled-row" usage
+  usage="$(curl_mgmt -f -X POST "http://127.0.0.1:$CHAT2_HEAD_PORT/v1/messages" \
+    -H 'Content-Type: application/json' -H "x-claude-code-session-id: $session" \
+    -d '{"model":"claude-mockchat2--mock-chat-2-big","max_tokens":16,"stream":false,"messages":[{"role":"user","content":"hi"}]}' |
+    bun -e 'const u = JSON.parse(await Bun.stdin.text()).usage ?? {}; console.log(JSON.stringify({input_tokens: u.input_tokens ?? 0, cache_read_input_tokens: u.cache_read_input_tokens ?? 0, cache_creation_input_tokens: u.cache_creation_input_tokens ?? 0}))')" || {
+    echo "no turn on the 128k row"; return 1; }
+  echo "reply usage: $usage"
+  statusline_row mockchat2 mock-chat-2-big "$session" "$usage" "Chat 2 big (mock)" "12/128k"
+}
+step "status line: a scaled 128k row reads its served reply back as its label, real count and real window" scaled_row
+step "status line: the pinned 64k row shows an unmatched post as sent" statusline_row mockchat2 mock-chat-2 statusline-pinned-row \
+  '{"input_tokens":2000,"cache_read_input_tokens":30000,"cache_creation_input_tokens":0}' "Chat 2 (mock)" "32k/64k" "50%"
 
 # ── 8. the real wrapper: Claude Code itself, print mode, through the head, to the mock ───────
 daemon_down() {

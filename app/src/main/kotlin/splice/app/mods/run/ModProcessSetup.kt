@@ -21,12 +21,11 @@ internal class ModProcessSetup(
     private val env = ModChildEnv(paths.envReader)
     val records = ModRunRecords(paths.modsDir, daemonLog)
 
-    fun launch(mod: InstalledMod, executable: Path, output: ModOutput): ModProcess {
+    fun launch(mod: InstalledMod, executable: Path, output: ModOutput, pipe: ModPipe): ModProcess {
         records.requireGone(mod.name)
         val data = paths.modsDir.toAbsolutePath().normalize().resolve("data").resolve(mod.name)
         ModPrivateDir.create(data)
         val command = env.command(mod, executable, script.install().toAbsolutePath().normalize(), data)
-        val pipe = ModPipe(output.drops, output.log, output.clock)
         val child = ModProcessGroup.isolate(command).start()
         Cancellables.runCatchingCancellable { records.save(mod.name, child.toHandle(), grouped = true) }.onFailure {
             child.destroyForcibly()

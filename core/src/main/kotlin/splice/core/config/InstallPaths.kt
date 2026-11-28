@@ -5,7 +5,9 @@
 // tests (StatePaths idiom — JVM cannot setenv), since kt-no-system-getenv walls every direct read.
 package splice.core.config
 
+import splice.core.install.seatdPipePinDocument
 import splice.core.util.EnvReader
+import splice.core.util.JsonScalars
 import java.nio.file.Path
 import java.nio.file.Paths
 
@@ -29,6 +31,15 @@ public class InstallPaths(
         ?: envReader("SPLICE_SHARE_DIR")?.let { Paths.get(it) }
         ?: UserHome.dir(envReader).resolve(".local/share/splice")
 
-    /** Immutable executable path baked into Desktop's entrypoints; absence leaves Claude Code in place. */
-    public val desktopPipe: Path get() = shareDir.resolve("seatd/0.1.0/seatd-pipe").toAbsolutePath()
+    /** The companion store shared by the installer and both launchers. */
+    public val seatdRoot: Path get() = shareDir.resolve("seatd").toAbsolutePath().normalize()
+
+    /** The bundled pin's path, even before installation; the launchers test it when they run. */
+    public val desktopPipe: Path?
+        get() = JsonScalars.str(seatdPipePinDocument, "version")
+            ?.takeIf(SEATD_VERSION_SEGMENT::matches)
+            ?.let { seatdRoot.resolve(it).resolve("seatd-pipe") }
 }
+
+// The pin is trusted release data, but a version must still be one path segment.
+private val SEATD_VERSION_SEGMENT = Regex("""[0-9]+(?:\.[0-9]+){2}(?:[-+][0-9A-Za-z.+-]+)?""")

@@ -64,7 +64,11 @@ From 0.7.0 on, `splice upgrade` works as shown below. It has `--wait`, it offers
 | `splice upgrade --check` | Says what is installed and what is newest; stands alone. |
 | `splice upgrade --rollback` | See [Roll back to 0.6.4](#roll-back-to-064). |
 
-When a 0.7.0 or later `splice upgrade` finds that the new release refuses your `splice.toml`, it runs that release's own `check-config --fix` in your terminal, checks again, and continues only when the file passes (`✓ config <version> accepts splice.toml now`). Without a terminal, for example from a script, it refuses and tells you to run `splice upgrade` in one. A successful upgrade also re-lays `splice.service` from the new jar, but a unit you override in `~/.config/systemd/user` stays yours. Its aftercare lays the Antigravity shim and refreshes the MCP hub's units where the hub is installed. The interactive **What's new / action needed** list explains the optional companion when missing and points to `splice setup --update` or `splice desktop on` to opt in. Automatic aftercare does not show that offer or opt you in. A companion you already opted into can be refreshed from the new Splice release.
+When a 0.7.0 or later `splice upgrade` finds that the new release refuses your `splice.toml`, it runs that release's own `check-config --fix` in your terminal, checks again, and continues only when the file passes (`✓ config <version> accepts splice.toml now`). Without a terminal, for example from a script, it refuses and tells you to run `splice upgrade` in one. A successful upgrade also re-lays `splice.service` from the new jar, but a unit you override in `~/.config/systemd/user` stays yours. Its aftercare lays the Antigravity shim and refreshes the MCP hub's units where the hub is installed.
+
+Aftercare never asks for consent. If you already opted in and still have the companion installed, the activated Splice release refreshes it to that release's pinned version. Otherwise, the interactive **What's new / action needed** list explains what's missing and points to `splice setup --update` or `splice desktop on`. Automatic aftercare skips the list and never opts you in.
+
+The Desktop launcher and the Antigravity shim use that exact pin, not the newest binary on disk. Until it lands, a new launch passes through to Claude Code. After it lands, the next launch uses it without another restart. Sessions already running keep their original companion.
 
 ### 2. Read and move the configuration warnings
 

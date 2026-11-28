@@ -85,7 +85,7 @@ public class SeatdInstaller(private val env: EnvReader = EnvReader(System::geten
     }
 
     private fun versions(platform: SeatdPlatform): SeatdVersions =
-        SeatdVersions(InstallPaths(envReader = env).shareDir.resolve("seatd").toAbsolutePath().normalize(), platform)
+        SeatdVersions(InstallPaths(envReader = env).seatdRoot, platform)
 
     private inline fun underLock(
         versions: SeatdVersions,

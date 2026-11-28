@@ -26,7 +26,7 @@ import java.nio.file.attribute.PosixFilePermission
 internal class DesktopPrograms(
     private val stateDir: Path,
     env: EnvReader = EnvReader(System::getenv),
-    private val pipe: Path = InstallPaths(envReader = env).desktopPipe,
+    private val pipe: Path? = InstallPaths(envReader = env).desktopPipe,
 ) {
     private val paths = StatePaths(baseOverride = stateDir.toAbsolutePath(), envReader = env)
     private val hooks = DesktopHooks(paths)
@@ -63,7 +63,7 @@ internal class DesktopPrograms(
                 mapOf(
                     "desktop_key" to paths.desktopKeyFile.toString(),
                     "port" to port.toString(),
-                    "pipe" to pipe.toString(),
+                    "pipe" to pipe?.toString().orEmpty(),
                     "harness_map" to paths.desktopHarnessesFile.toString(),
                     "hooks" to hooks.file.toString(),
                     "SPLICE_STATE_DIR" to paths.stateDir.toString(),

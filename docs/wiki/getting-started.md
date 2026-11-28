@@ -27,7 +27,7 @@ curl -fsSL https://splice.torad.ai/download/install.sh | bash
 
 The installer puts the jar and the `splice-launch` shim in `~/.local/share/splice/`, links `splice` and your launch commands into `~/.local/bin` (make sure that is on your PATH), and runs `splice doctor`. A daemon that was already running stays on its old build until you restart it.
 
-The piped command skips the optional `seatd-pipe` companion. When the installer itself runs in a terminal, it asks before downloading the companion for Desktop gateway mode, live switching and Gemini through Antigravity. You can also choose it later in `splice setup` or `splice desktop on`. See [Claude Desktop](claude-desktop.md#claude-desktop-on-splice).
+The piped command explains the optional `seatd-pipe` companion and skips its download. When the installer itself runs in a terminal, it asks before downloading the companion for Desktop gateway mode, live switching and Gemini through Antigravity. It remembers your answer for future Splice upgrades. You can also choose it later in `splice setup --update` or `splice desktop on`. See [Claude Desktop](claude-desktop.md#claude-desktop-on-splice).
 
 To pin one version instead of following `latest` (prereleases never become `latest`):
 

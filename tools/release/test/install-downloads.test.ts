@@ -68,6 +68,9 @@ case "$*" in
   *" shim-version") echo shim-test ;;
   *" version") echo "splice 9.9.9" ;;
   *" install --all") mkdir -p "$SPLICE_BIN_DIR" && ln -sfn "$SPLICE_JAR" "$SPLICE_BIN_DIR/splice" ;;
+  *" offer-seatd-pipe --show")
+    echo "Companion explanation from the jar"
+    echo "To add seatd-pipe later, run: splice setup --update" ;;
   *" offer-seatd-pipe")
     [ -e "$SPLICE_BIN_DIR/splice" ] || exit 1
     printf "Install seatd-pipe? [y/N] "
@@ -119,6 +122,7 @@ describe("install.sh keeps the companion optional", () => {
     const run = install({});
     expect(run.ok, run.output).toBe(true);
     expect(run.output).not.toContain("Install seatd-pipe?");
+    expect(run.output).toContain("Companion explanation from the jar");
     expect(run.output).toContain("To add seatd-pipe later, run: splice setup --update");
     expect(run.urls.some((url) => url.includes("/seatd-pipe-"))).toBe(false);
   });

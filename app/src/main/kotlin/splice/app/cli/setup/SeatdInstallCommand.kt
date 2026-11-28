@@ -1,43 +1,31 @@
 package splice.app.cli.setup
 
-import splice.core.install.SEATD_PIPE_EXPLANATION
-import splice.core.install.seatdPipeRepository
+import splice.app.seatd.SeatdAdvice
+import splice.app.seatd.SeatdChoice
+import splice.core.util.EnvReader
+import splice.lifecycle.seatd.SeatdCompanion
 import splice.lifecycle.seatd.SeatdInstaller
 
-private const val SEATD_LATER = "To add seatd-pipe later, run: splice setup --update"
+/** install.sh uses the same offer and record as setup. The shell can explicitly request advice only. */
+internal class SeatdInstallCommand(
+    env: EnvReader = EnvReader(System::getenv),
+    private val prompts: SetupPrompts = SetupPrompts(),
+    installer: SeatdCompanion = SeatdInstaller(env),
+) {
+    private val seatd = SetupSeatd(prompts, env, installer)
 
-/** install.sh calls this after the base install. The bundled pin supplies the link and the installer owns the bytes. */
-internal class SeatdInstallCommand {
-    fun run(): Int {
-        val installer = SeatdInstaller()
-        if (installer.installed() != null) return 0
-        if (!confirmed()) {
-            println(SEATD_LATER)
-            return 0
+    fun run(showOnly: Boolean): Int {
+        if (seatd.installed()) return 0
+        val choice = if (showOnly || !prompts.hasConsole()) {
+            prompts.frame.step(SeatdAdvice.about)
+            null
+        } else {
+            seatd.offer()
         }
-        return when (val result = installer.install()) {
-            is SeatdInstaller.Result.Installed -> {
-                println("Installed seatd-pipe ${result.location.version}.")
-                result.cleanupNotice?.let(::println)
-                0
-            }
-            is SeatdInstaller.Result.AlreadyInstalled -> 0
-            is SeatdInstaller.Result.Failed -> {
-                System.err.println(result.message)
-                1
-            }
+        val installed = seatd.apply(choice)
+        if (choice != SeatdChoice.OPTED_IN) {
+            prompts.frame.step("To add seatd-pipe later, run: ${SeatdAdvice.SETUP}")
         }
-    }
-
-    private fun confirmed(): Boolean {
-        val console = System.console() ?: return false
-        println(SEATD_PIPE_EXPLANATION)
-        println(seatdPipeRepository)
-        println(
-            "If you say No, Claude Code Desktop and Gemini are not supported; " +
-                "terminal claude and all other providers work normally.",
-        )
-        val answer = console.readLine("Install seatd-pipe? [y/N] ")?.trim()?.lowercase()
-        return answer == "y" || answer == "yes"
+        return if (installed) 0 else 1
     }
 }

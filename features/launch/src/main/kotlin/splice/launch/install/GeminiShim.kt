@@ -30,7 +30,7 @@ public sealed class GeminiShimLaid {
 /** The Antigravity shim under [env]'s home, for [pipe] when it is installed. */
 public class GeminiShim(
     private val env: EnvReader,
-    private val pipe: Path = InstallPaths(envReader = env).desktopPipe,
+    private val pipe: Path? = InstallPaths(envReader = env).desktopPipe,
 ) {
     /** Where the shim lives: `~/.local/lib/splice/gemini/claude`, as install.sh lays it. */
     public fun path(): Path = UserHome.dir(env).resolve(LIB_DIR).resolve(GEMINI_DIR).resolve(SHIM)
@@ -54,8 +54,10 @@ public class GeminiShim(
 
     private fun text(): String = buildString {
         appendLine("#!/bin/sh")
-        appendLine("pipe=${word(pipe)}")
-        appendLine("if [ -f \"\$pipe\" ] && [ -x \"\$pipe\" ]; then exec \"\$pipe\" --acp \"\$@\"; fi")
+        if (pipe != null) {
+            appendLine("pipe=${word(pipe)}")
+            appendLine("if [ -f \"\$pipe\" ] && [ -x \"\$pipe\" ]; then exec \"\$pipe\" --acp \"\$@\"; fi")
+        }
         val layout = InstallLayout()
         appendLine("local_claude=${word(layout.localBin(env).resolve("claude"))}")
         appendLine("splice_launcher=${word(layout.launchShimPath(env))}")

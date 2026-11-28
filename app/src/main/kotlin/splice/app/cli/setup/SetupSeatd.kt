@@ -5,6 +5,7 @@ import splice.app.seatd.SeatdChoice
 import splice.app.seatd.SeatdConsent
 import splice.core.util.EnvReader
 import splice.lifecycle.seatd.SeatdCompanion
+import splice.lifecycle.seatd.SeatdInstaller
 
 /** The companion question is separate from confirming the setup plan. Only applying a plan records the answer. */
 internal class SetupSeatd(
@@ -29,16 +30,17 @@ internal class SetupSeatd(
 
     fun update(): SetupOffer {
         val choice = offer() ?: return SetupOffer.NOTHING
-        apply(choice)
-        return if (choice == SeatdChoice.OPTED_IN && installed()) SetupOffer.DONE else SetupOffer.DECLINED
+        val applied = apply(choice)
+        return if (choice == SeatdChoice.OPTED_IN && applied) SetupOffer.DONE else SetupOffer.DECLINED
     }
 
-    fun apply(choice: SeatdChoice?) {
-        if (choice == null) return
+    fun apply(choice: SeatdChoice?): Boolean {
+        if (choice == null) return true
         val frame = prompts.frame
         SeatdConsent(env).save(choice)?.let(frame::step)
-        if (choice == SeatdChoice.OPTED_IN) {
-            SeatdAdvice.lines(installer.install(SeatdAdvice.SETUP)).forEach(frame::step)
-        }
+        if (choice != SeatdChoice.OPTED_IN) return true
+        val result = installer.install(SeatdAdvice.SETUP)
+        SeatdAdvice.lines(result).forEach(frame::step)
+        return result !is SeatdInstaller.Result.Failed
     }
 }

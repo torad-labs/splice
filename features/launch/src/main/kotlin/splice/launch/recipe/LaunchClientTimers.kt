@@ -17,8 +17,8 @@ private const val CLIENT_TIMER_MAX_MS: Long = Int.MAX_VALUE.toLong()
 private const val CLIENT_BYTE_IDLE_MS: Long = 300_000L
 
 internal object LaunchClientTimers {
-    /** Whether the caller opted out of multi-hour/7-day holds (`SPLICE_NO_HOLD` / `noHold`). */
-    fun noHold(raw: String?): Boolean = NoHoldFlag.isOn(raw)
+    /** Explicit tri-state opt-out (`SPLICE_NO_HOLD` / `noHold`): null when unset/blank, true/false when set. */
+    fun noHold(raw: String?): Boolean? = if (raw.isNullOrBlank()) null else NoHoldFlag.isOn(raw)
 
     /** Effective client wall for a session: strips the 7-day hold window when [noHold] opts out of holds. */
     fun wallMs(apiTimeoutMs: Long, noHold: Boolean): Long =

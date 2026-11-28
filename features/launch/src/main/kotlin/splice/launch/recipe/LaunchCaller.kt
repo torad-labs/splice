@@ -33,5 +33,5 @@ public data class LaunchCallerAmbient(
     val noProxy: List<String> = emptyList(),
     val labels: List<String> = emptyList(),
     val modsOff: String? = null,
-    val noHold: Boolean = false,
+    val noHold: Boolean? = null,
 )

@@ -13,14 +13,16 @@ import java.util.concurrent.TimeUnit
 class ShimHeadersTest {
     private val shim: String = requireNotNull(System.getProperty("splice.launchShim")) { "splice.launchShim unset" }
 
-    /** What the session sends with the caller's [ambient] headers (null: none set) and the recipe's [recipe]. */
-    private fun sent(ambient: String?, recipe: String): String {
+    /** What the session sends with the caller's [ambient] headers (null: none set), [recipe], and [noHold] env. */
+    private fun sent(ambient: String?, recipe: String, noHold: String? = null): String {
         val script = "SPLICE_LAUNCH_FUNCTIONS_ONLY=1 . \"\$SHIM\"; caller_headers; merged_headers \"\$RECIPE\"; " +
             "printf '%s' \"\$MERGED_HEADERS\""
         val builder = ProcessBuilder("sh", "-c", script)
         builder.environment().apply {
             remove("ANTHROPIC_CUSTOM_HEADERS")
+            remove("SPLICE_NO_HOLD")
             ambient?.let { put("ANTHROPIC_CUSTOM_HEADERS", it) }
+            noHold?.let { put("SPLICE_NO_HOLD", it) }
             put("SHIM", shim)
             put("RECIPE", recipe)
         }
@@ -67,11 +69,19 @@ class ShimHeadersTest {
     }
 
     @Test
-    fun `a caller's x-splice-no-hold header is preserved rather than stripped`() {
-        val ambient = "x-splice-no-hold: 1\nx-splice-client-wall-ms: 5"
+    fun `a caller's x-splice-no-hold header is preserved when SPLICE_NO_HOLD is unset and overridden when set`() {
+        val ambient = "x-splice-no-hold: 1\nx-team: blue\nx-splice-client-wall-ms: 5"
         assertEquals(
-            listOf("x-splice-no-hold: 1", "x-splice-client-wall-ms: 99"),
-            sent(ambient, "x-splice-client-wall-ms: 99").lines(),
+            listOf("x-splice-no-hold: 1", "x-team: blue", "x-splice-client-wall-ms: 99"),
+            sent(ambient, "x-splice-client-wall-ms: 99", noHold = null).lines(),
+        )
+        assertEquals(
+            listOf("x-team: blue", "x-splice-client-wall-ms: 99"),
+            sent(ambient, "x-splice-client-wall-ms: 99", noHold = "0").lines(),
+        )
+        assertEquals(
+            listOf("x-team: blue", "x-splice-client-wall-ms: 99", "x-splice-no-hold: 1"),
+            sent(ambient, "x-splice-client-wall-ms: 99\nx-splice-no-hold: 1", noHold = "1").lines(),
         )
     }
 }

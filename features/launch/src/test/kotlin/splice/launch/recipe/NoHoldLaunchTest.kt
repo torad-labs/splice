@@ -130,21 +130,40 @@ class NoHoldLaunchTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `DoorRecipe without noHold preserves caller-set x-splice-no-hold in settings`() {
-        val caller = LaunchCaller(cwd = tmp.toString(), ambient = LaunchCallerAmbient(noHold = false))
+    fun `DoorRecipe preserves caller x-splice-no-hold when unset and clears it when explicitly false`() {
         val settingsWithHeader = """{"env":{"ANTHROPIC_CUSTOM_HEADERS":${JsonPrimitive("$NO_HOLD_HEADER: 1")}}}"""
-        val outcome = service().onDoor.outcome(
-            doorSpec(),
-            listOf("--settings", settingsWithHeader),
-            dangerouslySkipPermissions = false,
-            caller = caller,
-            headDirs = emptyList(),
+
+        val unsetCaller = LaunchCaller(cwd = tmp.toString(), ambient = LaunchCallerAmbient(noHold = null))
+        val unsetRecipe = (
+            service().onDoor.outcome(
+                doorSpec(),
+                listOf("--settings", settingsWithHeader),
+                dangerouslySkipPermissions = false,
+                caller = unsetCaller,
+                headDirs = emptyList(),
+            ) as LaunchOutcome.Ready
+            ).recipe
+        assertEquals("1", unsetRecipe.env["CLAUDE_CODE_RETRY_WATCHDOG"])
+        assertEquals(FULL_WALL_MS.toString(), unsetRecipe.env["API_TIMEOUT_MS"])
+        assertTrue("$NO_HOLD_HEADER: 1" in unsetRecipe.env.getValue("ANTHROPIC_CUSTOM_HEADERS").lines())
+
+        val offCaller = LaunchCaller(cwd = tmp.toString(), ambient = LaunchCallerAmbient(noHold = false))
+        val offRecipe = (
+            service().onDoor.outcome(
+                doorSpec(),
+                listOf("--settings", settingsWithHeader),
+                dangerouslySkipPermissions = false,
+                caller = offCaller,
+                headDirs = emptyList(),
+            ) as LaunchOutcome.Ready
+            ).recipe
+        assertEquals("1", offRecipe.env["CLAUDE_CODE_RETRY_WATCHDOG"])
+        assertEquals(FULL_WALL_MS.toString(), offRecipe.env["API_TIMEOUT_MS"])
+        val offHeaders = offRecipe.env.getValue("ANTHROPIC_CUSTOM_HEADERS").lines()
+        assertTrue(
+            offHeaders.none { it.substringBefore(':').trim().lowercase() == NO_HOLD_HEADER },
+            "explicit noHold=false strips inherited --settings $NO_HOLD_HEADER: $offHeaders",
         )
-        val recipe = (outcome as LaunchOutcome.Ready).recipe
-        assertEquals("1", recipe.env["CLAUDE_CODE_RETRY_WATCHDOG"])
-        assertEquals(FULL_WALL_MS.toString(), recipe.env["API_TIMEOUT_MS"])
-        val headers = recipe.env.getValue("ANTHROPIC_CUSTOM_HEADERS").lines()
-        assertTrue("$NO_HOLD_HEADER: 1" in headers, "$headers")
     }
 
     @Test

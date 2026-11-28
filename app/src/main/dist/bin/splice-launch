@@ -973,6 +973,7 @@ caller_headers() {
     ch_name=$(printf '%s' "${ch_line%%:*}" | tr -d ' \t' | tr '[:upper:]' '[:lower:]')
     case $ch_name in
       '' | x-splice-client | x-splice-client-wall-ms | x-splice-client-window | x-splice-launch-proof | x-splice-launch-owner) ;;
+      x-splice-no-hold) blank "${SPLICE_NO_HOLD-}" && CALLER_HEADERS=${CALLER_HEADERS:+$CALLER_HEADERS$NL}$ch_line ;;
       *) CALLER_HEADERS=${CALLER_HEADERS:+$CALLER_HEADERS$NL}$ch_line ;;
     esac
   done

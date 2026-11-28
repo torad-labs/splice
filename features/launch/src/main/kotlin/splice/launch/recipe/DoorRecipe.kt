@@ -48,7 +48,7 @@ internal class DoorRecipe(
         val chosen = wrapState.claude()
         if (chosen is ClaudeToRun.Refused) return LaunchOutcome.Refused(chosen.reason)
         // custom-provider (cp-overlay): the person's own --settings are merged into the one overlay, never a second one.
-        val noHold = caller.ambient.noHold
+        val noHold = caller.ambient.noHold == true
         val modelGiven = ClaudeArgv.options(extraArgs).namesModel
         val held = held(door, modelGiven, caller.ambient)
         val merged = when (val m = DoorOverlayMerge(door.overlay, caller.cwd, held).merge(extraArgs)) {
@@ -67,7 +67,12 @@ internal class DoorRecipe(
         val config = wrap.ownHome().configRootUnsets(caller.inheritedConfigDir, headDirs)
         val wallMs = door.wallMs?.let { LaunchClientTimers.wallMs(it, noHold) }
         val ownHeaders = if (noHold) listOf("$NO_HOLD_HEADER: 1") else emptyList()
-        val headers = ambient.customHeaders(wallMs, ownHeaders, merged.headers)
+        val headers = ambient.customHeaders(
+            wallMs,
+            ownHeaders,
+            merged.headers,
+            stripNoHold = caller.ambient.noHold != null,
+        )
         // what the overlay says empty, the process environment takes out
         val cleared = held.filterValues(String::isEmpty).keys
         val env = door.env - cleared + held.filterValues(String::isNotEmpty) + headers
@@ -87,7 +92,7 @@ internal class DoorRecipe(
         modelGiven: Boolean,
         callerAmbient: LaunchCallerAmbient,
     ): Map<String, String> = buildMap {
-        door.wallMs?.let { putAll(LaunchClientTimers.of(it, callerAmbient.noHold)) }
+        door.wallMs?.let { putAll(LaunchClientTimers.of(it, callerAmbient.noHold == true)) }
         putAll(LaunchModelEnvironment.gatewayWindows(door.window))
         putAll(ambient.noProxy(door.env[GATEWAY_BASE_URL], callerAmbient.noProxy))
         if (modelGiven) put(STARTING_MODEL, "")

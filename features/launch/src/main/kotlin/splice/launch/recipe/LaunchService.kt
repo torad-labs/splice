@@ -378,7 +378,7 @@ public class LaunchService(
         slots: List<Pair<String, String>>,
         callerAmbient: LaunchCallerAmbient,
     ): Map<String, String> {
-        val noHold = callerAmbient.noHold
+        val noHold = callerAmbient.noHold == true
         val wallMs = LaunchClientTimers.wallMs(spec.gateway.apiTimeoutMs, noHold)
         return buildMap {
             // LAN share: a command another machine serves goes to that machine's address, never through this one.
@@ -407,7 +407,7 @@ public class LaunchService(
             // Failure-handling slice 5: the same timeout, told to the head on every request, so a turn held for a reset
             // fits the session that sent it (a session launched before this reads as the 960 s every session had).
             // The shim adds the caller's own custom headers before these (LaunchAmbient).
-            putAll(ambient.customHeaders(wallMs, ownHeaders(spec, noHold)))
+            putAll(ambient.customHeaders(wallMs, ownHeaders(spec, noHold), stripNoHold = callerAmbient.noHold != null))
             putAll(ambient.noProxy(spec.gateway.remote, callerAmbient.noProxy))
             // Hide Claude Code's built-in Anthropic-account commands: in a gateway head, auth is the
             // proxy bearer above, so /login (a local-jsx command hardwired to platform.claude.com —

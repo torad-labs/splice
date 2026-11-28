@@ -28,6 +28,14 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.core)
 }
 
+// The release rehearsal supplies an accepted bundle. Read through a Gradle provider so a
+// configuration-cache hit cannot replay the path to an earlier, already removed bundle.
+tasks.test {
+    providers.environmentVariable("SPLICE_SEATD_REHEARSAL_DIST").orNull?.let { dist ->
+        systemProperty("splice.seatdRehearsalDist", dist)
+    }
+}
+
 // THE LAW HERE (the shim selector law in SupervisedStartTest.kt) reads the launch script the dist ships, and walks up to
 // install.sh to find the repository. Both are inputs of lawTest, so an edit to either re-runs the law.
 tasks.named<Test>("lawTest") {

@@ -117,7 +117,7 @@ internal class UpgradeCommand(
     private fun upgradeTo(a: UpgradeArgs): Upgraded<Boolean> {
         val requested = a.to?.let { layout.versionDir(it.removePrefix("v")) }
         if (requested is Upgraded.Refused) return requested
-        val base = release.base(a.to, env("SPLICE_RELEASE_BASE_URL"))
+        val base = ReleaseUrls.base(a.to, env("SPLICE_RELEASE_BASE_URL"))
         output.line("${BOLD}splice upgrade$RESET$DIM: from $base$RESET")
         val staging = layout.stagingDir()
         return staged(base, staging, a).then { candidate -> promote(a, staging, candidate) }

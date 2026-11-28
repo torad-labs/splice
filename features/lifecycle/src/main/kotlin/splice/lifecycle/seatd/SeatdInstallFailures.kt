@@ -1,8 +1,10 @@
 package splice.lifecycle.seatd
 
+import splice.core.GATEWAY_VERSION
 import splice.core.install.seatdPipeRepository
 import splice.lifecycle.seatd.SeatdInstaller.Failure
 import splice.lifecycle.seatd.SeatdInstaller.Result.Failed
+import splice.lifecycle.upgrade.RELEASE_SITE
 import java.nio.file.Path
 
 internal class SeatdInstallFailures(private val retryCommand: String) {
@@ -31,14 +33,13 @@ internal class SeatdInstallFailures(private val retryCommand: String) {
 
     fun absent(): Failed = Failed(
         Failure.DOWNLOAD_FAILED,
-        "The pinned seatd-pipe asset is missing from the release. Report it at $seatdPipeRepository/issues, " +
-            "then run `$retryCommand` once it is available.",
+        "No published Splice $GATEWAY_VERSION release with seatd-pipe was found. " +
+            "Install a released Splice from $RELEASE_SITE, then run `$retryCommand`.",
     )
 
     fun download(): Failed = Failed(
         Failure.DOWNLOAD_FAILED,
-        "Could not download seatd-pipe. Check your connection and $seatdPipeRepository/releases, " +
-            "then run `$retryCommand`.",
+        "Could not download seatd-pipe from Splice $GATEWAY_VERSION. Check your connection and run `$retryCommand`.",
     )
 
     fun notWritable(folder: Path): Failed = Failed(

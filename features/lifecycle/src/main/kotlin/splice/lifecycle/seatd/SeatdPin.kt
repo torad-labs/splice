@@ -4,8 +4,10 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
+import splice.core.GATEWAY_VERSION
 import splice.core.install.seatdPipePinDocument
 import splice.lifecycle.release.ReleaseDirectories
+import splice.lifecycle.upgrade.ReleaseUrls
 
 /** One checked-in asset manifest, copied unchanged into the jar by processResources. */
 @Serializable
@@ -20,10 +22,7 @@ internal data class SeatdPin(
             platforms.isNotEmpty() && platforms.values.all(SeatdAsset::reviewed)
 
     fun download(platform: SeatdPlatform): SeatdDownload? = platform.key()?.let(platforms::get)?.let { asset ->
-        val url = urlTemplate.replace("{repository}", repository)
-            .replace("{version}", version)
-            .replace("{asset}", asset.asset)
-        SeatdDownload(url, asset.sha256)
+        SeatdDownload("${ReleaseUrls.base(GATEWAY_VERSION)}/${asset.asset}", asset.sha256)
     }
 }
 

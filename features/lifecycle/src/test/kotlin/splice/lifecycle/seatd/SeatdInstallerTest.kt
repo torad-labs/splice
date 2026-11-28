@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import splice.core.GATEWAY_VERSION
 import splice.core.config.UserHome
 import splice.core.install.seatdPipeRepository
 import splice.core.util.EnvReader
@@ -26,7 +27,7 @@ class SeatdInstallerTest(@TempDir scratch: Path) {
     private val home = scratch
     private val share = home.resolve("share with spaces")
     private val installer = SeatdInstaller(EnvReader { key -> share.toString().takeIf { key == "SPLICE_SHARE_DIR" } })
-    private val release = home.resolve("upstream").resolve("3.0.0")
+    private val release = home.resolve("released-splice")
     private val asset = release.resolve("seatd-pipe-renamed.tar.gz")
     private val binary = "stand-in executable".toByteArray()
     private val archives = SeatdArchiveFixture(binary)
@@ -34,11 +35,9 @@ class SeatdInstallerTest(@TempDir scratch: Path) {
     private val target = share.resolve("seatd/3.0.0/seatd-pipe")
     private val retry = "splice desktop on"
     private val platform = SeatdPlatform()
-    private val pin = SeatdPin(
+    private val pin = requireNotNull(SeatdPins.bundled).copy(
         version = "3.0.0",
-        urlTemplate = "{repository}/{version}/{asset}",
         platforms = mapOf(requireNotNull(platform.key()) to SeatdAsset(asset.fileName.toString(), sha256(archive))),
-        repository = home.resolve("upstream").toUri().toString().trimEnd('/'),
     )
 
     @Test
@@ -54,6 +53,34 @@ class SeatdInstallerTest(@TempDir scratch: Path) {
         assertEquals(PosixFilePermissions.fromString("rwxr-xr-x"), Files.getPosixFilePermissions(target))
         assertEquals(archives.license, Files.readString(target.resolveSibling("LICENSE")))
         assertEquals(archives.notices, Files.readString(target.resolveSibling("THIRD_PARTY_NOTICES.md")))
+    }
+
+    @Test
+    fun `the pinned asset installs from the running Splice version's release`() = inHome {
+        val bundled = requireNotNull(SeatdPins.bundled)
+        val staged = System.getProperty("splice.seatdRehearsalDist")?.let(Path::of)
+        val sums = staged?.let {
+            Files.readAllLines(it.resolve("sha256sums.txt")).associate { line ->
+                val (sum, name) = line.split("  ", limit = 2)
+                name to sum
+            }
+        }
+        val reviewedAssets = bundled.platforms.mapValues { (_, row) ->
+            row.copy(sha256 = sums?.getValue(row.asset) ?: sha256(archive))
+        }
+        val reviewed = bundled.copy(platforms = reviewedAssets)
+        val row = reviewed.platforms.getValue(requireNotNull(platform.key()))
+        val bytes = staged?.let { Files.readAllBytes(it.resolve(row.asset)) } ?: archive
+        val fetch = UpgradeFetch { url ->
+            assertEquals("https://splice.torad.ai/download/v$GATEWAY_VERSION/${row.asset}", url)
+            bytes
+        }
+
+        val result = installer.install(reviewed, platform, retry, fetch)
+        val installed = assertInstanceOf(SeatdInstaller.Result.Installed::class.java, result)
+        val path = share.resolve("seatd/${bundled.version}/seatd-pipe")
+        assertEquals(SeatdInstaller.Location(path, bundled.version), installed.location)
+        assertTrue(Files.isExecutable(path))
     }
 
     @Test
@@ -77,7 +104,7 @@ class SeatdInstallerTest(@TempDir scratch: Path) {
 
         val result = assertInstanceOf(
             SeatdInstaller.Result.Failed::class.java,
-            installer.install(edited, platform, retry),
+            installer.install(edited, platform, retry, releaseAsset()),
         )
         assertEquals(SeatdInstaller.Failure.INVALID_ARCHIVE, result.kind)
         assertTrue(result.message.contains("archive"), result.message)
@@ -87,8 +114,15 @@ class SeatdInstallerTest(@TempDir scratch: Path) {
     }
 
     @Test
-    fun `a missing release asset tells the person where to report it and how to retry`() = inHome {
-        failed(install(), SeatdInstaller.Failure.DOWNLOAD_FAILED, "missing", "$seatdPipeRepository/issues", retry)
+    fun `a missing exact release directs source builds to a released Splice without falling back`() = inHome {
+        failed(
+            install(),
+            SeatdInstaller.Failure.DOWNLOAD_FAILED,
+            "No published Splice $GATEWAY_VERSION release with seatd-pipe",
+            "Install a released Splice",
+            "https://splice.torad.ai/download",
+            retry,
+        )
         assertFalse(Files.exists(target))
     }
 
@@ -233,7 +267,12 @@ class SeatdInstallerTest(@TempDir scratch: Path) {
 
     private fun inHome(body: () -> Unit) = UserHome.within(home, body)
 
-    private fun install(): SeatdInstaller.Result = installer.install(pin, platform, retry)
+    private fun install(): SeatdInstaller.Result = installer.install(pin, platform, retry, releaseAsset())
+
+    private fun releaseAsset(): UpgradeFetch = UpgradeFetch { url ->
+        assertEquals("https://splice.torad.ai/download/v$GATEWAY_VERSION/${asset.fileName}", url)
+        if (Files.exists(asset)) Files.readAllBytes(asset) else null
+    }
 
     private fun sha256(bytes: ByteArray): String =
         HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))

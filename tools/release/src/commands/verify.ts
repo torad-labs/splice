@@ -10,7 +10,7 @@
 //      `prerelease`, exactly one parsed stage step carrying the gated command and the resolved
 //      version, plus the comment-decoy mutant that proves the parse cannot be fooled by a comment;
 //   4. the SemVer/tag-equality mutants, driven through the REAL `:app:stageRelease` task;
-//   5. the rehearsal proper — build the fat jar through the slot, stage, accept;
+//   5. the rehearsal proper — build and stage through the slot, accept, then install the staged companion in a sandbox;
 //   6. release.yml's `files:` list against the STAGED manifest (DR-25), and the dist enumeration
 //      against the actual directory, with its four mutants (undispositioned extra file, blank
 //      reason, placeholder reason, substantive-reason positive control) and the zero-byte artifact
@@ -126,13 +126,6 @@ export async function verify(argv: readonly string[], repoRoot: string): Promise
     }
   }
 
-  leg("build and rehearse companion installation and pruning");
-  const built = gradle(repoRoot, [
-    "-q", "--no-parallel", ":app:shadowJar", ":features-lifecycle:test",
-    "--tests", "splice.lifecycle.seatd.SeatdInstallerTest",
-  ]);
-  if (!built.ok) return fail(`release verify: jar build or companion installation tests failed\n${built.output}`);
-
   const scratch = mkdtempSync(join(tmpdir(), "release-verify-"));
   try {
     return await stageAndAccept(repoRoot, version, workflow, scratch);
@@ -159,6 +152,13 @@ async function stageAndAccept(repoRoot: string, version: string, workflow: Workf
   if (await accept([distDir, "--version", version, "--with-seatd"], repoRoot, pin) !== 0) {
     return fail("release verify: the staged bundle was not accepted");
   }
+
+  leg("rehearse companion installation from the exact release");
+  const installed = gradle(repoRoot, [
+    "-q", "--no-parallel", ":features-lifecycle:test",
+    "--tests", "splice.lifecycle.seatd.SeatdInstallerTest",
+  ], { SPLICE_SEATD_REHEARSAL_DIST: distDir });
+  if (!installed.ok) return fail(`release verify: companion installation tests failed\n${installed.output}`);
 
   return verifyStaged(repoRoot, version, workflow, distDir, pin.repository);
 }

@@ -99,7 +99,7 @@ public class UpgradeChecks(
             if (beta) {
                 channel.newest(beta = true)
             } else {
-                release.latest(release.base(null, env("SPLICE_RELEASE_BASE_URL")), staging)
+                release.latest(ReleaseUrls.base(null, env("SPLICE_RELEASE_BASE_URL")), staging)
             }
         }
         discard(staging)

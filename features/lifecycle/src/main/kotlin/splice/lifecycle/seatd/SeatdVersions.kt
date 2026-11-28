@@ -8,7 +8,7 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 
-private const val SEATD_PIPE_BINARY = "seatd-pipe"
+internal const val SEATD_PIPE_BINARY = "seatd-pipe"
 
 /** Layout and retention for the companion. Each running launcher keeps the executable it started from. */
 internal class SeatdVersions(val root: Path, private val platform: SeatdPlatform) {
@@ -20,24 +20,33 @@ internal class SeatdVersions(val root: Path, private val platform: SeatdPlatform
         Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
 
     fun prune(current: SeatdInstaller.Location): String? = try {
-        discardOld(current)
-        null
+        if (discardOld(current)) null else cleanupNotice()
     } catch (_: IOException) {
         cleanupNotice()
     } catch (_: UncheckedIOException) {
         cleanupNotice()
     }
 
-    private fun discardOld(current: SeatdInstaller.Location) {
+    private fun discardOld(current: SeatdInstaller.Location): Boolean {
         val order = ReleaseOrder(current.version)
         val older = ReleaseDirectories.children(root).mapNotNull(::ordered)
             .filter { it.order < order }.sortedByDescending { it.order }
         val rollback = older.firstOrNull { installed(it.dir.resolve(SEATD_PIPE_BINARY)) }
         val stale = older.filterNot { it == rollback }
-        if (stale.isNotEmpty()) {
-            val activity = SeatdActivity(platform, root.toRealPath())
-            stale.filterNot { activity.held(it.dir.fileName) }.forEach { ReleaseDirectories.discard(it.dir) }
+        return stale.isEmpty() || discardUnused(stale)
+    }
+
+    private fun discardUnused(stale: List<VersionFolder>): Boolean {
+        val activity = SeatdActivity(platform, root.toRealPath())
+        var checked = true
+        for ((dir) in stale) {
+            when (activity.usage(dir.fileName)) {
+                SeatdUse.UNUSED -> ReleaseDirectories.discard(dir)
+                SeatdUse.IN_USE -> Unit
+                SeatdUse.UNKNOWN -> checked = false
+            }
         }
+        return checked
     }
 
     private fun ordered(dir: Path): VersionFolder? =

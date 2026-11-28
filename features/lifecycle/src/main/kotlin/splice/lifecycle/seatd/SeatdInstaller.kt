@@ -110,7 +110,7 @@ public class SeatdInstaller(private val env: EnvReader = EnvReader(System::geten
         if (Files.isDirectory(folder, LinkOption.NOFOLLOW_LINKS)) {
             when (fetch.download(asset.url, location.path, asset.sha256, QuietDownload(), SEATD_PIPE_MODE)) {
                 Downloaded.Landed -> Result.Installed(location, versions.prune(location))
-                Downloaded.Absent -> messages.download()
+                Downloaded.Absent -> messages.absent()
                 is Downloaded.Mismatch -> messages.mismatch()
             }
         } else {

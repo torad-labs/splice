@@ -23,6 +23,12 @@ internal class SeatdInstallFailures(private val retryCommand: String) {
             "Run `$retryCommand` to retry. If it happens again, report it at $SEATD_PIPE_REPOSITORY/issues.",
     )
 
+    fun absent(): Failed = Failed(
+        Failure.DOWNLOAD_FAILED,
+        "The pinned seatd-pipe asset is missing from the release. Report it at $SEATD_PIPE_REPOSITORY/issues, " +
+            "then run `$retryCommand` once it is available.",
+    )
+
     fun download(): Failed = Failed(
         Failure.DOWNLOAD_FAILED,
         "Could not download seatd-pipe. Check your connection and $SEATD_PIPE_REPOSITORY/releases, " +
@@ -31,8 +37,8 @@ internal class SeatdInstallFailures(private val retryCommand: String) {
 
     fun notWritable(folder: Path): Failed = Failed(
         Failure.NOT_WRITABLE,
-        "Cannot install seatd-pipe in $folder. Make sure the folder is writable and can hold executable files, " +
-            "then run `$retryCommand`.",
+        "Cannot install seatd-pipe in $folder. Make sure the folder is writable, allows executables, " +
+            "and has free disk space, then run `$retryCommand`.",
     )
 
     fun inProgress(): Failed = Failed(

@@ -6,11 +6,13 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.UserHome
 import splice.core.util.EnvReader
 import splice.lifecycle.upgrade.UpgradeFetch
+import splice.lifecycle.upgrade.UpgradeFetchFailed
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
@@ -58,8 +60,17 @@ class SeatdInstallerTest(@TempDir scratch: Path) {
     }
 
     @Test
-    fun `a refusing download does not look like a permissions failure`() = inHome {
-        failed(install(), SeatdInstaller.Failure.DOWNLOAD_FAILED, "download", retry)
+    fun `a missing release asset tells the person where to report it and how to retry`() = inHome {
+        failed(install(), SeatdInstaller.Failure.DOWNLOAD_FAILED, "missing", "seatd/issues", retry)
+        assertFalse(Files.exists(target))
+    }
+
+    @Test
+    fun `a network failure gives retry advice without exposing its exception`() = inHome {
+        val fetch = UpgradeFetch { throw UpgradeFetchFailed("internal transport detail") }
+        val result = installer.install(pin, platform, retry, fetch)
+        failed(result, SeatdInstaller.Failure.DOWNLOAD_FAILED, "connection", retry)
+        assertFalse(assertInstanceOf(SeatdInstaller.Result.Failed::class.java, result).message.contains("internal"))
         assertFalse(Files.exists(target))
     }
 
@@ -69,6 +80,7 @@ class SeatdInstallerTest(@TempDir scratch: Path) {
         Files.createDirectories(target.parent)
         Files.setPosixFilePermissions(target.parent, PosixFilePermissions.fromString("r-x------"))
         try {
+            assumeFalse(Files.isWritable(target.parent), "This test needs a user subject to directory permissions.")
             failed(install(), SeatdInstaller.Failure.NOT_WRITABLE, target.parent.toString(), retry)
             assertFalse(Files.exists(target))
         } finally {
@@ -167,20 +179,14 @@ class SeatdInstallerTest(@TempDir scratch: Path) {
     }
 
     private fun startSession(path: Path): Process {
-        if (platform.linux) {
-            Files.copy(Path.of("/bin/sleep"), path)
-            Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rwxr-xr-x"))
-        } else {
-            // A copy of a macOS system binary does not retain permission to execute outside the system volume.
-            val build = ProcessBuilder("/usr/bin/cc", "-x", "c", "-", "-o", path.toString())
-                .redirectErrorStream(true).start()
-            build.outputStream.bufferedWriter().use {
-                it.write("#include <unistd.h>\nint main(void) { sleep(60); return 0; }\n")
-            }
-            val diagnostics = build.inputStream.bufferedReader().use { it.readText() }
-            assertEquals(0, build.waitFor(), diagnostics)
+        // Compile a real executable: system sleep may be a multicall binary or restricted to its original location.
+        val build = ProcessBuilder("cc", "-x", "c", "-", "-o", path.toString()).redirectErrorStream(true).start()
+        build.outputStream.bufferedWriter().use {
+            it.write("#include <unistd.h>\nint main(void) { sleep(60); return 0; }\n")
         }
-        return ProcessBuilder(path.toString(), "60").start()
+        val diagnostics = build.inputStream.bufferedReader().use { it.readText() }
+        assertEquals(0, build.waitFor(), diagnostics)
+        return ProcessBuilder(path.toString()).start()
     }
 
     private fun inHome(body: () -> Unit) = UserHome.within(home, body)

@@ -28,4 +28,7 @@ public class InstallPaths(
     public val shareDir: Path = shareOverride
         ?: envReader("SPLICE_SHARE_DIR")?.let { Paths.get(it) }
         ?: UserHome.dir(envReader).resolve(".local/share/splice")
+
+    /** Immutable executable path baked into Desktop's entrypoints; absence leaves Claude Code in place. */
+    public val desktopPipe: Path get() = shareDir.resolve("seatd/0.1.0/seatd-pipe").toAbsolutePath()
 }

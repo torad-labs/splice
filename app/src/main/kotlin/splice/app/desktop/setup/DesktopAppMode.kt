@@ -60,7 +60,7 @@ internal class DesktopAppMode(
     fun putIn(door: String): String {
         val record = records.get()
         val id = record.appId ?: UUID.randomUUID().toString()
-        val (held, replaced) = library.putIn(id, door, helper.lay(), record.appLibrary)
+        val (held, replaced) = library.putIn(id, door, helper.lay(door), record.appLibrary)
         records.update { it.copy(appId = id, appLibrary = held, configWrittenAt = now()) }
         return replaced?.let { " It replaces $it while splice is on; `splice desktop off` puts it back." }.orEmpty()
     }
@@ -82,8 +82,11 @@ internal class DesktopAppMode(
     fun refreshed(door: String): Boolean {
         val record = records.get()
         val id = record.appId
-        if (record.appLibrary == null || id == null) return false
-        val laid = helper.lay()
+        if (record.appLibrary == null || id == null) {
+            if (record.on && library.beside().any { it.onDoor(door) != null }) helper.lay(door)
+            return false
+        }
+        val laid = helper.lay(door)
         if (library.doorOf(id) == door) return false
         library.rewrite(id, door, laid)
         records.update { it.copy(configWrittenAt = now()) }

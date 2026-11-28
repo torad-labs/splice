@@ -56,7 +56,7 @@ internal class SideBySideDesktop(
         val _ = DesktopKey(paths.desktopKeyFile, log).get()
         val records = DesktopRecords(paths.desktopFile, log)
         if (!records.get().on) records.update { it.copy(on = true) }
-        val helper = DesktopPrograms(paths.stateDir).lay()
+        val helper = DesktopPrograms(paths.stateDir, env).lay(door)
         val config = DesktopAppConfig(env = env, osName = osName, baseDir = profile)
         val overrides = DesktopPolicyOverrides(paths.desktopPolicyOverridesFile)
         val library = DesktopAppLibrary(

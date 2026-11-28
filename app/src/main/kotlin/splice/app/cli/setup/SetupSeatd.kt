@@ -29,10 +29,22 @@ internal class SetupSeatd(
         null -> emptyList()
     }
 
-    fun update(): SetupOffer {
-        val choice = offer() ?: return SetupOffer.NOTHING
+    /** What `splice setup --update`'s companion step came to. */
+    enum class UpdateOutcome(val offer: SetupOffer, val open: Int = 0) {
+        NOTHING(SetupOffer.NOTHING),
+        DECLINED(SetupOffer.DECLINED),
+        DONE(SetupOffer.DONE),
+        FAILED(SetupOffer.DECLINED, open = 1),
+    }
+
+    fun update(): UpdateOutcome {
+        val choice = offer() ?: return UpdateOutcome.NOTHING
         val applied = apply(choice)
-        return if (choice == SeatdChoice.OPTED_IN && applied) SetupOffer.DONE else SetupOffer.DECLINED
+        return when {
+            choice != SeatdChoice.OPTED_IN -> UpdateOutcome.DECLINED
+            applied -> UpdateOutcome.DONE
+            else -> UpdateOutcome.FAILED
+        }
     }
 
     fun apply(choice: SeatdChoice?): Boolean {

@@ -78,7 +78,8 @@ internal class SetupUpdate(
     ): Int {
         val kinds = gaps.map { it.kind }.toSet()
         // The companion consent is a separate offer, first, so a declined companion gates the Desktop offer below.
-        val seatdOutcome = Outcome(seatd.update())
+        val seatdResult = seatd.update()
+        val seatdOutcome = Outcome(seatdResult.offer, seatdResult.open)
         val launcherOutcome = launchers(desktop)
         val desktopOutcome = desktop(desktop)
         val outcomes = listOf(

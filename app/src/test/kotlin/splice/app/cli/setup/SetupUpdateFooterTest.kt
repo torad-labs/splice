@@ -24,6 +24,9 @@ import splice.core.terminal.GREEN
 import splice.core.terminal.RESET
 import splice.core.terminal.YELLOW
 import splice.core.util.EnvReader
+import splice.lifecycle.seatd.SeatdCompanion
+import splice.lifecycle.seatd.SeatdInstaller
+import splice.lifecycle.seatd.SeatdRehearsal
 import splice.terminal.ConfirmPrompt
 import splice.terminal.MultiSelectOutcome
 import splice.terminal.Spinner
@@ -132,7 +135,12 @@ class SetupUpdateFooterTest {
             val runner = SetupUpdate(
                 prompts,
                 env,
-                SetupEffects(env, add = noOpAdd(), launchers = SetupLaunchers(env, osName = "Linux")),
+                SetupEffects(
+                    env,
+                    add = noOpAdd(),
+                    launchers = SetupLaunchers(env, osName = "Linux"),
+                    seatd = installedSeatd(env),
+                ),
                 detect = { SetupFacts(emptySet(), emptySet(), openRouterKey = false, daemonUp = false, caps) },
                 desktopOn = { error("desktop not installed") },
                 modes = SetupModes(prompts, env, rows = ModeRows { emptyList() }),
@@ -174,7 +182,7 @@ class SetupUpdateFooterTest {
             val runner = SetupUpdate(
                 prompts,
                 env,
-                SetupEffects(env, add = noOpAdd()),
+                SetupEffects(env, add = noOpAdd(), seatd = installedSeatd(env)),
                 detect = {
                     val mode = if (activated) DesktopMode.APP else DesktopMode.OFF
                     val desk = desktop(cli = true, app = true).copy(mode = mode, managed = managed(OTHER_WRAPPER))
@@ -219,7 +227,7 @@ class SetupUpdateFooterTest {
             val runner = SetupUpdate(
                 prompts,
                 env,
-                SetupEffects(env, add = noOpAdd(), restart = DaemonRestart { false }),
+                SetupEffects(env, add = noOpAdd(), restart = DaemonRestart { false }, seatd = installedSeatd(env)),
                 detect = { SetupFacts(emptySet(), emptySet(), openRouterKey = false, daemonUp = false, caps) },
                 desktopOn = { error("desktop not installed") },
                 modes = SetupModes(prompts, env, rows = ModeRows { listOf(ModeRow("demo", "demo mode", on = false)) }),
@@ -227,6 +235,38 @@ class SetupUpdateFooterTest {
             runBlocking { runner.run() }
         }
         assertTrue("Could not restart the daemon" in said, said.toString())
+        assertFalse("Up to date." in said, said.toString())
+        assertTrue("${YELLOW}1 open item listed above.$RESET" in said, said.toString())
+    }
+
+    @Test
+    fun `a failed seatd-pipe install leaves an open item instead of green Up to date`(@TempDir home: Path) {
+        val said = StringBuilder()
+        UserHome.within(home) {
+            seedToml(home)
+            val env = EnvReader { null }
+            val prompts = SetupPrompts(
+                frame = WizardFrame(out = said, ask = ConfirmPrompt { _, _ -> true }),
+                spinner = Spinner(tty = false),
+                hasConsole = { true },
+            )
+            val caps = Capabilities(
+                desktop(program = null, cli = true, app = true),
+                HarnessFacts(null, null, geminiShim = true, synced = emptySet()),
+                HubFacts(linux = true, on = false, systemd = true),
+                autoUpdate = false,
+            )
+            val runner = SetupUpdate(
+                prompts,
+                env,
+                SetupEffects(env, add = noOpAdd(), seatd = SeatdRehearsal(env).missingAsset()),
+                detect = { SetupFacts(emptySet(), emptySet(), openRouterKey = false, daemonUp = false, caps) },
+                desktopOn = { error("desktop not installed") },
+                modes = SetupModes(prompts, env, rows = ModeRows { emptyList() }),
+            )
+            runBlocking { runner.run() }
+        }
+        assertTrue("seatd-pipe" in said && "splice setup --update" in said, said.toString())
         assertFalse("Up to date." in said, said.toString())
         assertTrue("${YELLOW}1 open item listed above.$RESET" in said, said.toString())
     }
@@ -253,7 +293,7 @@ class SetupUpdateFooterTest {
             val runner = SetupUpdate(
                 prompts,
                 env,
-                SetupEffects(env, add = noOpAdd()),
+                SetupEffects(env, add = noOpAdd(), seatd = installedSeatd(env)),
                 detect = { SetupFacts(emptySet(), emptySet(), openRouterKey = false, daemonUp = false, caps) },
                 desktopOn = desktopOn,
                 modes = SetupModes(prompts, env, rows = ModeRows { emptyList() }),
@@ -261,6 +301,10 @@ class SetupUpdateFooterTest {
             runBlocking { runner.run() }
         }
         return said.toString()
+    }
+
+    private fun installedSeatd(env: EnvReader): SeatdCompanion = SeatdRehearsal(env).installer().also {
+        assertTrue(it.install() is SeatdInstaller.Result.Installed)
     }
 
     private fun noOpAdd(): ProfileAdd = object : ProfileAdd {

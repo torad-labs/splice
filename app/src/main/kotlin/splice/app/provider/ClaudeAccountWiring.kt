@@ -40,6 +40,12 @@ internal class ClaudeAccountWiring(
     private val native = ClaudeNativeAccountWiring(statePaths, nativePlaces, log, identities)
     private val owners = LoginOwners()
 
+    /** The static owner key for [head]'s Claude folder, or null when multiple declared heads serve its provider. */
+    fun canonicalKey(head: String): String? = routeAccounts.canonicalKey(head)
+
+    /** Declared heads serving [head]'s provider when [head] is a gateway provider route without its own folder. */
+    fun servingHeads(head: String): Set<String> = routeAccounts.servingHeads(head)
+
     /** Native places provide read-only selectable credentials. Without one, [caller] remains the forwarded primary;
      *  managed folders are always separate members, never a replacement for the native login owner. */
     fun accounts(head: String, caller: RefreshableAuthProvider): List<WiredAccount> {

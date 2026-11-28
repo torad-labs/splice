@@ -10,6 +10,7 @@ package splice.head.admission
 
 import splice.core.auth.REFUSAL_FIELD
 import splice.core.usage.QuotaFull
+import splice.head.HeldLogins
 import splice.head.usage.QuotaTracker
 import splice.head.usage.TrackedAccountQuota
 import splice.upstream.credentials.AccountPool
@@ -46,12 +47,25 @@ internal class TurnQuota(
     }
 
     /** V4-452: the head's full reading by the providers' own CURRENT readings, null when there is none. A head
-     *  reads full when every account it holds does, so a pool needs all of its trackers full and answers with the
-     *  earliest reset; a head with no tracker never reads full. Head-wide, so no session or selection is asked. */
-    fun full(): QuotaFull? {
-        val current = accountPool?.takeIf { it.active }?.members
-            ?.mapNotNull { accountQuotas[it.label] } ?: listOfNotNull(primary)
-        val readings = current.map(QuotaTracker::full)
+     *  reads full when every usable account allowed by [allowed] does, so a pool needs all of its usable allowed
+     *  trackers full and answers with the earliest reset; signed-out, owner-blocked and auth-excluded accounts are
+     *  excluded, and a pool with no usable allowed accounts or a head with no tracker never reads full. Head-wide, so
+     *  no session or selection is asked. */
+    fun full(allowed: HeldLogins = HeldLogins { true }): QuotaFull? {
+        val pool = accountPool
+        val trackers = if (pool != null) {
+            val usable = pool.view(null).accounts
+                .filter { allowed.held(it.label) }
+                .filter {
+                    it.credential.present && it.credential.block == null &&
+                        it.credential.excludedUntilEpochMillis == null
+                }
+            if (usable.isEmpty()) return null
+            usable.map { account -> accountQuotas[account.label] ?: primary.takeIf { account.primary } }
+        } else {
+            listOfNotNull(primary)
+        }
+        val readings = trackers.map { it?.full() }
         if (readings.any { it == null }) return null
         return readings.filterNotNull().minByOrNull { it.resetsAtEpochSeconds }
     }

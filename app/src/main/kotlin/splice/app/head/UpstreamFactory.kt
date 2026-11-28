@@ -7,7 +7,6 @@ import splice.app.provider.ProviderBuild
 import splice.app.provider.tls.ProviderTrust
 import splice.core.config.SpliceConfig
 import splice.core.util.LogSink
-import splice.upstream.retry.ProviderHoldStore
 import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamTransport
@@ -20,7 +19,7 @@ internal class UpstreamFactory {
         ctx: ProviderBuild,
         cfg: SpliceConfig,
         log: LogSink,
-        providerHold: ProviderHoldStore?,
+        stores: HeadStores,
         configDir: Path,
     ): UpstreamClient = UpstreamClient(
         cfg.upstreamTimeoutMs,
@@ -45,6 +44,7 @@ internal class UpstreamFactory {
             },
         // Every wait is RetryEngine's (failure-handling slice 4): the retry curve and its knobs retired in 0.4.0.
         pacing = RetryPacing(),
-        holdStore = providerHold,
+        holdStore = stores.providerHold,
+        cooldowns = stores.accounts.upstreamCooldowns,
     )
 }

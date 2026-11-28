@@ -77,6 +77,15 @@ internal class CallerLogin(
     private fun stampOf(previous: SessionAccount?): ServedStamp? =
         previous?.served?.takeUnless { mark?.replaces(previous.caller) == true }
 
+    /** The exhaustion reading from the accounts this caller may run on, excluding [never] (e.g. native/own logins). */
+    fun exhausted(accounts: List<PoolAccount>, at: Long): Selection.Exhausted {
+        val eligible = accounts.filterNot { it.label in never }
+        return Selection.Exhausted(
+            AccountAvailability.earliestReset(eligible, at, model),
+            OwnerBlocks.named(eligible, at),
+        )
+    }
+
     /** Why a move went to the caller's own login: the person signed in to another account. Null for any other
      *  move, and for a pin, which names itself. */
     fun movedBy(previous: SessionAccount?, chosen: PoolAccount, pinLabel: String?): String? =

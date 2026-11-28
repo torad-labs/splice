@@ -55,7 +55,8 @@ internal class TurnAccountHandoff(
         val session = drive.meta.scope.sessionId
         // own = false: the turn was counted toward the command's usual model at its admission. Counted again here, a
         // login running out would hand that say to the helpers' turns it refused, at the moment the screens are read.
-        val choosing = pool.awaitingEvidence.without(never(drive))
+        val door = drive.meta.route.relay.door
+        val choosing = if (door != null) pool.awaitingEvidence.only(held::held) else pool.awaitingEvidence
         val available = choosing.select(session, pending.excluded, model = model, own = false)
         val selected = if (available is Selection.Exhausted && earlierHeld(drive)) {
             choosing.select(session, model = model, own = false)
@@ -82,7 +83,8 @@ internal class TurnAccountHandoff(
         if (synchronized(this) { committed }) return false
         // A login that left the pool since, or whose label is another account's now, is not this turn's login any more.
         val current = drive.account?.account?.takeIf { held -> pool.members.any { it === held } }?.label
-        val tried = synchronized(this) { tried() } + never(drive)
+        val door = drive.meta.route.relay.door
+        val tried = synchronized(this) { tried() }
         val reset = when (cause) {
             is FailureCause.Provider.Limited -> (cause.lift as? Lift.At)?.at
             is FailureCause.Provider.NeedsPayment -> (cause.lift as? Lift.At)?.at
@@ -90,8 +92,10 @@ internal class TurnAccountHandoff(
         }
         // Each login as a turn of this model meets it: a login whose provider refused another model for the week is
         // free for this one (Nov 3, 2026).
-        return pool.view(drive.meta.scope.sessionId, drive.meta.route.upstreamModel).accounts
-            .any { it.available && it.label != current && it.label !in tried } || earlierTakes(drive, cause, reset)
+        val accounts = pool.view(drive.meta.scope.sessionId, drive.meta.route.upstreamModel).accounts
+        val hasFree = accounts.filter { door == null || held.held(it.label) }
+            .any { it.available && it.label != current && it.label !in tried }
+        return hasFree || earlierTakes(drive, cause, reset)
     }
 
     /** Whether a login held to an earlier reset takes the turn. An earlier reset only shortens the hold the turn would
@@ -137,16 +141,12 @@ internal class TurnAccountHandoff(
         val view = pool.view(drive.meta.scope.sessionId, drive.meta.route.upstreamModel)
         val resets = view.blockedUntilEpochSecondsByLabel
         val currentReset = currentReset(view, current, reset, refused) ?: return false
-        val never = never(drive)
-        return view.accounts.any { account ->
-            account.label != current && account.label !in never && signedIn(account) &&
+        val door = drive.meta.route.relay.door
+        return view.accounts.filter { door == null || held.held(it.label) }.any { account ->
+            account.label != current && signedIn(account) &&
                 (resets[account.label] ?: Long.MAX_VALUE) < currentReset
         }
     }
-
-    /** The logins [drive]'s turn never moves to: for a turn through a door, every login not added to splice ([held]),
-     *  the person's own among them. None for any other turn. */
-    private fun never(drive: TurnDrive): Set<String> = held.never(pool, drive.meta.route.relay.door)
 
     /** When [current] serves again, in epoch seconds: never where it was [refused] or is signed out, else at the
      *  [reset] just read or the one the pool holds; null where nothing holds it. */

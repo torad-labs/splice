@@ -47,6 +47,10 @@ internal class ProviderAssembly(
 
     internal fun claudeAccounts(head: String, auth: splice.core.auth.RefreshableAuthProvider): List<WiredAccount> =
         claudeAccounts.accounts(head, auth)
+
+    internal fun claudeCanonicalKey(head: String): String? = claudeAccounts.canonicalKey(head)
+
+    internal fun claudeServingHeads(head: String): Set<String> = claudeAccounts.servingHeads(head)
     private val grokResponsesArm = GrokResponsesArm(probeScope, log, grokRefresh, statePaths, grokAccounts)
     private val apiKeyResponsesArm = ApiKeyResponsesArm(statePaths)
     private val codexResponsesArm = CodexResponsesArm(statePaths, probeScope, log, refreshCall, sessionSpeeds)

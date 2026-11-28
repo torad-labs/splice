@@ -12,10 +12,12 @@ import splice.sessions.registry.HeadlessSessionSource
 import splice.sessions.registry.ServedLaunchRows
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionClient
+import splice.sessions.registry.SessionListing
 import splice.sessions.registry.SessionProcess
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
+import splice.sessions.registry.SessionSource
 import splice.sessions.registry.SessionStatus
 import java.nio.file.Files
 import java.nio.file.Path
@@ -64,13 +66,51 @@ class HeadlessSessionRowTest {
         assertEquals("""{"role":"interactive-worker"}""", row.getValue("labels").toString())
     }
 
-    private fun routes(dir: Path, served: () -> List<SessionRecord>): SessionsRoutes {
+    @Test
+    fun `a resumed headless session shows its live row instead of the ended one`(@TempDir dir: Path) {
+        val ended = launchRow(5, SessionAvailability.GONE).copy(
+            process = SessionProcess(5, "/interactive", NOW - 100, NOW - 100, null),
+            client = SessionClient("interactive", null),
+        )
+        val routes = routes(dir, listed = listOf(ended)) { listOf(launchRow(7, SessionAvailability.LIVE)) }
+
+        val row = rows(routes).single()
+        assertEquals(ID, row.field("session_id"))
+        assertEquals("live", row.field("availability"))
+        assertEquals("7", row.field("pid"))
+        assertEquals("/work", row.field("cwd"))
+        assertEquals("headless", row.field("kind"))
+    }
+
+    @Test
+    fun `a live registry session keeps its row when a headless run serves the same id`(@TempDir dir: Path) {
+        Files.writeString(
+            dir.resolve("11.json"),
+            """{"pid":11,"sessionId":"$ID","cwd":"/interactive","kind":"interactive","updatedAt":$NOW}""",
+        )
+        val ended = launchRow(5, SessionAvailability.GONE).copy(client = SessionClient("interactive", null))
+        val routes = routes(dir, listed = listOf(ended)) { listOf(launchRow(7, SessionAvailability.LIVE)) }
+
+        val row = rows(routes).single()
+        assertEquals("live", row.field("availability"))
+        assertEquals("/interactive", row.field("cwd"))
+        assertEquals("""{"role":"interactive-worker"}""", row.getValue("labels").toString())
+    }
+
+    private fun routes(
+        dir: Path,
+        listed: List<SessionRecord> = emptyList(),
+        served: () -> List<SessionRecord>,
+    ): SessionsRoutes {
         val registry = SessionRegistry(dir, routeOf = { SessionRoute.Unknown }, pidAlive = { true }, clock = { NOW })
+        val recorded = object : SessionSource by registry {
+            override fun list(): SessionListing = registry.list().let { it.copy(sessions = it.sessions + listed) }
+        }
         val launches = object : ServedLaunchRows {
             override fun rows(): List<SessionRecord> = served()
         }
         return SessionsRoutes(
-            HeadlessSessionSource(registry, launches),
+            HeadlessSessionSource(recorded, launches),
             TestTranscripts(),
             facts = SessionRowFacts(labelsOf = SessionLabelsOf { mapOf("role" to "interactive-worker") }),
         )

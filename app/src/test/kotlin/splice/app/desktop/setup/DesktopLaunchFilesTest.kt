@@ -62,6 +62,17 @@ class DesktopLaunchFilesTest {
     }
 
     @Test
+    fun `companion launches receive distinct foreground owners`() = UserHome.within(home) {
+        val f = DesktopFileRig(home)
+        f.putIn(4567)
+        val owners = List(2) {
+            f.run(emptyMap())
+            java.util.UUID.fromString(f.env("SPLICE_FOREGROUND_OWNER"))
+        }
+        assertEquals(2, owners.toSet().size)
+    }
+
+    @Test
     fun `daemon restart upgrades the shared launcher for a side-by-side-only installation`() = UserHome.within(home) {
         val f = DesktopFileRig(home)
         f.putInBeside(4567)

@@ -20,14 +20,14 @@ import java.util.concurrent.TimeUnit
 
 class DesktopHooksFilesTest {
     @Test
-    fun `the overlay registers startup peers Teams login and tool activity with only the tool and session ids`(
+    fun `the overlay posts the original event and fixed tool phase to the authenticated local door without Perl`(
         @TempDir home: Path,
     ) = UserHome.within(home) {
         val received = LinkedBlockingQueue<List<String>>()
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/") { call ->
             val capture = listOf(
-                call.requestURI.path,
+                call.requestURI.toString(),
                 call.requestHeaders.getFirst("Authorization").orEmpty(),
                 call.requestHeaders.getFirst("X-Splice-Foreground-Owner").orEmpty(),
                 call.requestBody.reader().readText(),
@@ -50,11 +50,10 @@ class DesktopHooksFilesTest {
             for ((event, phase) in mapOf("PreToolUse" to "start", "PostToolUse" to "end")) {
                 val group = hooks.getValue(event).jsonArray.single().jsonObject
                 assertEquals("*", group.getValue("matcher").jsonPrimitive.content)
-                run(group, event, home)
+                val input = run(group, event, home)
                 val call = requireNotNull(received.poll())
-                assertEquals(listOf("/hooks/foreground/door", "Bearer hook-fixture", OWNER), call.take(3))
-                val expected = """{"session_id":"session","tool_use_id":"tool","phase":"$phase"}"""
-                assertEquals(Json.parseToJsonElement(expected), Json.parseToJsonElement(call.last()))
+                assertEquals(listOf("/hooks/foreground/door?phase=$phase", "Bearer hook-fixture", OWNER), call.take(3))
+                assertEquals(input, call.last())
             }
         } finally {
             server.stop(0)
@@ -71,18 +70,21 @@ class DesktopHooksFilesTest {
             group
         }
         run(command, "PreToolUse", home)
+        Unit
     }
 
     private fun hooks(state: Path): JsonObject =
         Json.parseToJsonElement(Files.readString(state.resolve("desktop-hooks.json"))).jsonObject
             .getValue("hooks").jsonObject
 
-    private fun run(group: JsonObject, event: String, home: Path) {
+    private fun run(group: JsonObject, event: String, home: Path): String {
+        val bin = Files.createDirectories(home.resolve("bin"))
+        if (!Files.exists(bin.resolve("curl"))) Files.createSymbolicLink(bin.resolve("curl"), Path.of("/usr/bin/curl"))
         val cmd = group.getValue("hooks").jsonArray.single().jsonObject.getValue("command").jsonPrimitive.content
         val process = ProcessBuilder("/bin/sh", "-c", cmd).directory(home.toFile()).redirectErrorStream(true).apply {
             environment().clear()
             environment()["HOME"] = home.toString()
-            environment()["PATH"] = "/usr/bin:/bin"
+            environment()["PATH"] = bin.toString()
             environment()["SPLICE_FOREGROUND_OWNER"] = OWNER
         }.start()
         val input = """{"tool_input":{"session_id":"nested","password":"private"},"session_id":"session",""" +
@@ -95,6 +97,7 @@ class DesktopHooksFilesTest {
         } finally {
             process.destroyForcibly()
         }
+        return input
     }
 }
 

@@ -10,8 +10,7 @@ try_claude() {
   shift
   [ -f "$candidate" ] && [ -x "$candidate" ] && ! [ "$candidate" -ef "$0" ] || return
   if [ "$candidate" -ef "$splice_launcher" ]; then
-    candidate=$(/usr/bin/perl -MJSON::PP -0777 -ne 'print decode_json($_)->{real_binary_path}' "$wrap_state" 2>/dev/null)
-    case $candidate in /*) ;; *) return ;; esac
+    candidate=$unwrapped
     [ -f "$candidate" ] && [ -x "$candidate" ] && ! [ "$candidate" -ef "$splice_launcher" ] &&
       ! [ "$candidate" -ef "$0" ] || return
   fi

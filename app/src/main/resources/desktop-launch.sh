@@ -16,7 +16,9 @@ if [ -f "$pipe" ] && [ -x "$pipe" ]; then
   if [ -r /proc/sys/kernel/random/uuid ]; then
     IFS= read -r SPLICE_FOREGROUND_OWNER </proc/sys/kernel/random/uuid
   else
-    SPLICE_FOREGROUND_OWNER=$(/usr/bin/uuidgen)
+    # A per-launch identity, not an authorization token. Bash 3 on macOS supplies RANDOM.
+    SPLICE_FOREGROUND_OWNER=$(/bin/bash -c 'printf "%08x-%04x-4%03x-%04x-%04x%04x%04x" \
+      "$$" "$RANDOM" "$((RANDOM & 4095))" "$((32768 | (RANDOM & 16383)))" "$RANDOM" "$RANDOM" "$RANDOM"')
   fi
   export SPLICE_FOREGROUND_OWNER
 fi

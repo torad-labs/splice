@@ -2,6 +2,7 @@
 // upgrade aftercare share one writer. The versioned companion is never resolved through the session's PATH.
 package splice.launch.install
 
+import splice.client.wrap.UNWRAPPED_CLAUDE
 import splice.core.config.InstallPaths
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
@@ -58,7 +59,7 @@ public class GeminiShim(
         val layout = InstallLayout()
         appendLine("local_claude=${word(layout.localBin(env).resolve("claude"))}")
         appendLine("splice_launcher=${word(layout.launchShimPath(env))}")
-        appendLine("wrap_state=${word(StatePaths(envReader = env).stateDir.resolve("claude-head-wrap.json"))}")
+        appendLine("unwrapped=${word(StatePaths(envReader = env).stateDir.resolve(UNWRAPPED_CLAUDE))}")
         append(checkNotNull(Thread.currentThread().contextClassLoader.getResource("gemini-fallback.sh")).readText())
     }
 

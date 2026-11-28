@@ -30,28 +30,38 @@ public class ForegroundHookRoute(
     private val jsonBody: JsonBody = JsonBody(),
 ) {
     public suspend fun receive(call: ApplicationCall) {
-        handle(call.parameters["head"].orEmpty(), jsonBody.parse(call), call.request.headers[FOREGROUND_OWNER_HEADER])
+        handle(
+            call.parameters["head"].orEmpty(),
+            jsonBody.parse(call),
+            call.request.headers[FOREGROUND_OWNER_HEADER],
+            call.request.queryParameters["phase"],
+        )
         call.respondText("{}", ContentType.Application.Json)
     }
 
     private data class ActivityCall(val session: String, val tool: String?, val phase: ForegroundToolPhase)
 
-    internal fun handle(key: String, body: JsonObject?, owner: String?) {
-        if (!knownTarget(key) || owner == null) return
-        val event = body?.let(::parse) ?: return
-        if (owner.length == FOREGROUND_OWNER_LENGTH) {
+    internal fun handle(key: String, body: JsonObject?, owner: String?, hookPhase: String? = null) {
+        if (knownTarget(key) && owner?.length == FOREGROUND_OWNER_LENGTH) {
+            val event = body?.let { parse(key, it, hookPhase) } ?: return
             activity.record(ForegroundToolCall(event.session, event.tool, event.phase, owner))
         }
     }
 
     private fun knownTarget(key: String): Boolean = key == DOOR_HOOK_KEY || heads.byKey(key) != null
 
-    private fun parse(body: JsonObject): ActivityCall? {
-        if (body.keys != FOREGROUND_FIELDS) return null
+    private fun parse(key: String, body: JsonObject, hookPhase: String?): ActivityCall? {
         val session = JsonScalars.strIfString(body["session_id"])
-            .takeIf { it.isNotEmpty() && it.length <= MAX_SESSION_ID_CHARS }
-        val phase = phase(body)
-        return if (session != null && phase != null) toolCall(session, phase, body) else null
+            .takeIf { it.isNotEmpty() && it.length <= MAX_SESSION_ID_CHARS } ?: return null
+        return phase(key, body, hookPhase)?.let { toolCall(session, it, body) }
+    }
+
+    private fun phase(key: String, body: JsonObject, hookPhase: String?): ForegroundToolPhase? = when {
+        hookPhase == null -> body.takeIf { it.keys == FOREGROUND_FIELDS }?.let(::phase)
+        key != DOOR_HOOK_KEY -> null
+        hookPhase == "start" -> ForegroundToolPhase.START
+        hookPhase == "end" -> ForegroundToolPhase.END
+        else -> null
     }
 
     private fun phase(body: JsonObject): ForegroundToolPhase? = when (JsonScalars.strIfString(body["phase"])) {

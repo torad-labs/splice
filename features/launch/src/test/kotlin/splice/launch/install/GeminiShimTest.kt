@@ -5,12 +5,62 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.client.wrap.WrapStateStore
+import splice.client.wrap.WrappedHead
+import splice.core.config.InstallPaths
 import splice.core.config.UserHome
 import splice.core.util.EnvReader
 import java.nio.file.Files
 import java.nio.file.Path
 
 class GeminiShimTest {
+    @Test
+    fun `the shim follows a wrapped Claude update without a parser or a new lay`(@TempDir home: Path) =
+        UserHome.within(home) {
+            val bin = Files.createDirectories(home.resolve("bin"))
+            val share = Files.createDirectories(home.resolve("share"))
+            val state = Files.createDirectories(home.resolve("state"))
+            val vars = mapOf(
+                "HOME" to home.toString(),
+                "SPLICE_BIN_DIR" to bin.toString(),
+                "SPLICE_SHARE_DIR" to share.toString(),
+                "SPLICE_STATE_DIR" to state.toString(),
+            )
+            val env = EnvReader { vars[it] }
+            val shim = GeminiShim(env, share.resolve("missing/seatd-pipe"))
+            assertEquals(GeminiShimLaid.Written(shim.path()), shim.lay())
+            val store = WrapStateStore(state.resolve("claude-head-wrap.json"))
+            val wrap = WrappedHead(home, InstallPaths(envReader = env), store)
+            val launcher = Files.writeString(share.resolve("splice-launch"), "#!/bin/sh\nexit 99\n")
+            check(launcher.toFile().setExecutable(true))
+            val link = bin.resolve("claude")
+            for (version in listOf("first", "updated")) {
+                val stub = "#!/bin/sh\nprintf '%s' \"$version:\$1\"\n"
+                val real = Files.writeString(home.resolve("Claude's $version"), stub)
+                check(real.toFile().setExecutable(true))
+                Files.deleteIfExists(link)
+                Files.createSymbolicLink(link, real)
+                if (version == "first") {
+                    wrap.wrap()
+                    // At upgrade an older wrap has the JSON record but not the executable link.
+                    Files.delete(state.resolve("claude-unwrapped"))
+                }
+                wrap.reconcile()
+                assertTrue(Files.isSameFile(link, launcher))
+                val child = ProcessBuilder(shim.path().toString(), "argument with spaces").redirectErrorStream(true)
+                    .apply {
+                        environment().clear()
+                        environment().putAll(vars)
+                        environment()["PATH"] = bin.toString()
+                        environment()["PERL5OPT"] = "-MNoSuchModuleInThisFixture"
+                    }.start()
+                assertEquals("$version:argument with spaces", child.inputStream.bufferedReader().readText())
+                assertEquals(0, child.waitFor())
+            }
+            wrap.unwrap()
+            assertFalse(Files.isSymbolicLink(state.resolve("claude-unwrapped")))
+        }
+
     @Test
     fun `the shim runs the pinned translator then passes the same model and door credential to Claude without it`(
         @TempDir home: Path,

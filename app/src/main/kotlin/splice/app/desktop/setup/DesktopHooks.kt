@@ -33,18 +33,18 @@ internal class DesktopHooks(private val paths: StatePaths) {
         val login = DoorLogin(UserHome.claudeDir(paths.envReader), paths.doorLoginDir).hooks()
         val foregroundBody = DesktopShell.script(
             "desktop-foreground.sh",
-            "/usr/bin/env bash",
+            "/bin/sh",
             mapOf("url" to "http://127.0.0.1:$port/hooks/foreground/$DOOR_HOOK_KEY", "auth_file" to header.toString()),
         )
         SecureFile.writeAtomic(foreground, foregroundBody, ownerOnlyExecutable)
-        val tool = JsonArray(listOf(command(DesktopShell.word(foreground.toString()), "*")))
+        val tool = DesktopShell.word(foreground.toString())
         val splice = InstallPaths(envReader = paths.envReader).binDir.resolve("splice").toAbsolutePath()
         val peer = command("${DesktopShell.word(splice.toString())} peer attach --hook")
         val hooks = buildJsonObject {
             put("SessionStart", JsonArray(start + peer))
             login.forEach { (event, groups) -> put(event, JsonArray(groups)) }
-            put("PreToolUse", tool)
-            put("PostToolUse", tool)
+            put("PreToolUse", JsonArray(listOf(command("$tool start", "*"))))
+            put("PostToolUse", JsonArray(listOf(command("$tool end", "*"))))
         }
         SecureFile.writeAtomic0600(file, buildJsonObject { put("hooks", hooks) }.toString() + "\n")
     }

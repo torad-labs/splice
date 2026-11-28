@@ -19,7 +19,8 @@ internal class SetupSeatd(
         if (!prompts.hasConsole() || installed()) return null
         prompts.frame.step(SeatdAdvice.about)
         prompts.frame.step(SeatdAdvice.WITHOUT)
-        return if (prompts.frame.confirm(SeatdAdvice.QUESTION, false)) SeatdChoice.OPTED_IN else SeatdChoice.DECLINED
+        val yes = prompts.frame.confirm(SeatdAdvice.SEATD_INSTALL_QUESTION, false)
+        return if (yes) SeatdChoice.OPTED_IN else SeatdChoice.DECLINED
     }
 
     fun summary(choice: SeatdChoice?): List<String> = when (choice) {

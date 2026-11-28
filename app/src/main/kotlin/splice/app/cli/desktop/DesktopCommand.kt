@@ -103,7 +103,7 @@ internal class DesktopCommand(
         out.line(SeatdAdvice.about)
         out.line(SeatdAdvice.WITHOUT)
         if (!stdin.isTerminal()) return false
-        val accepted = confirm.yes("${SeatdAdvice.QUESTION} [y/N] ")
+        val accepted = confirm.yes("${SeatdAdvice.SEATD_INSTALL_QUESTION} [y/N] ")
         val choice = if (accepted) SeatdChoice.OPTED_IN else SeatdChoice.DECLINED
         SeatdConsent(env).save(choice)?.let(err::line)
         return accepted

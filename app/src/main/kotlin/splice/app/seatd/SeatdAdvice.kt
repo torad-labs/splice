@@ -7,7 +7,7 @@ import splice.lifecycle.seatd.SeatdInstaller.Result
 internal object SeatdAdvice {
     const val SETUP = "splice setup --update"
     const val DESKTOP = "splice desktop on"
-    const val QUESTION = "Install seatd-pipe?"
+    const val SEATD_INSTALL_QUESTION = "Install seatd-pipe?"
     const val WITHOUT = "If you decline, Claude Code Desktop and Gemini aren't supported through Splice. " +
         "Terminal claude and other providers still work."
 

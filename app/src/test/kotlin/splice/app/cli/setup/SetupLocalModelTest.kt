@@ -170,6 +170,7 @@ class SetupLocalModelTest {
             "ask Share MCP servers between sessions? It uses less memory.",
             "ask mode tableapp",
             "ask Install new splice releases automatically? The daemon installs each one itself.",
+            "ask Install seatd-pipe?",
             "ask Install now?",
             "add codex",
             "restart",
@@ -185,8 +186,7 @@ class SetupLocalModelTest {
         assertTrue("Local model:" in summary && "about 9 GB" in summary, chrome.toString())
     }
 
-    /** Every question answered yes but the live turn, which would run a real command, `codex` ticked, each answer
-     *  recorded in [events]. */
+    /** Accept the wizard's local steps with `codex` ticked, but decline the live turn and companion download. */
     private fun wizardPrompts(events: MutableList<String>) = SetupPrompts(
         frame = WizardFrame(
             out = chrome,
@@ -198,7 +198,7 @@ class SetupLocalModelTest {
                         "ask mode " + question.removePrefix("Turn on ").substringBefore('?')
                     else -> "ask $question"
                 }
-                !question.startsWith("Run one short live turn")
+                question != "Install seatd-pipe?" && !question.startsWith("Run one short live turn")
             },
         ),
         pickHeads = HeadPicker { _, _ ->

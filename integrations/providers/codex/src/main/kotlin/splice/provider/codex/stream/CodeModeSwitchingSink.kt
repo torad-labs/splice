@@ -96,7 +96,12 @@ internal class CodeModeSinkCore(initial: WireSink) {
         native.clear()
         val text = sink?.let {
             val kept = text.toString().takeIf { complete }
-            deliveredText = CodeModeDeliveredText(textOffset, kept)
+            deliveredText = CodeModeDeliveredText(
+                offset = textOffset,
+                text = kept,
+                hasToolUse = blocks.sawTool || early.sawTool,
+                toolTearOpen = blocks.hasOpenTool || early.toolTearOpen,
+            )
             textOffset += text.length
             text.clear()
             blocks.detach(it)
@@ -107,7 +112,12 @@ internal class CodeModeSinkCore(initial: WireSink) {
     }
 
     suspend fun confirmedText(): CodeModeDeliveredText = mutex.withLock {
-        CodeModeDeliveredText(textOffset, text.toString().takeIf { complete })
+        CodeModeDeliveredText(
+            offset = textOffset,
+            text = text.toString().takeIf { complete },
+            hasToolUse = blocks.sawTool || early.sawTool,
+            toolTearOpen = blocks.hasOpenTool || early.toolTearOpen,
+        )
     }
 
     /** The block table is read under the lock, with the write. */

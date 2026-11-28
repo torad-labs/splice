@@ -9,6 +9,7 @@ package splice.head.hold
 import splice.core.failure.LimitWindow
 import splice.core.failure.RECHECK_SECONDS
 import splice.core.failure.WireAnswer
+import splice.core.wire.SHOULD_RETRY_HEADER
 import splice.core.wire.WholeSeconds
 import splice.upstream.failure.ReplyFacts.RETRY_AFTER_HEADER
 import java.util.concurrent.TimeUnit
@@ -31,6 +32,13 @@ internal object HandOverHeaders {
         val member = windowMember(answer.window)
         if (member != null && reset != null) headers[member] = WholeSeconds.of(reset).toString()
         return headers
+    }
+
+    /** All response headers for a non-stream failure: [of]'s reset/pushback headers plus `x-should-retry`. */
+    fun all(answer: WireAnswer, nowMs: Long): Map<String, String> {
+        val headers = of(answer, nowMs)
+        val retry = answer.shouldRetry ?: return headers
+        return headers + (SHOULD_RETRY_HEADER to retry.toString())
     }
 
     private fun pushbackHeaders(answer: WireAnswer, nowMs: Long): Map<String, String> {

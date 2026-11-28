@@ -10,6 +10,7 @@ import splice.core.failure.Position
 import splice.core.failure.ProtocolFault
 import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
+import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
@@ -127,6 +128,7 @@ class CodeModeUsageObservationTest {
             cause = FailureCause.Provider.Unrecognized(clientError = false),
             at = Position(Moment.MID_CONTENT, streamBegan = true),
             evidence = FailureEvidence("synthetic"),
+            partial = TurnOutcome.PartialRound(text = RoundText(bodyText = "chunk", emittedText = true)),
         )
         val result = rounds.finish(failure) as TurnOutcome.Failure
         assertEquals(mapOf(PerfKeys.OUT_TOKENS to 3L), TurnBill.counters(result.salvagedUsage))

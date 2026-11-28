@@ -53,8 +53,9 @@ internal class CodeModeReaderSettlement(
 
     suspend fun finish(outcome: TurnOutcome, switching: CodeModeSwitchingSink): TurnOutcome {
         outcomes.upstreamEnded = true
-        lifecycle.delivered(switching.confirmedText())
-        val result = outcomes.finish(outcome)
+        val delivered = switching.confirmedText()
+        lifecycle.delivered(delivered)
+        val result = outcomes.finish(outcome, delivered)
         beforeSettle?.run()
         billing.settle(readerEnd = false, clientCut = cut.client)
         return result

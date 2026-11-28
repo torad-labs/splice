@@ -17,6 +17,9 @@ internal class CodeModeSinkBlocks {
 
     private val blocks = linkedMapOf<Int, Block>()
     private var sequence = 0
+    var sawTool: Boolean = false
+        private set
+    val hasOpenTool: Boolean get() = blocks.values.any { it.kind == Kind.TOOL && it.index != null }
 
     suspend fun open(
         sink: WireSink?,
@@ -35,7 +38,7 @@ internal class CodeModeSinkBlocks {
     private suspend fun openOn(sink: WireSink, block: Block): WireBlockIndex? = when (block.kind) {
         Kind.TEXT -> sink.openText()
         Kind.THINKING -> sink.openThinking()
-        Kind.TOOL -> sink.openTool(block.id, block.name)
+        Kind.TOOL -> sink.openTool(block.id, block.name).also { sawTool = true }
         Kind.RAW -> sink.openRawBlock(checkNotNull(block.raw))
     }
 
@@ -67,6 +70,7 @@ internal class CodeModeSinkBlocks {
      *  delta may name them. */
     fun discard() {
         blocks.clear()
+        sawTool = false
     }
 
     suspend fun closeAll(sink: WireSink) {

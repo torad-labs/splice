@@ -121,8 +121,9 @@ internal class CodeModeLiveRound(
                 readerOutcomes.cancelled(error)
                 throw error
             } catch (error: IOException) {
-                lifecycle.delivered(switching.confirmedText())
-                readerOutcomes.failed(error)
+                val delivered = switching.confirmedText()
+                lifecycle.delivered(delivered)
+                readerOutcomes.failed(error, delivered)
             } catch (error: CodeModePersistenceException) {
                 readerOutcomes.failed(error)
             } catch (error: IllegalStateException) {
@@ -152,6 +153,24 @@ internal class CodeModeLiveRound(
     /** A reader that died on an unnamed throwable ends the round as a torn transport does, with the classified failure's
      *  outcome, never by throwing its throwable through the next client step. */
     suspend fun outcome(): TurnOutcome = completion.outcome(checkNotNull(finished))
+
+    /** The round's own terminal failure when the source ended before startup completed; null for runtime faults. */
+    suspend fun failureOutcome(record: CodeModeRecord): TurnOutcome? = when {
+        localFailure != null -> localFailure
+        sourceInterrupted || readerOutcomes.sourceFailure != null -> settledFailure(record)
+        else -> null
+    }
+
+    private suspend fun settledFailure(record: CodeModeRecord): TurnOutcome {
+        val outcome = outcome()
+        val usage = billing.consume(record)
+        if (outcome !is TurnOutcome.Failure) return outcome
+        return when {
+            outcome.cause.permanent -> outcome.copy(partial = null, salvagedUsage = usage ?: outcome.salvagedUsage)
+            usage != null -> outcome.copy(salvagedUsage = usage)
+            else -> outcome
+        }
+    }
 
     /** Disposal cancels the already-posted reader so its stream and admission slot are freed. */
     fun cancel() {

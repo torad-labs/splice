@@ -18,25 +18,22 @@
 // the folder already holds a newer token than the one the refused request sent.
 package splice.app.auth.claude
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.put
 import splice.core.auth.ACCOUNT_REF_FIELD
 import splice.core.auth.AccountRef
 import splice.core.auth.AuthDescription
-import splice.core.auth.CredentialKey
+import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.Credentials
 import splice.core.auth.INVALID_GRANT_REASON
 import splice.core.auth.LoginAnswer
 import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
-import splice.core.util.Cancellables
-import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.WallClock
+import splice.upstream.credentials.AccountCredentialIdentitySource
+import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialEvidence
+import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialFileEvidenceReader
+import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
 import splice.upstream.credentials.HeldToken
 import splice.upstream.credentials.RenewalStage
 import splice.upstream.credentials.RenewalWindows
@@ -48,13 +45,6 @@ import java.nio.file.Path
 // that client's number rather than a splice policy. Named for Claude, not shared with the codex and grok windows:
 // those come from a JWT exp claim and from xAI's expiry, and changing one must never move the others.
 private const val CLAUDE_REFRESH_WINDOW_MS = 300_000L
-
-// why: the fields Claude Code writes in .credentials.json. splice rewrites only these three and keeps the rest of the
-// document byte for byte, so the folder stays a folder Claude Code itself could read.
-private const val OAUTH_FIELD = "claudeAiOauth"
-private const val ACCESS_TOKEN = "accessToken"
-private const val REFRESH_TOKEN = "refreshToken"
-private const val EXPIRES_AT = "expiresAt"
 
 /** The `auth.kind` word an added Claude account describes itself by: not `client`, because splice DOES hold this one. */
 internal const val CLAUDE_ACCOUNT_AUTH_KIND = "claude-account"
@@ -79,9 +69,7 @@ internal class ClaudeFolderAuth(
     private val log: LogSink = LogSink { },
     private val profiles: ClaudeCredentialProfiles? = null,
     private val identities: ClaudeIdentityRefresh? = null,
-) : RefreshableAuthProvider {
-    private val json = Json { ignoreUnknownKeys = true }
-
+) : RefreshableAuthProvider, AccountCredentialIdentitySource {
     // No background scope: inside the window a lookup waits for the rotation, and a token still alive is served
     // whatever it said.
     private val windows = RenewalWindows(CLAUDE_REFRESH_WINDOW_MS, CLAUDE_REFRESH_WINDOW_MS)
@@ -93,9 +81,23 @@ internal class ClaudeFolderAuth(
         null,
         RenewalStage { prior -> renew(prior) },
     )
+    private val document = ClaudeFolderDocument(folder, renewal, log)
+
+    override fun observedCredentialKey(): String? = document.read()?.accessToken?.let(document::keyOf)
+
+    /** The account profile verified for this token, so blocks survive token refreshes and daemon restarts. */
+    override fun credentialAccount(): String? = observedCredentialKey()?.let { profiles?.read(it) }?.uuid
+
+    override fun credentialIdentity(): CredentialFileIdentity? = credentialEvidence().identity
+
+    override fun credentialEvidence(): CredentialEvidence = if (document.read() != null) {
+        CredentialFileEvidenceReader.read(folder.resolve(CREDENTIALS_JSON))
+    } else {
+        CredentialEvidence(null, CredentialPresence.MISSING)
+    }
 
     override suspend fun answer(): LoginAnswer =
-        renewal.answer(read()?.let { HeldToken(Credentials.Bearer(it.accessToken), it.expiresAtMs) }, windows)
+        renewal.answer(document.read()?.let { HeldToken(Credentials.Bearer(it.accessToken), it.expiresAtMs) }, windows)
 
     /** The folder's access token, rotated first when it is at or inside its proactive window. */
     override suspend fun credentials(): Credentials? = (answer() as? LoginAnswer.Granted)?.credentials
@@ -109,13 +111,13 @@ internal class ClaudeFolderAuth(
     override suspend fun exchange(refused: Credentials?): RefreshOutcome = renewal.exchange(refused)
 
     override suspend fun describe(): AuthDescription {
-        val held = read()
+        val held = document.read()
         val fields = mutableMapOf("auth_path" to folder.resolve(CREDENTIALS_JSON).toString())
         // A name a person gave beats the email verified from this credential profile.
         val given = ClaudeLoginFactsReader().displayName(folder.resolve(".splice-account.json"))
         given?.let { fields["display_name"] = it }
         held?.let { credential ->
-            val key = keyOf(credential.accessToken)
+            val key = document.keyOf(credential.accessToken)
             val account = key?.let { profiles?.read(it) }
             if (account == null && key != null) identities?.request(key, credential.accessToken)
             account?.let {
@@ -130,18 +132,24 @@ internal class ClaudeFolderAuth(
      *  holds a token other than [prior], the one the caller read (a 401's: the one the refused request sent), a rotation
      *  landed since and is adopted, so two turns that read the same near-expiry token spend its refresh token once. */
     private suspend fun renew(prior: String?): RefreshOutcome {
-        val held = readHeld().getOrElse { return RefreshOutcome.ReadFailed(it) } ?: return RefreshOutcome.NoRefreshToken
+        val held = document.readHeld().getOrElse { return RefreshOutcome.ReadFailed(it) }
+            ?: return RefreshOutcome.NoRefreshToken
         val adopted = prior != null && held.accessToken != prior
         return if (adopted) RefreshOutcome.Refreshed(Credentials.Bearer(held.accessToken)) else rotated(held)
     }
 
     /** POSTs [held]'s refresh token and keeps what the endpoint granted. */
-    private suspend fun rotated(held: Held): RefreshOutcome {
+    private suspend fun rotated(held: ClaudeFolderHeld): RefreshOutcome {
         return when (val attempt = refresh.rotate(held.refreshToken)) {
             is RefreshAttempt.Granted -> {
                 val rotated = attempt.tokens
-                renewal.persist(document(held.document, rotated))
-                carry(held.accessToken, rotated.accessToken)
+                renewal.persist(document.rewrite(held.document, rotated))
+                // Carry the verified account onto the renewed token and reprove in the background.
+                document.keyOf(rotated.accessToken)?.let { renewedKey ->
+                    document.keyOf(held.accessToken)?.let { profiles?.read(it) }
+                        ?.let { profiles?.observed(renewedKey, it) }
+                    identities?.reprove(renewedKey, rotated.accessToken)
+                }
                 RefreshOutcome.Refreshed(Credentials.Bearer(rotated.accessToken))
             }
             is RefreshAttempt.InvalidGrant -> RefreshOutcome.Rejected(INVALID_GRANT_REASON)
@@ -149,73 +157,4 @@ internal class ClaudeFolderAuth(
             is RefreshAttempt.Unavailable -> RefreshOutcome.Unavailable(attempt.detail)
         }
     }
-
-    /** A renewal keeps the account: Anthropic issued [renewed] for this login's own refresh token, so the account
-     *  proved for [old] is the renewed token's too, filed under it at once, and the card keeps its email through
-     *  the renewal (Nov 3, 2026: five cards went up to four hours without one, until a page read proved the new
-     *  token). Then [renewed] is proved in the background, not when a page next reads this login, so the card shows
-     *  what the account's profile says now. The record is filed first, so that read can only replace it. */
-    private fun carry(old: String, renewed: String) {
-        val key = keyOf(renewed) ?: return
-        keyOf(old)?.let { profiles?.read(it) }?.let { profiles?.observed(key, it) }
-        identities?.reprove(key, renewed)
-    }
-
-    /** The identity store's key for [accessToken]: the digest the token is sent under. */
-    private fun keyOf(accessToken: String): String? =
-        CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $accessToken"))
-
-    /** The whole document plus the three fields splice reads, or null when the folder holds no readable credential. */
-    private fun read(): Held? = readHeld()
-        // The account's label is its folder's own name: enough to act on, and never a token.
-        .onFailure { why ->
-            log("[claude-account] ${folder.fileName ?: folder} has no readable credential (${why::class.simpleName})\n")
-        }
-        .getOrNull()
-
-    /** [folder]'s credential as the three fields splice reads, plus the whole document so a save keeps every other
-     *  field Claude Code wrote. Read through the renewal, which serves a rotated document whose write failed until it
-     *  is written. A failure is the caller's to report; null inside a success is "nothing filed". */
-    private fun readHeld(): Result<Held?> = Cancellables.runCatchingCancellable {
-        val document = json.parseToJsonElement(renewal.text.read()).jsonObject
-        val oauth = document[OAUTH_FIELD]?.jsonObject ?: return@runCatchingCancellable null
-        val access = text(oauth, ACCESS_TOKEN) ?: return@runCatchingCancellable null
-        val refreshToken = text(oauth, REFRESH_TOKEN) ?: return@runCatchingCancellable null
-        val expiresAt = JsonScalars.long(oauth, EXPIRES_AT) ?: return@runCatchingCancellable null
-        Held(access, refreshToken, expiresAt, document)
-    }
-
-    /** The document with the rotated pair in place, keeping every other field Claude Code put in it. The renewal
-     *  writes it owner-only and atomic, so a reader never sees half a credential. */
-    private fun document(document: JsonObject, rotated: ClaudeRefreshedTokens): String {
-        val oauth = document[OAUTH_FIELD]?.jsonObject ?: JsonObject(emptyMap())
-        val next = buildJsonObject {
-            document.forEach { (key, value) -> if (key != OAUTH_FIELD) put(key, value) }
-            put(
-                OAUTH_FIELD,
-                buildJsonObject {
-                    oauth.forEach { (key, value) -> if (key !in ROTATED) put(key, value) }
-                    put(ACCESS_TOKEN, rotated.accessToken)
-                    put(REFRESH_TOKEN, rotated.refreshToken)
-                    put(EXPIRES_AT, rotated.expiresAtMs)
-                },
-            )
-        }
-        return json.encodeToString(JsonObject.serializer(), next)
-    }
-
-    private fun text(obj: JsonObject, key: String): String? =
-        JsonScalars.strIfString(obj[key]).takeIf { it.isNotBlank() }
-
-    private data class Held(
-        val accessToken: String,
-        val refreshToken: String,
-        val expiresAtMs: Long,
-        val document: JsonObject,
-    ) {
-        /** Both tokens and the document that carries them are secrets; the expiry is not. */
-        override fun toString(): String = "Held(<redacted>, expiresAtMs=$expiresAtMs)"
-    }
 }
-
-private val ROTATED: Set<String> = setOf(ACCESS_TOKEN, REFRESH_TOKEN, EXPIRES_AT)

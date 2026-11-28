@@ -433,6 +433,48 @@ class SpliceLinesPropertyTest {
     }
 
     @Test
+    fun `pooled handed-over limits name the spent window when known and fall back cleanly when absent`() {
+        val now = Instant.parse("2026-11-08T12:00:00Z")
+        val reset = now.plusSeconds(7_200L)
+        val lines = SpliceLines(LocalTimeText(ZoneId.of("UTC")))
+        val facts = LineFacts(
+            head = "anthropic",
+            loginCommand = null,
+            providerName = "Anthropic",
+            local = false,
+            request = RequestFacts(compaction = false, firstExchange = false, otherLogin = true),
+            now = now,
+        )
+        val at = Position(Moment.BEFORE_COMMIT, streamBegan = false)
+
+        fun handedOver(window: LimitWindow?): String {
+            val limited = FailureCause.Provider.Limited(Lift.At(reset, true, LiftSource.RESET_HEADER), window)
+            val cause = FailureCause.Splice.HoldOutlasted(Outlast.WALL, limited, reset)
+            val answer = ClientWire.answer(cause, at, otherLogin = true)
+            return lines.ending(cause, at, answer, facts).text
+        }
+
+        val weekly = handedOver(LimitWindow.WEEKLY)
+        assertTrue(
+            "Every anthropic login is at its usage limit; the first reached its weekly limit, until " in weekly,
+            weekly,
+        )
+        assertFalse("Every anthropic login reached its weekly limit" in weekly, weekly)
+        assertTrue("Claude Code checks again in 30 seconds" in weekly, weekly)
+
+        val fiveHour = handedOver(LimitWindow.FIVE_HOUR)
+        assertTrue(
+            "Every anthropic login is at its usage limit; the first reached its 5-hour limit, until " in fiveHour,
+            fiveHour,
+        )
+        assertFalse("Every anthropic login reached its 5-hour limit" in fiveHour, fiveHour)
+        assertTrue("Claude Code checks again in 30 seconds" in fiveHour, fiveHour)
+
+        val unwindowed = handedOver(null)
+        assertTrue("Every anthropic login is at its usage limit, the first until " in unwindowed, unwindowed)
+    }
+
+    @Test
     fun `every line is one splice line of one or two sentences within 240 characters`() {
         forEveryLine(seed = 1) { line, facts, _, about, place ->
             assertReadable(line, facts, emptyList(), about, place)

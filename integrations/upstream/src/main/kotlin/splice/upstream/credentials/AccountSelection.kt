@@ -11,6 +11,7 @@ import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
 import splice.upstream.CredentialHeaders
 import splice.upstream.retry.RateLimitCooldown
+import splice.upstream.retry.SavedLoginHold
 import splice.upstream.retry.WarmLoginWait
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicReference
@@ -147,6 +148,11 @@ public data class PoolAccount(
 
     internal fun askCredentialAgain(at: Long) {
         credentialEligibility.askAgain(at)
+    }
+
+    /** Merges an active persisted login hold from an upgrade's secondary route into this live account and store. */
+    public fun adoptLoginHold(saved: SavedLoginHold, atEpochMillis: Long) {
+        credentialEligibility.adopt(saved, atEpochMillis)
     }
 }
 

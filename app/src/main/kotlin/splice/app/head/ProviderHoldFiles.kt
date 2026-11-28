@@ -39,6 +39,9 @@ internal class ProviderHoldFiles(
     fun forHead(key: String): ProviderHoldStore =
         FileProviderHoldStore(statePaths.stateDir.resolve("$key-provider-hold.json"), log)
 
+    fun forAddedAccount(key: String, label: String): FileProviderHoldStore =
+        FileProviderHoldStore(added(key, label), log)
+
     fun forAccounts(key: String, wired: Wired): Map<String, ProviderHoldStore> =
         wired.accounts.associate { account ->
             val native = account.auth as? ClaudeNativeAuth

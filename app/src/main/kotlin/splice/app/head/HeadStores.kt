@@ -13,6 +13,7 @@ import splice.head.usage.UsageStore
 import splice.head.wire.TraceStore
 import splice.upstream.credentials.AccountPool
 import splice.upstream.retry.ProviderHoldStore
+import splice.upstream.retry.UpstreamCooldowns
 
 internal data class HeadStores(
     val usageStore: UsageStore,
@@ -46,4 +47,6 @@ internal data class HeadAccountStores(
     val pool: AccountPool? = null,
     val quotas: Map<String, QuotaTracker> = emptyMap(),
     val fallbacks: SessionFallbacks = SessionFallbacks { null },
+    /** Live single-login cooldowns shared across routes serving the same upstream login. */
+    val upstreamCooldowns: UpstreamCooldowns? = null,
 )

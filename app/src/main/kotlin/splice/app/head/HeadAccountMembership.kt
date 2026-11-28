@@ -4,6 +4,7 @@ package splice.app.head
 import splice.accounts.order.AccountOrderStore
 import splice.app.auth.claude.ClaudePoolChange
 import splice.app.auth.claude.OWN_SIGN_IN_LABEL
+import splice.app.head.books.SharedPools
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
 import splice.app.provider.Wired
@@ -15,7 +16,9 @@ import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.credentials.AccountMembershipRefresh
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.PoolAccount
+import splice.upstream.retry.ProviderHoldStore
 import splice.upstream.retry.RateLimitCooldown
+import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -29,9 +32,12 @@ internal class HeadAccountMembership(
     private val orders: AccountOrderStore,
 ) : ClaudePoolChange, AccountMembershipRefresh {
     private val lock = ReentrantLock()
+    private val keys = CopyOnWriteArraySet<String>().apply { add(ctx.key) }
     private val withdrawn = mutableSetOf<String>()
     private val elapsed = ProcessElapsedNow()
     private var polling: HeadQuotaPolling? = null
+    private var sharedPools: SharedPools? = null
+    private val isFollower: Boolean get() = assembly.claudeServingHeads(ctx.key).isNotEmpty()
 
     // A login that joins the running head writes its plan readings where the head's own sign-in does.
     private val ownHistory = trackers.getValue(OWN_SIGN_IN_LABEL).historyFor(OWN_SIGN_IN_LABEL)
@@ -43,10 +49,22 @@ internal class HeadAccountMembership(
         RateLimitCooldown(elapsed),
     )
 
-    fun bind(polling: HeadQuotaPolling) {
+    fun bind(polling: HeadQuotaPolling, sharedPools: SharedPools? = null) {
         this.polling = polling
+        this.sharedPools = sharedPools
         assembly.claudePoolChanges.bind(ctx.key, this)
+        assembly.claudeServingHeads(ctx.key).forEach { source -> assembly.claudePoolChanges.follow(source, ctx.key) }
         pool.membershipRefresh = this
+    }
+
+    /** Attaches another route key sharing this pool (e.g. gateway `anthropic` beside `[heads.claude]`), so live
+     *  account additions, sign-ins and withdrawals propagate to every attached route's view and change hooks. */
+    fun attach(aliasKey: String) {
+        lock.withLock {
+            if (!keys.add(aliasKey)) return
+            assembly.claudePoolChanges.bind(aliasKey, this)
+            assembly.claudePoolChanges.accounts(aliasKey, wired.liveAccounts)
+        }
     }
 
     override fun refresh() = update()
@@ -55,10 +73,15 @@ internal class HeadAccountMembership(
         lock.withLock {
             withdrawn.add(label)
             polling?.remove(label)
-            trackers.remove(label)?.retire()
-            pool.members = pool.members.filter { it.label != label }
-            holds.forget(ctx.key, label)
-            assembly.claudePoolChanges.accounts(ctx.key, wired.liveAccounts.filter { it.label != label })
+            if (!isFollower) {
+                pool.members.firstOrNull { it.label == label }?.let {
+                    sharedPools?.unregisterMember(it.label, it.auth)
+                }
+                holds.forget(ctx.key, label)
+            }
+            dropTracker(label)
+            pool.members = pool.members.filter { it.label != label }.ifEmpty { listOf(fallback) }
+            publishAccounts(wired.liveAccounts.filter { it.label != label })
         }
     }
 
@@ -92,42 +115,74 @@ internal class HeadAccountMembership(
             val current = assembly.claudeAccounts(ctx.key, wired.auth).filterNot { it.label in withdrawn }
             if (unchanged(current)) return
             val previous = pool.members.associateBy(PoolAccount::label)
-            // A label new to the running pool is a login just filed: a file under its label is an earlier login's.
-            current.filter { it.nativePlace == null && it.label !in previous }
-                .forEach { holds.forget(ctx.key, it.label) }
+            forgetNewHolds(current, previous)
             val held = holds.forAccounts(ctx.key, wired.copy(accounts = current))
             val labels = current.map { it.label }.toSet() + OWN_SIGN_IN_LABEL
-            trackers.keys.filter { it !in labels }.forEach { trackers.remove(it)?.retire() }
-            val next = current.map { account ->
-                val retained = previous[account.label]?.takeIf {
-                    account.nativePlace == null || it.auth === account.auth
-                }
-                if (retained == null) trackers.remove(account.label)?.retire()
-                retained ?: PoolAccount(
-                    label = account.label,
-                    primary = account.primary,
-                    auth = account.auth,
-                    quota = TrackedAccountQuota(
-                        trackers.computeIfAbsent(account.label) {
-                            QuotaTracker(
-                                account.quota.file,
-                                extraFamily = CodexQuotaHeaderFamily(),
-                                history = ownHistory?.forLogin(account.label),
-                            )
-                        }.also {
-                            it.credentialListener = account.quota.read as? splice.head.usage.CredentialQuotaListener
-                        },
-                        account.quota.read,
-                    ),
-                    cooldown = RateLimitCooldown(elapsed, store = held[account.label]),
-                    credentialPresent = account.credential.present,
-                    extraHeaders = account.extraHeaders,
-                )
-            }
+            trackers.keys.filter { it !in labels }.forEach(::dropTracker)
+            val next = current.map { memberFor(it, previous, held) }
             pool.members = next.ifEmpty { listOf(fallback) }
             pool.order = orders.order(ctx.key).filter(pool.members.map(PoolAccount::label).toSet()::contains)
-            assembly.claudePoolChanges.accounts(ctx.key, current)
+            publishAccounts(current)
             polling?.update(current, trackers)
         }
+    }
+
+    private fun forgetNewHolds(current: List<WiredAccount>, previous: Map<String, PoolAccount>) {
+        // A label new to a head is a login just filed; a multi-head gateway follower must never forget a head's holds.
+        if (isFollower) return
+        current.filter { it.nativePlace == null && it.label !in previous }.forEach { holds.forget(ctx.key, it.label) }
+    }
+
+    private fun dropTracker(label: String) {
+        val removed = trackers.remove(label)
+        if (!isFollower) removed?.retire()
+    }
+
+    private fun publishAccounts(current: List<WiredAccount>) {
+        keys.forEach { key -> assembly.claudePoolChanges.accounts(key, current) }
+    }
+
+    private fun memberFor(
+        account: WiredAccount,
+        previous: Map<String, PoolAccount>,
+        held: Map<String, ProviderHoldStore>,
+    ): PoolAccount {
+        previous[account.label]?.takeIf { it.auth === account.auth }?.let { return it }
+        dropTracker(account.label)
+        val shareable = account.nativePlace == null && !account.primary
+        if (shareable) {
+            sharedPools?.reuseMember(ctx.key, pool, account.label, account.auth)?.let { existing ->
+                trackers[account.label] = existing.tracker
+                return existing.account
+            }
+        }
+        return createMember(account, held, shareable)
+    }
+
+    private fun createMember(
+        account: WiredAccount,
+        held: Map<String, ProviderHoldStore>,
+        shareable: Boolean,
+    ): PoolAccount {
+        val tracker = trackers.computeIfAbsent(account.label) {
+            QuotaTracker(
+                account.quota.file,
+                extraFamily = CodexQuotaHeaderFamily(),
+                history = ownHistory?.forLogin(account.label),
+            )
+        }.also {
+            it.credentialListener = account.quota.read as? splice.head.usage.CredentialQuotaListener
+        }
+        val member = PoolAccount(
+            label = account.label,
+            primary = account.primary,
+            auth = account.auth,
+            quota = TrackedAccountQuota(tracker, account.quota.read),
+            cooldown = RateLimitCooldown(elapsed, store = held[account.label]),
+            credentialPresent = account.credential.present,
+            extraHeaders = account.extraHeaders,
+        )
+        if (shareable) sharedPools?.registerMember(ctx.key, pool, member, tracker)
+        return member
     }
 }

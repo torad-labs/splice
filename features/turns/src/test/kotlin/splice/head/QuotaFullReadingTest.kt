@@ -7,12 +7,16 @@
 package splice.head
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
+import splice.core.auth.ClientAuthProvider
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.AccountBlock
+import splice.core.failure.OwnerStep
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
@@ -31,6 +35,7 @@ import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
 import splice.upstream.credentials.PoolAccount
+import splice.upstream.credentials.Selection
 import splice.upstream.retry.RateLimitCooldown
 import java.nio.file.Path
 import java.time.Instant
@@ -96,12 +101,19 @@ class QuotaFullReadingTest {
     private fun single(tmp: Path, snapshot: QuotaSnapshot, tag: String = "") =
         head(tmp, quotaFor(tracker(tmp, "primary$tag", snapshot), null))
 
-    private fun account(label: String, primary: Boolean, tracker: QuotaTracker) = PoolAccount(
+    private fun account(
+        label: String,
+        primary: Boolean,
+        tracker: QuotaTracker,
+        credentialPresent: Boolean = true,
+        auth: RefreshableAuthProvider = QuotaReadingAuth(),
+    ) = PoolAccount(
         label = label,
         primary = primary,
-        auth = QuotaReadingAuth(),
+        auth = auth,
         quota = AccountQuotaSource(tracker::snapshot),
         cooldown = RateLimitCooldown(ProcessElapsedNow()),
+        credentialPresent = credentialPresent,
     )
 
     private fun pooled(tmp: Path, primary: QuotaSnapshot, backup: QuotaSnapshot, tag: String): HeadServer {
@@ -181,5 +193,138 @@ class QuotaFullReadingTest {
 
         assertEquals(fullWeek(TWO_HOURS_S), pooled(tmp, spent, sooner, "-all").quotaFull())
         assertNull(pooled(tmp, spent, free, "-one").quotaFull())
+    }
+
+    @Test
+    fun `a signed-out account does not keep an otherwise full pool from reading full`(@TempDir tmp: Path) {
+        val first = tracker(tmp, "primary-so", reading(seven = week(100.0)))
+        val second = tracker(tmp, "backup-so", reading(seven = week(100.0, resetsInSeconds = TWO_HOURS_S)))
+        val signedOut = QuotaTracker(tmp.resolve("signed-out.json"), clock, log = { })
+        val pool = AccountPool(
+            listOf(
+                account("primary", true, first),
+                account("backup", false, second),
+                account("signed-out", false, signedOut, credentialPresent = false),
+            ),
+            clock,
+        )
+        val server = head(
+            tmp,
+            quotaFor(first, pool, mapOf("primary" to first, "backup" to second, "signed-out" to signedOut)),
+        )
+
+        assertEquals(fullWeek(TWO_HOURS_S), server.quotaFull())
+    }
+
+    @Test
+    fun `an owner-blocked account does not keep an otherwise full pool from reading full`(@TempDir tmp: Path) {
+        val first = tracker(tmp, "primary-blk", reading(seven = week(100.0)))
+        val blockedTracker = QuotaTracker(tmp.resolve("blocked.json"), clock, log = { })
+        val pool = AccountPool(
+            listOf(
+                account("primary", true, first),
+                account("blocked", false, blockedTracker),
+            ),
+            clock,
+        )
+        pool.pin("blocked")
+        val chosen = pool.select("sess-block") as Selection.Chosen
+        chosen.account.markCredentialUnavailable(AccountBlock(OwnerStep.ALLOW_SUBSCRIPTION_ACCESS, "claude.ai"))
+        val server = head(tmp, quotaFor(first, pool, mapOf("primary" to first, "blocked" to blockedTracker)))
+
+        assertEquals(fullWeek(), server.quotaFull())
+    }
+
+    @Test
+    fun `a pool with no usable accounts does not read quota full`(@TempDir tmp: Path) {
+        val signedOut = tracker(tmp, "signed-out-only", reading(seven = week(100.0)))
+        val blocked = tracker(tmp, "blocked-only", reading(seven = week(100.0)))
+        val pool = AccountPool(
+            listOf(
+                account("primary", true, signedOut, credentialPresent = false),
+                account("blocked", false, blocked),
+            ),
+            clock,
+        )
+        val chosen = pool.select("sess-only-blocked") as Selection.Chosen
+        chosen.account.markCredentialUnavailable(AccountBlock(OwnerStep.ALLOW_SUBSCRIPTION_ACCESS, "claude.ai"))
+        val server = head(tmp, quotaFor(signedOut, pool, mapOf("primary" to signedOut, "blocked" to blocked)))
+
+        assertNull(server.quotaFull())
+    }
+
+    private fun runtime(tmp: Path, pool: AccountPool, trackers: Map<String, QuotaTracker>, held: HeldLogins) =
+        ProviderRuntime(
+            provider = TestResponsesProvider(
+                tuning = ProviderTuning(
+                    name = ProviderName(key = "anthropic", label = "anthropic"),
+                    catalog = ModelCatalog(
+                        discoveryPrefix = "claude-anthropic--",
+                        models = listOf(ModelEntry("test-model", "Test", contextWindow = 200_000)),
+                        defaultContextWindow = 200_000,
+                    ),
+                    pinnedModel = "test-model",
+                    auth = QuotaReadingAuth(),
+                    locations = ProviderLocations(baseUrl = "http://127.0.0.1:1"),
+                    watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+                ),
+                reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
+            ),
+            assembled = headDeps(tmp = tmp).let { base ->
+                base.copy(
+                    quotaBundle = quotaFor(trackers.values.first(), pool, trackers),
+                    traffic = base.traffic.copy(held = held),
+                )
+            },
+        )
+
+    @Test
+    fun `gateway runtime quotaFull counts only door-usable accounts, ignoring native and own placeholders`(
+        @TempDir tmp: Path,
+    ) {
+        val nativeWithRoom = tracker(tmp, "native-room", reading(seven = week(10.0)))
+        val ownPlaceholder = QuotaTracker(tmp.resolve("own-placeholder.json"), clock, log = { })
+        val addedFull = tracker(tmp, "added-full", reading(seven = week(100.0, resetsInSeconds = TWO_HOURS_S)))
+        val doorHeld = HeldLogins { label -> label != "claude-code" && !label.startsWith("native:") }
+
+        val withNative = AccountPool(
+            listOf(account("native:claude", true, nativeWithRoom), account("acct-a", false, addedFull)),
+            clock,
+        )
+        assertEquals(
+            fullWeek(TWO_HOURS_S),
+            runtime(tmp, withNative, mapOf("native:claude" to nativeWithRoom, "acct-a" to addedFull), doorHeld)
+                .quotaFull(),
+            "native:claude with room must not suppress door quotaFull when every added account is full",
+        )
+
+        val withOwn = AccountPool(
+            listOf(account("claude-code", true, ownPlaceholder), account("acct-a", false, addedFull)),
+            clock,
+        )
+        assertEquals(
+            fullWeek(TWO_HOURS_S),
+            runtime(tmp, withOwn, mapOf("claude-code" to ownPlaceholder, "acct-a" to addedFull), doorHeld).quotaFull(),
+            "claude-code placeholder with no reading must not suppress door quotaFull",
+        )
+
+        val ownOnlyFull = tracker(tmp, "own-only-full", reading(seven = week(100.0, resetsInSeconds = TWO_HOURS_S)))
+        val inactiveOwnOnly = AccountPool(
+            listOf(account("claude-code", true, ownOnlyFull, auth = ClientAuthProvider("anthropic"))),
+            clock,
+        )
+        assertFalse(inactiveOwnOnly.active, "single forwarded client-auth member is an inactive pool")
+        assertNull(
+            runtime(tmp, inactiveOwnOnly, mapOf("claude-code" to ownOnlyFull), doorHeld).quotaFull(),
+            "inactive pool with only claude-code must not leak primary's full reading onto door quotaFull",
+        )
+
+        val nativeOnlyFull =
+            tracker(tmp, "native-only-full", reading(seven = week(100.0, resetsInSeconds = TWO_HOURS_S)))
+        val nativeOnlyPool = AccountPool(listOf(account("native:claude", true, nativeOnlyFull)), clock)
+        assertNull(
+            runtime(tmp, nativeOnlyPool, mapOf("native:claude" to nativeOnlyFull), doorHeld).quotaFull(),
+            "pool with only native:claude must not leak native:claude's full reading onto door quotaFull",
+        )
     }
 }

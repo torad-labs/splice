@@ -25,8 +25,11 @@ internal class CredentialCooldowns(
     /** No carriers means no known principal; never manufacture a login from the head or session. */
     public fun forHeaders(headers: Map<String, String>, declaredCarrier: String? = null): RateLimitCooldown? {
         val key = CredentialKey.fromHeaders(headers, declaredCarrier) ?: return null
-        return cooldowns.computeIfAbsent(key) { RateLimitCooldown(clock, wall, store?.forCredential(key)) }
+        return forKey(key)
     }
+
+    internal fun forKey(key: String): RateLimitCooldown =
+        cooldowns.computeIfAbsent(key) { RateLimitCooldown(clock, wall, store?.forCredential(key)) }
 
     public fun clear() {
         cooldowns.values.forEach(RateLimitCooldown::clear)

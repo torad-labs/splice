@@ -28,6 +28,7 @@ import splice.core.util.EnvReader
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import java.math.BigInteger
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -131,7 +132,7 @@ public class UpgradeAuto(
 internal class ReleaseOrder(version: String) : Comparable<ReleaseOrder> {
     // why: isVersion accepts `0.4.1+build.7`, and build metadata never takes part in precedence, so it goes first.
     private val precedence = version.substringBefore('+')
-    private val core = precedence.substringBefore('-').split('.').map { it.toLong() }
+    private val core = precedence.substringBefore('-').split('.').map(::BigInteger)
     private val pre = precedence.substringAfter('-', "").split('.').filter { it.isNotEmpty() }
 
     override fun compareTo(other: ReleaseOrder): Int {
@@ -144,8 +145,8 @@ internal class ReleaseOrder(version: String) : Comparable<ReleaseOrder> {
     }
 
     private fun identifier(a: String, b: String): Int {
-        val x = a.toLongOrNull()
-        val y = b.toLongOrNull()
+        val x = a.toBigIntegerOrNull()
+        val y = b.toBigIntegerOrNull()
         return when {
             x != null && y != null -> x.compareTo(y)
             x != null -> -1

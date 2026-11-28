@@ -27,6 +27,11 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.core)
 }
 
+// Bundle the same reviewed pin the release tool reads, without a checkout at runtime.
+tasks.processResources {
+    from(rootProject.layout.projectDirectory.file("tools/release/seatd-pipe.json"))
+}
+
 // THE LAW HERE (the shim selector law in SupervisedStartTest.kt) reads the launch script the dist ships, and walks up to
 // install.sh to find the repository. Both are inputs of lawTest, so an edit to either re-runs the law.
 tasks.named<Test>("lawTest") {

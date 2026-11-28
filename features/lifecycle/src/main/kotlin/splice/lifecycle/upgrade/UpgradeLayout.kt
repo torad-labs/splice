@@ -13,11 +13,11 @@ import splice.core.config.StatePaths
 import splice.core.util.EnvReader
 import splice.launch.install.InstallLayout
 import splice.lifecycle.hub.HubUnits
+import splice.lifecycle.release.ReleaseDirectories
 import splice.lifecycle.units.SpliceUnits
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
-import kotlin.io.path.deleteRecursively
 
 internal const val JAR_ASSET = "splice.jar"
 internal const val SHIM_ASSET = "splice-launch"
@@ -35,13 +35,6 @@ private const val MANAGED_MARKER = "managed-install"
 /** The file in splice's state folder that lists the releases this machine put back or rolled back from. */
 private const val REJECTED_FILE = "upgrade-rejected"
 
-// SemVer 2.0.0 (semver.org, the canonical grammar): no leading zeros in the numeric parts or numeric
-// prerelease identifiers, no empty identifiers, hyphens allowed inside identifiers, build metadata after +.
-private const val NUM = """(?:0|[1-9]\d*)"""
-private const val PRE_ID = """(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)"""
-private const val SEMVER_SEGMENT =
-    """$NUM\.$NUM\.$NUM(?:-$PRE_ID(?:\.$PRE_ID)*)?(?:\+[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*)?"""
-
 /** [units] are the MCP hub's systemd units on this machine, or null where the hub's front is not installed.
  *  [daemonUnits] is splice's systemd user units folder on Linux, or null off Linux (#525). */
 internal class UpgradeLayout(
@@ -50,7 +43,6 @@ internal class UpgradeLayout(
     val units: HubUnits? = null,
     val daemonUnits: SpliceUnits? = null,
 ) {
-    private val semver = Regex(SEMVER_SEGMENT)
     val share: Path = installLayout.shareDir(env)
     val liveJar: Path = share.resolve(JAR_ASSET)
     val liveShim: Path = installLayout.launchShimPath(env)
@@ -86,7 +78,7 @@ internal class UpgradeLayout(
         }
 
     /** Whether [version] is one normalized SemVer segment: what [versionDir] accepts. */
-    fun isVersion(version: String): Boolean = semver.matches(version)
+    fun isVersion(version: String): Boolean = ReleaseDirectories.isVersion(version)
 
     fun stagingDir(): Path = releases.resolve("$STAGING_PREFIX${ProcessHandle.current().pid()}")
 
@@ -139,12 +131,8 @@ internal class UpgradeLayout(
      *  never the staging directory of an upgrade that is still running (its pid is alive). */
     fun prunable(): List<Path> {
         val keep = setOfNotNull(pointedVersion(current), pointedVersion(previous))
-        if (!Files.isDirectory(releases)) return emptyList()
-        return Files.list(releases).use { entries ->
-            entries.filter { Files.isDirectory(it) && !Files.isSymbolicLink(it) && it.fileName.toString() !in keep }
-                .filter { !liveStaging(it.fileName.toString()) }
-                .toList()
-        }
+        return ReleaseDirectories.children(releases)
+            .filter { it.fileName.toString() !in keep && !liveStaging(it.fileName.toString()) }
     }
 
     private fun liveStaging(name: String): Boolean {
@@ -152,10 +140,7 @@ internal class UpgradeLayout(
         return pid != null && ProcessHandle.of(pid).map { it.isAlive }.orElse(false)
     }
 
-    @OptIn(kotlin.io.path.ExperimentalPathApi::class)
-    fun discard(path: Path) {
-        if (Files.exists(path)) path.deleteRecursively()
-    }
+    fun discard(path: Path) = ReleaseDirectories.discard(path)
 
     /** The jar's own version line must be a plain semver segment (versionDir refuses anything else)
      *  and must confirm --to when one was given. */

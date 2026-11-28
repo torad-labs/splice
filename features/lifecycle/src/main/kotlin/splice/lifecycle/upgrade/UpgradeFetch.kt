@@ -13,6 +13,7 @@ import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.nio.file.attribute.PosixFilePermission
 
 /** GET a URL (https or file://): the bytes, null when the asset is ABSENT (404, no such file), and
  *  [UpgradeFetchFailed] for everything else — a transport failure or a refusing status is not a
@@ -24,9 +25,15 @@ internal fun interface UpgradeFetch {
      *  when there is no such asset, [Downloaded.Mismatch] when the bytes are not the published ones, and
      *  [UpgradeFetchFailed] as [invoke]. Whatever did not land is removed. This default reads [invoke]'s bytes, for a
      *  seam that serves a few; [JdkUpgradeFetch] streams, so a release jar is never held in memory. */
-    fun download(url: String, target: Path, expected: String, progress: DownloadProgress): Downloaded {
+    fun download(
+        url: String,
+        target: Path,
+        expected: String,
+        progress: DownloadProgress,
+        mode: Set<PosixFilePermission>? = null,
+    ): Downloaded {
         val bytes = invoke(url) ?: return Downloaded.Absent
-        return PartFile(target).use { part ->
+        return PartFile(target, mode).use { part ->
             part.write(bytes, bytes.size)
             part.land(expected)
         }
@@ -76,15 +83,20 @@ internal class JdkUpgradeFetch(
         return if (HttpTransfer(client, pacing, url, sink, QuietDownload()).run()) sink.bytes() else null
     }
 
-    override fun download(url: String, target: Path, expected: String, progress: DownloadProgress): Downloaded =
-        PartFile(target).use { part ->
-            val found = if (url.startsWith("file:")) {
-                copied(url, part)
-            } else {
-                HttpTransfer(client, pacing, url, part, progress).run()
-            }
-            if (found) part.land(expected) else Downloaded.Absent
+    override fun download(
+        url: String,
+        target: Path,
+        expected: String,
+        progress: DownloadProgress,
+        mode: Set<PosixFilePermission>?,
+    ): Downloaded = PartFile(target, mode).use { part ->
+        val found = if (url.startsWith("file:")) {
+            copied(url, part)
+        } else {
+            HttpTransfer(client, pacing, url, part, progress).run()
         }
+        if (found) part.land(expected) else Downloaded.Absent
+    }
 
     private fun local(url: String): ByteArray? =
         Cancellables.runCatchingCancellable { Files.readAllBytes(Paths.get(URI(url))) }.getOrElse { e ->

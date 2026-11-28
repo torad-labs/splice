@@ -9,9 +9,11 @@ import splice.core.util.MonoClock
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.PosixFilePermission
 import java.security.MessageDigest
 import java.time.Duration
 import java.util.HexFormat
@@ -78,7 +80,10 @@ internal class MemorySink : TransferSink {
 
 /** The file an asset streams into, beside [target] so landing it is one rename in the same directory, hashed as it is
  *  written. Closing it removes whatever did not land, on every path. */
-internal class PartFile(private val target: Path) : TransferSink, AutoCloseable {
+internal class PartFile(
+    private val target: Path,
+    private val mode: Set<PosixFilePermission>? = null,
+) : TransferSink, AutoCloseable {
     val path: Path = target.resolveSibling(".${target.fileName}.part")
     private val digest = MessageDigest.getInstance("SHA-256")
     private var out: OutputStream = open()
@@ -103,6 +108,7 @@ internal class PartFile(private val target: Path) : TransferSink, AutoCloseable 
         out.close()
         val actual = HexFormat.of().formatHex(digest.digest())
         if (!expected.equals(actual, ignoreCase = true)) return Downloaded.Mismatch(actual)
+        if (mode != null) Files.setPosixFilePermissions(path, mode)
         Files.move(path, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
         return Downloaded.Landed
     }
@@ -117,5 +123,6 @@ internal class PartFile(private val target: Path) : TransferSink, AutoCloseable 
         StandardOpenOption.CREATE,
         StandardOpenOption.TRUNCATE_EXISTING,
         StandardOpenOption.WRITE,
+        LinkOption.NOFOLLOW_LINKS,
     )
 }

@@ -39,12 +39,8 @@ internal class SetupEffects(
 
     fun launchers(): SetupLaunchers = launchers
 
-    /** Upkeep, never an offer: the shim is laid again where it is missing or stale. */
-    fun refreshGeminiShim(): String? = when (val laid = GeminiShim(env).lay()) {
-        is GeminiShimLaid.Written -> "Laid the Antigravity shim at ${laid.path}"
-        is GeminiShimLaid.Failed -> "Could not lay the Antigravity shim (${laid.why})"
-        GeminiShimLaid.Current -> null
-    }
+    /** Upkeep, never an offer: the shim is laid again where it is missing or stale. Returns what the lay did. */
+    fun refreshGeminiShim(): GeminiShimLaid = GeminiShim(env).lay()
 
     /** `splice doctor`, once, at the end of setup: with no plan connected as much as with three. */
     fun checkup(env: EnvReader) = add.checkup(env)

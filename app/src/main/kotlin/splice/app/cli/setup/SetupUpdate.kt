@@ -19,7 +19,6 @@ import splice.core.terminal.TerminalOutput
 import splice.core.topology.CLAUDE_COMMAND
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
-import splice.launch.install.GeminiShim
 import splice.launch.install.GeminiShimLaid
 import splice.launch.install.InstallCommand
 import splice.topology.TopologyLoader
@@ -127,7 +126,7 @@ internal class SetupUpdate(
     }
 
     /** The Antigravity shim, laid where it is missing or stale, and said when it was. False when the write failed. */
-    private fun shim(): Boolean = when (val laid = GeminiShim(env).lay()) {
+    private fun shim(): Boolean = when (val laid = effects.refreshGeminiShim()) {
         is GeminiShimLaid.Written -> true.also { frame.step("Laid the Antigravity shim at ${laid.path}") }
         is GeminiShimLaid.Failed -> false.also { frame.step("Could not lay the Antigravity shim (${laid.why})") }
         GeminiShimLaid.Current -> true

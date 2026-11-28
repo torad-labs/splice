@@ -166,8 +166,7 @@ internal class CodeModeRuntimeStarter(
             registry.complete(record, error.diagnostic)
             CodeModeLocalOutcome.success()
         }
-        stream?.sourceInterrupted == true -> stream.outcome()
-        else -> failed(record, error)
+        else -> stream?.failureOutcome(record) ?: failed(record, error)
     }
 
     fun capacity(record: CodeModeRecord, error: CodeModeCapacityException, machine: CodexCodeModeMachine): TurnOutcome {

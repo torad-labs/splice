@@ -8,6 +8,7 @@ import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.reader.CodeModeReaderFailures.HEAD_STOPPED
 import splice.provider.codex.stream.reader.CodeModeReaderFailures.SOURCE_DISPOSED
+import splice.provider.codex.stream.source.CodeModeDeliveredText
 import splice.provider.codex.stream.source.CodeModeSourceCapture
 import java.io.IOException
 
@@ -31,6 +32,9 @@ internal class CodeModeReaderOutcomes(
         private set
 
     @Volatile var upstreamEnded = false
+
+    @Volatile var sourceFailure: TurnOutcome.Failure? = null
+        private set
 
     @Volatile var permanentEnding: TurnOutcome.Failure? = null
         private set
@@ -64,7 +68,7 @@ internal class CodeModeReaderOutcomes(
         }
     }
 
-    fun finish(outcome: TurnOutcome) = synchronized(lifecycle) {
+    fun finish(outcome: TurnOutcome, delivered: CodeModeDeliveredText? = null) = synchronized(lifecycle) {
         billing.reported(outcome)
         if (stoppedByHead) throw CancellationException(HEAD_STOPPED)
         localFailure?.let { return@synchronized it }
@@ -77,11 +81,12 @@ internal class CodeModeReaderOutcomes(
         // The capture loses a source its terminal does not certify, which closes the cell a client step may still be
         // advancing. Set first, so that step ends as a torn source's step does, or with a permanent failure as it is.
         lifecycle.executionLost = !sourceInterrupted && capture.rejects(outcome)
+        sourceFailure = (outcome as? TurnOutcome.Failure)?.takeIf { lifecycle.executionLost }
         permanentEnding = (outcome as? TurnOutcome.Failure)?.takeIf { sourceLost && it.cause.permanent }
         Cancellables.runCatchingBestEffort { capture.finish(outcome) }
             .getOrElse { return@synchronized lifecycle.reject(it) }
         if (sourceInterrupted && outcome is TurnOutcome.Failure) {
-            CodeModeReaderFailures.interrupted(outcome)
+            CodeModeReaderFailures.interrupted(outcome, delivered)
         } else {
             outcome
         }
@@ -96,25 +101,30 @@ internal class CodeModeReaderOutcomes(
         }
     }
 
-    fun failed(error: Exception): TurnOutcome.Failure = synchronized(lifecycle) {
-        upstreamEnded = true
-        if (stoppedByHead) {
-            capture.source.fail(CodeModeReaderFailures.SOURCE_FAILED)
-            throw CancellationException(HEAD_STOPPED, error)
-        }
-        localFailure?.let { return@synchronized it }
-        val detail = CodeModeReaderFailures.SOURCE_FAILED
-        if (error is CodeModePersistenceException) {
+    fun failed(error: Exception, delivered: CodeModeDeliveredText? = null): TurnOutcome.Failure =
+        synchronized(lifecycle) {
+            upstreamEnded = true
+            if (stoppedByHead) {
+                capture.source.fail(CodeModeReaderFailures.SOURCE_FAILED)
+                throw CancellationException(HEAD_STOPPED, error)
+            }
+            localFailure?.let { return@synchronized it }
+            val detail = CodeModeReaderFailures.SOURCE_FAILED
+            if (error is CodeModePersistenceException) {
+                capture.source.fail(detail)
+                if (!capture.ready.isCompleted) capture.ready.completeExceptionally(error)
+                throw error
+            }
+            lifecycle.sourceInterrupted = capture.unfinished && error is IOException
+            // Splice's own non-IO fault loses the record below and closes the cell a client step may be advancing, as an
+            // uncertified source does. Set before the source fails, so that step ends as a torn source's step does.
+            lifecycle.executionLost = !sourceInterrupted && capture.unfinished
             capture.source.fail(detail)
-            if (!capture.ready.isCompleted) capture.ready.completeExceptionally(error)
-            throw error
+            capture.interrupted(detail)
+            CodeModeReaderFailures.outcome(
+                error,
+                admitted = capture.record != null,
+                partial = CodeModeReaderFailures.deliveredPartial(sourceInterrupted, delivered),
+            )
         }
-        lifecycle.sourceInterrupted = capture.unfinished && error is IOException
-        // Splice's own non-IO fault loses the record below and closes the cell a client step may be advancing, as an
-        // uncertified source does. Set before the source fails, so that step ends as a torn source's step does.
-        lifecycle.executionLost = !sourceInterrupted && capture.unfinished
-        capture.source.fail(detail)
-        capture.interrupted(detail)
-        CodeModeReaderFailures.outcome(error, admitted = capture.record != null)
-    }
 }

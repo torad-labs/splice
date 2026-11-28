@@ -7,8 +7,14 @@ import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
 import splice.provider.codex.history.CodeModeContinuityCapture
 
-/** One range of the switching sink's bounded, actually delivered text; overlapping samples are idempotent. */
-internal data class CodeModeDeliveredText(val offset: Int, val text: String?)
+/** One range of the switching sink's bounded, actually delivered text and tool state; overlapping samples are
+ *  idempotent. */
+internal data class CodeModeDeliveredText(
+    val offset: Int,
+    val text: String?,
+    val hasToolUse: Boolean = false,
+    val toolTearOpen: Boolean = false,
+)
 
 /** Buffered writes are not delivery. Only the confirmed prefix can promote completed messages to raw native items. */
 internal class CodeModeSourceDelivery {

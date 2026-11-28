@@ -132,17 +132,21 @@ internal class AccountCredentialEligibility(
         }
     }
 
+    /** Merges an active hold migrated from a secondary route into this login's live state and store. */
+    fun adopt(saved: SavedLoginHold, at: Long) {
+        while (true) {
+            val current = reconcile()
+            val updated = current.adopted(saved, evidence, at)
+            if (updated == current) return
+            if (state.compareAndSet(current, updated)) return
+        }
+    }
+
     private fun scheduleFailure(lease: Lease, block: AccountBlock? = null) {
         while (true) {
             val current = reconcile()
             if (current.generation != lease.generation) return
-            val failureCount = nextFailureCount(current, lease)
-            val updated = current.copy(
-                failureCount = failureCount,
-                hold = Hold(lease.now() + holdMs(failureCount), block, block?.let { evidence.account() }),
-                probeToken = null,
-                generation = current.generation + 1L,
-            )
+            val updated = current.failed(lease, block, evidence)
             if (state.compareAndSet(current, updated)) return
         }
     }
@@ -162,17 +166,6 @@ internal class AccountCredentialEligibility(
             if (updated == current) return current
             if (state.compareAndSet(current, updated)) return updated
         }
-    }
-
-    private fun nextFailureCount(current: State, lease: Lease): Int = when {
-        lease.probeToken != null -> minOf(current.failureCount + 1, MAX_AUTH_FAILURE_COUNT)
-        current.failureCount == 0 -> 1
-        else -> current.failureCount
-    }
-
-    private fun holdMs(failureCount: Int): Long {
-        val exponent = (failureCount - 1).coerceIn(0, MAX_AUTH_FAILURE_COUNT - 1)
-        return minOf(FIRST_AUTH_HOLD_MS shl exponent, MAX_AUTH_HOLD_MS)
     }
 
     data class Lease(
@@ -338,11 +331,63 @@ internal class AccountCredentialEligibility(
             val saved = kept?.load() ?: return this
             val hold = Hold(saved.untilEpochMillis, saved.block, saved.account)
             val sameFile = saved.identity != null && saved.identity == identity
-            val stands = credentialPresent && if (saved.block != null) hold.blocks(source) else sameFile
-            if (stands) return copy(failureCount = saved.failureCount, hold = hold)
-            kept.save(null)
-            return this
+            if (credentialPresent && hold.isLegacyBlock(saved)) {
+                val upgraded = copy(
+                    failureCount = saved.failureCount,
+                    hold = Hold(saved.untilEpochMillis, saved.block, source.account()),
+                )
+                kept.save(upgraded.saved())
+                return upgraded
+            }
+            return if (credentialPresent && hold.standsOn(source, sameFile)) {
+                copy(failureCount = saved.failureCount, hold = hold)
+            } else {
+                kept.save(null)
+                this
+            }
         }
+
+        fun failed(lease: Lease, block: AccountBlock?, source: CredentialEvidence): State {
+            val count = when {
+                lease.probeToken != null -> minOf(failureCount + 1, MAX_AUTH_FAILURE_COUNT)
+                failureCount == 0 -> 1
+                else -> failureCount
+            }
+            val exponent = (count - 1).coerceIn(0, MAX_AUTH_FAILURE_COUNT - 1)
+            val delay = minOf(FIRST_AUTH_HOLD_MS shl exponent, MAX_AUTH_HOLD_MS)
+            return copy(
+                failureCount = count,
+                hold = Hold(lease.now() + delay, block, block?.let { source.account() }),
+                probeToken = null,
+                generation = generation + 1L,
+            )
+        }
+
+        fun adopted(saved: SavedLoginHold, source: CredentialEvidence, at: Long): State {
+            val active = saved.untilEpochMillis > at || saved.block != null
+            if (!credentialPresent || !active) return this
+            val currentAccount = source.account()
+            if (!matchesAdopted(saved, currentAccount)) return this
+            val merged = mergeHold(saved, currentAccount)
+            val failures = maxOf(failureCount, saved.failureCount)
+            return if (hold == merged && failureCount == failures) {
+                this
+            } else {
+                copy(failureCount = failures, hold = merged, probeToken = null, generation = generation + 1L)
+            }
+        }
+
+        private fun matchesAdopted(saved: SavedLoginHold, currentAccount: String?): Boolean {
+            val accountOk = saved.account?.let { currentAccount == null || it == currentAccount } != false
+            val identityOk = saved.identity?.let { identity == null || it == identity } != false
+            return if (saved.block != null) accountOk && identityOk else identityOk
+        }
+
+        private fun mergeHold(saved: SavedLoginHold, currentAccount: String?): Hold = Hold(
+            maxOf(hold?.untilEpochMillis ?: 0L, saved.untilEpochMillis),
+            hold?.block ?: saved.block,
+            hold?.account ?: saved.account ?: currentAccount,
+        )
     }
 
     /** A hold on this login after its provider refused it, until [untilEpochMillis]. With [block], the provider refused
@@ -352,5 +397,18 @@ internal class AccountCredentialEligibility(
         /** Whether this hold is a block on the very account the credential in [source] names now. */
         fun blocks(source: CredentialEvidence): Boolean =
             block != null && account != null && account == source.account()
+
+        /** Whether [saved] is a pre-identity legacy block file (saved before identity/account tracking existed). */
+        fun isLegacyBlock(saved: SavedLoginHold): Boolean =
+            block != null && listOf(account, saved.identity).all { it == null }
+
+        /** Whether this restored hold still applies on [source]: account-matched for a block, or same file when the
+         *  account is not contradicted by another proved account. */
+        fun standsOn(source: CredentialEvidence, sameFile: Boolean): Boolean = when {
+            block == null -> sameFile
+            blocks(source) -> true
+            account != null && source.account() != null -> false
+            else -> sameFile
+        }
     }
 }

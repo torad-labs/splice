@@ -19,6 +19,9 @@ import splice.app.control.UsageWarningSource
 import splice.app.head.books.AssembledRoute
 import splice.app.head.books.BooksQuota
 import splice.app.head.books.ProviderBooks
+import splice.app.head.books.SharedHoldMigration
+import splice.app.head.books.SharedPool
+import splice.app.head.books.SharedPools
 import splice.app.probe.PlaygroundProviders
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
@@ -58,7 +61,6 @@ import splice.provider.codex.CodexQuotaHeaderFamily
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.credentials.AccountEvidenceLoads
-import splice.upstream.credentials.AccountPool
 import splice.usage.AccountPlanLookup
 import splice.usage.HeadQuotaPlan
 import splice.usage.UsageBilling
@@ -138,7 +140,9 @@ internal class QuotaPollSeams(
         ctx: ProviderBuild,
         probes: QuotaProbes,
         orders: AccountOrderStore,
-    ): HeadQuotaPolling = HeadQuotaPolling(ctx, probes, startQuotaPoller, clientUserAgent, orders, readFailures)
+        sharedPools: SharedPools? = null,
+    ): HeadQuotaPolling =
+        HeadQuotaPolling(ctx, probes, startQuotaPoller, clientUserAgent, orders, readFailures, sharedPools)
 }
 
 /** The head server factory and the Playground registry a head is bound into once it is built. */
@@ -194,6 +198,11 @@ internal class ManagedHeadFactory(
      *  other: a legacy head and the gateway's runtime for the same provider are two routes over one set (ProviderBooks). */
     private val books = java.util.concurrent.ConcurrentHashMap<String, ProviderBooks>()
 
+    /** Shared live account pools, quota trackers, holds, cooldowns and pollers keyed by provider + credential owners,
+     *  so a legacy head and the gateway's provider runtime over the same accounts share one live pool while keeping
+     *  their per-key usage/perf/economics books separate. */
+    private val sharedPools = SharedPools(SharedHoldMigration(providerHolds))
+
     /** The keys whose kept files have been swept this daemon life, once each, before the first provider is built. */
     private val swept = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
@@ -210,24 +219,48 @@ internal class ManagedHeadFactory(
     /** The books [ctx]'s first route builds: the quota trackers (one per account, and the primary), the stores that read
      *  them, the pollers that fill them and the kept compaction answers. */
     private fun buildBooks(ctx: ProviderBuild, wired: Wired): ProviderBooks {
+        val poolKey = sharedPools.keyFor(ctx, wired, providerAssembly.claudeCanonicalKey(ctx.key))
+        var firstStores: HeadStores? = null
+        val shared = if (poolKey != null) {
+            val (found, created) = sharedPools.resolve(poolKey) {
+                buildSharedPool(ctx, wired).also { firstStores = it.first }.second
+            }
+            if (!created) sharedPools.attach(found, ctx.key)
+            found
+        } else {
+            buildSharedPool(ctx, wired).also { firstStores = it.first }.second
+        }
+        quotaSeams.primaryWired(shared.primaryQuota)
+        val stores = firstStores ?: headStoresOf(ctx, shared)
+        return ProviderBooks(
+            ctx.head.provider,
+            stores,
+            BooksQuota(shared.primaryQuota, shared.accountQuotas, shared.pollers, shared.polling),
+            recordings(ctx),
+        )
+    }
+
+    private fun buildSharedPool(ctx: ProviderBuild, wired: Wired): Pair<HeadStores, SharedPool> {
         val key = ctx.key
         val accountQuotas = accountQuotas(key, wired)
         val primaryQuota = wired.accounts.singleOrNull { it.primary && it.nativePlace == null }
             ?.let { accountQuotas.getValue(it.label) }
             ?: ownQuota(key)
-        quotaSeams.primaryWired(primaryQuota)
-        val stores = headStores(ctx, wired, primaryQuota, accountQuotas)
-        val polling = quotaSeams.pollingFor(ctx, quotaProbes, accountOrders)
+        val pool = accountPools.build(wired, accountQuotas, providerHolds.forPool(key, wired), primaryQuota)
+        sharedPools.syncInitialMembers(key, wired, pool, accountQuotas)
+        if (pool != null) {
+            val labels = pool.effectiveOrder().toSet()
+            pool.order = accountOrders.order(key).filter(labels::contains)
+        }
+        val cooldowns = sharedPools.cooldownsFor(key)
+        val polling = quotaSeams.pollingFor(ctx, quotaProbes, accountOrders, sharedPools)
+        val seed = SharedPool(key, pool, primaryQuota, accountQuotas, emptyList(), polling, cooldowns)
+        val stores = headStoresOf(ctx, seed)
         val pollers = polling.start(wired, stores, accountQuotas, providerAssembly, providerHolds)
         if (wired.auth is ClientAuthProvider) {
             primaryQuota.credentialListener = CredentialQuotaFiles(statePaths.quotaFile(key), log)
         }
-        return ProviderBooks(
-            ctx.head.provider,
-            stores,
-            BooksQuota(primaryQuota, accountQuotas, pollers, polling),
-            recordings(ctx),
-        )
+        return stores to seed.copy(pollers = pollers)
     }
 
     /** gateway-no-heads: [ctx]'s provider assembled for the gateway, with no head to serve it: the provider and its
@@ -246,6 +279,7 @@ internal class ManagedHeadFactory(
         }
         val wired = providerAssembly.buildProvider(ctx)
         val shared = booksOf(ctx, wired)
+        sharedPools.bindRoute(shared)
         val scope = RouteScope(layer, registers, forwardClientAuth = wired.auth is ClientAuthProvider)
         return AssembledRoute(wired, shared, serving.runtimeFor(ctx, wired, shared, scope))
     }
@@ -264,8 +298,8 @@ internal class ManagedHeadFactory(
         }
         val wired = providerAssembly.buildProvider(ctx)
         val shared = booksOf(ctx, wired)
+        sharedPools.bindRoute(shared)
         val stores = shared.stores
-        val polling = shared.quota.polling
         val quotaPollers = shared.quota.pollers
         // Derived from the CREDENTIAL, never from the declared string. The bypass is safe only
         // because splice holds nothing for this head, so it reads the artifact that IS that fact:
@@ -290,8 +324,7 @@ internal class ManagedHeadFactory(
                 authKind = ctx.providerCfg.auth.kind,
                 dialect = DialectWires.name(ctx.providerCfg.dialect),
                 keyPresence = keyPresence,
-                accountPool = accountPools
-                    .source(stores.accounts.pool, key, accountOrders, accountPins, polling.limitResets(wired, log)),
+                accountPool = accountPoolSource(key, wired, shared),
                 accountAuth = accountPools.authSource(wired),
                 plans = stores.telemetry.economics.plans,
             ),
@@ -302,6 +335,17 @@ internal class ManagedHeadFactory(
             ),
             statusline = StatuslineContext(catalog = ctx.catalog, clientWindows = stores.clientWindows),
         )
+    }
+
+    private fun accountPoolSource(key: String, wired: Wired, shared: ProviderBooks): HeadAccountPoolSource? {
+        val pool = shared.stores.accounts.pool
+        val (policyKey, ownsPolicy) = sharedPools.claimPolicyOwner(pool, key)
+        val limitResets = shared.quota.polling.limitResets(wired, log)
+        return if (ownsPolicy) {
+            accountPools.source(pool, policyKey, accountOrders, accountPins, limitResets)
+        } else {
+            accountPools.sharedSource(pool, policyKey, accountOrders, accountPins, limitResets)
+        }
     }
 
     private fun sourcesFor(
@@ -329,21 +373,6 @@ internal class ManagedHeadFactory(
         (wired.auth as? ApiKeyAuthProvider)?.hasKeyNow() != false
     }
 
-    /** Every file-backed store one head owns, built from its state paths. Its own method because
-     *  the head WRITES these and the control-plane adapters READ them, and both must hold the SAME
-     *  instances — a second store over the same path would serve the dashboard its own stale
-     *  in-memory copy. (The economics store pushed assembleHead past detekt's LongMethod ceiling,
-     *  which is the same pressure that made this a separate declaration in the original commit.) */
-    private fun headStores(
-        ctx: ProviderBuild,
-        wired: Wired,
-        primaryQuota: QuotaTracker,
-        accountQuotas: Map<String, QuotaTracker>,
-    ): HeadStores {
-        val pool = accountPools.build(wired, accountQuotas, providerHolds.forPool(ctx.key, wired), primaryQuota)
-        return headStoresOf(ctx, primaryQuota, accountQuotas, pool)
-    }
-
     /** Who covers a request on this command's accounts: its credential says subscription or key, and its pool and quota
      *  say which accounts have a plan. The one answer the rollup, the rebuilt hours and the pages share. */
     private fun planLookup(ctx: ProviderBuild, pool: HeadAccountPoolSource?, quota: QuotaTracker): AccountPlanLookup {
@@ -352,12 +381,7 @@ internal class ManagedHeadFactory(
         return AccountPlanLookup(kind, pool, HeadQuotaPlan { quota.snapshot()?.plan })
     }
 
-    private fun headStoresOf(
-        ctx: ProviderBuild,
-        primaryQuota: QuotaTracker,
-        accountQuotas: Map<String, QuotaTracker>,
-        pool: AccountPool?,
-    ): HeadStores = HeadStores(
+    private fun headStoresOf(ctx: ProviderBuild, shared: SharedPool): HeadStores = HeadStores(
         usageStore = UsageStore(statePaths.usageFile(ctx.key), statePaths.ratelimitFile(ctx.key)),
         telemetry = HeadTelemetryStores(
             compactStats = CompactStats(statePaths.compactStatsFile(ctx.key)),
@@ -380,19 +404,20 @@ internal class ManagedHeadFactory(
                 statePaths.economicsFile(ctx.key),
                 TurnPrice(ctx.catalog),
                 kept = perfSources.kept,
-                plans = planLookup(ctx, accountPools.source(pool, ctx.key, accountOrders), primaryQuota)
+                plans = planLookup(ctx, accountPools.source(shared.pool), shared.primaryQuota)
                     .let { lookup -> AccountOnPlan { lookup.covers(it) } },
             ),
         ),
-        quota = primaryQuota,
+        quota = shared.primaryQuota,
         accounts = HeadAccountStores(
-            pool = pool,
-            quotas = accountQuotas,
+            pool = shared.pool,
+            quotas = shared.accountQuotas,
             fallbacks = SessionFallbacks { session -> sessionFallbacks.of(session) },
+            upstreamCooldowns = shared.cooldowns,
         ),
         clientWindows = ClientWindows(store = statePaths.clientWindowsFile(ctx.key), log = log),
         trace = traceStores.forHead(ctx.key, ctx.cfg),
-        providerHold = providerHolds.forHead(ctx.key),
+        providerHold = shared.cooldowns.store,
     )
 
     /** V4-216: the head's kept compaction answers. Not in [HeadStores]: only the head reads them, no

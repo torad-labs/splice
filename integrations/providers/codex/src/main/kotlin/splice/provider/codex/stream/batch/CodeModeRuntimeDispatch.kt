@@ -68,14 +68,11 @@ internal class CodeModeRuntimeDispatch(
         return record to outcome
     }
 
-    private suspend fun failure(record: CodeModeRecord, stream: CodeModeLiveRound?): TurnOutcome = when {
-        stream?.localFailure != null -> checkNotNull(stream.localFailure)
-        stream?.sourceInterrupted == true -> stream.outcome()
-        else -> TurnOutcome.Failure(
+    private suspend fun failure(record: CodeModeRecord, stream: CodeModeLiveRound?): TurnOutcome =
+        stream?.failureOutcome(record) ?: TurnOutcome.Failure(
             cause = FailureCause.Splice.Internal(),
             at = Position(Moment.MID_CONTENT, streamBegan = true),
             evidence = FailureEvidence(record.error.orEmpty()),
             salvagedUsage = noRequestUsage,
         )
-    }
 }

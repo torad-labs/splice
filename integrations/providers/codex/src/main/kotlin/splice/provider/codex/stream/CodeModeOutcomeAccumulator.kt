@@ -7,7 +7,6 @@ import splice.core.turn.ResponseShape
 import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.core.turn.noRequestUsage
 import splice.core.util.JsonScalars
 import splice.provider.codex.history.CodeModeContinuityCapture
 
@@ -22,10 +21,14 @@ internal class CodeModeOutcomeAccumulator {
         val prior = success ?: return outcome
         return when (outcome) {
             is TurnOutcome.Success -> mergeSuccess(prior, outcome)
-            is TurnOutcome.Failure -> outcome.copy(
-                partial = mergePartial(prior, outcome.partial),
-                salvagedUsage = mergeTerminalUsage(prior.usage, outcome.salvagedUsage),
-            )
+            is TurnOutcome.Failure -> {
+                val usage = mergeTerminalUsage(prior.usage, terminalUsage(outcome))
+                val partial = outcome.partial?.takeUnless { outcome.cause.permanent }
+                outcome.copy(
+                    partial = partial?.let { mergePartial(prior, it, usage) },
+                    salvagedUsage = usage,
+                )
+            }
             is TurnOutcome.ClientAbandoned -> outcome.copy(
                 salvagedUsage = mergeTerminalUsage(prior.usage, outcome.salvagedUsage),
             )
@@ -73,35 +76,39 @@ internal class CodeModeOutcomeAccumulator {
         )
     }
 
+    private fun terminalUsage(failure: TurnOutcome.Failure): Usage =
+        failure.partial?.usage?.takeIf { it.reported.isNotEmpty() } ?: failure.salvagedUsage
+
     private fun mergePartial(
         prior: TurnOutcome.Success,
-        latest: TurnOutcome.PartialRound?,
+        latest: TurnOutcome.PartialRound,
+        usage: Usage,
     ): TurnOutcome.PartialRound = TurnOutcome.PartialRound(
         text = RoundText(
-            thinkingText = listOf(prior.text.thinkingText, latest?.text?.thinkingText.orEmpty())
+            thinkingText = listOf(prior.text.thinkingText, latest.text.thinkingText)
                 .filter(String::isNotEmpty)
                 .joinToString("\n\n"),
-            bodyText = prior.text.bodyText + latest?.text?.bodyText.orEmpty(),
-            emittedText = prior.text.emittedText || latest?.text?.emittedText == true,
-            emittedThinking = prior.text.emittedThinking || latest?.text?.emittedThinking == true,
+            bodyText = prior.text.bodyText + latest.text.bodyText,
+            emittedText = prior.text.emittedText || latest.text.emittedText,
+            emittedThinking = prior.text.emittedThinking || latest.text.emittedThinking,
         ),
-        hasToolUse = prior.hasToolUse || latest?.hasToolUse == true,
-        reasoningEnvelopes = prior.handoffs.reasoningEnvelopes + latest?.reasoningEnvelopes.orEmpty(),
-        toolTearOpen = latest?.toolTearOpen == true,
-        usage = mergeTerminalUsage(prior.usage, latest?.usage ?: noRequestUsage),
+        hasToolUse = prior.hasToolUse || latest.hasToolUse,
+        reasoningEnvelopes = prior.handoffs.reasoningEnvelopes + latest.reasoningEnvelopes,
+        toolTearOpen = latest.toolTearOpen,
+        usage = usage,
         nativePrefix = CodeModeContinuityCapture.followedBy(prior, latest),
         nativeDelivery = NativeDeliverySnapshot(
-            afterExec = latest?.nativeAfterExec,
+            afterExec = latest.nativeAfterExec,
             deliveredPrefix = deliveredPrefix(prior, latest),
         ),
     )
 
     /** A prior exec or prose needs its own canonical history; never guess its delivery order here. */
-    private fun deliveredPrefix(prior: TurnOutcome.Success, latest: TurnOutcome.PartialRound?): List<JsonObject>? {
+    private fun deliveredPrefix(prior: TurnOutcome.Success, latest: TurnOutcome.PartialRound): List<JsonObject>? {
         if (prior.text.bodyText.isNotEmpty() || prior.handoffs.nativeAfterExec != null) return null
         val prefix = CodeModeContinuityCapture.successItems(prior)
         if (prefix.any { JsonScalars.str(it, "type") != "reasoning" }) return null
-        return latest?.deliveredNativePrefix?.let { prefix + it }
+        return latest.deliveredNativePrefix?.let { prefix + it }
     }
 
     private fun mergeRoundUsage(prior: Usage, latest: Usage): Usage = prior.followedBy(latest)

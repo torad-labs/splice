@@ -57,6 +57,13 @@ public class ConsolePorts {
     /** Live turn observation and explicit turn actions share the provider's running ownership. */
     internal val turns: ConsoleTurnPorts = ConsoleTurnPorts()
 
+    /** The management route and launches share the daemon's installed mod roster. */
+    internal var mods: splice.app.mods.install.InstalledMods? = null
+    internal var modRunner: splice.app.mods.run.ModRunner? = null
+
+    /** The same launch settings the daemon's launch and resume routes write. */
+    internal var modLaunches: splice.app.mods.sessions.ModLaunches? = null
+
     /** V4-136: how /api/compaction/instructions reaches the daemon's ONE compaction resolver.
      *
      *  A SETTABLE PROPERTY, not a constructor parameter — the constructor sits at the width

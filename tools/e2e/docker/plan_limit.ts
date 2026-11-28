@@ -12,7 +12,9 @@
  *                           the native envelope and error type; splice's own line (HoldSentences.kt)
  *                           naming the head, the window it met and the native reset as a clock time;
  *                           and exactly the headers of HandOverHeaders.kt: retry-after, the unified
- *                           status, the unified reset and the per-window reset with the native value.
+ *                           status, the unified reset, the per-window reset with the native value,
+ *                           and the representative claim when unified-reset carries the firm native
+ *                           reset (omitted on a 30 s pooled recheck).
  *                           Retry-After and the unified reset name one instant: the native reset with
  *                           one login, splice's 30 s recheck where another login could serve the head.
  *                           The mock's per-bucket and utilization headers are not relayed.
@@ -33,6 +35,7 @@ class CheckFailed extends Error {}
 const CLIENT_RECHECK_S = 30;
 const UNIFIED_RESET = "anthropic-ratelimit-unified-reset";
 const UNIFIED_STATUS = "anthropic-ratelimit-unified-status";
+const UNIFIED_CLAIM = "anthropic-ratelimit-unified-representative-claim";
 const FIVE_HOUR_RESET = "anthropic-ratelimit-unified-5h-reset";
 const RETRY_AFTER = "retry-after";
 function check(condition: unknown, message: string): asserts condition {
@@ -141,9 +144,10 @@ function limitHeaders(headers: Record<string, string>): string[] {
   return Object.keys(headers).filter((name) => name.startsWith("anthropic-ratelimit-") || name === RETRY_AFTER).sort();
 }
 
-/** HandOverHeaders.kt: exactly retry-after, the unified status "rejected", the unified reset and the five-hour member (the
- *  window the mock's limit is), which carries the native reset. Retry-After counts to the unified reset from when the head
- *  answered; that reset is the native one with one login, or splice's 30 s recheck where another login could serve. */
+/** HandOverHeaders.kt: retry-after, the unified status "rejected", the unified reset, the five-hour member (the
+ *  window the mock's limit is, carrying the native reset), and the representative claim "five_hour" when unified-reset
+ *  is the firm native reset (omitted on a 30 s pooled recheck). Retry-After counts to the unified reset from when the
+ *  head answered; that reset is the native one with one login, or splice's 30 s recheck where another login could serve. */
 function handOverHeaders(answer: Answer, expected: NativeReply, label: string): void {
   const nativeReset = expected.headers[UNIFIED_RESET];
   const nativeFiveHour = expected.headers[FIVE_HOUR_RESET];
@@ -165,7 +169,14 @@ function handOverHeaders(answer: Answer, expected: NativeReply, label: string): 
   check(retryAfter !== undefined && /^\d+$/.test(retryAfter) && Number(retryAfter) >= earliest && Number(retryAfter) <= latest,
     `${label}: ${RETRY_AFTER} should count to ${UNIFIED_RESET} ${told} (${earliest} to ${latest} s), got '${retryAfter}'`);
   const carried = limitHeaders(answer.headers);
-  const handOver = [FIVE_HOUR_RESET, RETRY_AFTER, UNIFIED_RESET, UNIFIED_STATUS].sort();
+  const firmNonRecheck = told === nativeReset;
+  const handOver = firmNonRecheck
+    ? [FIVE_HOUR_RESET, RETRY_AFTER, UNIFIED_CLAIM, UNIFIED_RESET, UNIFIED_STATUS].sort()
+    : [FIVE_HOUR_RESET, RETRY_AFTER, UNIFIED_RESET, UNIFIED_STATUS].sort();
+  if (firmNonRecheck) {
+    check(answer.headers[UNIFIED_CLAIM] === "five_hour",
+      `${label}: ${UNIFIED_CLAIM} expected 'five_hour', got '${answer.headers[UNIFIED_CLAIM]}'`);
+  }
   check(JSON.stringify(carried) === JSON.stringify(handOver),
     `${label}: the hand-over should carry exactly ${handOver.join(", ")}, got ${carried.join(", ")}`);
 }

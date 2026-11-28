@@ -10,6 +10,7 @@ import splice.core.terminal.BLACK
 import splice.core.terminal.DIM
 import splice.core.terminal.GREEN
 import splice.core.terminal.RESET
+import splice.core.terminal.YELLOW
 
 class WizardFrameTest {
 
@@ -25,6 +26,13 @@ class WizardFrameTest {
         val buf = StringBuilder()
         WizardFrame(buf).outro("Toolkit ready!")
         assertEquals("$GREEN" + "Toolkit ready!$RESET\n", buf.toString())
+    }
+
+    @Test
+    fun `outroWarn is one yellow line`() {
+        val buf = StringBuilder()
+        WizardFrame(buf).outroWarn("1 open item listed above.")
+        assertEquals("$YELLOW" + "1 open item listed above.$RESET\n", buf.toString())
     }
 
     @Test

@@ -17,6 +17,11 @@ import splice.launch.install.GeminiShimLaid
 import splice.lifecycle.seatd.SeatdCompanion
 import splice.lifecycle.seatd.SeatdInstaller
 
+/** `splice desktop on`, as `setup --update` runs it: true when Desktop was put on splice. */
+internal fun interface DesktopOn {
+    suspend operator fun invoke(): Boolean
+}
+
 /** The steps of `setup` that change the machine, beside install: the profile add (and retiring the command it links),
  *  the daemon restart and the launchers. Not prompts, which is the line SetupPrompts draws. Each reads through [env],
  *  not a fresh `EnvReader(System::getenv)`, so a test's hermetic environment is the one every step sees (V4-177). */

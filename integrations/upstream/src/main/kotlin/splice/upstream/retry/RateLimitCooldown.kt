@@ -127,6 +127,36 @@ public class RateLimitCooldown public constructor(
         if (rateLimitReply != null) arm(providerUnavailableForMs())
     }
 
+    /** Merges active holds from another persisted [ProviderHold] into this live cooldown and persists to its store. */
+    public fun adoptHold(hold: ProviderHold) {
+        if (hold.isEmpty) return
+        val beforeMs = providerUnavailableForMs()
+        if (hold.read.isNotEmpty()) planHold.recall(hold.read)
+        adoptReset(hold, wallClock())
+        hold.models.filter(PlanLimit::forOneModel).forEach { planHold.hold(it, RetryNotice { }) }
+        val remaining = providerUnavailableForMs()
+        val reply = hold.rateLimitReply.takeIf { remaining > 0L } ?: return
+        if (rateLimitReply == null || remaining > beforeMs) {
+            rateLimitReply = reply
+            arm(remaining)
+        }
+    }
+
+    private fun adoptReset(hold: ProviderHold, wallNow: Long) {
+        val unmatched = hold.plan?.takeIf(PlanLimit::modelUnknown)
+        if (unmatched == null) hold.plan?.let { planHold.hold(it, RetryNotice { }) }
+        val resetAt = hold.providerResetAtEpochSeconds ?: return
+        if (resetAt * MS_PER_S <= wallNow) return
+        if (unmatched != null && resetAt <= unmatched.resetEpochSeconds) return
+        val delayMs = minOf(resetAt * MS_PER_S - wallNow, MAX_PROVIDER_RESET_MS)
+        holds.refusing {
+            providerUnavailableUntilMs.accumulateAndGet(clock() + delayMs) { current, candidate ->
+                maxOf(current, candidate)
+            }
+            holds.providerReset(maxOf(resetAt, providerResetAt ?: 0L))
+        }
+    }
+
     /** The provider's reset as a wall instant in epoch seconds, or null when none is pending. */
     private val providerResetAt: Long?
         get() = maxOf(0L, providerUnavailableUntilMs.get() - clock()).takeIf { it > 0L }

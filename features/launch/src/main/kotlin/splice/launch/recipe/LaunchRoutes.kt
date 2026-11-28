@@ -34,13 +34,12 @@ private data class LaunchRequest(
     val cwd: String?,
     val inheritedConfigDir: String?,
     val launch: String? = null,
-    /** shim-30 (#791): the caller shell's NO_PROXY and no_proxy, which a launch keeps beside loopback. */
-    val noProxy: List<String> = emptyList(),
+    val ambient: LaunchCallerAmbient,
 ) {
     /** Who is launching, as this request says: through [wrapped] when it came through the wrapped `claude`, on
      *  [gateway] for a head's command that starts on the Splice gateway, [command] the one typed. */
     fun caller(wrapped: WrappedLaunch? = null, gateway: GatewayAt? = null, command: String? = null): LaunchCaller =
-        LaunchCaller(cwd, wrapped, inheritedConfigDir, launch, gateway, command, noProxy)
+        LaunchCaller(cwd, wrapped, inheritedConfigDir, launch, gateway, command, ambient)
 }
 
 /** The head one launch runs, and [wrapped] when it came through the wrapped `claude` (V4-129). */
@@ -248,7 +247,11 @@ public class LaunchRoutes(
             fields["cwd"],
             fields["inheritedConfigDir"],
             fields["launch"],
-            fields.getAll(NO_PROXY_FIELD).orEmpty(),
+            LaunchCallerAmbient(
+                noProxy = fields.getAll(NO_PROXY_FIELD).orEmpty(),
+                labels = fields.getAll("label").orEmpty(),
+                modsOff = fields["modsOff"],
+            ),
         )
     }
 
@@ -266,7 +269,11 @@ public class LaunchRoutes(
             JsonScalars.str(body, "cwd"),
             JsonScalars.str(body, "inheritedConfigDir"),
             JsonScalars.str(body, "launch"),
-            listOfNotNull(JsonScalars.str(body, NO_PROXY_FIELD)),
+            LaunchCallerAmbient(
+                listOfNotNull(JsonScalars.str(body, NO_PROXY_FIELD)),
+                LaunchLabels.jsonLabels(body),
+                JsonScalars.str(body, "modsOff"),
+            ),
         )
     }
 }

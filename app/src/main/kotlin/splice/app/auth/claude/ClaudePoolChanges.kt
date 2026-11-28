@@ -33,6 +33,7 @@ internal fun interface LoginJoined {
 internal class ClaudePoolChanges {
     private val heads = ConcurrentHashMap<String, ClaudePoolChange>()
     private val accounts = ConcurrentHashMap<String, List<WiredAccount>>()
+    private val followers = ConcurrentHashMap<String, MutableSet<String>>()
 
     fun view(head: String, initial: List<WiredAccount>): WiredAccountsRead {
         accounts.putIfAbsent(head, initial.toList())
@@ -79,17 +80,26 @@ internal class ClaudePoolChanges {
         heads[head] = change
     }
 
+    /** Registers [followerKey] to re-read its accounts whenever [sourceKey] publishes or completes a withdrawal. */
+    fun follow(sourceKey: String, followerKey: String) {
+        if (sourceKey == followerKey) return
+        followers.computeIfAbsent(sourceKey) { ConcurrentHashMap.newKeySet() }.add(followerKey)
+    }
+
     fun withdraw(head: String, label: String) {
         heads[head]?.withdraw(label)
     }
 
     fun completeWithdrawal(head: String, label: String) {
-        heads[head]?.completeWithdrawal(label)
+        val primary = heads[head]
+        primary?.completeWithdrawal(label)
+        notifyFollowers(head, primary)
     }
 
     fun publish(head: String): Boolean {
         val change = heads[head] ?: return false
         change.publish()
+        notifyFollowers(head, change)
         return true
     }
 
@@ -97,6 +107,14 @@ internal class ClaudePoolChanges {
     fun signedIn(head: String, label: String): Boolean {
         val change = heads[head] ?: return false
         change.signedIn(label)
+        notifyFollowers(head, change)
         return true
+    }
+
+    private fun notifyFollowers(sourceHead: String, primary: ClaudePoolChange?) {
+        followers[sourceHead].orEmpty().forEach { followerKey ->
+            val target = heads[followerKey]
+            if (target != null && target !== primary) target.publish()
+        }
     }
 }

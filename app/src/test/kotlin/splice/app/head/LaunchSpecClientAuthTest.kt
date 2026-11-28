@@ -124,8 +124,13 @@ class LaunchSpecClientAuthTest {
         // #706: every request also names the window this process was launched with, since a resumed session id
         // can carry another launch's window in the head's registry.
         val window = env.getValue("CLAUDE_CODE_MAX_CONTEXT_TOKENS")
+        val owner = env.getValue("SPLICE_FOREGROUND_OWNER")
         assertEquals(
-            listOf("x-splice-client-wall-ms: $timeout", "x-splice-client-window: $window"),
+            listOf(
+                "x-splice-client-wall-ms: $timeout",
+                "x-splice-client-window: $window",
+                "x-splice-launch-owner: $owner",
+            ),
             env.getValue("ANTHROPIC_CUSTOM_HEADERS").lines(),
         )
     }

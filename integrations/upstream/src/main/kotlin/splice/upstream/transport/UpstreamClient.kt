@@ -31,6 +31,7 @@ import io.ktor.client.HttpClient
 import splice.core.auth.LoginAnswer
 import splice.core.auth.RefreshOutcome
 import splice.core.failure.FailureEvidence
+import splice.core.perf.UpstreamAttemptTiming
 import splice.core.usage.PlanLimit
 import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
@@ -47,6 +48,7 @@ import splice.upstream.retry.MAX_ATTEMPTS_OUTSIDE_HOLDS
 import splice.upstream.retry.ProviderHoldStore
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.retry.RetryLedger
+import splice.upstream.retry.UpstreamCooldowns
 
 public class UpstreamClient(
     private val totalTimeoutMs: Long,
@@ -65,6 +67,8 @@ public class UpstreamClient(
     /** V4-412: where this head's provider hold (its reset, the plan window it named spent) survives a
      *  restart; null keeps it in memory only. Pool accounts each carry their own. */
     holdStore: ProviderHoldStore? = null,
+    /** Live cooldowns shared across routes serving the same single-login upstream credential. */
+    cooldowns: UpstreamCooldowns? = null,
 ) {
     // The stateless collaborators the loop delegates to. Constructed once per client (not per call)
     // so the transport/request/failure/retry rules cost nothing per attempt. [cooldown] is the one
@@ -82,8 +86,12 @@ public class UpstreamClient(
     public val retryWaiter: Waiter = Waiter { ms -> pacing.wait(ms) }
 
     // Legacy files have no proved credential owner. Keep them untouched, never attribute their hold to a caller.
-    private val cooldown = RateLimitCooldown(clock, pacing.wall)
-    private val credentialCooldowns = CredentialCooldowns(clock, holdStore, pacing.wall)
+    private val sharedCooldowns = cooldowns ?: UpstreamCooldowns(clock, pacing.wall, holdStore)
+    private val cooldown: RateLimitCooldown get() = sharedCooldowns.cooldown
+    private val credentialCooldowns: CredentialCooldowns get() = sharedCooldowns.credentials
+
+    /** True when another route shares this client's live cooldowns, so restarting one head must not clear them. */
+    public val sharedAcrossRoutes: Boolean get() = sharedCooldowns.sharedAcrossRoutes
 
     /** Resolves the actual credential's hold, never the aggregate head pressure reported by status. */
     public fun credentialCooldown(headers: Map<String, String>, declaredCarrier: String? = null): RateLimitCooldown? =
@@ -250,7 +258,13 @@ public class UpstreamClient(
             state.markResend(ctx)
             request.execute(
                 ctx,
-                AttemptWire(auth.credentials, auth.headers, body.bytes, recorder),
+                AttemptWire(
+                    auth.credentials,
+                    auth.headers,
+                    body.bytes,
+                    recorder,
+                    ctx.observers.perf?.let(::UpstreamAttemptTiming),
+                ),
                 auth,
                 onStreamStart = {
                     streamHandedOff = true

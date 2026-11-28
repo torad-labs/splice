@@ -6,6 +6,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.content.ByteArrayContent
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
+import splice.core.perf.UpstreamAttemptTiming
 import splice.upstream.RoundBody
 import splice.upstream.sse.AttemptRecorder
 import java.util.concurrent.atomic.AtomicReference
@@ -127,6 +128,7 @@ internal class AttemptWire(
     private val extra: Map<String, String>,
     internal val bodyBytes: ByteArray,
     val recorder: AttemptRecorder? = null,
+    val timing: UpstreamAttemptTiming? = null,
 ) {
     /** V4-174: the recorder sees the SAME map the wire gets, after the dedupe — redacted on the way in
      *  (AttemptRecorder.request), so the credential never leaves this assembly. */

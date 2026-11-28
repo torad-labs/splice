@@ -11,6 +11,7 @@ import splice.core.util.LruSizing
 import splice.core.util.WallClock
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import java.util.function.Predicate
 
 private const val MAX_TRACKED_SESSIONS = 4_096
 
@@ -64,6 +65,11 @@ public class AccountPool(
     /** Native login writes outside splice. Reconcile its generation before reading selector state. */
     @Volatile
     public var membershipRefresh: AccountMembershipRefresh? = null
+
+    /** True once more than one route (e.g. a legacy head and the gateway runtime) shares this pool, so restarting one
+     *  head does not wipe live session stickiness, holds or blocks still serving the other route. */
+    @Volatile
+    public var sharedAcrossRoutes: Boolean = false
 
     /** Every read of the pool starts here, so a pin whose login read a new limit lets go before anything reads the pin
      *  (Nov 3, 2026: a pin lets go at the first limit reading instead of pulling sessions back). */
@@ -173,10 +179,17 @@ public class AccountPool(
     public val awaitingEvidence: AwaitingEvidence = AwaitingEvidence()
 
     /** No suspension follows lease acquisition, so prompt cancellation cannot strand a probe lease. */
-    public inner class AwaitingEvidence internal constructor(private val never: Set<String> = emptySet()) {
-        /** The same selection, never choosing a login in [labels] ([CallerLogin.never]): a turn through a door never
-         *  runs on the person's own login, and still waits for or moves among the others as any turn does. */
-        public fun without(labels: Set<String>): AwaitingEvidence = AwaitingEvidence(never + labels)
+    public inner class AwaitingEvidence internal constructor(
+        private val allowed: Predicate<String> = Predicate { true },
+    ) {
+        /** The same selection, never choosing a login in [labels] ([CallerLogin.never]). */
+        public fun without(labels: Set<String>): AwaitingEvidence =
+            AwaitingEvidence(Predicate { label -> allowed.test(label) && label !in labels })
+
+        /** The same selection, choosing only logins matching [filter], evaluated against the refreshed membership so a
+         *  login added during [membershipRefresh] (e.g. a native Claude login) is never chosen for a door turn. */
+        public fun only(filter: Predicate<String>): AwaitingEvidence =
+            AwaitingEvidence(Predicate { label -> allowed.test(label) && filter.test(label) })
 
         public suspend fun select(
             sessionId: String?,
@@ -189,13 +202,13 @@ public class AccountPool(
             currentCoroutineContext().ensureActive()
             asked.asked(model, own)
             val loads = evidenceLoads
-                ?: return pick(excluded) { CallerLogin(callerCredentialKey, sessionId, it, model, never) }
+                ?: return pick(excluded) { CallerLogin(callerCredentialKey, sessionId, it, model, neverIn(it)) }
             while (true) {
                 loads.ensureActive()
                 val current = runInterruptible(loads.ioDispatcher) { liveMembership }
                 current.accounts.forEach { it.refreshCredentialEvidence(loads) }
                 val caller = runInterruptible(loads.ioDispatcher) {
-                    CallerLogin(callerCredentialKey, sessionId, current.accounts, model, never)
+                    CallerLogin(callerCredentialKey, sessionId, current.accounts, model, neverIn(current.accounts))
                 }
                 currentCoroutineContext().ensureActive()
                 loads.ensureActive()
@@ -213,6 +226,9 @@ public class AccountPool(
                 selectionCommit.select(login.session, excluded, current, login)?.let { return it }
             }
         }
+
+        private fun neverIn(accounts: List<PoolAccount>): Set<String> =
+            accounts.mapNotNull { it.label.takeUnless(allowed::test) }.toSet()
     }
 
     private inner class SelectionCommit {
@@ -258,10 +274,8 @@ public class AccountPool(
         current: AccountMembership,
         caller: CallerLogin,
     ): Pair<Selection, SessionAccount?> {
-        val chosen = choose(previous, at, excluded, current, caller) ?: return Selection.Exhausted(
-            AccountAvailability.earliestReset(current.accounts, at, caller.model),
-            OwnerBlocks.named(current.accounts, at),
-        ) to null
+        val chosen = choose(previous, at, excluded, current, caller)
+            ?: return caller.exhausted(current.accounts, at) to null
         // A new session starts relative to primary even when its credential is missing: choosing
         // a backup is cache-cold on that first turn, and the session's own last switch says so.
         val prior = previous ?: SessionAccount(current.primary.label, null)

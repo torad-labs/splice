@@ -132,7 +132,7 @@ internal class SessionsWiring(
     private val traceSent = TraceSessionSent(TraceDirPort { ports.traceDir })
     val routes: SessionsRoutes? = listed?.let {
         SessionsRoutes(
-            it,
+            perfFacts.listingSource(it),
             // a session whose transcript file is gone reads from the request the trace kept for it (gap 423)
             CapturedTranscripts(MovedTranscripts(TranscriptReader(), moves), SessionCaptures(it, traceSent)),
             TranscriptRoots(sessionHeads),

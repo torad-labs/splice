@@ -6,6 +6,7 @@ import splice.core.terminal.BLACK
 import splice.core.terminal.DIM
 import splice.core.terminal.GREEN
 import splice.core.terminal.RESET
+import splice.core.terminal.YELLOW
 import java.io.IOException
 
 /** Asks a y/n question and returns the answer. */
@@ -63,5 +64,10 @@ public class WizardFrame(
 
     public fun outro(message: String) {
         out.append(GREEN).append(message).append(RESET).append('\n')
+    }
+
+    /** A closing line for a run that left open items, in yellow rather than [outro]'s all-clear green. */
+    public fun outroWarn(message: String) {
+        out.append(YELLOW).append(message).append(RESET).append('\n')
     }
 }

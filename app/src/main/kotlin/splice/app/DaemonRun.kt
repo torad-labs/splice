@@ -80,13 +80,7 @@ internal class DaemonRun(
         } finally {
             try {
                 withContext(NonCancellable) {
-                    val halt = HaltJvm { exitCode ->
-                        // The lane is a daemon thread apart from whatever wedged the stop: give the lines already queued a
-                        // short window to land whole, then end the process.
-                        AsyncFileIo.drain(HALT_DRAIN_MS)
-                        Runtime.getRuntime().halt(exitCode)
-                    }
-                    process.runBoundedTeardown(stopDeadlineMs + TEARDOWN_TAIL_GRACE_MS, halt) {
+                    process.runBoundedTeardown(stopDeadlineMs + TEARDOWN_TAIL_GRACE_MS, hardHalt) {
                         startup.cancel()
                         shutdown(daemon, lock, startup)
                     }
@@ -95,6 +89,12 @@ internal class DaemonRun(
                 stopped.countDown()
             }
         }
+    }
+
+    private val hardHalt = HaltJvm { exitCode ->
+        // The log lane is independent of whatever wedged retirement or stop.
+        AsyncFileIo.drain(HALT_DRAIN_MS)
+        Runtime.getRuntime().halt(exitCode)
     }
 
     // The ordered stop, run once by main after the signal inside runBoundedTeardown. The watchdog is the guarantee
@@ -127,16 +127,21 @@ internal class DaemonRun(
         startup: Job,
         shutdownSignal: CompletableDeferred<Unit>,
     ) {
-        startup.join()
-        boundary.runCatchingDaemonBoundary { daemon.retire() }
-        release(lock)
-        coroutineScope {
-            val finishing = launch { boundary.runCatchingDaemonBoundary { daemon.finish(RETIRED_FINISH_MS) } }
-            select<Unit> {
-                shutdownSignal.onAwait { }
-                finishing.onJoin { }
+        process.runBoundedTeardown(stopDeadlineMs + TEARDOWN_TAIL_GRACE_MS, hardHalt) {
+            startup.join()
+            boundary.runCatchingDaemonBoundary { daemon.retire() }
+            release(lock)
+        }
+        // Kept turns get their full drain window; cleanup still has the same ceiling as an ordinary stop.
+        process.runBoundedTeardown(RETIRED_FINISH_MS + stopDeadlineMs + TEARDOWN_TAIL_GRACE_MS, hardHalt) {
+            coroutineScope {
+                val finishing = launch { boundary.runCatchingDaemonBoundary { daemon.finish(RETIRED_FINISH_MS) } }
+                select<Unit> {
+                    shutdownSignal.onAwait { }
+                    finishing.onJoin { }
+                }
+                finishing.cancel()
             }
-            finishing.cancel()
         }
     }
 

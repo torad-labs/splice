@@ -58,6 +58,7 @@ internal class LaunchMount(
         sessions.activity,
         sessions.starts,
         ResumeHookRoute.RemoteSessionTrees { command -> launchService?.remotes?.ownTree(command) },
+        notices = launchService?.launchNotices,
     )
 
     // gpt-speed: /fast and /ultrafast, caught by the hook a head signed in with ChatGPT carries. A server built without a

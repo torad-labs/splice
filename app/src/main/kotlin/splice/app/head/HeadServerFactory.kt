@@ -31,6 +31,8 @@ import splice.head.compact.ShadowClassifier
 import splice.head.compaction.CompactionRecordings
 import splice.head.compaction.CompactionTail
 import splice.head.compaction.SessionProjectLookup
+import splice.head.observe.NoTurnObservers
+import splice.head.observe.TurnObservers
 import splice.head.turn.LiveTurns
 import splice.head.wire.WireTap
 import splice.upstream.Provider
@@ -63,6 +65,9 @@ internal class HeadServerFactory(
             upstreamFactory.performance = value
         }
     private val voices = HeadVoiceFacts()
+
+    /** The daemon installs its offer-only observer before assembling provider runtimes or heads. */
+    internal var turnObservers: TurnObservers = NoTurnObservers
 
     /** Assigned before any head is assembled; the callback reads the login owner at request time. */
     internal var credentialAccountNames: HeadDeps.CredentialAccountNames = HeadDeps.CredentialAccountNames { null }
@@ -198,7 +203,7 @@ internal class HeadServerFactory(
     private fun traffic(ctx: ProviderBuild, stores: HeadStores, scope: RouteScope): HeadDeps.HeadTraffic =
         HeadDeps.HeadTraffic(
             watchdog = ctx.faultPlan.liveWatchdog,
-            upstream = upstreamFactory.upstreamFor(ctx, ctx.cfg, log, stores.providerHold, prompts.configDir),
+            upstream = upstreamFactory.upstreamFor(ctx, ctx.cfg, log, stores, prompts.configDir),
             // Re-read per head on EVERY admission (still hot-resizable): the ceiling belongs to
             // the upstream ACCOUNT, not the gateway. One shared value meant a workflow fan-out
             // admitted 100 concurrent streams into a single account, 429'd, and armed the shared
@@ -278,7 +283,11 @@ internal class HeadServerFactory(
             compactionTail = compactionTail,
             harness = capabilities.forHead(key, log),
         ),
-        reports = HeadDeps.HeadReports(events = console?.forHead(key) ?: NoHeadEvents, served = served),
+        reports = HeadDeps.HeadReports(
+            events = console?.forHead(key) ?: NoHeadEvents,
+            served = served,
+            observers = turnObservers,
+        ),
     )
 }
 

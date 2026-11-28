@@ -48,6 +48,7 @@ class ShimHeadersTest {
             "  X-Splice-Launch-Proof: from-an-outer-session",
             "x-splice-client-window: 200000",
             "X-SPLICE-CLIENT: 0.6.0",
+            "  X-Splice-Launch-Owner: outer",
             "",
             "x-splice-wrapper: acme-ai/1.4.0",
             "x-team: blue",

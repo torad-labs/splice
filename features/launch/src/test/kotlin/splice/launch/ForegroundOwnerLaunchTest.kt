@@ -8,7 +8,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
+import splice.client.desktop.GATEWAY_HEADERS
 import splice.core.client.FOREGROUND_OWNER_ENV
+import splice.core.client.LAUNCH_OWNER_HEADER
 import splice.launch.recipe.LaunchService
 import java.nio.file.Path
 
@@ -45,9 +47,17 @@ class ForegroundOwnerLaunchTest {
         val uuid = Regex("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
         assertTrue(uuid.matches(firstOwner), "the first owner is a random UUID")
         assertTrue(uuid.matches(nextOwner), "the next owner is a random UUID")
-        assertEquals(one.env - FOREGROUND_OWNER_ENV, two.env - FOREGROUND_OWNER_ENV)
+        assertEquals(withoutOwner(one.env, firstOwner), withoutOwner(two.env, nextOwner))
         assertEquals(one.argv, two.argv)
         assertEquals(one.unset, two.unset)
         assertTrue(firstOwner != "synthetic-model", "the owner is not a model selector")
+    }
+
+    private fun withoutOwner(env: Map<String, String>, owner: String): Map<String, String> {
+        val (ownerLines, otherHeaders) = env.getValue(GATEWAY_HEADERS).lines().partition {
+            it.substringBefore(':').equals(LAUNCH_OWNER_HEADER, ignoreCase = true)
+        }
+        assertEquals(listOf("$LAUNCH_OWNER_HEADER: $owner"), ownerLines)
+        return env - FOREGROUND_OWNER_ENV + (GATEWAY_HEADERS to otherHeaders.joinToString("\n"))
     }
 }

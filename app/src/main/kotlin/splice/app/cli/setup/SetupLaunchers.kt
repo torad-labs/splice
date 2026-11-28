@@ -11,23 +11,31 @@ import splice.app.desktop.setup.SideBySideLaunchers
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.CLAUDE_SPLICE_COMMAND
 import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
 import splice.launch.install.InstallCommand
 import splice.launch.install.InstallResult
 import splice.terminal.MultiSelectOutcome
 import splice.terminal.SelectOption
 import splice.terminal.WizardFrame
+import java.io.IOException
 
 /** Which optional side-by-side convenience launchers the operator opted to install during `splice setup`. */
 internal data class LauncherChoice(
     val cliShortcut: Boolean = false,
     val desktopApp: Boolean = false,
-)
+) {
+    val selectedCount: Int get() = (if (cliShortcut) 1 else 0) + (if (desktopApp) 1 else 0)
+}
 
 internal class SetupLaunchers(
     private val env: EnvReader = EnvReader(System::getenv),
     private val osName: String = System.getProperty("os.name").orEmpty(),
 ) {
     private val appLaunchers = SideBySideLaunchers(env, osName)
+
+    /** Whether at least one side-by-side launcher applicable to this machine is not installed yet. */
+    fun hasMissing(desktop: DesktopFacts?): Boolean =
+        desktop == null || !desktop.sideBySideCli || (desktop.program != null && !desktop.sideBySideApp)
 
     /** Explains the two ways onto splice, side by side or all of Claude Desktop, and asks which optional shortcuts to
      *  install (none in non-TTY). The Claude (Splice) app launcher is offered only where Claude Desktop is installed,
@@ -89,25 +97,34 @@ internal class SetupLaunchers(
         if (choice.desktopApp) add("App launcher: $SIDE_BY_SIDE_APP_NAME (${appLaunchers.platformHint()})")
     }
 
-    /** Installs whichever optional shortcuts were chosen and reports each to [frame]. */
-    fun apply(choice: LauncherChoice, frame: WizardFrame) {
-        if (choice.cliShortcut) {
-            val out = mutableListOf<String>()
-            val err = mutableListOf<String>()
-            val res = InstallCommand(TerminalOutput { out += it }, TerminalOutput { err += it })
-                .installShortcut(CLAUDE_SPLICE_COMMAND, env)
-            when (res) {
-                InstallResult.Linked -> frame.step("Installed CLI shortcut: $CLAUDE_SPLICE_COMMAND")
-                InstallResult.Declined -> Unit
-                is InstallResult.Refused -> frame.step("CLI shortcut skipped: ${res.sentence}")
-            }
+    /** Installs whichever optional shortcuts were chosen and reports each to [frame]. Returns how many chosen
+     *  launchers were skipped or refused. */
+    fun apply(choice: LauncherChoice, frame: WizardFrame): Int =
+        (if (choice.cliShortcut) applyCli(frame) else 0) + (if (choice.desktopApp) applyDesktopApp(frame) else 0)
+
+    private fun applyCli(frame: WizardFrame): Int = try {
+        val out = mutableListOf<String>()
+        val err = mutableListOf<String>()
+        val res = InstallCommand(TerminalOutput { out += it }, TerminalOutput { err += it })
+            .installShortcut(CLAUDE_SPLICE_COMMAND, env)
+        when (res) {
+            InstallResult.Linked -> 0.also { frame.step("Installed CLI shortcut: $CLAUDE_SPLICE_COMMAND") }
+            InstallResult.Declined -> 1
+            is InstallResult.Refused -> 1.also { frame.step("CLI shortcut skipped: ${res.sentence}") }
         }
-        if (choice.desktopApp) {
-            when (val res = appLaunchers.installDesktopApp()) {
-                is AppLauncherInstall.Installed -> frame.step("Installed app launcher: ${res.path}")
-                is AppLauncherInstall.Skipped -> frame.step("App launcher skipped: ${res.reason}")
-            }
+    } catch (failure: IOException) {
+        frame.step("CLI shortcut skipped: ${SafeFailureText.render(failure)}")
+        1
+    }
+
+    private fun applyDesktopApp(frame: WizardFrame): Int = try {
+        when (val res = appLaunchers.installDesktopApp()) {
+            is AppLauncherInstall.Installed -> 0.also { frame.step("Installed app launcher: ${res.path}") }
+            is AppLauncherInstall.Skipped -> 1.also { frame.step("App launcher skipped: ${res.reason}") }
         }
+    } catch (failure: IOException) {
+        frame.step("App launcher skipped: ${SafeFailureText.render(failure)}")
+        1
     }
 }
 

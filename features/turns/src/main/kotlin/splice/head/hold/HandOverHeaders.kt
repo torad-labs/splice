@@ -9,6 +9,9 @@ package splice.head.hold
 import splice.core.failure.LimitWindow
 import splice.core.failure.RECHECK_SECONDS
 import splice.core.failure.WireAnswer
+import splice.core.usage.FIVE_HOUR_CLAIM
+import splice.core.usage.SEVEN_DAY_CLAIM
+import splice.core.wire.SHOULD_RETRY_HEADER
 import splice.core.wire.WholeSeconds
 import splice.upstream.failure.ReplyFacts.RETRY_AFTER_HEADER
 import java.util.concurrent.TimeUnit
@@ -17,9 +20,13 @@ import java.util.concurrent.TimeUnit
 internal object HandOverHeaders {
     /** [answer]'s headers at [nowMs] on the wall clock: handed-over limit headers, or Retry-After in whole seconds
      *  rounded up for an overload that carried a provider pushback. */
-    fun of(answer: WireAnswer, nowMs: Long): Map<String, String> {
-        if (answer.status == null) return emptyMap()
-        if (!answer.handedOver) return pushbackHeaders(answer, nowMs)
+    fun of(answer: WireAnswer, nowMs: Long): Map<String, String> = when {
+        answer.status == null -> emptyMap()
+        answer.handedOver -> handoffHeaders(answer, nowMs)
+        else -> pushbackHeaders(answer, nowMs)
+    }
+
+    private fun handoffHeaders(answer: WireAnswer, nowMs: Long): Map<String, String> {
         val reset = answer.resetsAt?.toEpochMilli()
         val recheckAt = nowMs + TimeUnit.SECONDS.toMillis(RECHECK_SECONDS)
         val toldAt = if (reset == null || answer.recheck) minOf(recheckAt, reset ?: recheckAt) else reset
@@ -28,9 +35,17 @@ internal object HandOverHeaders {
             UNIFIED_STATUS to UNIFIED_REJECTED,
             UNIFIED_RESET to WholeSeconds.of(toldAt).toString(),
         )
+        if (!answer.recheck && answer.firmReset) windowClaim(answer.window)?.let { headers[UNIFIED_CLAIM] = it }
         val member = windowMember(answer.window)
         if (member != null && reset != null) headers[member] = WholeSeconds.of(reset).toString()
         return headers
+    }
+
+    /** All response headers for a non-stream failure: [of]'s reset/pushback headers plus `x-should-retry`. */
+    fun all(answer: WireAnswer, nowMs: Long): Map<String, String> {
+        val headers = of(answer, nowMs)
+        val retry = answer.shouldRetry ?: return headers
+        return headers + (SHOULD_RETRY_HEADER to retry.toString())
     }
 
     private fun pushbackHeaders(answer: WireAnswer, nowMs: Long): Map<String, String> {
@@ -45,11 +60,19 @@ internal object HandOverHeaders {
         LimitWindow.BILLING_CYCLE, LimitWindow.OTHER, null -> null
     }
 
+    /** The unified representative claim of [window], only for whole-login windows whose reset matches [UNIFIED_RESET]. */
+    private fun windowClaim(window: LimitWindow?): String? = when (window) {
+        LimitWindow.FIVE_HOUR -> FIVE_HOUR_CLAIM
+        LimitWindow.WEEKLY -> SEVEN_DAY_CLAIM
+        LimitWindow.MODEL_WEEKLY, LimitWindow.BILLING_CYCLE, LimitWindow.OTHER, null -> null
+    }
+
     private fun secondsUntil(atMs: Long, nowMs: Long): Long = WholeSeconds.of(atMs - nowMs)
 }
 
 private const val UNIFIED_STATUS = "anthropic-ratelimit-unified-status"
 private const val UNIFIED_RESET = "anthropic-ratelimit-unified-reset"
+private const val UNIFIED_CLAIM = "anthropic-ratelimit-unified-representative-claim"
 private const val FIVE_HOUR_RESET = "anthropic-ratelimit-unified-5h-reset"
 private const val SEVEN_DAY_RESET = "anthropic-ratelimit-unified-7d-reset"
 

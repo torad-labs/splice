@@ -123,10 +123,11 @@ internal class DesktopCommand(
 }
 
 // What putting Desktop on splice costs, said before it changes anything (desktop-full, outcome 1).
-private const val APP_COSTS = "all of Claude Desktop will run on splice: Chat and Cowork too, not only the Code tab. " +
-    "Your conversations are kept on this computer, not in your claude.ai account. Remote Control and Anthropic's " +
-    "cloud environments are not offered, and SSH sessions can't reach splice, which listens on this computer only. " +
-    "`splice desktop off` puts it back."
+internal const val APP_COSTS: String =
+    "all of Claude Desktop will run on splice: Chat and Cowork too, not only the Code tab. " +
+        "Your conversations are kept on this computer, not in your claude.ai account. Remote Control and " +
+        "Anthropic's cloud environments are not offered, and SSH sessions can't reach splice, which listens on " +
+        "this computer only. `splice desktop off` puts it back."
 
 private const val DESKTOP_QUESTION = "Put Claude Desktop on splice? [y/N] "
 

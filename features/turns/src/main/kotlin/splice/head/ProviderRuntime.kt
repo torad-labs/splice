@@ -62,7 +62,7 @@ public class ProviderRuntime(
     public fun modelsJson(): String = turns.diagnostics.modelsJson()
 
     /** The plan window the provider reads fully used now, if one is: a reading, never a refusal (V4-452). */
-    public fun quotaFull(): QuotaFull? = deps.turnQuota.full()
+    public fun quotaFull(): QuotaFull? = deps.turnQuota.full(deps.traffic.held)
 
     /** No listener to bind: starting is the driver's fresh health baseline and the admission window opening. */
     public fun start() {

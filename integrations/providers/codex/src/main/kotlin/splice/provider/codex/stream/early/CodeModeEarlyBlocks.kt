@@ -59,6 +59,10 @@ internal class CodeModeEarlyBlocks {
     private var reader: CodeModeEarlyWrite? = null
     private var sealed = false
     private var open: CodeModeEarlyBlock? = null
+    var sawTool: Boolean = false
+        private set
+    private var sawRefusedTool = false
+    val toolTearOpen: Boolean get() = open != null || sawRefusedTool
 
     /** [event] from the round's script stream, with the client sink attached now and whether the round holds no block
      *  of its own, so an early block never opens inside another. */
@@ -110,6 +114,7 @@ internal class CodeModeEarlyBlocks {
         }
         val id = "$CODE_MODE_CLIENT_ID_PREFIX${UUID.randomUUID()}"
         val index = target.openTool(id, CODE_MODE_EARLY_WRITE_TOOL)
+        sawTool = true
         target.inputJsonDelta(index, "{\"$WRITE_PATH\":${JsonWire.string(JsonPrimitive(path))},\"$WRITE_CONTENT\":\"")
         open = CodeModeEarlyBlock(id, path, target, index)
     }
@@ -140,6 +145,7 @@ internal class CodeModeEarlyBlocks {
         reader = null
         val block = open?.takeUnless { it.claimed } ?: return
         open = null
+        sawRefusedTool = true
         val reason = JsonWire.string(JsonPrimitive(NOT_WRITTEN_REASON))
         block.sink.inputJsonDelta(block.index, "\",\"$NOT_WRITTEN_KEY\":$reason}")
         block.sink.closeBlock(block.index)
@@ -167,6 +173,8 @@ internal class CodeModeEarlyBlocks {
         reader = null
         callId = null
         sealed = false
+        sawTool = false
+        sawRefusedTool = false
     }
 
     /** [text] as it reads inside a JSON string: escaping is per character, so the parts join into the whole. */

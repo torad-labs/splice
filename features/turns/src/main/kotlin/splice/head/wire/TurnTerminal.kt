@@ -53,6 +53,9 @@ internal interface TurnTerminal : WireSink {
      *  false: the collecting sink has no detached consumer. */
     public val endedCleanly: Boolean get() = false
 
+    /** The reason this terminal wrote in a clean ending, or null when it did not write one. */
+    public val stopReason: String? get() = null
+
     /** The ONLY clean ending — implementors derive the stop_reason literal internally (L3). */
     public suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage)
 

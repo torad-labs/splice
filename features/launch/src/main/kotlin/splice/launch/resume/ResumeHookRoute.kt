@@ -72,6 +72,7 @@ public class ResumeHookRoute(
     /** Told of every startup with a folder: Teams binds a session to a slot by its rule there (SessionStarts). */
     private val starts: SessionStarts? = null,
     private val remoteTrees: RemoteSessionTrees = RemoteSessionTrees { null },
+    private val notices: splice.launch.LaunchNotices? = null,
 ) {
     /** LAN share: where a command another machine serves records its sessions, by its name here: its own tree
      *  (RemoteCommands.ownTree), or null for a name that is no such command. */
@@ -137,9 +138,11 @@ public class ResumeHookRoute(
         if (managed == null) remoteTrees.own(key) else managed.spec?.trees?.own
 
     private fun started(key: String, hook: ResumeCall, owner: String?) {
-        owner?.takeIf { it.length == FOREGROUND_OWNER_LENGTH }?.let {
-            foreground?.record(ForegroundToolCall(hook.sessionId, null, ForegroundToolPhase.SESSION_START, it))
+        val launch = owner?.takeIf { it.length == FOREGROUND_OWNER_LENGTH }
+        if (launch != null) {
+            foreground?.record(ForegroundToolCall(hook.sessionId, null, ForegroundToolPhase.SESSION_START, launch))
         }
+        notices?.sessionStarted(launch, hook.sessionId, hook.cwd)
         if (hook.source == STARTUP_SOURCE && hook.cwd.isNotBlank()) {
             val bound = if (key == DOOR_HOOK_KEY && hook.provider.isNotBlank()) {
                 starts?.started(hook.provider, hook.sessionId, hook.cwd)

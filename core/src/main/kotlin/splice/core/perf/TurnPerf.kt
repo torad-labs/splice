@@ -8,6 +8,7 @@
 package splice.core.perf
 
 import splice.core.perf.observation.PerfRequestRecorder
+import splice.core.turn.ObservedTurn
 import splice.core.turn.WireFacts
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
@@ -51,6 +52,9 @@ public class TurnPerf(
     private val counters = LinkedHashMap<String, Long>()
     private var arrivalOffsetMs = 0L
     private var upstreamGapEnd: UpstreamGapEnd? = null
+
+    /** Bound at admission, before the drive starts. Null keeps turn observation entirely off. */
+    public var observed: ObservedTurn? = null
 
     /** What the client has been shown so far: not a counter, so it never reaches the row. */
     public val wire: WireFacts = WireFacts()

@@ -32,12 +32,14 @@ public data class WireAnswer(
         val resetsAt: Instant? = null,
         val recheck: Boolean = false,
         val window: LimitWindow? = null,
+        val firmReset: Boolean = false,
     )
 
     /** Family L keeps its true reset beside a pooled head's earlier recheck. */
     public val resetsAt: Instant? get() = handoff?.resetsAt
     public val recheck: Boolean get() = handoff?.recheck == true
     public val window: LimitWindow? get() = handoff?.window
+    public val firmReset: Boolean get() = handoff?.firmReset == true
     public val handedOver: Boolean get() = handoff != null
 
     /** Whether Claude Code sends this answer again, from the 2.1.310 reaction record. In band it re-sends an overload
@@ -109,11 +111,16 @@ public object ClientWire {
      *  the head. */
     private fun handedOver(cause: FailureCause, otherLogin: Boolean): WireAnswer =
         (cause as? FailureCause.Splice.HoldOutlasted).let { outlasted ->
+            val limited = outlasted?.held as? FailureCause.Provider.Limited
+            val firmReset = (limited?.lift as? Lift.At)?.let {
+                it.firm && it.source != LiftSource.RETRY_AFTER
+            } == true
             HANDED_OVER.copy(
                 handoff = WireAnswer.Handoff(
                     resetsAt = outlasted?.nextReset,
                     recheck = otherLogin,
-                    window = (outlasted?.held as? FailureCause.Provider.Limited)?.window,
+                    window = limited?.window,
+                    firmReset = firmReset,
                 ),
             )
         }

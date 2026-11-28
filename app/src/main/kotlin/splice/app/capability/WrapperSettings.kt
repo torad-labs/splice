@@ -18,6 +18,7 @@ import splice.client.PARENT_SETTINGS_MERGE
 import splice.client.PROCESS_WRAPPER_KEY
 import splice.diagnostics.doctor.ToolLevel
 import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 
 /** What [reading] says of the managed settings Claude Desktop's Code tab needs, where splice's launcher is [launch]. */
@@ -87,6 +88,7 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
         val wrapper = reading.held(PROCESS_WRAPPER_KEY)?.value
         return when {
             state == ManagedFile.Unreadable -> "a managed settings path splice could not read"
+            state is ManagedFile.Unlistable -> "a managed settings folder splice could not list"
             starts -> "a managed settings file naming splice's desktop-launch as $PROCESS_WRAPPER_KEY"
             wrapper == ManagedValue.NotText -> "a managed settings file whose $PROCESS_WRAPPER_KEY is not text"
             wrapper is ManagedValue.Text -> "a managed settings file naming another program as $PROCESS_WRAPPER_KEY"
@@ -108,11 +110,16 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
     }
 
     /** The main file's own state where splice did not read it; null where it did. */
-    private fun mainState(): String? = when (state) {
+    private fun mainState(): String? = when (val current = state) {
         is ManagedFile.Read -> null
         ManagedFile.Unreadable ->
             "$file could not be read (no permission on its path, a link to nothing, or not a JSON object), so " +
                 "splice does not say whether it exists or what it holds"
+        is ManagedFile.Unlistable -> if (reading.read.isEmpty()) {
+            "${current.folder} could not be listed, so splice could not check its contents or drop-ins"
+        } else {
+            "${current.folder} could not be listed, so splice could not check all of its contents"
+        }
         ManagedFile.Absent -> "nothing is at $file"
     }
 
@@ -129,7 +136,16 @@ internal class WrapperSettings(private val reading: ManagedReading, private val 
     }
 
     /** That splice's launcher is not laid, null where it is. */
-    private val notLaid: String? get() = "$launch is not laid yet: run `splice desktop on` first".takeUnless { laid }
+    private val notLaid: String? get() = when {
+        laid -> null
+        Files.isDirectory(launch, NOFOLLOW_LINKS) ->
+            "$launch is a directory, not splice's launcher: remove or move it, then run `splice desktop on`"
+        Files.isRegularFile(launch) ->
+            "$launch is not executable: run `splice desktop on` to refresh it"
+        Files.exists(launch, NOFOLLOW_LINKS) ->
+            "$launch is not a regular file: run `splice desktop on` to replace it"
+        else -> "$launch is not laid yet: run `splice desktop on` first"
+    }
 }
 
 // What Desktop does: the condition, always true, and no more.

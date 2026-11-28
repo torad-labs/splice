@@ -409,6 +409,9 @@ public class StatePaths(
      *  at the arms rather than a function here: StatePaths sits at detekt's function ceiling. */
     public val headsDir: Path = stateDir.resolve("heads")
 
+    /** Installed TypeScript mods and their runtime state, isolated with the daemon's state root. */
+    public val modsDir: Path = stateDir.resolve("mods")
+
     /** Compact-stats JSONL lives in the ROOT dir (not state/) — legacy layout, kept with the names.
      *  The two legacy names are irregular on purpose (claudex-…, claude-grok-…); overridable per head. */
     public fun compactStatsFile(headKey: String, nameOverride: String? = null): Path {

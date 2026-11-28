@@ -34,6 +34,10 @@ public fun interface AuthRefreshObserver {
 public fun interface ProviderAnswerObserver {
     public fun observed(status: Int, observedAtEpochMs: Long)
 
+    /** Includes the transport ordinal if the caller supplied a turn perf record. */
+    public fun observed(status: Int, observedAtEpochMs: Long, attempt: Long?): Unit =
+        observed(status, observedAtEpochMs)
+
     /** Enriches that same answer only after a spent subscription window has been decoded. */
     public fun quotaRefused(status: Int, observedAtEpochMs: Long) {}
 }

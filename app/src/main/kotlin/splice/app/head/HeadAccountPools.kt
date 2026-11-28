@@ -116,6 +116,16 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
         PoolSource(it, head, orders, pins, resets)
     }
 
+    /** A secondary head's view over an already-bound shared [pool], saving policy changes under the owner [head]
+     *  without overwriting the live order, pins or release hook restored by the first head. */
+    fun sharedSource(
+        pool: AccountPool?,
+        head: String,
+        orders: AccountOrderStore,
+        pins: AccountPinStore? = null,
+        resets: HeadAccountResetSource? = null,
+    ): HeadAccountPoolSource? = pool?.let { PoolSource(it, head, orders, pins, resets) }
+
     fun authSource(wired: Wired): HeadAccountAuthSource? =
         if (pooled(wired) || wired.auth is ClientAuthProvider) {
             HeadAccountAuthSource {
@@ -222,15 +232,13 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
             },
         )
 
-        // Synchronized so two presses save in the order they pinned: each save writes the pins as they stand.
-        @Synchronized
-        override fun pin(label: String, sessionId: String?): Boolean {
+        // Synchronized on the pool so sibling heads sharing one pool serialize disk writes and live policy mutations.
+        override fun pin(label: String, sessionId: String?): Boolean = synchronized(pool) {
             val before = pool.savedPins
-            return pool.pin(label, sessionId).also { pinned -> if (pinned) savePinsOr(before) }
+            pool.pin(label, sessionId).also { pinned -> if (pinned) savePinsOr(before) }
         }
 
-        @Synchronized
-        override fun unpin(sessionId: String?) {
+        override fun unpin(sessionId: String?) = synchronized(pool) {
             val before = pool.savedPins
             pool.unpin(sessionId)
             savePinsOr(before)
@@ -258,13 +266,12 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
 
         override fun followingTarget(): String? = pool.view(null, pool.asked.usual()).followingLabel
 
-        @Synchronized
-        override fun setOrder(labels: List<String>): Boolean {
+        override fun setOrder(labels: List<String>): Boolean = synchronized(pool) {
             val known = pool.effectiveOrder().toSet()
             if (labels.distinct().size != labels.size || labels.any { it !in known }) return false
             if (head != null) orders?.set(head, labels)
             pool.order = labels
-            return true
+            true
         }
     }
 }

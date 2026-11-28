@@ -45,12 +45,15 @@ internal class HeadLifecycle(
     }
     suspend fun restart(): Unit = mutex.withLock {
         stopLocked()
-        // NF-01: restart clears whichever cooldown authority the turn path actually uses. Pooled
-        // turns bypass the client-owned legacy cooldown, so reset every account instead.
-        // Only a restart does: a head's first start keeps what its logins brought back from disk, a hold its provider
-        // put on a login and the provider's word on its limits. On 0.4.1's promotion review (Nov 14, 2026) the reset
-        // sat in every start, so the daemon's own boot undid the login holds #521 had just made survive a restart.
-        deps.quotaBundle.activePool?.reset() ?: deps.traffic.upstream.clearRateLimitCooldown()
+        // NF-01: restart clears whichever cooldown authority the turn path actually uses, unless that live state is
+        // shared with another route (e.g. a running gateway runtime), where resetting one head must not wipe the
+        // sibling route's active stickiness, cooldowns or blocks.
+        val pool = deps.quotaBundle.activePool
+        if (pool != null) {
+            if (!pool.sharedAcrossRoutes) pool.reset()
+        } else if (!deps.traffic.upstream.sharedAcrossRoutes) {
+            deps.traffic.upstream.clearRateLimitCooldown()
+        }
         startLocked()
     }
 

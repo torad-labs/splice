@@ -60,17 +60,17 @@ public class ManagedSettings(
      *  it, and each drop-in it lists and can't read as an object ([ManagedReading]). */
     public fun reading(env: EnvReader): ManagedReading {
         val main = read(file)
-        val state = if (PathAbsence.known(file)) ManagedFile.Absent else main?.let(ManagedFile::Read)
+        val state = PathAbsence.mainState(file, main)
         val tree = env(CONFIG_TREE_ENV)?.takeIf(String::isNotBlank)?.let(Path::of) ?: UserHome.claudeDir(env)
-        val listed = if (PathAbsence.known(dropInFolder)) emptyList() else PathAbsence.listed(dropInFolder)
+        val (listed, unreadFolder) = PathAbsence.dropInListing(dropInFolder)
         val dropIns = listed?.let(::jsonFiles).orEmpty().map { it to read(it) }
-        val unreadDropIns = listed?.let { dropIns.filter { it.second == null }.map(Pair<Path, *>::first) }
-            ?: listOf(dropInFolder)
+        val unreadDropIns = unreadFolder?.let(::listOf)
+            ?: dropIns.filter { it.second == null }.map { it.first.toString() }
         val read = (listOf(file to main) + dropIns).mapNotNull { (path, json) -> json?.let { path to it } }
         val remote = "$REMOTE_SETTINGS in Claude Code's config folder ($tree, unless $CONFIG_TREE_ENV names another " +
             "for a session)"
-        val unread = listOf(remote) + policy.stores() + unreadDropIns.map(Path::toString)
-        return ManagedReading(file, state ?: ManagedFile.Unreadable, read, unread)
+        val unread = listOf(remote) + policy.stores() + unreadDropIns
+        return ManagedReading(file, state, read, unread)
     }
 
     /** Whether the managed settings that reach a session of the tree at [configDir] set telemetry: the switch or any

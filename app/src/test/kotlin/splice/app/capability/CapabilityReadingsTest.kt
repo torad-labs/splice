@@ -167,6 +167,18 @@ class CapabilityReadingsTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
+    fun `both keys right with a directory at the launcher path warns and says to remove or move it first`() {
+        Files.delete(launch)
+        Files.createDirectories(launch)
+        val facts = app(right())
+        val expected = "$launch is a directory, not splice's launcher: remove or move it, then run `splice desktop on`"
+        assertEquals(ToolLevel.WARN, row(facts)!!.level)
+        assertTrue(expected in row(facts)!!.said, row(facts)!!.said)
+        assertTrue("is not laid yet" !in row(facts)!!.said, row(facts)!!.said)
+        assertTrue(expected in items(facts).single(), items(facts).single())
+    }
+
+    @Test
     fun `nothing at the path is said as nothing there, with the step to create it, as an item`() {
         val facts = app(ManagedFile.Absent)
         val row = row(facts)!!
@@ -187,6 +199,30 @@ class CapabilityReadingsTest(@param:TempDir private val tmp: Path) {
             assertTrue(untrue !in row.said, "${row.said} says \"$untrue\" of a file nobody read")
         }
         assertTrue("as an administrator, editing it in place where it exists" in items(facts).single())
+    }
+
+    @Test
+    fun `a folder splice could not list is said so by folder path, never absent, as an item`() {
+        val folder = managedFile.parent
+        val facts = app(ManagedFile.Unlistable(folder), unread = listOf("$folder (folder could not be listed)"))
+        val row = row(facts)!!
+        assertEquals(ToolLevel.INFO, row.level)
+        assertTrue("$folder could not be listed, so splice could not check its contents or drop-ins" in row.said)
+        assertTrue("nothing is at" !in row.said && "file splice read sets" !in row.said, row.said)
+        assertTrue("as an administrator, editing it in place where it exists" in items(facts).single())
+    }
+
+    @Test
+    fun `an unlistable folder that still yielded a readable drop-in does not claim drop-ins were unchecked`() {
+        val folder = managedFile.parent
+        val facts = app(
+            ManagedFile.Unlistable(folder),
+            dropIns = listOf(dropIn("""{"parentSettingsBehavior": "merge"}""")),
+        )
+        val said = row(facts)!!.said
+        assertTrue("$folder could not be listed, so splice could not check all of its contents" in said, said)
+        assertTrue("or drop-ins" !in said, said)
+        assertTrue("$dropIn sets parentSettingsBehavior to \"merge\"" in said, said)
     }
 
     // A place splice did not read changes how the step is said, never whether a file that needs an edit is an item.

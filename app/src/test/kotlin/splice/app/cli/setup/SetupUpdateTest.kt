@@ -20,6 +20,9 @@ import splice.app.desktop.setup.DesktopMode
 import splice.client.ManagedFile
 import splice.client.ManagedReading
 import splice.core.config.UserHome
+import splice.core.terminal.GREEN
+import splice.core.terminal.RESET
+import splice.core.terminal.YELLOW
 import splice.core.util.EnvReader
 import splice.terminal.ConfirmPrompt
 import splice.terminal.MultiSelectOutcome
@@ -56,14 +59,14 @@ class SetupUpdateTest {
 
     @Test
     fun `an update offers no launcher that is already installed, and asks nothing when none is left`() {
-        var asked = 0
+        val said = StringBuilder()
         val choice = SetupLaunchers(EnvReader { null }, osName = "Linux").offer(
-            prompts(StringBuilder(), launchers = { asked++ }),
+            prompts(said, launchers = { error("no launcher should be offered when all are installed") }),
             desktop(cli = true, app = true),
             onlyNew = true,
         )
         assertEquals(LauncherChoice(), choice)
-        assertEquals(0, asked)
+        assertEquals("", said.toString())
     }
 
     @Test
@@ -80,7 +83,6 @@ class SetupUpdateTest {
     @Test
     fun `an update of an install that has everything asks nothing and says there is nothing new`(@TempDir home: Path) {
         val said = StringBuilder()
-        var checkups = 0
         val toml = home.resolve(".config/splice/splice.toml")
         val ok = UserHome.within(home) {
             Files.createDirectories(toml.parent)
@@ -89,27 +91,51 @@ class SetupUpdateTest {
             launch.toFile().setExecutable(true)
             val right = managed("""{"processWrapper": "$launch", "parentSettingsBehavior": "merge"}""", launch = launch)
             val complete = desktop(cli = true, app = true).copy(mode = DesktopMode.APP, managed = right)
-            runBlocking { update(said, facts = complete, onCheckup = { checkups++ }).run() }
+            runBlocking { update(said, facts = complete, onCheckup = { said.append("splice doctor\n") }).run() }
         }
         assertTrue(ok)
         assertTrue("Nothing new to set up in what splice checked." in said, said.toString())
-        assertEquals(1, checkups, "an update ends on the doctor, as setup does")
+        assertTrue("splice doctor" in said, "an update runs the doctor before its footer: $said")
+        assertTrue("${GREEN}Up to date.$RESET" in said, said.toString())
+        assertTrue(said.indexOf("splice doctor") < said.indexOf("Up to date."), said.toString())
         assertEquals("[daemon]\ncontrol_port = 3096\nauto_update = false\n", Files.readString(toml), "nothing written")
     }
 
     @Test
-    fun `an update says what only root can fix in the managed settings`(@TempDir home: Path) {
+    fun `an update says what only root can fix in the managed settings and does not end on Up to date`(
+        @TempDir home: Path,
+    ) {
+        for (console in listOf(false, true)) {
+            val said = StringBuilder()
+            UserHome.within(home) {
+                val toml = Files.createDirectories(home.resolve(".config/splice")).resolve("splice.toml")
+                Files.writeString(toml, "[daemon]\ncontrol_port = 3096\nauto_update = false\n")
+                val other = desktop(cli = true, app = true).copy(mode = DesktopMode.APP, managed = managed(OTHER))
+                runBlocking { update(said, facts = other, console = console).run() }
+            }
+            assertTrue("sets processWrapper to \"/usr/bin/other\"" in said, said.toString())
+            val step = "make /etc/claude-code/managed-settings.json hold processWrapper \"/s/desktop-launch\", " +
+                "editing it"
+            assertTrue(step in said, said.toString())
+            assertTrue("after a change, quit Claude Desktop entirely and reopen it" in said, said.toString())
+            assertFalse("Up to date." in said, "open item listed must not end on all-clear: $said")
+            assertFalse(GREEN in said, "open item listed must not paint green outro: $said")
+            assertTrue("${YELLOW}1 open item listed above.$RESET" in said, said.toString())
+        }
+    }
+
+    @Test
+    fun `multiple open items name the count in the yellow footer`(@TempDir home: Path) {
         val said = StringBuilder()
         UserHome.within(home) {
-            val toml = Files.createDirectories(home.resolve(".config/splice")).resolve("splice.toml")
-            Files.writeString(toml, "[daemon]\ncontrol_port = 3096\nauto_update = false\n")
+            seedToml(home, autoUpdate = false)
             val other = desktop(cli = true, app = true).copy(mode = DesktopMode.APP, managed = managed(OTHER))
-            runBlocking { update(said, facts = other).run() }
+            val harness = HarnessFacts(null, null, geminiShim = true, synced = emptySet())
+            val caps = Capabilities(other, harness, HubFacts(linux = true, on = true, systemd = false), false)
+            runBlocking { updateCaps(said, capabilities = caps, console = true).run() }
         }
-        assertTrue("sets processWrapper to \"/usr/bin/other\"" in said, said.toString())
-        val step = "make /etc/claude-code/managed-settings.json hold processWrapper \"/s/desktop-launch\", editing it"
-        assertTrue(step in said, said.toString())
-        assertTrue("after a change, quit Claude Desktop entirely and reopen it" in said, said.toString())
+        assertFalse("Up to date." in said, said.toString())
+        assertTrue("${YELLOW}2 open items listed above.$RESET" in said, said.toString())
     }
 
     // A place splice did not read changes how the item is said, never whether a known mismatch is one.
@@ -158,11 +184,20 @@ class SetupUpdateTest {
         console: Boolean = false,
         autoUpdate: Boolean? = false,
     ): SetupUpdate {
-        val env = EnvReader { null }
         val capabilities = facts?.let {
             val harness = HarnessFacts(null, null, geminiShim = true, synced = emptySet())
             Capabilities(it, harness, HubFacts(linux = true, on = false, systemd = true), autoUpdate)
         }
+        return updateCaps(said, capabilities, onCheckup, console)
+    }
+
+    private fun updateCaps(
+        said: StringBuilder,
+        capabilities: Capabilities?,
+        onCheckup: () -> Unit = {},
+        console: Boolean = false,
+    ): SetupUpdate {
+        val env = EnvReader { null }
         val prompts = prompts(said, console = console)
         return SetupUpdate(
             prompts,

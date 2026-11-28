@@ -83,6 +83,22 @@ class DesktopFactsReadTest(@param:TempDir private val tmp: Path) {
         }
     }
 
+    @Test
+    fun `a folder splice can enter but not list names the folder as unlistable instead of absent`() {
+        Files.createDirectories(folder)
+        Files.setPosixFilePermissions(folder, PosixFilePermissions.fromString("--x--x--x"))
+        try {
+            assumeFalse(Files.isReadable(folder), "a user that can read anything cannot show this")
+            val said = row(null, keep = true).said
+            assertTrue("$folder could not be listed" in said, said)
+            assertTrue("$folder (folder could not be listed)" in said, said)
+            assertTrue("nothing is at" !in said && "file splice read sets" !in said, said)
+            assertTrue("managed-settings.d" !in said, said)
+        } finally {
+            Files.setPosixFilePermissions(folder, PosixFilePermissions.fromString("rwxr-xr-x"))
+        }
+    }
+
     // Claude Code merges each drop-in over the main file, so the row names the drop-in as the file holding the key.
     @Test
     fun `a drop-in beside the file is read, with or without a main file, and named as the file holding its key`() {

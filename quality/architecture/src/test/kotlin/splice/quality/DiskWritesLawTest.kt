@@ -426,6 +426,15 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // Nov 19, 2026: what a mode keeps per session (modes/README.md), owner-only, in the modes/<mode> disk page row.
     "app/src/main/kotlin/splice/app/modes/FileModeStore.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/modes/ModArtifacts.kt" to mapOf("writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/mods/install/InstalledMods.kt" to mapOf("writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/mods/install/ModFiles.kt" to mapOf("Files.newOutputStream(" to 1),
+    "app/src/main/kotlin/splice/app/mods/install/ModHashes.kt" to mapOf("writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/mods/install/ModStage.kt" to mapOf("Files.move(" to 1),
+    "app/src/main/kotlin/splice/app/mods/run/ModHostScript.kt" to mapOf("writeAtomic0600(" to 2),
+    "app/src/main/kotlin/splice/app/mods/run/ModRunFiles.kt" to mapOf("writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/mods/run/ModStartLock.kt" to mapOf("FileChannel.open(" to 1),
+    "app/src/main/kotlin/splice/app/mods/run/ModLog.kt" to
+        mapOf("Files.move(" to 1, "Files.write(" to 1, "createNew0600(" to 1),
     // The economics backfill's covered edge kept across restarts, documented in the perf backfill edge disk page row.
     "app/src/main/kotlin/splice/app/sources/EconomicsBackfill.kt" to mapOf("writeAtomic0600(" to 1),
     // The hourly view's judged hours kept across restarts, documented in the probe judgments disk page row.
@@ -440,6 +449,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/sources/RepriceKept.kt" to mapOf("writeAtomic0600(" to 1),
     // The non-secret launcher declaration documented in the launch-owners disk page row.
     "core/src/main/kotlin/splice/core/process/LaunchOwners.kt" to mapOf("writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/mods/sessions/ModLaunchFiles.kt" to mapOf("writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/mods/sessions/ModSessionLedger.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/cli/ConfigFixOffer.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/cli/ConfigFixSession.kt" to mapOf("writeAtomic0600(" to 1),
     // Failure-handling slice 4: the fix session clears a retired knob saved in config.json, after its backup, in the

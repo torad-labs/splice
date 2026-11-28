@@ -60,6 +60,7 @@ internal class CollectTurn(
                 built.meta.scope.sessionId,
             ),
             voice = inputs.voice,
+            observed = inputs.perf.observed,
         )
         // Inert writer: collect never writes SSE frames. clientGone is flipped by Netty
         // closeFuture (HD-29), not by a failed write.
@@ -204,7 +205,7 @@ internal class CollectTurn(
         // streaming path: Claude Code reads the windows on a 429 as the limit it hit, and until Nov 17, 2026 a request
         // the provider refused with no window at all was shown as the spent week of the last login that was asked.
         val failure = terminal.answered
-        val handedOver = failure?.let { HandOverHeaders.of(it, wall()) }.orEmpty()
+        val handedOver = failure?.let { HandOverHeaders.all(it, wall()) }.orEmpty()
         handedOver.forEach { (name, value) -> call.response.header(name, value) }
         if (failure == null) {
             turnQuota.forSession(inputs.built.meta.scope.sessionId, drive.account)

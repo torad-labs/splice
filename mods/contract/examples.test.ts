@@ -5,7 +5,9 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
-import type { EventName, Handler, Handle, HooksFile, Json, ModManifest, On, Register, SessionStart, ToolMeta } from "./index.ts";
+import type {
+  EventName, Handler, Handle, HooksFile, Json, ModManifest, ModStart, On, Register, SessionStart, ToolMeta, TurnComplete,
+} from "./index.ts";
 
 const here = import.meta.dir;
 const contract = join(here, "index.ts");
@@ -19,6 +21,14 @@ const cases: ReadonlyArray<readonly [file: string, type: string]> = [
   [join(here, "examples/sessions-list-response.json"), "SessionsListResponse"],
   [join(here, "examples/session-row.json"), "HostSessionRow"],
   [join(here, "examples/mod-row.json"), "ModSessionRow"],
+  [join(here, "examples/mod-start.json"), "ModStart"],
+  [join(here, "examples/mod-stop.json"), "ModStop"],
+  [join(here, "examples/turn-start.json"), "TurnStart"],
+  [join(here, "examples/request-send.json"), "RequestSend"],
+  [join(here, "examples/response-receive.json"), "ResponseReceive"],
+  [join(here, "examples/stream-event.json"), "StreamEvent"],
+  [join(here, "examples/tool-call.json"), "ToolCall"],
+  [join(here, "examples/turn-complete.json"), "TurnComplete"],
   [join(here, "examples/session-start.json"), "SessionStart"],
   [join(here, "examples/session-end.json"), "SessionEnd"],
   [join(here, "examples/ui-render-request.json"), "UiRenderRequest"],
@@ -37,7 +47,7 @@ const cases: ReadonlyArray<readonly [file: string, type: string]> = [
 /** Type errors of `const x: <type> = <json>;` compiled beside the contract. */
 function errors(type: string, json: string): string[] {
   const probe = join(here, "__probe__.ts");
-  const source = `import type { ${type} } from "./index.ts";\nexport const x: ${type} = ${json};\n`;
+  const source = `import type * as Contract from "./index.ts";\nexport const x: Contract.${type} = ${json};\n`;
   const options: ts.CompilerOptions = {
     strict: true,
     noEmit: true,
@@ -84,6 +94,58 @@ function readJson<T>(file: string): T {
   return JSON.parse(readFileSync(file, "utf8")) as T;
 }
 
+/** Every object under a `labels` key, wherever it sits in a JSON value. */
+function labelSets(value: unknown, found: Record<string, unknown>[] = []): Record<string, unknown>[] {
+  if (Array.isArray(value)) for (const item of value) labelSets(item, found);
+  else if (value !== null && typeof value === "object") {
+    for (const [key, child] of Object.entries(value)) {
+      if (key === "labels" && child !== null && typeof child === "object" && !Array.isArray(child)) {
+        found.push(child as Record<string, unknown>);
+      }
+      labelSets(child, found);
+    }
+  }
+  return found;
+}
+
+describe("labels in every example follow the label rules", () => {
+  // The rules are on `Labels` in index.ts: a lowercased key of 1-32 characters, a value of at most 256 bytes
+  // with no control characters, at most 16 labels.
+  for (const [file] of cases) {
+    const sets = labelSets(readJson(file));
+    if (sets.length === 0) continue;
+    test(`${file.slice(here.length - "contract".length)}`, () => {
+      for (const labels of sets) {
+        expect(Object.keys(labels).length).toBeLessThanOrEqual(16);
+        for (const [key, value] of Object.entries(labels)) {
+          expect(key).toMatch(/^[a-z][a-z0-9_]{0,31}$/);
+          expect(typeof value).toBe("string");
+          expect(Buffer.byteLength(value as string)).toBeLessThanOrEqual(256);
+          expect(value as string).not.toMatch(/\p{Cc}/u);
+        }
+      }
+    });
+  }
+  test("a label key in upper case is caught", () => {
+    expect(Object.keys({ TICKET: "42" })[0]).not.toMatch(/^[a-z][a-z0-9_]{0,31}$/);
+  });
+});
+
+describe("the served examples say what the runner sends", () => {
+  test("a turn's input includes what was read from and written to the cache", () => {
+    const usage = readJson<TurnComplete>(join(here, "examples/turn-complete.json")).usage;
+    expect(usage.cacheRead + usage.cacheWrite).toBeGreaterThan(0);
+    expect(usage.input).toBeGreaterThanOrEqual(usage.cacheRead + usage.cacheWrite);
+  });
+
+  test("mod.start names itself among what is served, and each refusal begins with the mod's name", () => {
+    const start = readJson<ModStart>(join(here, "examples/mod-start.json"));
+    expect(start.served).toContain("mod.start");
+    expect(start.refused.length).toBeGreaterThan(0);
+    for (const refusal of start.refused) expect(refusal.startsWith(`Mod ${start.mod}: `)).toBe(true);
+  });
+});
+
 describe("the example mod", () => {
   const manifest = readJson<ModManifest>(join(mod, ".splice-mod/mod.json"));
   const hooks = readJson<HooksFile>(join(mod, "hooks/hooks.json"));
@@ -119,13 +181,13 @@ describe("the example mod", () => {
     const start: Handler<"session.start">[] = [];
     const list: Handler<"sessions.list">[] = [];
     // This test drives just the two hooks involved in producing a review row, not the runner.
-    const on: On = (event: EventName, handler: unknown) => {
+    const on: On<"full"> = (event: EventName, handler: unknown) => {
       if (event === "session.start") start.push(handler as Handler<"session.start">);
       if (event === "sessions.list") list.push(handler as Handler<"sessions.list">);
       return { catch() { return this; } };
     };
     for (const module of modules) {
-      const { register } = await import(module) as { register: Register };
+      const { register } = await import(module) as { register: Register<"full"> };
       register(on);
     }
 

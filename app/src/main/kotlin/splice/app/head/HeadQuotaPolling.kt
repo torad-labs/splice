@@ -6,6 +6,7 @@ import splice.accounts.pool.HeadAccountResetSource
 import splice.app.auth.claude.ClaudeLimitResets
 import splice.app.auth.claude.ClaudeNativeQuota
 import splice.app.auth.claude.OWN_SIGN_IN_LABEL
+import splice.app.head.books.SharedPools
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
 import splice.app.provider.Wired
@@ -34,11 +35,14 @@ internal class HeadQuotaPolling(
     private val orders: AccountOrderStore,
     /** Where each login's failed limits read is kept for /api/accounts (Accounts' "Not read" reason). */
     private val failures: QuotaReadFailures = QuotaReadFailures(),
+    private val sharedPools: SharedPools? = null,
 ) : LoginReadAgain {
     private val held = ConcurrentHashMap<String, QuotaPoller>()
     private val owners = ConcurrentHashMap<String, AuthProvider>()
     private val live = CopyOnWriteArrayList<QuotaPoller>()
     val pollers: List<QuotaPoller> get() = live
+    internal var membership: HeadAccountMembership? = null
+        private set
 
     fun start(
         wired: Wired,
@@ -59,7 +63,9 @@ internal class HeadQuotaPolling(
         if (wired.auth is ClientAuthProvider) {
             stores.accounts.pool?.let { pool ->
                 trackers.putIfAbsent(OWN_SIGN_IN_LABEL, stores.quota)
-                HeadAccountMembership(ctx, wired, pool, trackers, assembly, holds, orders).bind(this)
+                membership = HeadAccountMembership(ctx, wired, pool, trackers, assembly, holds, orders).also {
+                    it.bind(this, sharedPools)
+                }
             }
         }
         return pollers
@@ -84,7 +90,7 @@ internal class HeadQuotaPolling(
     fun update(accounts: List<WiredAccount>, trackers: Map<String, QuotaTracker>) {
         val labels = accounts.map(WiredAccount::label).toSet()
         held.keys.filter { it !in labels }.forEach(::remove)
-        accounts.filter { it.nativePlace != null && owners[it.label] !== it.auth }.forEach { remove(it.label) }
+        accounts.filter { owners[it.label] != null && owners[it.label] !== it.auth }.forEach { remove(it.label) }
         accounts.filter { !held.containsKey(it.label) }.forEach { account ->
             val nativeQuota = account.quota.read as? ClaudeNativeQuota
             startAccount(account.auth, trackers.getValue(account.label), account.label, nativeQuota)?.let {

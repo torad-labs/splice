@@ -122,9 +122,9 @@ internal class LocalResponses(
             return
         }
         // A limit handed to the client names its reset in the headers Claude Code sleeps on, as CollectTurn's own
-        // answer does; every other answer carries the quota windows.
-        val handedOver = reply.answered?.let { HandOverHeaders.of(it, deps.traffic.upstream.retryWall()) }.orEmpty()
-        if (handedOver.isEmpty()) quotaHeaders(call, collected.sessionId)
+        // answer does; clean answers carry the quota windows, and failures carry only their own headers.
+        val handedOver = reply.answered?.let { HandOverHeaders.all(it, deps.traffic.upstream.retryWall()) }.orEmpty()
+        if (reply.answered == null) quotaHeaders(call, collected.sessionId)
         handedOver.forEach { (name, value) -> call.response.header(name, value) }
         call.respond(LocalResponseDelivery.body(reply.body, perf, reply.status))
         val served = if (reply.status == OK_STATUS) "answer" else "failure (HTTP ${reply.status})"

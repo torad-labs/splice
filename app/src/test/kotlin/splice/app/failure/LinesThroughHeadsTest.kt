@@ -207,9 +207,9 @@ class LinesThroughHeadsTest {
 
             val answer = chat().client.send(ClientRequest(stream = false, extra = COMPACTION_TURN))
 
-            // A collected 400 is non-retryable without a header, as before.
+            // A collected 400 carries x-should-retry: false, matching streaming and admission refusals.
             assertEquals(BAD_REQUEST, answer.status)
-            assertEquals(null, answer.shouldRetry)
+            assertEquals("false", answer.shouldRetry)
             val line = lineOf(answer)
             val counts = checkNotNull(TRIM_TOKENS.find(line)) { line }.groupValues
             assertTrue(counts[1].toLong() > counts[2].toLong(), line)

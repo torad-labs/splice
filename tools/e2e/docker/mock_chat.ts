@@ -16,6 +16,9 @@
  *                tool actually returned inside its head
  *    runbash     if the request offers a `Bash` tool, answer with one call to it (a harmless echo), the first action
  *                an interactive auto-mode session checks; once its result comes back, answer "BASH DONE: <result>"
+ *    burst      stream 4,000 small deltas to exercise observer back-pressure
+ *    gate       with MOCK_CHAT_GATE set, pause the stream after its first text delta until the
+ *               harness writes the matching RUN:<id> to that scratch file
  *    ratelimit   answer 429 in OpenAI's rate-limit shape, as a provider whose rate is spent does (tools/console-own
  *                sends one so the console has a refused request to show)
  *  Anything else answers the fixed reply. The server serves requests CONCURRENTLY:
@@ -32,11 +35,12 @@
  *  property the docstring requires: Bun.serve serves concurrently, so one held turn does not stop
  *  another head listing its peers.
  */
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import { loads, dumps, obj, num, objGet, isPyObj, type PyValue, type PyObj } from "../../../tools/e2e/src/compat/python-json.ts";
 
 const REPLY_WORDS = ["Hello", " from", " the", " chat", " mock", ".", " 1,", " 2,", " 3", " END"];
 const MODELS = ["mock-chat", "mock-chat-2", "mock-chat-2-big"];
+if (process.env.MOCK_CHAT_EXTRA_MODEL) MODELS.push(process.env.MOCK_CHAT_EXTRA_MODEL);
 const USAGE = obj([
   ["prompt_tokens", num("12")],
   ["completion_tokens", num("10")],
@@ -97,11 +101,14 @@ function chunk(model: string, delta: PyValue, finish: string | null, usage: PyVa
   return `data: ${dumps(obj(fields))}\n\n`;
 }
 
-function sseStream(pieces: string[]): Response {
+function sseStream(pieces: string[], gate?: () => Promise<void>): Response {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
-    start(controller) {
-      for (const p of pieces) controller.enqueue(encoder.encode(p));
+    async start(controller) {
+      for (const [i, p] of pieces.entries()) {
+        if (i === 2 && gate) await gate();
+        controller.enqueue(encoder.encode(p));
+      }
       controller.close();
     },
   });
@@ -112,7 +119,7 @@ function sseStream(pieces: string[]): Response {
   });
 }
 
-function reply(model: string, stream: boolean, words: string[]): Response {
+function reply(model: string, stream: boolean, words: string[], gate?: () => Promise<void>): Response {
   if (!stream) {
     return jsonResponse(
       200,
@@ -123,7 +130,7 @@ function reply(model: string, stream: boolean, words: string[]): Response {
   for (const word of words) pieces.push(chunk(model, obj([["content", word]]), null, null));
   pieces.push(chunk(model, obj([]), "stop", USAGE));
   pieces.push("data: [DONE]\n\n");
-  return sseStream(pieces);
+  return sseStream(pieces, gate);
 }
 
 function toolCall(model: string, stream: boolean, callId: string, name: string, args: string): Response {
@@ -157,7 +164,7 @@ function toolCall(model: string, stream: boolean, callId: string, name: string, 
   return sseStream(pieces);
 }
 
-async function handle(req: Request): Promise<Response> {
+async function handle(req: Request, server: Bun.Server<undefined>): Promise<Response> {
   const path = new URL(req.url).pathname;
   const trimmed = path.replace(/\/+$/, "");
   if (req.method === "GET") {
@@ -206,6 +213,15 @@ async function handle(req: Request): Promise<Response> {
   if (scen === "hold") {
     // AWAIT, never block: this is the whole threading property the docstring asks for.
     await Bun.sleep(HOLD_SECONDS * 1000);
+  }
+  if (scen === "burst") return reply(model, stream, Array.from({ length: 4_000 }, () => "x"));
+  const gate = process.env["MOCK_CHAT_GATE"];
+  const run = /RUN:(\d+)/.exec(raw)?.[1];
+  if (scen === "gate" && gate && run) {
+    server.timeout(req, 0);
+    return reply(model, stream, REPLY_WORDS, async () => {
+      while (readFileSync(gate, "utf8") !== run) await Bun.sleep(25);
+    });
   }
   if (scen === "ratelimit") {
     return jsonResponse(429, obj([["error", obj([["message", "Rate limit reached for requests"], ["type", "rate_limit_error"], ["code", "rate_limit_exceeded"]])]]));

@@ -527,11 +527,61 @@ internal class HoldBoundsThroughHeadsTest : HoldRouteFixtures() {
 
             assertEquals(TOO_MANY_REQUESTS, refused.status, refused.describe())
             assertEquals("30", refused.header("retry-after"), refused.describe())
+            assertEquals(null, refused.header("anthropic-ratelimit-unified-representative-claim"))
             assertEquals(reset.epochSecond.toString(), refused.header("anthropic-ratelimit-unified-5h-reset"))
+            assertTrue(
+                "is at its usage limit; the first reached its 5-hour limit" in lineOf(refused),
+                refused.describe(),
+            )
             assertTrue("checks again in 30 seconds" in lineOf(refused), refused.describe())
             assertTrue("Oct 26, 9:00 AM" in lineOf(refused), "the true reset: ${lineOf(refused)}")
             assertEquals("on the joined", again.text, again.describe())
             assertTrue(ScriptedLogin.of("joined") in bearer(provider.requests.last()))
+        }
+    }
+
+    @Test
+    fun `a pooled mixed-window limit handoff names the first login's window truthfully and omits representative-claim`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            val laterFiveHour = START.plusSeconds(4.hours.inWholeSeconds)
+            val soonerWeekly = START.plusSeconds(2.hours.inWholeSeconds)
+            provider.script(claudeFiveHour(laterFiveHour), claudeWeekly(soonerWeekly))
+            val head = pooledAnthropic(listOf("first", "second"), replies = HeadReplies.claude)
+
+            val refused = head.client.send(ClientRequest(session = "sess-pooled-weekly"))
+
+            assertEquals(TOO_MANY_REQUESTS, refused.status, refused.describe())
+            assertEquals("30", refused.header("retry-after"), refused.describe())
+            assertEquals((START.epochSecond + 30).toString(), refused.header("anthropic-ratelimit-unified-reset"))
+            assertEquals(null, refused.header("anthropic-ratelimit-unified-representative-claim"))
+            assertEquals(soonerWeekly.epochSecond.toString(), refused.header("anthropic-ratelimit-unified-7d-reset"))
+            assertTrue(
+                "is at its usage limit; the first reached its weekly limit" in lineOf(refused),
+                refused.describe(),
+            )
+            assertFalse("Every " in lineOf(refused) && "login reached its weekly limit" in lineOf(refused))
+            assertTrue("checks again in 30 seconds" in lineOf(refused), refused.describe())
+        }
+    }
+
+    @Test
+    fun `a single-login weekly limit handoff emits representative-claim seven_day with its true reset`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            val reset = START.plusSeconds(3.days.inWholeSeconds)
+            provider.script(claudeWeekly(reset))
+            val head = anthropic(replies = HeadReplies.claude)
+
+            val refused = head.client.send()
+
+            assertEquals(TOO_MANY_REQUESTS, refused.status, refused.describe())
+            assertEquals(reset.epochSecond.toString(), refused.header("anthropic-ratelimit-unified-reset"))
+            assertEquals("seven_day", refused.header("anthropic-ratelimit-unified-representative-claim"))
+            assertEquals(reset.epochSecond.toString(), refused.header("anthropic-ratelimit-unified-7d-reset"))
+            assertTrue("reached its weekly limit" in lineOf(refused), refused.describe())
         }
     }
 
@@ -701,6 +751,15 @@ internal abstract class HoldReplyFixtures {
         status(TOO_MANY_REQUESTS)
         header("anthropic-ratelimit-unified-status", "rejected")
         header("anthropic-ratelimit-unified-representative-claim", "five_hour")
+        header("anthropic-ratelimit-unified-reset", resetsAt.epochSecond.toString())
+        anthropicErrorBody("rate_limit_error", "This request would exceed your account's rate limit.")
+    }
+
+    /** Claude's 429 on a spent 7-day window: the unified family names seven_day and its reset. */
+    protected fun claudeWeekly(resetsAt: Instant): ScriptedReply = reply {
+        status(TOO_MANY_REQUESTS)
+        header("anthropic-ratelimit-unified-status", "rejected")
+        header("anthropic-ratelimit-unified-representative-claim", "seven_day")
         header("anthropic-ratelimit-unified-reset", resetsAt.epochSecond.toString())
         anthropicErrorBody("rate_limit_error", "This request would exceed your account's rate limit.")
     }

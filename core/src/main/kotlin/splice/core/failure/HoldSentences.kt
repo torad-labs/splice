@@ -103,16 +103,21 @@ internal class HoldSentences(private val spoken: Spoken) {
         val head = facts.head
         val reset = cause.nextReset ?: return heldOn(cause.held, facts)
         val at = spoken.at(reset)
+        val window = (cause.held as? FailureCause.Provider.Limited)?.window?.let(spoken::window)
         return if (facts.request.otherLogin) {
+            val what = if (window == null) {
+                "Every $head login is at its usage limit, the first until $at"
+            } else {
+                "Every $head login is at its usage limit; the first reached $window, until $at"
+            }
             Said(
-                "Every $head login is at its usage limit, the first until $at",
+                what,
                 next = Next.Then(
                     "Claude Code checks again in ${spoken.span(TimeUnit.SECONDS.toMillis(RECHECK_SECONDS))} " +
                         "and continues on the first login that frees.",
                 ),
             )
         } else {
-            val window = (cause.held as? FailureCause.Provider.Limited)?.window?.let(spoken::window)
             val what = if (window == null) {
                 "$head is at its usage limit until $at"
             } else {

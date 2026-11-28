@@ -9,6 +9,7 @@ import io.ktor.server.routing.Route
 import splice.app.control.ConsolePorts
 import splice.app.control.server.ServerMount
 import splice.app.modes.ModesMount
+import splice.app.mods.ModsMount
 
 internal fun interface ControlMount {
     fun register(route: Route)
@@ -25,11 +26,13 @@ internal fun interface ControlMount {
 internal class StandaloneMounts(ports: ConsolePorts, guard: ControlGuard) {
     private val consolePilot = ConsolePilotMount(guard)
     private val modes = ModesMount(ports, guard)
+    private val mods = ModsMount(ports, guard)
     private val serverMode = ServerMount(ports, guard)
 
     val rows: List<ControlMount> = listOf(
         ControlMount(consolePilot::register),
         ControlMount(modes::register),
+        ControlMount(mods::register),
         ControlMount(serverMode::register),
     )
     val last: ControlMount = ControlMount(modes::registerRoutes)

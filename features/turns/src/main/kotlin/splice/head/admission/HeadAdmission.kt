@@ -16,6 +16,7 @@ import splice.head.GatewayTurns
 import splice.head.HeadDeps
 import splice.head.hold.ClientWallHeader
 import splice.head.hold.ResendLedger
+import splice.head.observe.TurnObserverAdmission
 import splice.head.turn.ClientPace
 import splice.head.turn.Preparation
 import splice.head.turn.SESSION_TAG_CHARS
@@ -27,7 +28,6 @@ import splice.head.turn.TurnReply
 import splice.head.turn.TurnSlot
 import splice.head.wire.TurnTrace
 import splice.upstream.TurnEnd
-import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.Selection
 
 internal class HeadAdmission(
@@ -39,6 +39,7 @@ internal class HeadAdmission(
     private val driver: TurnDriver,
 ) {
     private val keyAccounts = KeyAccount(preparation.provider.auth, deps.quotaBundle)
+    private val observer = TurnObserverAdmission(deps.seams.reports.observers, preparation.provider.key, deps.log)
 
     private val refusals =
         preparation.provider.let { PreDriveRefusals(deps, admission, responses, driver, it.loginCommand, it.key) }
@@ -157,7 +158,8 @@ internal class HeadAdmission(
         // TurnTelemetry's emitters, which fire turn.end. Local and Replay write no row, so announcing them
         // would leave the console a start with no end; Rejected writes one and announces itself
         // (PreDriveRefusals.refusePrepared).
-        deps.seams.events.turnStarted(prepared.built.meta.scope.sessionId)
+        deps.seams.events.turnStarted(meta.scope.sessionId)
+        observer.begin(call, admitted.perf, meta)
         // V4-174: the trace begins HERE, before the two local refusals, because a refused turn is a
         // request the head received and answered — a trace that skipped it would show a client
         // retrying for no visible reason. Null for every head whose trace is off.
@@ -197,8 +199,10 @@ internal class HeadAdmission(
         if (refusals.refuseIfUnproven(call, prepared, admitted, trace, pool)) return
         val callerKey = prepared.built.extraHeaders.takeIf { deps.policy.forwardClientAuth }
             ?.let(CredentialKey::fromHeaders)
+        val door = prepared.built.meta.route.relay.door
+        val choosing = pool?.awaitingEvidence?.let { if (door != null) it.only(deps.traffic.held::held) else it }
         val selection = admitted.perf.timed(splice.core.perf.PerfKeys.ACCOUNT_CHECKS_MS) {
-            pool?.awaitingEvidence?.without(unheld(prepared, pool))?.select(
+            choosing?.select(
                 prepared.built.meta.scope.sessionId,
                 callerCredentialKey = callerKey,
                 // a login whose provider refused another model for the week still serves this one (Nov 3, 2026)
@@ -220,14 +224,6 @@ internal class HeadAdmission(
             if (!admitted.wasHandedOff()) account?.releaseCredentialProbe()
         }
     }
-
-    /** The logins of [pool] a turn through a door never runs on (HeldLogins): the person's own Claude login, which is
-     *  never sent for a door turn (Nov 17, 2026). None for any other turn, another machine's included. They
-     *  are left out of the choice, never counted as logins that refused the turn: those limit it to a free login, and
-     *  a door turn whose added accounts were all held for its model ended "has no login yet" instead of waiting for
-     *  the soonest reset or moving to a model with room. */
-    private fun unheld(prepared: Preparation.Ready, pool: AccountPool?): Set<String> =
-        pool?.let { deps.traffic.held.never(it, prepared.built.meta.route.relay.door) }.orEmpty()
 
     /** The login this turn runs on: the account admission chose, its quota, and the key to record when no account
      *  was proved. Assembled here so the drive is handed one value rather than three. */
@@ -256,7 +252,7 @@ internal class HeadAdmission(
         if (oversized) return
         admitted.retainRequest()
         val meta = prepared.built.meta
-        val otherLogin = (deps.quotaBundle.activePool?.members?.size ?: 0) > 1
+        val otherLogin = hasOtherLogin(meta.route.relay.door)
         val request = admission.compactionPreflight.requestFacts(meta, prepared.hasPriorExchange, otherLogin)
         val voice = resends.voiceOf(driver.voice, meta.scope, request)
         val inputs = TurnInputs(
@@ -276,5 +272,16 @@ internal class HeadAdmission(
             voice = voice,
         )
         if (prepared.stream) driver.stream(call, inputs) else driver.collect(call, inputs)
+    }
+
+    private fun hasOtherLogin(door: String?): Boolean {
+        val pool = deps.quotaBundle.activePool ?: return false
+        return if (door == null) pool.members.size > 1 else pool.view(null).accounts.count(::usableForDoor) > 1
+    }
+
+    private fun usableForDoor(account: splice.upstream.credentials.AccountView): Boolean {
+        if (!deps.traffic.held.held(account.label)) return false
+        val cred = account.credential
+        return cred.present && cred.block == null && cred.excludedUntilEpochMillis == null
     }
 }

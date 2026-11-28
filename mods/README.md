@@ -1,15 +1,237 @@
 # Writing a Splice mod
 
-> **Nothing here is served today.** This folder holds the contract alone, its shapes as TypeScript
-> declarations ([`contract/index.ts`](contract/index.ts)), worked JSON examples
-> ([`contract/examples/`](contract/examples/)) and an example mod ([`example/`](example/)). Splice
-> loads no mod yet. When the runner lands, a mod that uses an event Splice does not serve yet is
-> refused when it loads, and the refusal names the mod and the event. It never loads without that
-> event and leaves you guessing.
+A mod is a small folder of TypeScript that Splice runs beside your sessions and tells about them. This page has
+two parts. [What runs today](#what-runs-today) says what this version of Splice does with a mod: what it serves,
+what it refuses, how to install one and the limits it runs under. The rest of the page is the full contract, the
+shapes in [`contract/index.ts`](contract/index.ts), with worked JSON in
+[`contract/examples/`](contract/examples/) and an example mod in [`example/`](example/). Parts of that contract
+are not served yet, and each says so.
+
+Where a mod's files live, what it is shown and what it can reach are on
+[Disk and privacy](../docs/wiki/disk-and-privacy.md#mods).
+
+## What runs today
+
+### In short
+
+- Only TypeScript mods run, each in its own [Bun](https://bun.sh) process that Splice starts, watches and stops.
+- A mod observes. Handlers are told about sessions and turns; they cannot change, answer or slow a turn.
+- Mods run as you, **not in a sandbox**. Splice stops the host and processes that stay in its group. A process that
+  deliberately leaves the group, for example by starting a new session, is the mod's responsibility.
+  If a guardian is killed above a stuck host or does not exit after its pipe closes, Splice reports the group and refuses
+  to start another copy until it is gone.
+
+### Bun
+
+Bun is required and is not bundled with Splice. Install it from <https://bun.sh>. Mods run on Linux and macOS.
+At install Splice looks for Bun
+in `SPLICE_BUN`, then on `PATH`, and records the path it found with the mod. At each start it uses the recorded
+path if it is still an executable, then `SPLICE_BUN`, then `PATH`, then `~/.bun/bin/bun`. When it finds none, the
+mod is `failed` with `Bun not found`, and `splice mod install` says how to fix it:
+
+```
+Bun not found. Install Bun from https://bun.sh, then run splice mod enable <name>.
+```
+
+To point Splice at a particular Bun: `SPLICE_BUN=/path/to/bun splice mod install <folder-or-tarball>`. Splice
+starts Bun with a clean environment. A version-manager shim that adds variables back is caught at start, and the
+mod fails with `This Bun launcher adds environment variables. Set SPLICE_BUN to the Bun binary.` when Bun cannot
+drop them.
+
+### Installing and managing mods
+
+`splice mod` talks to the running daemon. Every command prints what it did.
+
+| command | what it does |
+| --- | --- |
+| `splice mod install <folder-or-tarball>` | Checks the folder's `mod.json` and `hooks/hooks.json`, copies the files into Splice's state, records the SHA-256 of every file, enables the mod and starts it. A mod already installed under that name is replaced. |
+| `splice mod install <folder> --link` | Records the folder by its path instead of copying it, so edits you make there run at the next start. A linked mod is **not hash-checked**. |
+| `splice mod list` | One line per installed mod: version, enabled or disabled, its state and why, the last handler error, dropped events by kind, and the Bun version; then its load notices. |
+| `splice mod disable <name>` | Stops the mod's process. It stays installed. |
+| `splice mod enable <name>` | Starts it again. A copied mod whose files changed since install is refused, naming the files. |
+| `splice mod enable <name> --accept` | Accepts the files as they are now: re-reads `mod.json`, records new hashes and starts the mod. |
+| `splice mod remove <name>` | Stops the mod and deletes its installed copy. A linked mod's folder is left alone. Its store and log stay on disk. |
+
+`install` prints, for the example mod in [`example/`](example/):
+
+```
+Installed reviews 0.1.0. Adds a row under each session that asks for a review, with buttons to approve it or ask for changes, and a page listing every open review.
+Declared capability: watch-sessions
+Declared capability: add-rows
+Declared capability: draw-ui
+Declared capability: answer-tools
+Copied into Splice state and recorded SHA-256 hashes.
+Mods run as you, not in a sandbox. Only TypeScript mods run for now.
+Mod reviews: handlers observe only in this version of Splice.
+Mod reviews: sessions.list is not served yet.
+Mod reviews: ui.render is not served yet.
+Mod reviews: $.ui is not served yet.
+Mod reviews: $.sessions.invalidate is not served yet.
+Mod reviews: $.ui.respond is not served yet.
+Mod reviews: pages: queue is declared but not served yet.
+Mod reviews: tools: resolve is declared but not served yet.
+Mod reviews: tools: board is declared but not served yet.
+Mod reviews: views: ui://reviews/board is declared but not served yet.
+It will hear turns from now on, including in sessions already running. No session.start is replayed; new sessions announce their start.
+```
+
+Its `session.start` handler runs. Its `tool.call` handlers load but never fire, because they filter for the mod's own
+tools, which no session is offered yet.
+
+With `--link`, the copy line reads `Linked to <path>; not hash-checked. It reads that folder at each start.` When
+the mod is still loading, the last line is `Still loading. See splice mod list for its state.`; when it could not
+start, `It is not running:` and why.
+
+The other commands print:
+
+```
+Disabled reviews. It will stop receiving events. To run it again: splice mod enable reviews.
+Accepted the current files and recorded new SHA-256 hashes.     (enable --accept only)
+Enabled reviews.                                                 (then the same notices and last line as install)
+Removed reviews. It will no longer receive events. Its installed copy was removed.
+Removed reviews. It will no longer receive events. Its source folder was left alone.   (a linked mod)
+No mods installed. Use splice mod install <folder|tarball> to add one.   (list, when empty)
+```
+
+If a mod left a store or logs behind, `splice mod remove` also prints the retained paths and a `trash` command.
+
+`splice mod list` prints a line such as:
+
+```
+reviews 0.1.0: enabled; running; dropped events: 0; Bun 1.3.1
+  Mod reviews: handlers observe only in this version of Splice.
+```
+
+The state is one of `starting`, `running`, `restarting`, `stuck`, `failed` or `disabled`.
+
+A mod installed while sessions are running hears their turns from then on. Splice does not replay a
+`session.start` for a session that began before the mod; sessions that start later announce themselves as usual.
+
+**On a team server**, installing, enabling, disabling and removing a mod need the machine's management key on the
+loopback control plane. A person holding a personal team key cannot do any of them; installing is the
+administrator's alone.
+
+### What is served
+
+- **Layout:** `.splice-mod/mod.json` and `hooks/hooks.json` as in [Layout](#layout); each module in `hooks.json`
+  exports `register(on)`.
+- **Events:** `mod.start`, `mod.stop`, `session.start` (with `seenBefore`), `session.end`, `turn.start`,
+  `request.send`, `stream.event`, `tool.call` (with its `{ server?, tool? }` filter), `response.receive` and
+  `turn.complete`. A handler's `.catch` is served too.
+- **The handle `$`:** `$.store`, `$.clock`, `$.log` and `$.sessions.list()`.
+
+### What a handler is told
+
+A handler for `Register` (the default) receives metadata, never a body. These are the shapes in
+[`contract/index.ts`](contract/index.ts), each with a worked file in [`contract/examples/`](contract/examples/):
+
+| event | fields beyond the common ones |
+| --- | --- |
+| `turn.start` (`TurnStart`) | `head`, requested `model`, `compact`, `agent` (null when absent) |
+| `request.send` (`RequestSend`) | upstream `model`, `round` |
+| `stream.event` (`StreamEvent`) | `seq`, `type`, `bytes` of one client SSE frame |
+| `tool.call` (`ToolCall`) | `caller: "model"`, tool call `id`, `server` (null for native tools), `tool`. A model opened a tool block; it does not say the tool ran. |
+| `response.receive` (`ResponseReceive`) | requested `model`, `status`, transport `attempt` |
+| `turn.complete` (`TurnComplete`) | `model`, `stopReason` (the client's clean ending, or null), daemon `outcome`, `durationMs`, `usage` |
+
+Every one of them also carries `session` (null when the turn is not attributed to one), `turn`, `labels` and
+`at` (Unix milliseconds). None carries a request or response body, stream data or a model's tool arguments.
+
+`usage` is `{ input, output, cacheRead, cacheWrite }`. `input` includes `cacheRead` and `cacheWrite`: it is every
+token the request sent, so the uncached part is `input - cacheRead - cacheWrite`.
+
+`mod.start` carries `served` (the events the mod registered that this host serves, `mod.start` itself among them when
+it registered one) and `refused`, whose lines each begin with `Mod <name>: `. `mod.stop` carries `reason`.
+
+### Handlers observe only
+
+Splice hands each event to the mod and goes on; it never waits for a handler, and a turn never waits for a mod.
+A handler's return value, and a changed event passed to `next()`, have no effect on anything. Splice says so when
+the mod loads, in the install output, in `splice mod list` and in the mod's log:
+
+```
+Mod <name>: handlers observe only in this version of Splice.
+```
+
+and the first time a handler for an event returns a value or passes a changed event to `next()`, it writes this
+once per event to the mod's log:
+
+```
+A handler for <event> passed a changed event to next() or returned a value; in this version of Splice that has no effect on the turn.
+```
+
+Events reach a handler frozen; calling `next(e)` runs the mod's next handler for that event.
+
+### What is not served
+
+Each of these is refused in words when the mod loads, and the mod's other handlers still run. The refusals appear
+in the install output, in `splice mod list` and in the mod's log, and they are passed to `mod.start` as `refused`,
+declarations included.
+The three handle refusals are listed for every mod, whether or not it uses them; an event or a declaration is listed
+only when the mod registers or declares it.
+
+| not served | what the mod is told |
+| --- | --- |
+| `$.sessions.invalidate()` | `Mod <name>: $.sessions.invalidate is not served yet.` (also thrown if called) |
+| `$.ui`, `$.ui.respond()` | `Mod <name>: $.ui is not served yet.` and `Mod <name>: $.ui.respond is not served yet.` |
+| `on("sessions.list", …)` | `Mod <name>: sessions.list is not served yet.` |
+| `on("ui.render", …)` | `Mod <name>: ui.render is not served yet.` |
+| `on("command.run", …)` | `Mod <name>: command.run is not served yet.` |
+| `on("http.request", …)` | `Mod <name>: http.request is not served yet.` |
+| `on("launch.prepare", …)` | `Mod <name>: launch.prepare is not served yet; Splice does not run mod code while a session launches.` |
+| `pages`, `commands`, `tools`, `views` in `mod.json` | `Mod <name>: pages: <page> is declared but not served yet.`, and likewise `commands: <name>`, `tools: <name>` and `views: <uri>` |
+
+No mod's tools are offered to a session yet, and no app draws a mod's pages, rows or views.
+
+### Imports
+
+A mod's modules may import only files inside the mod's own folder (its own `node_modules` included) and Bun's built-in
+modules (`bun:`, `node:`). An import that resolves anywhere else, by an absolute or `../` path, a link, a `tsconfig.json`
+alias, a `node_modules` folder above the mod or a `file:` URL, fails the load with
+`Mod <name>: <file> imports <specifier>, which is outside the mod's folder.` Splice hashes the installed copy, and this
+keeps the code that runs the code it hashed. It does not sandbox the mod.
+
+### Limits
+
+| limit | what happens |
+| --- | --- |
+| Load: 30 s | A mod whose modules have not finished `register` within 30 s fails with `did not finish loading in 30 s`. A module that throws while loading fails it with `could not load:` and the error. |
+| A handler: 5 s | A handler still running after 5 s is abandoned for that event and logged as `<event>: handler exceeded 5 s; abandoned the event`. `mod.stop` gets 2 s. |
+| One event at a time | A mod handles its events in order, one at a time. |
+| Queue: 2,048 events | Events wait for the mod in a bounded queue. When it is full, the newest event is dropped and counted by kind under `dropped events` in `splice mod list`. `stream.event`, `request.send` and `response.receive` may fill only 1,536 places, so a flood of them leaves room for session and turn events. A mod with events waiting that has not taken one in 30 s shows as `stuck`, and is left running. |
+| Restarts: three in 10 minutes | A mod that exits on its own is restarted after 1 s, then 5 s, then 25 s. A fourth exit within 10 minutes marks it `failed` (`exited 4 times in 10 minutes`) until you enable it again. Events sent while it was down may be lost. |
+| Store | 64 KiB per JSON value, 16 MiB per mod. |
+| Log | 200 lines and 256 KiB a second; rotates at 8 MiB keeping one older copy. |
+| Install | At most 20,000 files and 200 MiB per mod; files only, no symbolic links. |
+
+### `GET /api/mods`
+
+The catalog route on the management API, named in the contract as `GET /api/mods`. It lists every installed mod,
+disabled and failed ones included, from the installed manifest without running mod code: the manifest's fields,
+`runtime` (`ts`), `enabled`, `linked`, `hashChecked`, `state` and `why`, `dropped` and `droppedByEvent`,
+`restartsInWindow`, `lastError`, and once loaded `notice`, `served`, `refused` and `declaredNotServed`. Reading it
+takes the management key or the console's key. `POST /api/mods`, `PUT /api/mods/<name>` and
+`DELETE /api/mods/<name>`, which `splice mod` uses, take the management key alone.
+
+After a daemon handover, `handoverDropped` counts events the successor could not deliver and events the retiring
+daemon could not transfer. Retrying a transfer after a lost reply does not send its events to mods twice. If the
+successor cannot record the retiring daemon's count, the retiring daemon reports it in `daemon.log`.
+
+Killing the old daemon with SIGKILL is a crash, not a graceful handover. Events still queued in its memory can be lost
+without a count, and a `session.start` whose history had not been saved can be sent again with `seenBefore: true`.
+The mod host and every process that stays in its process group are stopped even if no successor starts. The successor
+waits for that group to clear; if it is still running, `splice mod list` shows the earlier copy's PID instead of starting
+another one. Mods are not sandboxed: a process that deliberately leaves the group is the mod's responsibility.
+
+## The contract
+
+The rest of this page is the whole contract. Where a part of it is not served yet, it says so; the list above is
+the full account.
 
 ## What a mod is
 
-A mod is a small folder you install into Splice, laid out the way a Claude Code mod is. It can:
+A mod is a small folder you install into Splice, laid out the way a Claude Code mod is. Under the full contract it
+can:
 
 - watch or change what passes through Splice: a session starting, a turn, a request on its way to a
   model, a tool call;
@@ -71,6 +293,9 @@ The capabilities a mod may name, each shown to the person as one line:
 
 ### Declared, never registered
 
+> Not served yet: `pages`, `commands`, `tools` and `views` are each refused at load with "declared but not served
+> yet".
+
 There is no `$.tool.register`, no `$.command.register` and no `$.ui.register`. Each moved into
 `mod.json`:
 
@@ -98,6 +323,8 @@ tools and fall out of each other's cache, though nothing about them differs. Rea
 files makes it the same for every session that runs the same version of the mod.
 
 ## Tools
+
+> Not served yet: no mod's tools are offered to a session, and a `tools` list in `mod.json` is refused at load.
 
 `tools/<name>.json` is the input schema, `tools/<name>.md` is the description and
 `tools/<name>.meta.json` is the `_meta`. Splice assembles them into one `tools/list` entry
@@ -130,28 +357,31 @@ answered. That is all the mark does, and it has two limits:
 
 ```ts
 export const register: Register = (on) => {
-  on(event, filter?, async ($, e, next) => {
-    // before
-    const res = await next(e); // the rest of the chain, ending in Splice's own behaviour
-    // after
-    return res;
+  on("turn.complete", async ($, e, next) => {
+    $.log(`Turn ${e.turn} ended: ${e.outcome}`);
+    await next(e); // call this mod's next observer, not the turn
   }).catch(async ($, e, next) => {
-    // e.error says what the handler threw. Answer instead, or call next(e) to go on without it.
-    return next(e);
+    $.log(e.error.message);
+    await next(e);
   });
 };
 ```
 
-Each handler is one layer of an onion. It can act before `next`, change `e` before passing it on,
-answer by itself without calling `next`, or change what `next` returned. Use a literal event name,
-or narrow a dynamic name to one event first. That name determines which filter keys are valid and
-the types of `e`, `next(e)` and the handler's answer, including in `.catch`.
+`Register` is what this host runs: its handlers receive the metadata in [What a handler is told](#what-a-handler-is-told).
+The full contract below, with its bodies, frames, tool arguments and answers that change a turn, is
+`Register<"full">`, and its shapes are named `FullTurnStart`, `FullRequestSend`, `FullStreamEvent`, `FullToolCall`,
+`FullResponseReceive` and `FullTurnComplete`. This host does not serve them: neither a handler's return nor a changed
+value passed to `next` changes a turn.
+
+Use a literal event name, or narrow a dynamic name to one event first. That name determines which filter
+keys are valid and the types of `e`, `next(e)` and the handler's answer, including in `.catch`.
 
 ### Events
 
 | event | filter | what it is |
 |---|---|---|
-| `mod.start`, `mod.stop` | | The mod loaded or is about to unload: `mod`, `version`. |
+| `mod.start` | | The mod loaded: `mod`, `version`, `served` (registered events this host supports), `refused` (why other requests are not served). |
+| `mod.stop` | | The mod is about to unload: `mod`, `version`, `reason`. |
 | `session.start` | | A process began serving a session: `session` (the harness's own session id, the `session_id` of `GET /api/sessions`), `cwd`, `labels`, and `seenBefore`, true when that id was seen earlier. |
 | `session.end` | | The process serving that session is gone: `session`, `cwd` and `labels`. One id is one session, however many processes serve it. |
 | `launch.prepare` | | Per process, before it starts: `session` when known, `cwd`, `labels`, `env`, `args`, `mcp`. To change the launch, pass a changed `e` to `next`. |
@@ -161,26 +391,31 @@ the types of `e`, `next(e)` and the handler's answer, including in `.catch`.
 | `stream.event` | | One event of the model's stream: `session`, `turn`, `event`. Return `null` to drop it. |
 | `tool.call` | `{ server?, tool? }` | `caller`, `session`, `turn?`, `server`, `tool`, `arguments`. A `model` call always carries `session`; an `app` call can be sessionless. Answer a `ToolResult`: `content`, `structuredContent?`, `isError?`, `_meta?`. |
 | `response.receive` | | The whole response, assembled from the stream: `session`, `turn`, `model`, `status`, `body`. |
-| `turn.complete` | | The turn ended: `session`, `turn`, `model`, `stopReason`, `usage` (`input`, `output`, `cacheRead`, `cacheWrite`). |
+| `turn.complete` | | The turn ended: `session`, `turn`, `model`, `stopReason`, `usage` (`input`, `output`, `cacheRead`, `cacheWrite`; `input` includes the two cache counts). |
 | `ui.render` | `{ surface?, slot? }`; add `page` only with `slot: "page"` | An app asks the mod to draw a page, a row or a view. |
 | `command.run` | `{ command }` | A person ran one of the mod's commands: `command`, `args`, `session?`. Answer `{ text }`. |
 | `http.request` | `{ path?, method? }` | A request under the mod's own path, `/mods/<name>/…`: `method`, `path` (the part after it), `query`, `headers`, `body?`. Answer `{ status, headers?, body? }`. |
 
 For `tool.call`, the host binds the session from trusted launch or session provenance. A tool
 argument or untrusted request metadata cannot supply that identity. An app call tied to a session
-gets its identity from host context too.
+gets its identity from host context too. This host serves none of it: it tells a handler that a model
+opened a tool block, as in [What a handler is told](#what-a-handler-is-told).
 
 ### The handle `$`
 
 - `$.store`: `get`, `set`, `delete`, `list(prefix?)`. A durable key-value store that belongs to the
-  mod alone.
+  mod alone, of JSON values up to 64 KiB each and 16 MiB in all. It survives restarts and removal.
 - `$.clock`: `now()`, and `after(ms, fn)`, which returns a function that cancels it.
-- `$.log(msg)`: writes a line to Splice's log under the mod's name.
-- `$.sessions`: `list()` returns every row; `invalidate()` tells readers the rows changed.
+- `$.log(msg)`: writes a line to the mod's own log, `<logs>/mods/<name>.log`.
+- `$.sessions`: `list()` returns every session's row; `invalidate()` tells readers the rows changed (not served
+  yet).
 - `$.ui.respond({ text, ui })`: the answer a `tool.call` handler returns when it carries both the
-  words the model reads and a declared `ui://` view.
+  words the model reads and a declared `ui://` view. Not served yet.
 
 ## App discovery and rows
+
+> `GET /api/mods` is served; see [above](#get-apimods). Mod rows are not: `sessions.list` is refused at load, and
+> `GET /api/sessions?kind=all` carries no mod rows yet.
 
 On connect, an app reads **`GET /api/mods`** ([example](contract/examples/mod-catalog.json)) on the
 management API.
@@ -234,6 +469,8 @@ See [`contract/examples/session-row.json`](contract/examples/session-row.json) a
 
 ## `ui.render`
 
+> Not served yet: registering for `ui.render` is refused at load.
+
 The request carries the `surface`, a `slot` ([page](contract/examples/ui-render-request.json),
 [row](contract/examples/ui-render-row-request.json) or [view](contract/examples/ui-render-view-request.json)),
 the `width` in CSS pixels, the `theme` (`light` or `dark`) and, when the page, row or view belongs
@@ -247,8 +484,9 @@ refused, and the person is told the mod's name and the page's.
 
 ### `SPLICE_LABEL_<KEY>=<value>`
 
-Set this where a session is launched. It arrives as `labels` on that session's events and on its
-row: `SPLICE_LABEL_TICKET=ENG-412` becomes `labels.ticket = "ENG-412"`.
+Set this in the shell you start a session from, for any command Splice launches. It arrives as `labels` on that
+session's events and on its row: `SPLICE_LABEL_TICKET=ENG-412` becomes `labels.ticket = "ENG-412"`. Today that row
+is the session's entry in `GET /api/sessions` and in `$.sessions.list()`.
 
 - `KEY` is 1–32 characters of `A–Z`, `0–9` and `_`, starting with a letter, and arrives lowercased.
   Environment names are upper case by custom and case does not carry reliably between shells, so a
@@ -256,7 +494,8 @@ row: `SPLICE_LABEL_TICKET=ENG-412` becomes `labels.ticket = "ENG-412"`.
 - The value is up to 256 bytes of UTF-8 with no control characters.
 - A session can have at most 16 labels.
 
-A variable that breaks one of these rules is left out, and the person is told which one. The limits
+A variable that breaks one of these rules is left out, and the launch prints which one and why, such as
+`ignoring SPLICE_LABEL_TICKET: duplicate key`. The limits
 exist because labels ride on session events and on the normalized row in
 `GET /api/sessions?kind=all`, which apps poll. However a launcher sets them, a session's labels must stay at a few
 kilobytes. Labels are keys a reader filters on, such as a ticket, a project or a lane, not a place
@@ -265,12 +504,17 @@ to carry documents.
 ### `SPLICE_MODS_OFF`
 
 Read at launch. `1` turns off every mod; a comma-separated list of mod names turns off those mods.
-A session launched with it is reported to none of the named mods, and none of their servers is
-offered to it.
+A session launched with it is reported to none of the named mods: they hear none of its session or turn events,
+and it is left out of their `$.sessions.list()`. Once mods offer servers, none of theirs will be offered to it. A
+name that is not an installed mod is still honoured, and the launch warns
+`SPLICE_MODS_OFF names a mod that is not installed: <name>`.
 
 ## The example
 
-[`example/`](example/) is a complete mod, `reviews`. A `session.start` hook opens a review for
+[`example/`](example/) is a complete mod, `reviews`, written against the whole contract. Installed today it loads and
+its `session.start` handler runs. Its `tool.call` handlers load but never fire, since no session is offered the
+mod's own tools yet, and everything else it registers or declares is refused at load
+as listed [above](#what-is-not-served). A `session.start` hook opens a review for
 a session launched with `SPLICE_LABEL_REVIEW=<title>`. `sessions.list` adds a row for each open
 review, with Approve and Ask-for-changes buttons. The buttons call `resolve`, a tool marked for the
 app alone. A `queue` page and a `board` view list every open review. `bun test mods` checks the

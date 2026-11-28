@@ -152,6 +152,9 @@ internal class McpHarnessCli(
             val mark = if (outcome.ok) "ok" else "failed"
             out.line("  ${outcome.harness.wire}: $mark - ${outcome.detail}")
         }
+        report.registrySaveError?.let { why ->
+            out.line("  sync state: failed - could not save connected harnesses ($why)")
+        }
         return if (report.allOk) 0 else 1
     }
 

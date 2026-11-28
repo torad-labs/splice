@@ -27,8 +27,9 @@ internal data class McpSyncReport(
     val hostedCount: Int,
     val endpointPrefix: String,
     val outcomes: List<HarnessSyncOutcome>,
+    val registrySaveError: String? = null,
 ) {
-    val allOk: Boolean get() = outcomes.all { it.ok }
+    val allOk: Boolean get() = outcomes.all { it.ok } && registrySaveError == null
 }
 
 /** Checks whether the MCP hub front state exists under [stateDir] and its loopback [port] answers. */

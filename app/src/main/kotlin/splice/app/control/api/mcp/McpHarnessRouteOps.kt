@@ -126,6 +126,9 @@ internal class McpHarnessRouteOps(
                 }
             }
         }
+        report.registrySaveError?.let { why ->
+            put("error", "Could not save connected MCP harnesses ($why)")
+        }
         put("state", snapshotJson())
     }
 

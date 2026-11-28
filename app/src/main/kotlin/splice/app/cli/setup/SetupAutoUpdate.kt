@@ -26,9 +26,9 @@ internal class SetupAutoUpdate(private val prompts: SetupPrompts, private val en
     fun summary(on: Boolean): List<String> =
         if (on) listOf("Automatic updates: on ([daemon] auto_update = true)") else emptyList()
 
-    /** Writes `auto_update = true` under `[daemon]` when [on], changing nothing else in [path]. */
-    fun save(path: Path, on: Boolean) {
-        if (!on) return
+    /** Writes `auto_update = true` under `[daemon]` when [on], changing nothing else in [path]. False on refusal. */
+    fun save(path: Path, on: Boolean): Boolean {
+        if (!on) return true
         val result = Cancellables.runCatchingBestEffort {
             val current = TopologyLoader.parse(Files.readString(path))
             val backups = TopologyStatePaths(env).of(current).configBackupsDir
@@ -41,6 +41,7 @@ internal class SetupAutoUpdate(private val prompts: SetupPrompts, private val en
         why?.let {
             System.err.println("splice: automatic updates were not turned on ($it); set [daemon] auto_update = true")
         }
+        return why == null
     }
 
     private fun held(path: Path): Boolean? = Cancellables.runCatchingBestEffort {

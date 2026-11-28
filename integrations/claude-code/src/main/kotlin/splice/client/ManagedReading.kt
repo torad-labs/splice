@@ -33,7 +33,9 @@ public data class ManagedHeld(public val file: Path, public val value: ManagedVa
 
 /** The managed settings file as splice found it: [Read] as a JSON object; [Unreadable], where something may be at its
  *  path and splice could not read it (no permission on the path, a link to nothing, no JSON object), so splice does
- *  not know whether it exists; or [Absent], only where splice established that nothing at all is at its path. */
+ *  not know whether it exists; [Unlistable], where the file itself is absent but an ancestor [folder] could not be
+ *  listed so sibling contents and drop-ins were not seen; or [Absent], only where splice established that nothing at
+ *  all is at its path. */
 public sealed class ManagedFile {
     /** The file, read: its [settings]. */
     public data class Read(public val settings: JsonObject) : ManagedFile() {
@@ -47,6 +49,9 @@ public sealed class ManagedFile {
 
     /** Something may be at the path, and splice could not read it. */
     public data object Unreadable : ManagedFile()
+
+    /** The file is absent, but its ancestor [folder] could not be listed. */
+    public data class Unlistable(public val folder: Path) : ManagedFile()
 
     /** Nothing is at the path. */
     public data object Absent : ManagedFile()
@@ -68,12 +73,42 @@ public sealed class ManagedValue {
 /** What splice can establish about a path it reads. */
 internal object PathAbsence {
     /** Whether nothing at all is at [path]: it and each missing folder above it are absent, asked without following
-     *  links, up to the first thing that is there, which must be a folder. A link to nothing establishes nothing. */
+     *  links, up to the first thing that is there, which must be a folder splice can list. A link to nothing, or a
+     *  folder that can be entered without being listed, establishes nothing. */
     fun known(path: Path): Boolean {
-        val absolute = path.toAbsolutePath()
-        if (!Files.notExists(absolute, NOFOLLOW_LINKS)) return false
-        val above = generateSequence(absolute.parent) { it.parent }.firstOrNull { !Files.notExists(it, NOFOLLOW_LINKS) }
-        return above != null && Files.isDirectory(above)
+        val above = missingBelow(path) ?: return false
+        return listable(above)
+    }
+
+    /** The first existing ancestor directory above an absent [path] when that directory cannot be listed (for example
+     *  mode `--x--x--x`); null when [path] is not established as missing or its ancestor directory can be listed. */
+    fun unlistableAncestor(path: Path): Path? {
+        val above = missingBelow(path) ?: return null
+        return above.takeUnless(::listable)
+    }
+
+    /** Classifies the main managed settings [file] given its already-parsed [main] object (or null). */
+    fun mainState(file: Path, main: JsonObject?): ManagedFile = when {
+        known(file) -> ManagedFile.Absent
+        main != null -> ManagedFile.Read(main)
+        else -> unlistableAncestor(file)?.let(ManagedFile::Unlistable) ?: ManagedFile.Unreadable
+    }
+
+    /** Lists [folder] when it exists or is established absent; when it cannot be listed (or sits under an unlistable
+     *  ancestor), returns null paired with the unread description naming that folder. */
+    fun dropInListing(folder: Path): Pair<List<Path>?, String?> {
+        val unlistable = unlistableAncestor(folder)
+        val listed = when {
+            known(folder) -> emptyList()
+            unlistable != null -> null
+            else -> listed(folder)
+        }
+        val unread = when {
+            listed != null -> null
+            unlistable != null -> "$unlistable (folder could not be listed)"
+            else -> folder.toString()
+        }
+        return listed to unread
     }
 
     /** What [folder] holds, or null where it cannot be listed, a listing that fails part-way included. */
@@ -83,5 +118,25 @@ internal object PathAbsence {
         null
     } catch (_: UncheckedIOException) {
         null
+    }
+
+    /** The first existing ancestor of [path] when [path] itself does not exist (without following links) and that
+     *  ancestor is a directory; null otherwise. */
+    private fun missingBelow(path: Path): Path? {
+        val absolute = path.toAbsolutePath()
+        if (!Files.notExists(absolute, NOFOLLOW_LINKS)) return null
+        val above = generateSequence(absolute.parent) { it.parent }.firstOrNull { !Files.notExists(it, NOFOLLOW_LINKS) }
+        return above?.takeIf { Files.isDirectory(it) }
+    }
+
+    /** Whether [folder] can be listed at all: an execute-only (`--x`) folder answers `ENOENT` to a lookup by name
+     *  without letting splice see its other contents, drop-ins included. */
+    private fun listable(folder: Path): Boolean = try {
+        Files.list(folder).use { it.findFirst() }
+        true
+    } catch (_: IOException) {
+        false
+    } catch (_: UncheckedIOException) {
+        false
     }
 }

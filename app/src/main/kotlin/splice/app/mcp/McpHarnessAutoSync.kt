@@ -175,6 +175,9 @@ internal class McpHarnessAutoSync(
         if (failed.isNotEmpty()) {
             log("[mcp-sync] $reason: failed for ${failed.joinToString("; ")}\n")
         }
+        report.registrySaveError?.let { why ->
+            log("[mcp-sync] $reason: failed to save connected harnesses ($why)\n")
+        }
     }
 
     private fun readStamps(): List<FileStamp?> =

@@ -99,8 +99,10 @@ abstract class DesktopWrapperFixture(protected val tmp: Path) {
         assertEquals(1, said.count { condition in it }, printed())
     }
 
-    protected fun withLocked(path: Path, block: () -> Unit) {
-        Files.setPosixFilePermissions(path, emptySet())
+    protected fun withLocked(path: Path, block: () -> Unit) = withMode(path, "---------", block)
+
+    protected fun withMode(path: Path, mode: String, block: () -> Unit) {
+        Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(mode))
         try {
             assumeFalse(Files.isReadable(path), "a user that can read anything cannot show this")
             block()

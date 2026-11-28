@@ -52,8 +52,17 @@ internal class McpHarnessSync(
             syncOne(harness, inputs, sharing, basePlan)
         }
         val succeeded = outcomes.filter { it.ok }.map { it.harness }.toSet()
-        if (succeeded.isNotEmpty()) registry.rememberHarnesses(succeeded)
-        return McpSyncReport(inputs.size, basePlan.hosted.size, endpointPrefix, outcomes)
+        val registrySaveError = if (succeeded.isNotEmpty()) {
+            try {
+                registry.rememberHarnesses(succeeded)
+                null
+            } catch (failure: IOException) {
+                failure::class.simpleName ?: "IOException"
+            }
+        } else {
+            null
+        }
+        return McpSyncReport(inputs.size, basePlan.hosted.size, endpointPrefix, outcomes, registrySaveError)
     }
 
     private suspend fun syncOne(

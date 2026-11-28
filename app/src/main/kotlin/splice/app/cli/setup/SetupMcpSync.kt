@@ -66,12 +66,25 @@ internal class SetupMcpSync(
         }
     }
 
-    suspend fun apply(choice: McpSyncChoice, frame: WizardFrame) {
-        if (!choice.active) return
+    /** Count of applied vs skipped/failed items from [apply]. */
+    data class SyncResult(val done: Int = 0, val failed: Int = 0)
+
+    /** Applies [choice] and returns how many chosen items succeeded vs were skipped or failed. */
+    suspend fun apply(choice: McpSyncChoice, frame: WizardFrame): SyncResult {
+        if (!choice.active) return SyncResult()
         val home = UserHome.dir(env)
         val paths = TopologyStatePaths(env, home).current()
-        if (choice.importServers.isNotEmpty()) applyImport(choice.importServers, paths, frame)
-        if (choice.harnesses.isNotEmpty()) applySync(choice.harnesses, home, paths, frame)
+        val imported = if (choice.importServers.isNotEmpty()) {
+            if (applyImport(choice.importServers, paths, frame)) SyncResult(done = 1) else SyncResult(failed = 1)
+        } else {
+            SyncResult()
+        }
+        val synced = if (choice.harnesses.isNotEmpty()) {
+            applySync(choice.harnesses, home, paths, frame)
+        } else {
+            SyncResult()
+        }
+        return SyncResult(done = imported.done + synced.done, failed = imported.failed + synced.failed)
     }
 
     private fun askImport(prompts: SetupPrompts, discovered: List<DiscoveredMcpServer>): List<DiscoveredMcpServer> {
@@ -95,13 +108,15 @@ internal class SetupMcpSync(
         servers: List<DiscoveredMcpServer>,
         paths: StatePaths,
         frame: WizardFrame,
-    ) {
-        try {
+    ): Boolean {
+        return try {
             val now = Instant.now().toString()
             McpUserRegistry(paths).merge(servers.map { it.toRecord(now) })
             frame.step("Imported ${servers.size} MCP server(s) into Splice MCP")
+            true
         } catch (failure: IOException) {
             frame.step("MCP server import skipped (${failure::class.simpleName})")
+            false
         }
     }
 
@@ -110,17 +125,26 @@ internal class SetupMcpSync(
         home: Path,
         paths: StatePaths,
         frame: WizardFrame,
-    ) {
-        try {
+    ): SyncResult {
+        return try {
             val report = McpHarnessSync(home, paths, env, LogSink {}, seams).sync(harnesses)
             report.outcomes.forEach { outcome ->
                 val status = if (outcome.ok) "synced" else "skipped"
                 frame.step("MCP ${outcome.harness.wire}: $status (${outcome.detail})")
             }
+            val saveFailed = report.registrySaveError?.let { why ->
+                frame.step("MCP sync state save skipped ($why)")
+                1
+            } ?: 0
+            SyncResult(
+                done = report.outcomes.count { it.ok },
+                failed = report.outcomes.count { !it.ok } + saveFailed,
+            )
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: IOException) {
             frame.step("MCP harness sync skipped (${failure::class.simpleName})")
+            SyncResult(done = 0, failed = 1)
         }
     }
 

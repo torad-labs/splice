@@ -85,21 +85,25 @@ internal class SetupModes(
     fun summary(on: List<String>): List<String> =
         if (on.isEmpty()) emptyList() else listOf("Modes turned on: ${on.joinToString(", ")}")
 
-    /** `on = true` in each of [on]'s tables, keeping any per-head keys it holds. A write that is refused is said. */
-    fun save(path: Path, on: List<String>) {
-        if (on.isEmpty()) return
+    /** `on = true` in each of [on]'s tables, keeping any per-head keys it holds. A write that is refused is said.
+     *  Returns how many requested modes could not be turned on. */
+    fun save(path: Path, on: List<String>): Int {
+        if (on.isEmpty()) return 0
         val topology = Cancellables.runCatchingBestEffort { TopologyLoader.parse(Files.readString(path)) }.getOrNull()
         val backups = TopologyStatePaths(env).of(topology).configBackupsDir
         val writer = TopologyWriter(path, backups, TopologyParse(TopologyLoader::parse))
+        var failed = 0
         for (name in on) {
             val turnOn = ModeTableEdit(setsOn = true, on = true)
             val result = Cancellables.runCatchingBestEffort { ModeTableWrite(writer).write(name, turnOn) }
             val refused = (result.getOrNull() as? TopologyWriteResult.Refused)
                 ?.findings?.joinToString("; ") { it.text() }
-            val failed = result.exceptionOrNull()?.let { SafeFailureText.render(it) }
-            val why = refused ?: failed ?: continue
+            val failedErr = result.exceptionOrNull()?.let { SafeFailureText.render(it) }
+            val why = refused ?: failedErr ?: continue
+            failed++
             System.err.println("splice: mode $name was not turned on ($why); set on = true under [modes.$name]")
         }
+        return failed
     }
 }
 

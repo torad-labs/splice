@@ -43,11 +43,16 @@ internal class SetupCodexHooks(private val prompts: SetupPrompts) {
         return applyFile(reading)
     }
 
-    /** For `splice setup --update`: null when nothing to offer, true when applied, false when declined or failed. */
-    fun offerUpdate(reading: CodexHooksReading?): Boolean? {
-        val question = reading?.let(::questionFor) ?: return null
+    /** What `splice setup --update`'s Codex peer hooks step came to. */
+    enum class UpdateOutcome { NOTHING, DECLINED, DONE, FAILED }
+
+    /** For `splice setup --update`: NOTHING when nothing to offer, DECLINED when refused, DONE when applied, FAILED
+     *  when the person asked to apply it and writing was skipped or refused. */
+    fun offerUpdate(reading: CodexHooksReading?): UpdateOutcome {
+        val question = reading?.let(::questionFor) ?: return UpdateOutcome.NOTHING
         val defaultYes = reading.state == CodexHooksState.NEEDS_MIGRATION
-        return prompts.frame.confirm(question, defaultYes) && applyFile(reading)
+        if (!prompts.frame.confirm(question, defaultYes)) return UpdateOutcome.DECLINED
+        return if (applyFile(reading)) UpdateOutcome.DONE else UpdateOutcome.FAILED
     }
 
     private fun questionFor(reading: CodexHooksReading): String? = when (reading.state) {

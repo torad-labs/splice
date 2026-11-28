@@ -194,6 +194,24 @@ class DesktopWrapperTest(@TempDir tmp: Path) : DesktopWrapperFixture(tmp) {
     }
 
     @Test
+    fun `a folder splice can enter but not list names the folder as unlistable and never offers a copy`() {
+        layLauncher()
+        Files.createDirectories(folder)
+        val unlistable = "$folder could not be listed, so splice could not check its contents or drop-ins."
+        withMode(folder, "--x--x--x") {
+            for ((verb, exit) in listOf("--print" to 0, "--check" to 1)) {
+                assertEquals(exit, wrapper(verb))
+                assertTrue(said.any { it.endsWith(unlistable) }, printed())
+                val wrong = listOf("othing is at", "sudo install", "create ").filter { it in printed() }
+                assertTrue(wrong.isEmpty(), printed())
+                assertTrue("$folder (folder could not be listed)" in placesLine(), printed())
+                assertFalse("managed-settings.d" in placesLine(), printed())
+                conditionOnly()
+            }
+        }
+    }
+
+    @Test
     fun `a drop-in folder splice cannot list is named in place of its files, in every outcome of check`() {
         layLauncher()
         val dropIns = Files.createDirectories(folder.resolve("managed-settings.d"))
@@ -252,11 +270,38 @@ class DesktopWrapperTest(@TempDir tmp: Path) : DesktopWrapperFixture(tmp) {
     }
 
     @Test
-    fun `a folder where the launcher should be is not a laid launcher`() {
+    fun `a folder where the launcher should be says it is a directory and to move or remove it before desktop on`() {
         Files.createDirectories(launch)
         file(bothRight)
+        val expected = "$launch is a directory, not splice's launcher: remove or move it, then run `splice desktop on`."
+        for ((verb, exit) in listOf("--check" to 1, "--print" to 0)) {
+            assertEquals(exit, wrapper(verb))
+            assertTrue(said.any { it.endsWith(expected) }, printed())
+            assertFalse("is not laid yet" in printed(), printed())
+        }
+    }
+
+    @Test
+    fun `a dangling symlink at the launcher path says it is not a regular file and desktop on replaces it`() {
+        Files.createDirectories(launch.parent)
+        Files.createSymbolicLink(launch, tmp.resolve("gone"))
+        file(bothRight)
         assertEquals(1, wrapper("--check"))
-        assertTrue("splice: $launch is not laid yet: run `splice desktop on` first." in said, printed())
+        val expected = "splice: $launch is not a regular file: run `splice desktop on` to replace it."
+        assertTrue(expected in said, printed())
+        assertFalse("is not laid yet" in printed(), printed())
+    }
+
+    @Test
+    fun `a non-executable regular file at the launcher path says it is not executable`() {
+        Files.createDirectories(launch.parent)
+        Files.writeString(launch, "#!/bin/sh\n")
+        launch.toFile().setExecutable(false)
+        file(bothRight)
+        assertEquals(1, wrapper("--check"))
+        val expected = "splice: $launch is not executable: run `splice desktop on` to refresh it."
+        assertTrue(expected in said, printed())
+        assertFalse("is not laid yet" in printed(), printed())
     }
 
     @Test

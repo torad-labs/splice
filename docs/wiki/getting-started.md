@@ -27,6 +27,8 @@ curl -fsSL https://splice.torad.ai/download/install.sh | bash
 
 The installer puts the jar and the `splice-launch` shim in `~/.local/share/splice/`, links `splice` and your launch commands into `~/.local/bin` (make sure that is on your PATH), and runs `splice doctor`. A daemon that was already running stays on its old build until you restart it.
 
+The piped command skips the optional `seatd-pipe` companion. When the installer itself runs in a terminal, it asks before downloading the companion for Desktop gateway mode, live switching and Gemini through Antigravity. You can also choose it later in `splice setup` or `splice desktop on`. See [Claude Desktop](claude-desktop.md#claude-desktop-on-splice).
+
 To pin one version instead of following `latest` (prereleases never become `latest`):
 
 ```bash
@@ -103,7 +105,9 @@ Your own `claude` and Claude Desktop stay on your personal account: setup offers
 
 It also asks whether sessions share MCP servers, which Modes to turn on, whether to install new releases automatically (`[daemon] auto_update`), and, on a Linux machine with an NVIDIA card, whether to run a local model. It shows a summary and writes nothing until you confirm; without a terminal it takes every default. It ends on `splice doctor`, with or without a plan.
 
-After an upgrade, `splice setup --update` asks only about what the new release adds that this install does not have yet. The sections below are the same steps by hand.
+`splice setup` and `splice setup --update` ask before a first companion install. If you say no, terminal Claude and your other providers keep working. If you say yes, Splice downloads and verifies the companion republished with the version of Splice you're running. It doesn't install the seatd daemon.
+
+After an upgrade, `splice setup --update` offers what the new release adds that this install does not have yet. The sections below are the same steps by hand.
 
 ## Choose how you pay
 

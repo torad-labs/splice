@@ -39,7 +39,7 @@ OAuth logins live in `~/.config/splice/auth/`, API keys in `~/.config/splice/key
 | --- | --- | --- |
 | **One model list** | Every provider in `splice.toml` is served at the door as `claude-<provider>--<model id>`; Claude Code, Claude Desktop, a LAN door and a team server read the same catalog | [Door and launchers](docs/wiki/door-and-launchers.md) |
 | **Your subscriptions** | ChatGPT, Grok, Kimi and Muse sign-ins, account pools with automatic switching, API keys shown as accounts | [Providers and accounts](docs/wiki/providers-and-accounts.md) |
-| **Claude Desktop** | `splice desktop on` puts Chat, Cowork and the Code tab on splice, with the reasoning picker and Gemini through Antigravity | [Claude Desktop](docs/wiki/claude-desktop.md) |
+| **Claude Desktop** | Opt in with `splice desktop on` to use Chat, Cowork and the Code tab on splice, with the reasoning picker and Gemini through Antigravity | [Claude Desktop](docs/wiki/claude-desktop.md) |
 | **Models that work together** | Sessions on different models find each other with `ListAgents` and talk with `SendMessage`; Codex threads join as peers | [Peers and harnesses](docs/wiki/peers-and-harnesses.md) |
 | **Long sessions that recover** | Compaction resumes from its saved answer, identical retries pick up work already underway, restarts hand over without cutting turns | [Architecture and troubleshooting](docs/wiki/architecture-and-troubleshooting.md#long-session-reliability) |
 | **Usage you can see** | Plan usage in Claude Code's status line, daily budgets, a web console with sessions, projects and model comparison | [Console and sessions](docs/wiki/console-and-sessions.md) |
@@ -56,7 +56,7 @@ OAuth logins live in `~/.config/splice/auth/`, API keys in `~/.config/splice/key
 >
 > **Side-by-side launchers.** `splice launch claude` and `splice launch claude-desktop` run splice beside your own `claude` and Desktop, which stay as they are; `[launch.profiles.<name>]` filters what a launch sees.
 >
-> **Claude Desktop on splice.** `splice desktop on` puts Chat, Cowork and the Code tab on splice with nothing to paste, and Gemini models arrive through Antigravity (`agy`).
+> **Claude Desktop on splice.** Run `splice desktop on` in a terminal. If the optional Desktop companion is missing, it asks before installing it. Then it offers to set up Chat, Cowork and the Code tab on splice with nothing to paste. Gemini models arrive through Antigravity (`agy`).
 >
 > **MCP import and sync.** Bring your existing MCP servers into splice's registry and keep agy, Codex and Desktop in step, with safe pruning of stale entries.
 >
@@ -74,7 +74,7 @@ Linux and macOS run splice natively; on Windows, run it inside WSL2. You need `b
 curl -fsSL https://splice.torad.ai/download/install.sh | bash
 ```
 
-The installer checks every prerequisite and prints the fix for your machine, verifies the release's checksums (and its build provenance when the GitHub CLI is signed in), and puts the jar and the `splice-launch` shim in `~/.local/share/splice/`. Every command splice installs (`splice`, `claude-splice`, a head's command) is a link to that shim, which starts the daemon when needed and then runs the real Claude Code against it. [Getting started](docs/wiki/getting-started.md) covers pinning a version, installing from source and letting your agent do it.
+The installer checks every prerequisite and prints the fix for your machine, verifies the release's checksums (and its build provenance when the GitHub CLI is signed in), and puts the jar and the `splice-launch` shim in `~/.local/share/splice/`. Every command splice installs (`splice`, `claude-splice`, a head's command) is a link to that shim, which starts the daemon when needed and then runs the real Claude Code against it. The piped installer skips the optional Desktop companion. [Getting started](docs/wiki/getting-started.md) covers pinning a version, installing from source and letting your agent do it.
 
 ## Quick start
 

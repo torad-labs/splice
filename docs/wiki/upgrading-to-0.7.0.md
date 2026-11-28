@@ -13,7 +13,7 @@ The main change is that splice is now **one gateway with one model list**. Every
 | Gateway and models | One model list for every client; provider tables carry `pinned_model`, `model_slots`, `context_window`, standing prompts and `overrides`; `splice add provider`; `[door.commands]` and `[door.selector_aliases]`; custom-provider keys (`credential_command`, `ca_file`, `served_window`, `error_messages`, `max_output_tokens`, `picker`) | [Providers and accounts](providers-and-accounts.md) |
 | Custom heads | Deprecated; each head command now starts Claude Code through the gateway; `splice claude retire`, `restore` and `check` | [Door and launchers](door-and-launchers.md) |
 | Launchers | `splice launch claude [--profile <name>]` and `splice launch claude-desktop` run splice beside your own `claude` and Desktop; `[launch.profiles.<name>]`; setup no longer wraps `claude` | [Door and launchers](door-and-launchers.md) |
-| Claude Desktop | `splice desktop on` puts Chat, Cowork and the Code tab on splice with nothing to paste; managed `processWrapper` through `splice desktop wrapper`; console policy overrides; profile sync of MCP servers, extensions and skills | [Claude Desktop](claude-desktop.md) |
+| Claude Desktop | Opt in to `seatd-pipe`, then `splice desktop on` puts Chat, Cowork and the Code tab on splice with nothing to paste; managed `processWrapper` through `splice desktop wrapper`; console policy overrides and profile sync | [Claude Desktop](claude-desktop.md) |
 | Antigravity (`agy`) | Gemini models in Desktop's Chat and Code tab, live `set_model` switching, subagent Task panes, skills in autocomplete, the Desktop harness map | [Claude Desktop](claude-desktop.md) |
 | MCP | Opt-in import into a Splice MCP registry, console import UI, sync to agy, Codex and Desktop, daemon auto-sync, stale-entry pruning in agy | [MCP hub and sync](mcp-hub-and-sync.md) |
 | Accounts and peers | Bare `splice login` and `/login` open the console's Accounts page; `splice setup` installs and migrates Codex peer hooks | [Providers and accounts](providers-and-accounts.md), [Peers and harnesses](peers-and-harnesses.md) |
@@ -64,7 +64,7 @@ From 0.7.0 on, `splice upgrade` works as shown below. It has `--wait`, it offers
 | `splice upgrade --check` | Says what is installed and what is newest; stands alone. |
 | `splice upgrade --rollback` | See [Roll back to 0.6.4](#roll-back-to-064). |
 
-When a 0.7.0 or later `splice upgrade` finds that the new release refuses your `splice.toml`, it runs that release's own `check-config --fix` in your terminal, checks again, and continues only when the file passes (`✓ config <version> accepts splice.toml now`). Without a terminal, for example from a script, it refuses and tells you to run `splice upgrade` in one. A successful upgrade also re-lays `splice.service` from the new jar, but a unit you override in `~/.config/systemd/user` stays yours. Its aftercare lays the Antigravity shim, refreshes the MCP hub's units where the hub is installed, and on an interactive upgrade prints a **What's new / action needed** list that ends by pointing at `splice setup --update`.
+When a 0.7.0 or later `splice upgrade` finds that the new release refuses your `splice.toml`, it runs that release's own `check-config --fix` in your terminal, checks again, and continues only when the file passes (`✓ config <version> accepts splice.toml now`). Without a terminal, for example from a script, it refuses and tells you to run `splice upgrade` in one. A successful upgrade also re-lays `splice.service` from the new jar, but a unit you override in `~/.config/systemd/user` stays yours. Its aftercare lays the Antigravity shim and refreshes the MCP hub's units where the hub is installed. The interactive **What's new / action needed** list explains the optional companion when missing and points to `splice setup --update` or `splice desktop on` to opt in. Automatic aftercare does not show that offer or opt you in. A companion you already opted into can be refreshed from the new Splice release.
 
 ### 2. Read and move the configuration warnings
 
@@ -111,12 +111,15 @@ splice setup --update
 
 This is the checkup for an existing install. It asks nothing about the plans and heads you already have, and offers only what this release adds, in this order:
 
-1. The side-by-side launchers you don't have yet: the `claude-splice` command and, where Claude Desktop is installed, the **Claude (Splice)** app.
-2. Putting all of Claude Desktop on splice (`splice desktop on`), or moving it off the older Code-tab door.
-3. MCP import and harness sync.
-4. Codex peer hooks. Hooks written by hand for 0.6.4 that wrap the call in `sh -c '… jq …'`, set a SessionEnd timeout other than 3, use a matcher or repeat an entry are offered a migration to direct `splice peer codex attach|detach` lines. The old file is backed up to `hooks.json.bak` first.
-5. Modes that are off. A running daemon restarts onto any mode you turn on.
-6. `[daemon] auto_update`.
+1. Installing the optional `seatd-pipe` companion, if needed.
+2. The side-by-side launchers you don't have yet: the `claude-splice` command and, where Claude Desktop is installed, the **Claude (Splice)** app.
+3. Putting Claude Desktop on splice (`splice desktop on`) or moving it off the older Code-tab door.
+4. MCP import and harness sync.
+5. Codex peer hooks. Hooks written by hand for 0.6.4 that wrap the call in `sh -c '… jq …'`, set a SessionEnd timeout other than 3, use a matcher or repeat an entry are offered a migration to direct `splice peer codex attach|detach` lines. The old file is backed up to `hooks.json.bak` first.
+6. Modes that are off. A running daemon restarts onto any mode you turn on.
+7. `[daemon] auto_update`.
+
+Declining `seatd-pipe` leaves terminal Claude and your other providers unchanged. Accepting installs the verified companion republished with the Splice release you're running, not a seatd daemon. See [Claude Desktop](claude-desktop.md#claude-desktop-on-splice) for what it enables.
 
 What only an administrator can change (Claude Code's managed settings), or what needs a program splice doesn't install (systemd for the MCP hub), is printed with what to do. The checkup lays the Antigravity shim where it is missing and ends on `splice doctor`. Without a terminal, it only lists the gaps.
 
@@ -127,7 +130,7 @@ splice doctor
 splice claude check
 ```
 
-`splice doctor` has a new **tools** section: Claude Desktop and its mode, Claude Code's managed settings for the Code tab, `agy` and `codex` with their Splice MCP sync, the Antigravity shim, Codex peer hooks, and systemd for the MCP hub. These rows are OK, INFO or WARN only, so they never turn the exit code red. Each head your install still links prints a deprecation line with its replacement selector. `splice claude check` reports every way Claude Code still starts past the gateway and every model list it finds.
+`splice doctor` has a new **tools** section: Claude Desktop and its mode, Claude Code's managed settings for the Code tab, `agy` and `codex` with their Splice MCP sync, the Antigravity shim, Codex peer hooks, `seatd-pipe`, and systemd for the MCP hub. A missing companion is a warning when Desktop is enabled. These rows are OK, INFO or WARN only, so they never turn the exit code red. Each head your install still links prints a deprecation line with its replacement selector. `splice claude check` reports every way Claude Code still starts past the gateway and every model list it finds.
 
 ### The decision path
 
@@ -235,10 +238,12 @@ Every launch on the door now sets what a head's launch sets: client timers, the 
 **What changed.** `splice desktop on` now puts all of Claude Desktop on splice (Chat, Cowork and the Code tab) in Desktop's third-party gateway mode, with nothing to paste. It writes splice's configuration into Desktop's `Claude-3p/configLibrary` and applies it. Desktop gets its key from `<state>/desktop-credential`, and no key is written into Desktop's files. `--model <id>` gives Desktop a starting model of its own again. 0.6.4's `on` printed five variables to paste into the Code tab; 0.7.0 has none.
 
 ```bash
-splice desktop on            # asks first; without a terminal, add --yes
+splice desktop on            # in a terminal; offers to install the companion if missing
 splice desktop               # mode, door, default model, picker, last turn
 splice desktop off           # takes out exactly what on put in, and re-applies what was applied before
 ```
+
+If the companion is missing, `on` exits without enabling Desktop when you decline or when it can't ask. `--yes` does not grant consent to download it.
 
 Quit Desktop completely and reopen it after `on`, `off` or an upgrade, because Desktop reads its configuration only at launch. Desktop on splice has no claude.ai sign-in: conversations stay on this computer, and Remote Control and Anthropic's cloud environments aren't offered. To keep claude.ai in your usual Desktop, use the side-by-side **Claude (Splice)** app instead. `on` refuses when Claude Desktop's own managed configuration exists (`/etc/claude-desktop/managed-settings.json` on Linux, Desktop's managed preferences on macOS).
 
@@ -265,17 +270,17 @@ Other parts of the Desktop setup:
 **What changed.** With Google's `agy` installed and signed in, the daemon asks it at start which models it offers. Desktop's picker then lists them as `claude-antigravity--*` rows in Chat and the Code tab, each with agy's own reasoning levels. These rows exist only in Desktop: they never appear in the terminal's `/model`, the LAN or team door, or a starting model.
 
 - **Chat** on a Gemini model runs through the door on a pool of `agy acp` sessions, and Desktop's Chat tools reach agy through a local bridge.
-- **The Code tab** on a Gemini model runs Google's unmodified `agy acp` through `splice desktop acp`, never on Claude Code. Streaming, tool cards, permission prompts, Stop, `--resume` and history work. Transcripts are written in Claude Code's format, so Desktop reopens the session with its history.
-- **Live `set_model`**: with the managed `processWrapper` in place, switching a running Code-tab session between an Antigravity model and any other model swaps the program on the same session id. The handoff loses context: messages, text and tool calls carry over, but thinking and tool results don't.
+- **The Code tab** on a Gemini model runs Google's unmodified `agy acp` through `seatd-pipe`, not on Claude Code. The bridge translates streaming replies, tool cards, permission prompts and Stop. It writes transcripts in Claude Code's format for Desktop's session history.
+- **Live `set_model`**: with the managed `processWrapper` in place, the companion can switch a running Code-tab session between Claude Code, Gemini and Codex CLI (if selected for GPT) on the same session ID. The handoff loses context: messages, text and tool calls carry over, but thinking and tool results don't.
 - **Subagents**: when agy delegates, Desktop draws a **Task** card and a subagent pane.
 - **Autocomplete** lists your Claude Code skills and slash commands from `~/.claude` (or `CLAUDE_CONFIG_DIR`) and the project's `.claude` and `.agents` folders.
 - **Harness routing**: Settings → **Desktop harnesses** chooses which program each Desktop family runs on. GPT runs on Claude Code through Splice by default, with Codex CLI as an opt-in entry in the map, and Antigravity can be switched on or off. `[harnesses.<id>]` declares an extra local ACP harness for the map only.
 
-splice never reads or writes `~/.gemini` from the Code-tab bridge and does not send the Code tab's system prompt to agy. Chat's system text is sent, as the opening instructions. `desktop-sandbox` is a contributor tool under `tools/`, not a `splice` verb.
+The Code-tab bridge does not read Google's sign-in store or send the Code tab's system prompt to agy. It reads limited local Gemini session and settings data for features such as history and MCP. Chat's system text goes to agy as the opening instructions. `desktop-sandbox` is a contributor tool under `tools/`, not a `splice` verb.
 
 **Who is affected.** Desktop users with `agy` installed and signed in see the rows after the upgrade.
 
-**What to do.** Nothing is required. For Gemini in the Code tab, install the managed wrapper (above). To sign agy in, run `agy acp --login` in a terminal, then `splice restart`. To keep agy out entirely:
+**What to do.** For Gemini in the Code tab, opt in to `seatd-pipe` and install the managed wrapper (above). If a Gemini submission reaches the Code-tab gateway instead of the bridge, the Code tab explains how to set it up. To sign agy in, run `agy acp --login` in a terminal, then `splice restart`. To keep agy out entirely:
 
 ```toml
 [daemon]

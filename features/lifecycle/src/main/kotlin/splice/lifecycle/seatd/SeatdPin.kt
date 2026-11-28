@@ -3,18 +3,26 @@ package splice.lifecycle.seatd
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromJsonElement
+import splice.core.install.seatdPipePinDocument
 import splice.lifecycle.release.ReleaseDirectories
-import java.io.IOException
 
 /** One checked-in asset manifest, copied unchanged into the jar by processResources. */
 @Serializable
-internal data class SeatdPin(val version: String, val urlTemplate: String, val platforms: Map<String, SeatdAsset>) {
+internal data class SeatdPin(
+    val version: String,
+    val urlTemplate: String,
+    val platforms: Map<String, SeatdAsset>,
+    val repository: String,
+) {
     fun reviewed(): Boolean =
         !version.endsWith("-unreleased") && ReleaseDirectories.isVersion(version) &&
             platforms.isNotEmpty() && platforms.values.all(SeatdAsset::reviewed)
 
     fun download(platform: SeatdPlatform): SeatdDownload? = platform.key()?.let(platforms::get)?.let { asset ->
-        val url = urlTemplate.replace("{version}", version).replace("{asset}", asset.asset)
+        val url = urlTemplate.replace("{repository}", repository)
+            .replace("{version}", version)
+            .replace("{asset}", asset.asset)
         SeatdDownload(url, asset.sha256)
     }
 }
@@ -31,12 +39,8 @@ private val SEATD_SHA256 = Regex("[a-fA-F0-9]{64}")
 internal object SeatdPins {
     val bundled: SeatdPin? by lazy {
         try {
-            javaClass.getResourceAsStream("/seatd-pipe.json")?.bufferedReader()?.use {
-                Json.decodeFromString<SeatdPin>(it.readText())
-            }
+            seatdPipePinDocument?.let { Json.decodeFromJsonElement<SeatdPin>(it) }
         } catch (_: SerializationException) {
-            null
-        } catch (_: IOException) {
             null
         }
     }
@@ -50,8 +54,8 @@ internal class SeatdPlatform(
     private val mac: Boolean get() = os.startsWith("Mac", ignoreCase = true)
 
     fun key(): String? = when (arch.lowercase()) {
-        "amd64", "x86_64" -> named("linux-x64", "darwin-x86_64")
-        "aarch64", "arm64" -> named("linux-arm64", "darwin-arm64")
+        "amd64", "x86_64" -> named("linux-x86_64", "darwin-x86_64")
+        "aarch64", "arm64" -> named("linux-aarch64", "darwin-arm64")
         else -> null
     }
 

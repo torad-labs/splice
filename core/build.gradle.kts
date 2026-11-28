@@ -16,6 +16,11 @@ dependencies {
     testImplementation(libs.junit.platform.launcher)
 }
 
+// The installer and the explanatory link read the same pin the release tool reads.
+tasks.processResources {
+    from(rootProject.layout.projectDirectory.file("tools/release/seatd-pipe.json"))
+}
+
 // Fixture laws that must FAIL when the guard works. They live in their own source set: it is on the launcher test's classpath
 // and in no Test task's testClassesDirs, so the build never runs one as a test and no skip condition is needed.
 val lawFixtures = sourceSets.create("lawFixtures") {

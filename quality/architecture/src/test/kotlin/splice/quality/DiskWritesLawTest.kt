@@ -486,6 +486,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "Files.writeString(" to 2,
     ),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeLock.kt" to mapOf("FileChannel.open(" to 1),
+    // The optional companion extracts three verified files in a private stage, then publishes their directory at once.
+    "features/lifecycle/src/main/kotlin/splice/lifecycle/seatd/SeatdArchive.kt" to mapOf("Files.newOutputStream(" to 1),
+    "features/lifecycle/src/main/kotlin/splice/lifecycle/seatd/SeatdStage.kt" to mapOf("Files.move(" to 1),
     // A release asset streamed into its `.part` sibling in the stage and renamed onto its own name once its sha256
     // matches (2026-11-10, replacing UpgradeRelease's whole-file write), in the releases/.staging disk page row.
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeDownloadFiles.kt" to mapOf(

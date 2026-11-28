@@ -19,17 +19,13 @@ dependencies {
     // `splice restart` reads the topology for the control port and the head ports its stop must see freed.
     implementation(project(":integrations-topology"))
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.commons.compress)
     // TestPorts: a port a test must know before anything binds it, reserved below the ephemeral range.
     testImplementation(testFixtures(project(":core")))
     testImplementation(libs.ktor.server.test.host) {
         exclude(group = "io.ktor", module = "ktor-client-apache5")
     }
     testImplementation(libs.kotlinx.coroutines.core)
-}
-
-// Bundle the same reviewed pin the release tool reads, without a checkout at runtime.
-tasks.processResources {
-    from(rootProject.layout.projectDirectory.file("tools/release/seatd-pipe.json"))
 }
 
 // THE LAW HERE (the shim selector law in SupervisedStartTest.kt) reads the launch script the dist ships, and walks up to

@@ -1,21 +1,22 @@
 {
-  "version": "0.0.0-unreleased",
-  "urlTemplate": "https://github.com/torad-labs/seatd/releases/download/v{version}/{asset}",
+  "repository": "https://github.com/torad-labs/seatd",
+  "version": "0.1.0",
+  "urlTemplate": "{repository}/releases/download/v{version}/{asset}",
   "platforms": {
-    "linux-x64": {
-      "asset": "seatd-pipe-linux-x64",
+    "linux-x86_64": {
+      "asset": "seatd-pipe-0.1.0-linux-x86_64.tar.gz",
       "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
     },
-    "linux-arm64": {
-      "asset": "seatd-pipe-linux-arm64",
+    "linux-aarch64": {
+      "asset": "seatd-pipe-0.1.0-linux-aarch64.tar.gz",
       "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
     },
     "darwin-arm64": {
-      "asset": "seatd-pipe-darwin-arm64",
+      "asset": "seatd-pipe-0.1.0-darwin-arm64.tar.gz",
       "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
     },
     "darwin-x86_64": {
-      "asset": "seatd-pipe-darwin-x86_64",
+      "asset": "seatd-pipe-0.1.0-darwin-x86_64.tar.gz",
       "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
     }
   }

@@ -9,7 +9,10 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import splice.core.config.UserHome
+import splice.core.install.seatdPipeRepository
 import splice.core.util.EnvReader
 import splice.lifecycle.upgrade.UpgradeFetch
 import splice.lifecycle.upgrade.UpgradeFetchFailed
@@ -24,22 +27,24 @@ class SeatdInstallerTest(@TempDir scratch: Path) {
     private val share = home.resolve("share with spaces")
     private val installer = SeatdInstaller(EnvReader { key -> share.toString().takeIf { key == "SPLICE_SHARE_DIR" } })
     private val release = home.resolve("upstream").resolve("3.0.0")
-    private val asset = release.resolve("renamed-pipe")
+    private val asset = release.resolve("seatd-pipe-renamed.tar.gz")
     private val binary = "stand-in executable".toByteArray()
+    private val archives = SeatdArchiveFixture(binary)
+    private val archive = archives.bytes()
     private val target = share.resolve("seatd/3.0.0/seatd-pipe")
     private val retry = "splice desktop on"
     private val platform = SeatdPlatform()
-    private val digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(binary))
     private val pin = SeatdPin(
         version = "3.0.0",
-        urlTemplate = home.resolve("upstream").toUri().toString().trimEnd('/') + "/{version}/{asset}",
-        platforms = mapOf(requireNotNull(platform.key()) to SeatdAsset("renamed-pipe", digest)),
+        urlTemplate = "{repository}/{version}/{asset}",
+        platforms = mapOf(requireNotNull(platform.key()) to SeatdAsset(asset.fileName.toString(), sha256(archive))),
+        repository = home.resolve("upstream").toUri().toString().trimEnd('/'),
     )
 
     @Test
     fun `a verified download lands executable at the versioned path and can be found there`() = inHome {
         assertNull(installer.installed(pin, platform))
-        publish(binary)
+        publish(archive)
 
         val result = assertInstanceOf(SeatdInstaller.Result.Installed::class.java, install())
 
@@ -47,7 +52,8 @@ class SeatdInstallerTest(@TempDir scratch: Path) {
         assertEquals(result.location, installer.installed(pin, platform))
         assertArrayEquals(binary, Files.readAllBytes(target))
         assertEquals(PosixFilePermissions.fromString("rwxr-xr-x"), Files.getPosixFilePermissions(target))
-        assertFalse(Files.exists(target.resolveSibling(".seatd-pipe.part")))
+        assertEquals(archives.license, Files.readString(target.resolveSibling("LICENSE")))
+        assertEquals(archives.notices, Files.readString(target.resolveSibling("THIRD_PARTY_NOTICES.md")))
     }
 
     @Test
@@ -55,13 +61,34 @@ class SeatdInstallerTest(@TempDir scratch: Path) {
         publish("wrong bytes".toByteArray())
 
         failed(install(), SeatdInstaller.Failure.CHECKSUM_MISMATCH, "checksum", retry)
-        assertFalse(Files.exists(target))
-        assertFalse(Files.exists(target.resolveSibling(".seatd-pipe.part")))
+        assertFalse(Files.exists(target.parent))
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+        strings = [
+            "path traversal", "absolute path", "symlink", "device", "extra file", "missing program", "pax metadata",
+        ],
+    )
+    fun `a verified archive with an invalid inventory installs nothing`(kind: String) = inHome {
+        val bytes = archives.bytes(kind)
+        val edited = pin.copy(platforms = pin.platforms.mapValues { (_, row) -> row.copy(sha256 = sha256(bytes)) })
+        publish(bytes)
+
+        val result = assertInstanceOf(
+            SeatdInstaller.Result.Failed::class.java,
+            installer.install(edited, platform, retry),
+        )
+        assertEquals(SeatdInstaller.Failure.INVALID_ARCHIVE, result.kind)
+        assertTrue(result.message.contains("archive"), result.message)
+        assertTrue(result.message.contains("Nothing was installed"), result.message)
+        assertFalse(Files.exists(target.parent))
+        assertFalse(Files.exists(share.resolve("seatd/x")))
     }
 
     @Test
     fun `a missing release asset tells the person where to report it and how to retry`() = inHome {
-        failed(install(), SeatdInstaller.Failure.DOWNLOAD_FAILED, "missing", "seatd/issues", retry)
+        failed(install(), SeatdInstaller.Failure.DOWNLOAD_FAILED, "missing", "$seatdPipeRepository/issues", retry)
         assertFalse(Files.exists(target))
     }
 
@@ -76,15 +103,15 @@ class SeatdInstallerTest(@TempDir scratch: Path) {
 
     @Test
     fun `an unwritable version folder is named with the way to retry`() = inHome {
-        publish(binary)
-        Files.createDirectories(target.parent)
-        Files.setPosixFilePermissions(target.parent, PosixFilePermissions.fromString("r-x------"))
+        publish(archive)
+        val folder = Files.createDirectories(target.parent.parent)
+        Files.setPosixFilePermissions(folder, PosixFilePermissions.fromString("r-x------"))
         try {
-            assumeFalse(Files.isWritable(target.parent), "This test needs a user subject to directory permissions.")
-            failed(install(), SeatdInstaller.Failure.NOT_WRITABLE, target.parent.toString(), retry)
-            assertFalse(Files.exists(target))
+            assumeFalse(Files.isWritable(folder), "This test needs a user subject to directory permissions.")
+            failed(install(), SeatdInstaller.Failure.NOT_WRITABLE, folder.toString(), retry)
+            assertFalse(Files.exists(target.parent))
         } finally {
-            Files.setPosixFilePermissions(target.parent, PosixFilePermissions.fromString("rwx------"))
+            Files.setPosixFilePermissions(folder, PosixFilePermissions.fromString("rwx------"))
         }
     }
 
@@ -101,7 +128,7 @@ class SeatdInstallerTest(@TempDir scratch: Path) {
             ),
             SeatdInstaller.Failure.NO_REVIEWED_RELEASE,
             "No reviewed seatd-pipe release is pinned yet",
-            "https://github.com/torad-labs/seatd",
+            seatdPipeRepository,
         )
         assertNull(installer.installed(placeholder, platform))
         assertFalse(Files.exists(share))
@@ -136,7 +163,7 @@ class SeatdInstallerTest(@TempDir scratch: Path) {
             installer.install(pin, SeatdPlatform("Windows", "amd64"), retry),
             SeatdInstaller.Failure.UNSUPPORTED_PLATFORM,
             "Windows",
-            "https://github.com/torad-labs/seatd",
+            seatdPipeRepository,
         )
         assertFalse(Files.exists(share))
     }
@@ -165,7 +192,7 @@ class SeatdInstallerTest(@TempDir scratch: Path) {
         val session = startSession(running)
         try {
             assertTrue(session.isAlive)
-            publish(binary)
+            publish(archive)
 
             assertInstanceOf(SeatdInstaller.Result.Installed::class.java, install())
             assertTrue(Files.exists(rollback))
@@ -192,6 +219,9 @@ class SeatdInstallerTest(@TempDir scratch: Path) {
     private fun inHome(body: () -> Unit) = UserHome.within(home, body)
 
     private fun install(): SeatdInstaller.Result = installer.install(pin, platform, retry)
+
+    private fun sha256(bytes: ByteArray): String =
+        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
 
     private fun publish(bytes: ByteArray) {
         Files.createDirectories(release)

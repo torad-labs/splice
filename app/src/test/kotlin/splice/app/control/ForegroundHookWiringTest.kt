@@ -47,13 +47,7 @@ class ForegroundHookWiringTest {
         val registry = registry(dir, tools, WallClock { now })
         val paths = StatePaths(baseOverride = dir.resolve("state"))
         val mgmt = MgmtKey(paths)
-        val server = controlServerFor(
-            port = 0,
-            heads = mapOf("synthetic" to head()),
-            config = ConfigService(paths),
-            runtime = ControlRuntime(sessions = registry),
-            auth = ControlAuth(mgmtKey = mgmt, log = {}),
-        )
+        val server = server(paths, registry, mgmt)
         runBlocking { server.start() }
         val client = HttpClient(CIO) { expectSuccess = false }
         try {
@@ -67,15 +61,21 @@ class ForegroundHookWiringTest {
                     assertEquals(200, beforeWiring.status.value, beforeWiring.bodyAsText())
                     assertEquals(SessionAvailability.STALE, registry.read().single().availability)
                     server.ports.turns.foreground = tools
+                    val door = "http://127.0.0.1:${server.listeningPort}/hooks/foreground/door"
+                    val start = callback(client, "$door?phase=start", mgmt, toolEvent("PreToolUse"))
+                    assertEquals(200, start.status.value)
+                    now += 45 * 60_000L
+                    assertEquals(SessionAvailability.LIVE, registry.read().single().availability)
+                    val end = callback(client, "$door?phase=end", mgmt, toolEvent("PostToolUse"))
+                    assertEquals(200, end.status.value)
+                    now += 45 * 60_000L
+                    assertEquals(SessionAvailability.STALE, registry.read().single().availability)
                     val accepted = callback(client, url, mgmt, START)
                     assertEquals(200, accepted.status.value, accepted.bodyAsText())
                     now += 45 * 60_000L
                     assertEquals(SessionAvailability.LIVE, registry.read().single().availability)
-                    val ended = client.post(url) {
-                        header("Authorization", "Bearer ${TurnKey(mgmt).get()}")
-                        header(FOREGROUND_OWNER_HEADER, "11111111-0000-4000-8000-000000000001")
-                        setBody("""{"session_id":"$SESSION","tool_use_id":null,"phase":"session_end"}""")
-                    }
+                    val closing = """{"session_id":"$SESSION","tool_use_id":null,"phase":"session_end"}"""
+                    val ended = callback(client, url, mgmt, closing)
                     assertEquals(200, ended.status.value)
                     assertEquals(SessionAvailability.STALE, registry.read().single().availability)
                 }
@@ -85,6 +85,18 @@ class ForegroundHookWiringTest {
             server.stop()
         }
     }
+
+    private fun server(paths: StatePaths, registry: SessionRegistry, mgmt: MgmtKey) = controlServerFor(
+        port = 0,
+        heads = mapOf("synthetic" to head()),
+        config = ConfigService(paths),
+        runtime = ControlRuntime(sessions = registry),
+        auth = ControlAuth(mgmtKey = mgmt, log = {}),
+    )
+
+    private fun toolEvent(event: String): String =
+        """{"hook_event_name":"$event","tool_input":{"session_id":"other","tool_use_id":"nested-$event"},""" +
+            """"session_id":"$SESSION","tool_use_id":"desktop-tool","tool_name":"Read"}"""
 
     private suspend fun callback(client: HttpClient, url: String, mgmt: MgmtKey, body: String) =
         client.post(url) {

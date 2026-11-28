@@ -351,6 +351,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // Which program each Desktop session runs on, in the desktop-harnesses.json disk page row.
     "app/src/main/kotlin/splice/app/desktop/harness/DesktopHarnessFile.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/desktop/setup/DesktopPrograms.kt" to mapOf("writeAtomic(" to 3),
+    "app/src/main/kotlin/splice/app/desktop/setup/DesktopHooks.kt" to
+        mapOf("writeAtomic(" to 1, "writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/cli/peer/PeerHookExports.kt" to mapOf("Files.newBufferedWriter(" to 1),
     // The names of the mcp modes the daemon gives Claude Desktop, in the desktop-own-mcp.json disk page row.
     "app/src/main/kotlin/splice/app/desktop/setup/DesktopOwnMcp.kt" to mapOf("writeAtomic0600(" to 1),
     // An extension or skill copied whole into Desktop's gateway profile: staged beside it, then moved into place.
@@ -497,6 +500,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "Files.writeString(" to 2,
     ),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeLock.kt" to mapOf("FileChannel.open(" to 1),
+    // The optional companion extracts three verified files in a private stage, then publishes their directory at once.
+    "features/lifecycle/src/main/kotlin/splice/lifecycle/seatd/SeatdArchive.kt" to mapOf("Files.newOutputStream(" to 1),
+    "features/lifecycle/src/main/kotlin/splice/lifecycle/seatd/SeatdStage.kt" to mapOf("Files.move(" to 1),
     // A release asset streamed into its `.part` sibling in the stage and renamed onto its own name once its sha256
     // matches (2026-11-10, replacing UpgradeRelease's whole-file write), in the releases/.staging disk page row.
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeDownloadFiles.kt" to mapOf(

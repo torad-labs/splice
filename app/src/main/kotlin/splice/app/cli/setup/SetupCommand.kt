@@ -45,6 +45,7 @@ internal class SetupCommand(
     private val headChoices = SetupHeadChoices(prompts, profiles)
     private val modes = SetupModes(prompts, env)
     private val autoUpdate = SetupAutoUpdate(prompts, env)
+    private val seatd = SetupSeatd(prompts, env, effects.seatd)
 
     /** The post-install OAuth tail, in splice.app.cli.setup since V4-156 (concentration). */
     private val signIn = SetupSignIn(loginHead, env)
@@ -93,11 +94,18 @@ internal class SetupCommand(
         val local = localModel.offer(path)
         val share = mcpShare.ask(path) ?: return WizardAnswer.Cancelled("cancelled")
         val hooksChoice = codexHooks.offer(facts)
-        val extras = SetupExtras(local, share, modes.offer(path).orEmpty(), autoUpdate.offer(path), hooksChoice)
+        val extras = SetupExtras(
+            local,
+            share,
+            modes.offer(path).orEmpty(),
+            autoUpdate.offer(path),
+            hooksChoice,
+            seatd.offer(),
+        )
         val summary = menu.summaryLines(path, bin, selection.heads, launchers.summaryLines(launcherChoice)) +
             selection.choices.values.map { it.summary } + localModel.summary(local) + mcpShare.summary(share) +
             codexHooks.summary(hooksChoice) + modes.summary(extras.modes) + autoUpdate.summary(extras.autoUpdate)
-        frame.note("Summary", summary)
+        frame.note("Summary", summary + seatd.summary(extras.seatd))
         if (!frame.confirm("Install now?", true)) return WizardAnswer.Cancelled("not installing")
         effects.choose(selection.choices)
         return WizardAnswer.Plan(path, launchers, launcherChoice, selection.picker, selection.heads, extras)
@@ -108,6 +116,7 @@ internal class SetupCommand(
         val landed = plan.picker.addAll(plan.heads)
         plan.launchers.apply(plan.launcherChoice, frame)
         localModel.install(plan.extras.local)
+        seatd.apply(plan.extras.seatd)
         val topology = TopologyLoader.loadOrMaterialize(plan.path)
         mcpShare.save(plan.path, plan.extras.share)
         mcpShare.hub(plan.path, plan.extras.share)

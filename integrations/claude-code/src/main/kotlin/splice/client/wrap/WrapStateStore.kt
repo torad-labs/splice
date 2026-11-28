@@ -23,6 +23,9 @@ import java.nio.file.Paths
 
 private const val WRAP_STATE_FILE = "claude-head-wrap.json"
 
+/** In the state directory, the wrapped command's native target for launchers that do not read JSON. */
+public const val UNWRAPPED_CLAUDE: String = "claude-unwrapped"
+
 /** The one fact [splice.launch.recipe.LaunchService] must read on every launch (see file header). A file,
  *  not in-memory state: the daemon's LaunchService is constructed once at boot while wrap/unwrap are
  *  per-request actions, possibly from a different process (`splice` CLI) — only a file both can
@@ -30,6 +33,7 @@ private const val WRAP_STATE_FILE = "claude-head-wrap.json"
 public class WrapStateStore(
     private val file: Path = StatePaths().stateDir.resolve(WRAP_STATE_FILE),
 ) {
+    internal val unwrapped: Path = file.resolveSibling(UNWRAPPED_CLAUDE)
     private val json = Json {
         ignoreUnknownKeys = true
         prettyPrint = true
@@ -109,7 +113,10 @@ public class WrapStateStore(
     /** Best-effort: a failed delete only leaves a stale file a later wrap's write() will overwrite anyway. */
     public fun clear() {
         Cancellables.discard(
-            Cancellables.runCatchingCancellable { Files.deleteIfExists(file) },
+            Cancellables.runCatchingCancellable {
+                Files.deleteIfExists(file)
+                Files.deleteIfExists(unwrapped)
+            },
             "wrap-state clear is best-effort: a file left behind is overwritten by the next wrap",
         )
     }

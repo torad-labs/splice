@@ -1,10 +1,10 @@
-// NEW: foreground-tool callbacks carry opaque ownership and phase, never tool content.
+// Foreground activity retained by the daemon carries opaque identities and phase, never tool content.
 package splice.core.client
 
 /** Lifecycle facts, independent of the tool's name, input, output or provider request. */
 public enum class ForegroundToolPhase { START, END, SESSION_START, SESSION_END }
 
-/** The per-launch value travels in the transport header, never in the hook's three-field JSON body. */
+/** The per-launch value travels in the transport header, not in the hook event. */
 public const val FOREGROUND_OWNER_HEADER: String = "X-Splice-Foreground-Owner"
 
 // why: random UUID launch owners have one fixed textual width; both transport ends validate the same bound.

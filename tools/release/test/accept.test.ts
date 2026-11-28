@@ -151,6 +151,16 @@ describe("release accept", () => {
     expect(accept("", { argv: ["--version"] }).output).toContain("--version needs the version");
   });
 
+  test("a bundle without third-party notices is refused even if the manifest omits them", () => {
+    const dist = bundle();
+    rmSync(join(dist, "THIRD_PARTY_NOTICES.md"));
+    const sums = join(dist, "sha256sums.txt");
+    writeFileSync(sums, readFileSync(sums, "utf8").replace(/^.*  THIRD_PARTY_NOTICES\.md\n/m, ""));
+    const run = accept(dist);
+    expect(run.code).toBe(1);
+    expect(run.output).toContain("THIRD_PARTY_NOTICES.md is missing from the release");
+  });
+
   test("a missing manifest reports as EMPTY", () => {
     const dir = bundle();
     rmSync(join(dir, "sha256sums.txt"));

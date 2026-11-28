@@ -68,6 +68,17 @@ case "$*" in
   *" shim-version") echo shim-test ;;
   *" version") echo "splice 9.9.9" ;;
   *" install --all") mkdir -p "$SPLICE_BIN_DIR" && ln -sfn "$SPLICE_JAR" "$SPLICE_BIN_DIR/splice" ;;
+  *" offer-seatd-pipe --show")
+    echo "Companion explanation from the jar"
+    echo "To add seatd-pipe later, run: splice setup --update" ;;
+  *" offer-seatd-pipe")
+    [ -e "$SPLICE_BIN_DIR/splice" ] || exit 1
+    printf "Install seatd-pipe? [y/N] "
+    read -r answer
+    case "$answer" in
+      y) echo "seatd-pipe installed" ;;
+      *) echo "To add seatd-pipe later, run: splice setup --update" ;;
+    esac ;;
   *) : ;;
 esac
 `);
@@ -89,7 +100,13 @@ function install(env: Record<string, string>, assets: string = ASSETS): { urls: 
   cleanup.push(box.dir);
   const curlLog = join(box.dir, "curl.log");
   const ghLog = join(box.dir, "gh.log");
-  const result = runInstall(assets, box, {
+  const result = runInstall(assets, box, installEnv(box, assets, curlLog, ghLog, env));
+  const urls = existsSync(curlLog) ? readFileSync(curlLog, "utf8").split("\n").filter(Boolean) : [];
+  return { urls, output: result.output, ok: result.ok };
+}
+
+function installEnv(box: ReturnType<typeof makeSandbox>, assets: string, curlLog: string, ghLog: string, env = {}) {
+  return {
     ...sandboxEnv(box),
     SPLICE_FAKE_RELEASE_ASSETS: assets,
     SPLICE_FAKE_CURL_LOG: curlLog,
@@ -97,10 +114,72 @@ function install(env: Record<string, string>, assets: string = ASSETS): { urls: 
     SPLICE_RELEASE_BASE_URL: "",
     PATH: `${NETWORK.dir}:${FAKE_TOOLS}:${box.bin}:${Bun.env.PATH ?? ""}`,
     ...env,
-  });
-  const urls = existsSync(curlLog) ? readFileSync(curlLog, "utf8").split("\n").filter(Boolean) : [];
-  return { urls, output: result.output, ok: result.ok };
+  };
 }
+
+describe("install.sh keeps the companion optional", () => {
+  test("a piped script never offers the companion and says how to add it later", () => {
+    const run = install({});
+    expect(run.ok, run.output).toBe(true);
+    expect(run.output).not.toContain("Install seatd-pipe?");
+    expect(run.output).toContain("Companion explanation from the jar");
+    expect(run.output).toContain("To add seatd-pipe later, run: splice setup --update");
+    expect(run.urls.some((url) => url.includes("/seatd-pipe-"))).toBe(false);
+  });
+
+  test.each([
+    ["n", "To add seatd-pipe later, run: splice setup --update"],
+    ["y", "seatd-pipe installed"],
+    ["", "To add seatd-pipe later, run: splice setup --update"],
+  ])("a terminal user who answers '%s' gets the corresponding outcome", async (answer, outcome) => {
+    const box = makeSandbox("install-downloads-tty-");
+    cleanup.push(box.dir);
+    const curlLog = join(box.dir, "curl.log");
+    let output = "";
+    let sent = false;
+    const proc = Bun.spawn(["bash", join(ASSETS, "install.sh")], {
+      cwd: box.work,
+      env: { ...Bun.env, ...installEnv(box, ASSETS, curlLog, join(box.dir, "gh.log")) },
+      terminal: {
+        data(terminal, bytes) {
+          output += Buffer.from(bytes).toString();
+          if (!sent && output.includes("Install seatd-pipe? [y/N] ")) {
+            sent = true;
+            terminal.write(answer + "\n");
+          }
+        },
+      },
+    });
+    try {
+      expect(await proc.exited, output).toBe(0);
+      expect(output).toContain("Install seatd-pipe?");
+      expect(output).toContain(outcome);
+      expect(readFileSync(curlLog, "utf8")).not.toContain("/seatd-pipe-");
+    } finally {
+      proc.terminal?.close();
+    }
+  });
+
+  test("a script piped into bash skips the offer even with terminal output", async () => {
+    const box = makeSandbox("install-downloads-pipe-");
+    cleanup.push(box.dir);
+    const curlLog = join(box.dir, "curl.log");
+    let output = "";
+    const proc = Bun.spawn(["bash", "-c", 'cat "$1" | bash', "bash", join(ASSETS, "install.sh")], {
+      cwd: box.work,
+      env: { ...Bun.env, ...installEnv(box, ASSETS, curlLog, join(box.dir, "gh.log")) },
+      terminal: { data(_terminal, bytes) { output += Buffer.from(bytes).toString(); } },
+    });
+    try {
+      expect(await proc.exited, output).toBe(0);
+      expect(output).not.toContain("Install seatd-pipe?");
+      expect(output).toContain("To add seatd-pipe later, run: splice setup --update");
+      expect(readFileSync(curlLog, "utf8")).not.toContain("/seatd-pipe-");
+    } finally {
+      proc.terminal?.close();
+    }
+  });
+});
 
 describe("install.sh downloads from splice.torad.ai", () => {
   test("a default install takes the newest stable release from /latest", () => {

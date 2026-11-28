@@ -237,7 +237,8 @@ class SetupUpdateTest {
             seedToml(home, autoUpdate = false)
             runBlocking { update(said, facts = desktop(cli = true, app = true), console = true).run() }
         }
-        assertTrue("splice desktop on" in said, "the full-app offer was made: $said")
+        assertTrue("Install seatd-pipe?" in said, "the prerequisite offer was made: $said")
+        assertFalse("Put all of Claude Desktop" in said, "declining the companion leaves Desktop alone: $said")
         assertFalse("Nothing new to set up" in said, said.toString())
         assertTrue("Nothing changed" in said, said.toString())
     }

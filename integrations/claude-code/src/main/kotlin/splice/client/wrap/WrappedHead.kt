@@ -240,6 +240,7 @@ public class WrappedHead(
             ),
         )
         stateStore.recordLauncherOwner(home, shim, installPaths.launcherProfile)
+        links.atomicSymlink(stateStore.unwrapped, Paths.get(ready.realBinaryPath))
         links.atomicSymlink(cmd, shim)
         return WrapResult.Ok(status())
     }
@@ -268,11 +269,14 @@ public class WrappedHead(
     private fun refreshBinary(state: WrapState): ReconcileResult {
         val recorded = Paths.get(state.realBinaryPath)
         val live = if (Files.isExecutable(recorded)) {
-            WrapBinaryVersions.newerBeside(recorded) ?: return ReconcileResult.Intact
+            WrapBinaryVersions.newerBeside(recorded) ?: recorded
         } else {
             WrapBinaryVersions.newestBeside(recorded)
                 ?: return ReconcileResult.Waiting("the recorded claude $recorded is gone and none sits beside it")
         }
+        // This also publishes the native target for wraps made before that link existed.
+        if (!links.isWrapShim(stateStore.unwrapped, live)) links.atomicSymlink(stateStore.unwrapped, live)
+        if (live == recorded) return ReconcileResult.Intact
         stateStore.write(state.copy(realBinaryPath = live.toString(), shadowedSymlinkTarget = live.toString()))
         return ReconcileResult.Rewrapped(live.toString())
     }
@@ -293,6 +297,7 @@ public class WrappedHead(
             ),
         )
         stateStore.recordLauncherOwner(home, shim, installPaths.launcherProfile)
+        links.atomicSymlink(stateStore.unwrapped, real)
         links.atomicSymlink(cmd, shim)
         return ReconcileResult.Rewrapped(real.toString())
     }

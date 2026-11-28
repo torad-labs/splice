@@ -3,6 +3,7 @@ package splice.app.desktop
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -34,6 +35,7 @@ import splice.core.client.SESSION_HEADER
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
+import splice.core.install.seatdPipeRepository
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.speed.SessionSpeeds
@@ -86,8 +88,7 @@ class DesktopDoorAntigravityTest {
                         contentType(ContentType.Application.Json)
                         setBody(chatBody)
                     }
-                    assertEquals(HttpStatusCode.BadRequest, cliRes.status)
-                    assertTrue(cliRes.bodyAsText().contains("runs only in Claude Desktop"))
+                    assertCompanionRefusal(cliRes)
 
                     val termRes = client.post("/door/v1/messages") {
                         header(HttpHeaders.Authorization, "Bearer ${harness.termToken}")
@@ -141,6 +142,21 @@ class DesktopDoorAntigravityTest {
                 }
             }
         }
+
+    private suspend fun assertCompanionRefusal(response: HttpResponse) {
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertEquals("application/json", response.headers[HttpHeaders.ContentType]?.substringBefore(';'))
+        val refusal = response.bodyAsText()
+        listOf(
+            "invalid_request_error",
+            "claude-antigravity--gem-4-neon",
+            "seatd-pipe",
+            "open-source",
+            seatdPipeRepository,
+            "splice setup --update",
+            "splice desktop on",
+        ).forEach { assertTrue(it in refusal, refusal) }
+    }
 
     private suspend fun buildHarness(): Harness {
         val script = writeFakeAgy()

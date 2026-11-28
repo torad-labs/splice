@@ -38,6 +38,13 @@ private const val NO_ANSWER = "no answer"
 /** `doctor --json` shipped in 0.4.0. */
 private const val JSON_DOCTOR_MINOR = 4
 
+internal object ReleaseUrls {
+    /** The installer's override wins; otherwise an exact tag or the newest stable release. */
+    fun base(to: String?, override: String? = null): String =
+        override?.trim()?.takeIf { it.isNotEmpty() }?.trimEnd('/')
+            ?: if (to == null) "$RELEASE_SITE/latest" else "$RELEASE_SITE/v${to.removePrefix("v")}"
+}
+
 /** A release file by the name it is published under and the name it takes in staging. Only the jar has two: a
  *  platform's own jar lands as the one jar every later step reads. */
 private data class Published(val name: String, val lands: String = name)
@@ -59,12 +66,6 @@ internal class UpgradeRelease(
 
     /** The line of the published launch shim that names its release; the workflow tags the release from the same line. */
     private val launchVersion = Regex("SPLICE_GATEWAY_VERSION=\"(\\d+\\.\\d+\\.\\d+[-+.0-9A-Za-z]*)\"")
-
-    /** The release base: SPLICE_RELEASE_BASE_URL wins (the installer's override), else the tag or latest.
-     *  Tags are `v<version>` (release.yml); `--to 0.4.0` and `--to v0.4.0` name the same one. */
-    fun base(to: String?, override: String?): String =
-        override?.trim()?.takeIf { it.isNotEmpty() }?.trimEnd('/')
-            ?: if (to == null) "$RELEASE_SITE/latest" else "$RELEASE_SITE/v${to.removePrefix("v")}"
 
     /** Fetch, verify and validate the release into [staging]. [attest] false is the daemon updater (UpgradeAuto): a beta
      *  built while Actions is locked has no attestation, so that run checks every asset against the release sums alone,

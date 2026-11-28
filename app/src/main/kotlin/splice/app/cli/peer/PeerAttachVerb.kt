@@ -6,6 +6,7 @@ package splice.app.cli.peer
 import splice.app.cli.hook.HarnessHook
 import splice.app.cli.hook.HookLook
 import splice.app.cli.hook.SilentTerminal
+import splice.core.mcp.McpHarness
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.PEER_NAME_PATTERN
 import splice.core.util.EnvReader
@@ -19,6 +20,7 @@ private const val ENV_SWITCH = "--env"
 private const val HARNESS_FLAG = "--harness"
 private const val ATTACH_NAME_FLAG = "--name"
 private const val DEFAULT_ATTACH_PREFIX = "peer"
+private const val DESKTOP_PEER_BRIDGE = "seatd-pipe"
 
 // why: peer names follow PEER_NAME_PATTERN (1 letter + up to 31 alnum/dash = 32 chars total).
 private const val MAX_ATTACH_NAME_LEN = 32
@@ -62,7 +64,8 @@ internal class PeerAttachVerb(
                 "--harness cannot be a plain shell ($harness); pass a harness binary or --owner <pid>",
             )
         }
-        val extra = PeerRegistrationBody.extraPrograms(env, processes) + listOfNotNull(harness)
+        val bridge = DESKTOP_PEER_BRIDGE.takeIf { look.active }
+        val extra = PeerRegistrationBody.extraPrograms(env, processes) + listOfNotNull(harness, bridge)
         val resolved = resolveOwner(parsed.values["--owner"], extra)
         val explicitName = explicitName(parsed)
         return when {
@@ -73,6 +76,7 @@ internal class PeerAttachVerb(
                 name = deriveName(explicitName, harness, resolved, look),
                 cwd = resolveCwd(parsed, look),
                 owner = resolved.process,
+                nativeHarness = McpHarness.AGY.definition.wire.takeIf { resolved.program == DESKTOP_PEER_BRIDGE },
             )
         }
     }
@@ -84,7 +88,13 @@ internal class PeerAttachVerb(
         parsed.values["--cwd"] ?: look.directory ?: Path.of("").toAbsolutePath().normalize().toString()
 
     private fun submit(parsed: PeerArgs, look: HookLook, plan: AttachPlan.Ready): Int {
-        val body = PeerRegistrationBody.buildOwned(plan.name, parsed.values + ("--cwd" to plan.cwd), plan.owner)
+        val body = PeerRegistrationBody.buildOwned(
+            plan.name,
+            parsed.values + ("--cwd" to plan.cwd),
+            plan.owner,
+            nativeInbox = plan.nativeHarness != null,
+            harness = plan.nativeHarness,
+        )
         val key = call.managementKey() ?: return look.keep(PeerExit.REFUSED)
         return when (val answer = call.call("POST", "/api/peers", key, body)) {
             is PeerAnswer.Exit -> look.keep(answer.code)
@@ -131,12 +141,8 @@ internal class PeerAttachVerb(
         val sink = if (look.active) SilentTerminal else out
         val reply = answer.body
         when {
-            ENV_SWITCH in parsed.switches -> {
-                val name = JsonScalars.str(reply, "name").orEmpty()
-                val keyFile = JsonScalars.str(reply, "keyFile").orEmpty()
-                sink.line("export $PEER_NAME_ENV=${shellQuote(name)}")
-                sink.line("export $PEER_KEY_FILE_ENV=${shellQuote(keyFile)}")
-            }
+            look.active -> PeerHookExports(reply).appendTo(env("CLAUDE_ENV_FILE"), err)
+            ENV_SWITCH in parsed.switches -> PeerHookExports(reply).lines().forEach(sink::line)
             JSON_SWITCH in parsed.switches -> sink.line(reply.toString())
             else -> {
                 sink.line("attached ${JsonScalars.str(reply, "name")}")
@@ -147,8 +153,6 @@ internal class PeerAttachVerb(
             }
         }
     }
-
-    private fun shellQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
 }
 
 private data class ResolvedOwner(val program: String?, val process: NativeProcess?)
@@ -156,7 +160,12 @@ private data class ResolvedOwner(val program: String?, val process: NativeProces
 private sealed class AttachPlan {
     data class Refused(val reason: String) : AttachPlan()
 
-    data class Ready(val name: String, val cwd: String, val owner: NativeProcess?) : AttachPlan()
+    data class Ready(
+        val name: String,
+        val cwd: String,
+        val owner: NativeProcess?,
+        val nativeHarness: String?,
+    ) : AttachPlan()
 }
 
 /** Builds a valid peer name matching [PEER_NAME_PATTERN] from [prefix] and [suffix]. */

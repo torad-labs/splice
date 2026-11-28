@@ -29,8 +29,13 @@
 - **`splice desktop on` sets Claude Desktop up itself, with nothing to paste.** It writes splice's configuration into
   Desktop's third-party configuration library and applies it, so all of Desktop (Chat, Cowork and the Code tab) runs
   on splice's door, with the desktop key handed over by a small program Desktop runs. No key is written into
-  Desktop's files. `on` says first what that costs and asks; `off` and `splice uninstall --all` take out exactly what
-  `on` put in.
+  Desktop's files. `off` and `splice uninstall --all` take out exactly what `on` put in.
+- **Desktop's `seatd-pipe` companion is opt-in.** It supports Desktop gateway mode, live switching and Gemini through
+  Antigravity. `splice setup`, `splice setup --update` and the terminal installer ask before a first install; the
+  piped installer skips it. `splice desktop on` offers it when missing and exits without enabling Desktop if you
+  decline or there is no terminal. `--yes` is not consent to the download. Splice verifies the companion from the
+  running Splice version's release and does not install the seatd daemon. Terminal Claude and other providers work
+  without it. See [Claude Desktop](docs/wiki/claude-desktop.md#claude-desktop-on-splice).
 - **Desktop starts out matching your Claude Code.** The configuration is generated: the default policy the build
   ships, with the effort your Claude Code sessions run at and the plugin marketplaces you added laid over it. A
   setting you change in Desktop stays as you set it: a daemon start only gives a configuration what it leaves unset.
@@ -67,6 +72,8 @@
   it comes alive and then rests, and what a page shows is redrawn only when it changed.
 
 ### Upgrading
+- **A missing Desktop companion is an interactive aftercare item, not an automatic install.** `splice doctor` warns
+  if Desktop is enabled and `seatd-pipe` is missing. Run `splice setup --update` or `splice desktop on` to opt in.
 - **Head-only provider settings warn but do not block startup.** Splice names a head's window, tier models,
   standing prompt, older selector prefix or override when its provider does not say the same thing. The gateway
   serves the provider with the value the heads on it agree on, and without one when they disagree.
@@ -175,8 +182,9 @@
 - **Every answer splits its cache write into five-minute and one-hour parts** (`usage.cache_creation`), which Claude
   Desktop's gateway protocol reads.
 - **A turn's row names the Claude Code subagent and parent agent that sent it** on `/api/perf/turns`.
-- **`splice desktop launch`** is what a managed `processWrapper` starts the Code tab through, and `splice desktop`
-  says each Desktop feature that depends on the backend, working or why not.
+- **The managed Code-tab wrapper uses `seatd-pipe` for live switches.** It still starts ordinary Claude Code when
+  the companion is missing. A Gemini submission that reaches the Code-tab gateway shows setup instructions rather
+  than silently switching models. `splice desktop` reports which Desktop features are available and why.
 - **`splice desktop wrapper` asks for both managed settings, and says only what splice read.** Claude Code's managed
   settings need `"parentSettingsBehavior": "merge"` beside `processWrapper`: without it in the source that wins,
   Claude Code drops the policy Claude Desktop hands each Code session, and Desktop warns in every one. `--print`,

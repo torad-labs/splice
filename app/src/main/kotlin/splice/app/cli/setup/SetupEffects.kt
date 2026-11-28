@@ -12,6 +12,10 @@ import splice.configuration.add.AddProfiles
 import splice.configuration.add.DaemonRestart
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
+import splice.launch.install.GeminiShim
+import splice.launch.install.GeminiShimLaid
+import splice.lifecycle.seatd.SeatdCompanion
+import splice.lifecycle.seatd.SeatdInstaller
 
 /** `splice desktop on`, as `setup --update` runs it: true when Desktop was put on splice. */
 internal fun interface DesktopOn {
@@ -28,11 +32,15 @@ internal class SetupEffects(
     private val add: ProfileAdd = CommandAdd(choices),
     val restart: DaemonRestart = DaemonRestart { LifecycleWiring.restart() },
     private val launchers: SetupLaunchers = SetupLaunchers(env),
+    val seatd: SeatdCompanion = SeatdInstaller(env),
 ) {
     fun heads(profiles: AddProfiles, prompts: SetupPrompts, env: EnvReader): SetupHeads =
         SetupHeads(profiles, prompts.pickHeads, add, restart, prompts.hasConsole, env, prompts.frame)
 
     fun launchers(): SetupLaunchers = launchers
+
+    /** Upkeep, never an offer: the shim is laid again where it is missing or stale. Returns what the lay did. */
+    fun refreshGeminiShim(): GeminiShimLaid = GeminiShim(env).lay()
 
     /** `splice doctor`, once, at the end of setup: with no plan connected as much as with three. */
     fun checkup(env: EnvReader) = add.checkup(env)

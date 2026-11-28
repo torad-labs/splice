@@ -51,10 +51,11 @@ class PeerAttachAndDefaultAsTest {
         val session = "9d7c1d2e-1111-2222-3333-444444444444"
         val hookPayload = """{"hook_event_name":"SessionStart","session_id":"$session",""" +
             """"cwd":"${dir.toAbsolutePath()}"}"""
+        val exports = Files.writeString(dir.resolve("session.env"), "export EXISTING='yes'")
         val ran = withServer(dir, StubReply(201, reply), capture) { env ->
             runPeer(
                 listOf("attach", "--harness", "agy", "--owner", pid.toString(), "--hook"),
-                env,
+                env + ("CLAUDE_ENV_FILE" to exports.toString()),
                 stdin = hookPayload,
                 terminal = false,
             )
@@ -64,6 +65,13 @@ class PeerAttachAndDefaultAsTest {
         val body = Json.parseToJsonElement(capture.body).jsonObject
         assertEquals("agy-9d7c1d2e", JsonScalars.str(body, "name"))
         assertEquals(dir.toAbsolutePath().normalize().toString(), JsonScalars.str(body, "cwd"))
+
+        val expected = listOf(
+            "export EXISTING='yes'",
+            "export SPLICE_PEER_NAME='agy-9d7c1d2e'",
+            "export SPLICE_PEER_KEY_FILE='$keyPath'",
+        )
+        assertEquals(expected, Files.readAllLines(exports))
 
         val badOwnerHook = runPeer(listOf("attach", "--owner", "4194303999", "--hook"), envOf(dir, 1), terminal = false)
         assertEquals(PeerExit.REFUSED, badOwnerHook.code)

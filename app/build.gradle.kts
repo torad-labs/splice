@@ -11,6 +11,7 @@ import org.gradle.language.jvm.tasks.ProcessResources
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import splice.release.IsolatePlatforms
 import splice.release.PlatformJar
+import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermissions
@@ -215,6 +216,7 @@ val bom = complianceDir.map { it.file("bom.cdx.json") }
 val licenses = complianceDir.map { it.file("dependency-licenses.json") }
 val thirdPartyLicenses = complianceDir.map { it.file("THIRD_PARTY_LICENSES.txt") }
 val thirdPartyNoticesSource = repositoryRoot.file("THIRD_PARTY_NOTICES.md")
+val seatdPipePin = repositoryRoot.file("tools/release/seatd-pipe.json")
 val thirdPartyNotices = complianceDir.map { it.file("THIRD_PARTY_NOTICES.md") }
 // Preserve each bundled dependency's own texts, including notices and shaded-library licenses.
 val runtimeLegalArtifacts = configurations.runtimeClasspath.get().incoming.artifactView {
@@ -340,18 +342,26 @@ val copyReleaseLicenses = tasks.register<splice.release.LicenseInventory>("copyR
 
 val generateThirdPartyNotices = tasks.register("generateThirdPartyNotices") {
     val noticesSource = thirdPartyNoticesSource
+    val seatdPin = seatdPipePin
     val notices = thirdPartyNotices
     val legalTexts = runtimeLegalTexts
     inputs.file(thirdPartyNoticesSource).withPathSensitivity(PathSensitivity.NONE)
+    inputs.file(seatdPin).withPathSensitivity(PathSensitivity.NONE)
     inputs.files(runtimeLegalArtifacts.artifactFiles).withNormalizer(ClasspathNormalizer::class.java)
     outputs.file(thirdPartyNotices)
-    outputs.cacheIf("a pure function of the notices source and the runtime jars") { true }
+    outputs.cacheIf("a pure function of the notices source, the companion pin and the runtime jars") { true }
     doLast {
         val output = notices.get().asFile
         output.parentFile.mkdirs()
         output.writeText(
             buildString {
-                append(noticesSource.asFile.readText())
+                val seatdRepository = (JsonSlurper().parse(seatdPin.asFile) as Map<*, *>)["repository"]
+                append(
+                    noticesSource.asFile.readText().replace(
+                        "](tools/release/seatd-pipe.json) (see the release pin's `repository` field)",
+                        "]($seatdRepository)",
+                    ),
+                )
                 legalTexts.get().filter { (_, name, _) -> "NOTICE" in name.uppercase() }
                     .forEach { (coordinate, name, text) ->
                         appendLine()
@@ -606,7 +616,10 @@ tasks.register("stageRelease") {
     val releaseJar = releaseJar
     val bom = bom
     val licenses = licenses
-    val distDir = distDir
+    val distDir = providers.environmentVariable("SPLICE_RELEASE_DIST")
+        .map { File(it) }.orElse(distDir.asFile)
+    val seatdAssets = providers.environmentVariable("SPLICE_SEATD_PIPE_ASSETS").map { File(it) }
+    val seatdPin = seatdPipePin
     val launchShim = launchShim
     val installScript = installScript
     val licenseFile = licenseFile
@@ -632,6 +645,8 @@ tasks.register("stageRelease") {
         ":integrations-mcp-hub:linkFrontReleaseExecutableLinuxX64",
     )
     inputs.files(hubHolder, hubFront).withPropertyName("mcpHubBinaries")
+    inputs.dir(seatdAssets).optional().withPropertyName("seatdPipeArchives")
+    inputs.file(seatdPin).withPropertyName("seatdPipePin")
     inputs.property("releaseTag", releaseTag)
     outputs.dir(distDir)
     val version = releaseVersionValue
@@ -707,7 +722,18 @@ tasks.register("stageRelease") {
             }
         }
 
-        val dist = distDir.asFile
+        val companions = seatdAssets.orNull?.let { dir ->
+            val pin = JsonSlurper().parse(seatdPin.asFile) as Map<*, *>
+            val platforms = pin["platforms"] as Map<*, *>
+            val names = platforms.values.map { (it as Map<*, *>)["asset"] as String }.toSortedSet()
+            val files = dir.listFiles().orEmpty().associateBy { it.name }
+            check(files.keys == names) {
+                "release stage: seatd-pipe assets differ from the pin; missing ${names - files.keys}, " +
+                    "unexpected ${files.keys - names}"
+            }
+            names.associateWith(files::getValue)
+        }.orEmpty()
+        val dist = distDir.get()
         dist.deleteRecursively()
         dist.mkdirs()
         val sources = jars + mapOf(
@@ -721,14 +747,15 @@ tasks.register("stageRelease") {
             "PROVENANCE.md" to provenance.asFile,
             "bom.cdx.json" to bom.get().asFile,
             "dependency-licenses.json" to licenses.get().asFile,
-        )
+        ) + companions
         // `install -m 0755` for the four the operator executes, `install -m 0644` for the rest —
         // set outright rather than inherited from the source or from this process's umask.
         val executable = setOf("splice-launch", "install.sh", "splice-mcp-holder", "splice-mcp-front")
-        check(sources.keys.toList() == releaseAssets) {
-            "release stage: the staged sources do not spell the asset list — ${sources.keys} vs $releaseAssets"
+        val stagedAssets = releaseAssets + companions.keys
+        check(sources.keys.toList() == stagedAssets) {
+            "release stage: the staged sources do not spell the asset list — ${sources.keys} vs $stagedAssets"
         }
-        val sums = releaseAssets.joinToString("") { asset ->
+        val sums = stagedAssets.joinToString("") { asset ->
             val staged = dist.resolve(asset)
             Files.copy(sources.getValue(asset).toPath(), staged.toPath(), StandardCopyOption.REPLACE_EXISTING)
             Files.setPosixFilePermissions(

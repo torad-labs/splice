@@ -36,12 +36,15 @@ internal class DoorVerbs(
         else -> refused()
     }
 
-    /** [opens], or [opens] `--model <selector>`. */
-    private fun opened(rest: List<String>): Int = when {
-        rest.isEmpty() -> acted(opens, NO_BODY)
-        rest.size == 2 && rest.first() == "--model" ->
-            acted(opens, buildJsonObject { put("model", rest.last()) }.toString())
-        else -> refused()
+    /** Validate an opening command before its caller asks permission or installs a prerequisite. */
+    fun canOpen(args: List<String>): Boolean = args.firstOrNull() == opens && openingBody(args.drop(1)) != null
+
+    private fun opened(rest: List<String>): Int = openingBody(rest)?.let { acted(opens, it) } ?: refused()
+
+    private fun openingBody(rest: List<String>): String? = when {
+        rest.isEmpty() -> NO_BODY
+        rest.size == 2 && rest.first() == "--model" -> buildJsonObject { put("model", rest.last()) }.toString()
+        else -> null
     }
 
     /** What the daemon says of the door, as data or in words. */

@@ -1,19 +1,17 @@
-// NEW: the `claude` Claude Desktop's launcher runs in place of Claude Code for an Antigravity model
-// (docs/specs/desktop-antigravity.md): `~/.local/lib/splice/gemini/claude`, which runs `splice desktop acp` with
-// Desktop's own arguments. install.sh step 4a' lays it; `splice install --all` and the upgrade's aftercare lay the same
-// bytes, so an install that predates the shim, or one moved to another bin folder, gets it without a reinstall.
-// Named `claude` because a host that runs Desktop's sessions under a profile picks that profile by the program's name,
-// so an Antigravity session gets the one every Desktop session has; it names the splice it runs by path, since
-// Desktop's PATH need not hold the bin folder.
+// A profile that swaps Claude Code by name can select this shim for Antigravity. install --all, setup update and
+// upgrade aftercare share one writer. The versioned companion is never resolved through the session's PATH.
 package splice.launch.install
 
+import splice.client.wrap.UNWRAPPED_CLAUDE
 import splice.core.config.InstallPaths
+import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermission
 
@@ -29,14 +27,20 @@ public sealed class GeminiShimLaid {
     public data class Failed(val why: String) : GeminiShimLaid()
 }
 
-/** The Antigravity shim under [env]'s home, for the splice in [env]'s bin folder. */
-public class GeminiShim(private val env: EnvReader) {
+/** The Antigravity shim under [env]'s home, for [pipe] when it is installed. */
+public class GeminiShim(
+    private val env: EnvReader,
+    private val pipe: Path? = InstallPaths(envReader = env).desktopPipe,
+) {
     /** Where the shim lives: `~/.local/lib/splice/gemini/claude`, as install.sh lays it. */
     public fun path(): Path = UserHome.dir(env).resolve(LIB_DIR).resolve(GEMINI_DIR).resolve(SHIM)
 
-    /** Whether the shim is there and runs this install's splice. */
+    /** Whether this version's shim is present with its intended content and mode. */
     public fun current(): Boolean =
-        Cancellables.runCatchingBestEffort { Files.readString(path()) == text() }.getOrDefault(false)
+        Cancellables.runCatchingBestEffort {
+            Files.isRegularFile(path(), LinkOption.NOFOLLOW_LINKS) &&
+                Files.getPosixFilePermissions(path()) == EXECUTABLE && Files.readString(path()) == text()
+        }.getOrDefault(false)
 
     /** Lays the shim when it is missing or holds other bytes, atomically, 0755. Never throws. */
     public fun lay(): GeminiShimLaid {
@@ -48,11 +52,20 @@ public class GeminiShim(private val env: EnvReader) {
         }.getOrElse { GeminiShimLaid.Failed(SafeFailureText.render(it)) }
     }
 
-    /** install.sh's bytes: `exec '<bin>/splice' desktop acp "$@"`. */
-    private fun text(): String {
-        val splice = InstallPaths(envReader = env).binDir.resolve(SELF_COMMAND).toString().replace("'", "'\\''")
-        return "#!/bin/sh\nexec '$splice' desktop acp \"\$@\"\n"
+    private fun text(): String = buildString {
+        appendLine("#!/bin/sh")
+        if (pipe != null) {
+            appendLine("pipe=${word(pipe)}")
+            appendLine("if [ -f \"\$pipe\" ] && [ -x \"\$pipe\" ]; then exec \"\$pipe\" --acp \"\$@\"; fi")
+        }
+        val layout = InstallLayout()
+        appendLine("local_claude=${word(layout.localBin(env).resolve("claude"))}")
+        appendLine("splice_launcher=${word(layout.launchShimPath(env))}")
+        appendLine("unwrapped=${word(StatePaths(envReader = env).stateDir.resolve(UNWRAPPED_CLAUDE))}")
+        append(checkNotNull(Thread.currentThread().contextClassLoader.getResource("gemini-fallback.sh")).readText())
     }
+
+    private fun word(path: Path): String = "'" + path.toAbsolutePath().toString().replace("'", "'\\''") + "'"
 }
 
 private const val LIB_DIR = ".local/lib/splice"

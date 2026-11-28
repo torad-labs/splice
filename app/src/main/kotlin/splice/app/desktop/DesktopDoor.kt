@@ -20,6 +20,7 @@ import splice.app.desktop.catalog.DesktopLineup
 import splice.app.desktop.catalog.DesktopProviders
 import splice.app.desktop.catalog.DoorCatalog
 import splice.app.desktop.catalog.ModelDiscovery
+import splice.app.seatd.SeatdAdvice
 import splice.client.desktop.GatewayDiscovery
 import splice.core.client.SESSION_HEADER
 import splice.core.speed.SessionSpeeds
@@ -135,7 +136,10 @@ internal class DesktopDoor(
         val headers = call.request.headers
         val isCli = DoorAgyGuard.isClaudeCodeRequest(headers[HttpHeaders.UserAgent], headers[X_APP_HEADER], ask.request)
         if (caller !is DesktopCaller || isCli) {
-            caller.voice.refuse(call, HttpStatus.BAD_REQUEST, "model \"${ask.model}\" $DESKTOP_CHAT_ONLY")
+            val message = "model \"${ask.model}\" $DESKTOP_CHAT_ONLY. ${SeatdAdvice.about} " +
+                "If the companion isn't installed, run `${SeatdAdvice.SETUP}` or `${SeatdAdvice.DESKTOP}` " +
+                "in a terminal, then open a new Code session."
+            caller.voice.refuse(call, HttpStatus.BAD_REQUEST, message)
             return null
         }
         return DoorRoute(desktopHit.first, desktopHit.second.upstream)
@@ -191,4 +195,4 @@ private const val LIMIT_PARAM = "limit"
 private const val AFTER_ID = "after_id"
 private const val X_APP_HEADER = "x-app"
 private const val DESKTOP_CHAT_ONLY =
-    "runs only in Claude Desktop (Chat or Code tab), not through Claude Code's HTTP loop"
+    "runs in Claude Desktop Chat, or in the Code tab through seatd-pipe, not through Claude Code's HTTP loop"

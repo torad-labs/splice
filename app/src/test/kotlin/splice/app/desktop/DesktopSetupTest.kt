@@ -57,12 +57,14 @@ class DesktopSetupTest {
         assertTrue(Files.isExecutable(tmp.resolve("state/desktop-credential")))
         val launch = tmp.resolve("state/desktop-launch")
         assertTrue(Files.isExecutable(launch), "a managed processWrapper can name the launcher")
-        assertTrue("desktop launch --state-dir" in Files.readString(launch), "it needs no variable of splice's")
+        assertTrue(Files.isRegularFile(tmp.resolve("state/desktop-hooks.json")))
         app.takeOut()
         assertFalse(Files.exists(library), "the folder splice made is gone")
         assertFalse(Files.exists(library.resolve("_meta.json")))
         assertFalse(Files.exists(tmp.resolve("state/desktop-credential")))
         assertFalse(Files.exists(tmp.resolve("state/desktop-launch")))
+        assertFalse(Files.exists(tmp.resolve("state/desktop-hooks.json")))
+        assertFalse(Files.exists(tmp.resolve("state/door-login/splice-desktop-foreground.sh")))
     }
 
     @Test

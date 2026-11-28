@@ -44,6 +44,7 @@ internal fun interface HookExecProbe {
 
 internal object HookScriptFiles {
     private const val COMMAND = "command"
+    private val PLAIN_HOOK_PATH = Regex("[a-zA-Z0-9_./-]+")
     const val HOOK_TIMEOUT_SECONDS: Int = 15
 
     /** The hook event both installers register on (the key-setup advertiser and the resume hook). */
@@ -154,7 +155,8 @@ internal object HookScriptFiles {
         putJsonArray("hooks") {
             addJsonObject {
                 put("type", COMMAND)
-                put(COMMAND, script.toString())
+                val path = script.toString()
+                put(COMMAND, if (path.matches(PLAIN_HOOK_PATH)) path else shellSingleQuote(path))
                 put("timeout", timeoutSeconds)
             }
         }

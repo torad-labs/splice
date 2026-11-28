@@ -19,12 +19,21 @@ dependencies {
     // `splice restart` reads the topology for the control port and the head ports its stop must see freed.
     implementation(project(":integrations-topology"))
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.commons.compress)
     // TestPorts: a port a test must know before anything binds it, reserved below the ephemeral range.
     testImplementation(testFixtures(project(":core")))
     testImplementation(libs.ktor.server.test.host) {
         exclude(group = "io.ktor", module = "ktor-client-apache5")
     }
     testImplementation(libs.kotlinx.coroutines.core)
+}
+
+// The release rehearsal supplies an accepted bundle. Read through a Gradle provider so a
+// configuration-cache hit cannot replay the path to an earlier, already removed bundle.
+tasks.test {
+    providers.environmentVariable("SPLICE_SEATD_REHEARSAL_DIST").orNull?.let { dist ->
+        systemProperty("splice.seatdRehearsalDist", dist)
+    }
 }
 
 // THE LAW HERE (the shim selector law in SupervisedStartTest.kt) reads the launch script the dist ships, and walks up to

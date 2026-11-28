@@ -59,10 +59,17 @@ describe("release.yml, parsed", () => {
 
   test("dropping the resolved version from the stage step's env fails", () => {
     const unthreaded = text.replace(
-      "        env:\n          RESOLVED_VERSION: ${{ steps.version.outputs.version }}\n        run: SPLICE_RELEASE_TAG",
-      "        env:\n          RESOLVED_VERSION: 0.0.0\n        run: SPLICE_RELEASE_TAG",
+      "          RESOLVED_VERSION: ${{ steps.version.outputs.version }}\n          SPLICE_SEATD_PIPE_ASSETS:",
+      "          RESOLVED_VERSION: 0.0.0\n          SPLICE_SEATD_PIPE_ASSETS:",
     );
     expect(stageStepProblem(parsed(unthreaded))).toContain("does not thread the resolved version");
+  });
+
+  test("a release cannot stage or accept without the reviewed companion", () => {
+    const noFetch = text.replace('run: bun tools/release seatd fetch "$RUNNER_TEMP/seatd-pipe"', "run: true");
+    const noRequirement = text.replace("bun tools/release accept --with-seatd", "bun tools/release accept");
+    expect(stageStepProblem(parsed(noFetch))).toContain("reviewed seatd-pipe assets");
+    expect(stageStepProblem(parsed(noRequirement))).toContain("accepted with the reviewed companion");
   });
 
   test("a hardcoded prerelease input fails", () => {

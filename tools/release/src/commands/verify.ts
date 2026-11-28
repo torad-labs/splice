@@ -10,7 +10,7 @@
 //      `prerelease`, exactly one parsed stage step carrying the gated command and the resolved
 //      version, plus the comment-decoy mutant that proves the parse cannot be fooled by a comment;
 //   4. the SemVer/tag-equality mutants, driven through the REAL `:app:stageRelease` task;
-//   5. the rehearsal proper — build the fat jar through the slot, stage, accept;
+//   5. the rehearsal proper — build and stage through the slot, accept, then install the staged companion in a sandbox;
 //   6. release.yml's `files:` list against the STAGED manifest (DR-25), and the dist enumeration
 //      against the actual directory, with its four mutants (undispositioned extra file, blank
 //      reason, placeholder reason, substantive-reason positive control) and the zero-byte artifact
@@ -19,13 +19,16 @@
 // The jar is BUILT here, through the slot, exactly as verify-OSS-D.sh did: this verb runs in the
 // gate's post-slot phase, where the slot is free, and a rehearsal that assumes someone else's
 // artifact is rehearsing someone else's release.
-import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ALL_PLATFORMS, SUMS, enumerationProblem, readManifest } from "../lib/dist.ts";
 import { launcherRehearsal } from "../lib/launcher.ts";
+import { seatdFixture } from "../../test/seatd-fixture.ts";
+import { fetchSeatdAssets } from "../lib/seatd.ts";
 import { shimPath } from "../lib/shim.ts";
-import { commentDecoy, parseWorkflow, prereleaseProblem, releaseFilesProblem, stageStepProblem, tagMutantEnv } from "../lib/workflow.ts";
+import { commentDecoy, parseWorkflow, prereleaseProblem, releaseFilesProblem, stageStepProblem, tagMutantEnv, type Workflow } from "../lib/workflow.ts";
+import { accept } from "./accept.ts";
 
 export const usage =
   "verify                               the release rehearsal: install.sh, the launch shim, release.yml, the stage/accept mutants, then stage + accept for real";
@@ -123,21 +126,51 @@ export async function verify(argv: readonly string[], repoRoot: string): Promise
     }
   }
 
-  leg("stage + accept");
-  // Through the slot: --no-daemon comes from the slot, --no-parallel stays.
-  const built = gradle(repoRoot, ["-q", ":app:shadowJar", "--no-parallel"]);
-  if (!built.ok) return fail(`release verify: :app:shadowJar failed\n${built.output}`);
-  const staged = gradle(repoRoot, ["-q", ":app:stageRelease", "--no-parallel"], { SPLICE_RELEASE_TAG: `v${version}` });
+  const scratch = mkdtempSync(join(tmpdir(), "release-verify-"));
+  try {
+    return await stageAndAccept(repoRoot, version, workflow, scratch);
+  } catch (error) {
+    return fail(`release verify: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+async function stageAndAccept(repoRoot: string, version: string, workflow: Workflow, scratch: string): Promise<number> {
+  leg("stage + accept with stand-in companion archives");
+  const { pin, fetcher } = seatdFixture(repoRoot, scratch);
+  const companions = join(scratch, "seatd");
+  const distDir = join(scratch, "dist");
+  await fetchSeatdAssets(pin, companions, fetcher);
+  const staged = gradle(repoRoot, ["-q", ":app:stageRelease", "--no-parallel"], {
+    SPLICE_RELEASE_TAG: `v${version}`,
+    SPLICE_SEATD_PIPE_ASSETS: companions,
+    SPLICE_RELEASE_DIST: distDir,
+  });
   if (!staged.ok) return fail(`release verify: :app:stageRelease failed\n${staged.output}`);
   process.stderr.write(staged.output);
-  const accepted = acceptCli(repoRoot, join(repoRoot, "dist"), version);
-  process.stderr.write(accepted.output);
-  if (!accepted.ok) return fail("release verify: the staged bundle was not accepted");
+  if (await accept([distDir, "--version", version, "--with-seatd"], repoRoot, pin) !== 0) {
+    return fail("release verify: the staged bundle was not accepted");
+  }
 
+  leg("rehearse companion installation from the exact release");
+  const installed = gradle(repoRoot, [
+    "-q", "--no-parallel", ":features-lifecycle:test",
+    "--tests", "splice.lifecycle.seatd.SeatdInstallerTest",
+  ], { SPLICE_SEATD_REHEARSAL_DIST: distDir });
+  if (!installed.ok) return fail(`release verify: companion installation tests failed\n${installed.output}`);
+
+  return verifyStaged(repoRoot, version, workflow, distDir, pin.repository);
+}
+
+function verifyStaged(repoRoot: string, version: string, workflow: Workflow, distDir: string, repository: string): number {
   leg("the staged denominator");
-  const distDir = join(repoRoot, "dist");
   const manifest = readManifest(distDir);
   if (manifest instanceof Error) return fail(manifest.message);
+  const notices = readFileSync(join(distDir, "THIRD_PARTY_NOTICES.md"), "utf8");
+  if (!notices.includes(`[Source repository](${repository})`)) {
+    return fail("release verify: the staged notices do not link to the companion source in the pin");
+  }
   const published = [...manifest.assets, SUMS];
   const filesProblem = releaseFilesProblem(workflow);
   if (filesProblem) return fail(filesProblem);
@@ -147,48 +180,40 @@ export async function verify(argv: readonly string[], repoRoot: string): Promise
   const real = enumerationProblem(distDir, published);
   if (real) return fail(real);
 
-  const mutantDist = mkdtempSync(join(tmpdir(), "release-verify-dist-"));
-  try {
-    for (const name of readdirSync(distDir)) {
-      copyFileSync(join(distDir, name), join(mutantDist, name));
-    }
-    writeFileSync(join(mutantDist, "EXTRA-README.md"), "stray\n");
-    const extra = enumerationProblem(mutantDist, published);
-    if (!extra) return fail("release verify: extra-file mutant unexpectedly passed — the enumeration cannot fail");
-    if (!extra.includes("NO disposition")) {
-      return fail(`release verify: extra-file mutant failed for the wrong reason (not the disposition leg): ${extra}`);
-    }
-    // §24: a blank/placeholder exclusion reason is absence, not a disposition. EXTRA-README.md is
-    // still present; excluding it with an EMPTY reason must RED on the blank-reason leg — never
-    // silently disposition the file. The positive control that follows uses a NONBLANK reason,
-    // proving the leg is not vacuously red.
-    for (const reason of ["", "TODO"]) {
-      const problem = enumerationProblem(mutantDist, published, { "EXTRA-README.md": reason });
-      if (!problem) {
-        return fail(`release verify: a ${reason === "" ? "blank" : "placeholder"} exclusion reason dispositioned a file`);
-      }
-      if (!problem.includes("blank or placeholder reason")) {
-        return fail(`release verify: the ${reason === "" ? "blank" : "placeholder"}-reason mutant failed for the wrong reason: ${problem}`);
-      }
-    }
-    const substantive = enumerationProblem(mutantDist, published, {
-      "EXTRA-README.md": "see TODO-1234: excluded until the platform port lands",
-    });
-    if (substantive) {
-      return fail(`release verify: a substantive reason (even one mentioning TODO) must disposition the file and pass (positive control): ${substantive}`);
-    }
-    // The zero-byte artifact, whose red must be accept's EMPTY leg and not a checksum coincidence.
-    rmSync(join(mutantDist, "EXTRA-README.md"));
-    writeFileSync(join(mutantDist, "PROVENANCE.md"), "");
-    const empty = acceptCli(repoRoot, mutantDist, version);
-    if (empty.ok) return fail("release verify: empty-artifact mutant unexpectedly passed accept");
-    if (!empty.output.includes("EMPTY")) {
-      return fail(`release verify: empty-artifact mutant failed for the wrong reason (not the EMPTY leg)\n${empty.output}`);
-    }
-  } finally {
-    rmSync(mutantDist, { recursive: true, force: true });
+  // This bundle is already in the rehearsal's disposable directory.
+  writeFileSync(join(distDir, "EXTRA-README.md"), "stray\n");
+  const extra = enumerationProblem(distDir, published);
+  if (!extra) return fail("release verify: extra-file mutant unexpectedly passed — the enumeration cannot fail");
+  if (!extra.includes("NO disposition")) {
+    return fail(`release verify: extra-file mutant failed for the wrong reason (not the disposition leg): ${extra}`);
   }
-
+  // §24: a blank/placeholder exclusion reason is absence, not a disposition. EXTRA-README.md is
+  // still present; excluding it with an EMPTY reason must RED on the blank-reason leg — never
+  // silently disposition the file. The positive control that follows uses a NONBLANK reason,
+  // proving the leg is not vacuously red.
+  for (const reason of ["", "TODO"]) {
+    const problem = enumerationProblem(distDir, published, { "EXTRA-README.md": reason });
+    if (!problem) {
+      return fail(`release verify: a ${reason === "" ? "blank" : "placeholder"} exclusion reason dispositioned a file`);
+    }
+    if (!problem.includes("blank or placeholder reason")) {
+      return fail(`release verify: the ${reason === "" ? "blank" : "placeholder"}-reason mutant failed for the wrong reason: ${problem}`);
+    }
+  }
+  const substantive = enumerationProblem(distDir, published, {
+    "EXTRA-README.md": "see TODO-1234: excluded until the platform port lands",
+  });
+  if (substantive) {
+    return fail(`release verify: a substantive reason (even one mentioning TODO) must disposition the file and pass (positive control): ${substantive}`);
+  }
+  // The zero-byte artifact, whose red must be accept's EMPTY leg and not a checksum coincidence.
+  rmSync(join(distDir, "EXTRA-README.md"));
+  writeFileSync(join(distDir, "PROVENANCE.md"), "");
+  const empty = acceptCli(repoRoot, distDir, version);
+  if (empty.ok) return fail("release verify: empty-artifact mutant unexpectedly passed accept");
+  if (!empty.output.includes("EMPTY")) {
+    return fail(`release verify: empty-artifact mutant failed for the wrong reason (not the EMPTY leg)\n${empty.output}`);
+  }
   console.log("release verify: OK");
   return 0;
 }

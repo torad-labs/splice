@@ -14,16 +14,27 @@ import splice.client.ManagedFile
 import splice.client.ManagedReading
 import splice.core.mcp.McpHarness
 import splice.diagnostics.doctor.ToolLevel
+import splice.lifecycle.seatd.SeatdInstaller
 import java.nio.file.Files
 import java.nio.file.Path
 
 class CapabilityReadingsTest(@param:TempDir private val tmp: Path) {
 
     @Test
-    fun `a machine with none of the tools has no rows and no gaps beyond the auto-update choice`() {
-        assertEquals(emptyList<Any>(), CapabilityTools(bare()).readings())
-        assertEquals(listOf(GapKind.AUTO_UPDATE), CapabilityGaps(bare(), claudeWrapped = false).all().map { it.kind })
-        assertEquals(emptyList<Gap>(), CapabilityGaps(bare(), claudeWrapped = false).afterUpgrade())
+    fun `a machine without Desktop can skip seatd and still sees how to add it after upgrading`() {
+        val row = CapabilityTools(bare()).readings().single()
+        assertEquals("seatd-pipe", row.name)
+        assertEquals(ToolLevel.INFO, row.level)
+        val item = CapabilityGaps(bare(), claudeWrapped = false).afterUpgrade().single().text
+        assertTrue("splice setup --update" in item && "splice desktop on" in item, item)
+    }
+
+    @Test
+    fun `Desktop on without the companion is a warning with a fix`() {
+        val facts = bare().copy(desktop = desktop(mode = DesktopMode.APP))
+        val row = CapabilityTools(facts).readings().single { it.name == "seatd-pipe" }
+        assertEquals(ToolLevel.WARN, row.level)
+        assertTrue("splice setup --update" in row.fix.orEmpty(), row.fix)
     }
 
     @Test
@@ -284,11 +295,16 @@ class CapabilityReadingsTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `synced harnesses and a laid shim say nothing to do`() {
+    fun `synced harnesses with the companion installed say nothing to do and report its version`() {
         val synced = setOf(McpHarness.AGY, McpHarness.CODEX)
-        val facts = bare().copy(harness = HarnessFacts(AGY, CODEX, geminiShim = true, synced = synced))
+        val facts = bare().copy(
+            harness = HarnessFacts(AGY, CODEX, geminiShim = true, synced = synced),
+            seatd = SeatdInstaller.Location(tmp.resolve("seatd-pipe"), "0.1.0"),
+        )
         assertEquals(emptyList<Gap>(), CapabilityGaps(facts, false).afterUpgrade())
-        assertTrue(CapabilityTools(facts).readings().all { it.level == ToolLevel.OK })
+        val rows = CapabilityTools(facts).readings()
+        assertTrue(rows.all { it.level == ToolLevel.OK })
+        assertTrue("0.1.0" in rows.single { it.name == "seatd-pipe" }.said)
     }
 
     @Test

@@ -5,6 +5,7 @@
 package splice.app.capability
 
 import splice.app.desktop.setup.DesktopMode
+import splice.app.seatd.SeatdAdvice
 import splice.core.mcp.McpHarness
 
 /** What a gap is about, so `splice setup --update` can offer the step that closes it. */
@@ -17,6 +18,7 @@ internal enum class GapKind {
     GEMINI_SHIM,
     HUB_SYSTEMD,
     AUTO_UPDATE,
+    SEATD,
 }
 
 /** One gap: what it is about and the line a person reads. */
@@ -29,7 +31,12 @@ internal class CapabilityGaps(private val facts: Capabilities, private val claud
         listOfNotNull(desktop(), managed(), sideBySide(), codexHooks(), shim(), hub()) + sync() + autoUpdate()
 
     /** The gaps an upgrade says: all but auto_update, which is a choice, not something the release left undone. */
-    fun afterUpgrade(): List<Gap> = all().filterNot { it.kind == GapKind.AUTO_UPDATE }
+    fun afterUpgrade(): List<Gap> = all().filterNot { it.kind == GapKind.AUTO_UPDATE } + listOfNotNull(seatd())
+
+    private fun seatd(): Gap? = Gap(
+        GapKind.SEATD,
+        "seatd-pipe is not installed. ${SeatdAdvice.about} ${SeatdAdvice.how}",
+    ).takeIf { facts.seatd == null }
 
     private fun desktop(): Gap? = Gap(
         GapKind.DESKTOP_STANDARD,

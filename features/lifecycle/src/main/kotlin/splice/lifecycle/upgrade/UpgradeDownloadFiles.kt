@@ -9,6 +9,7 @@ import splice.core.util.MonoClock
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
@@ -117,5 +118,6 @@ internal class PartFile(private val target: Path) : TransferSink, AutoCloseable 
         StandardOpenOption.CREATE,
         StandardOpenOption.TRUNCATE_EXISTING,
         StandardOpenOption.WRITE,
+        LinkOption.NOFOLLOW_LINKS,
     )
 }

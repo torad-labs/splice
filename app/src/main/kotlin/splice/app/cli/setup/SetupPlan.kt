@@ -2,6 +2,7 @@
 // Split from SetupCommand.kt (Nov 23, 2026, concentration).
 package splice.app.cli.setup
 
+import splice.app.seatd.SeatdChoice
 import java.nio.file.Path
 
 /** What the wizard's questions end in: a plan the operator said go to, or the reason it ends without installing. */
@@ -27,4 +28,8 @@ internal data class SetupExtras(
     val modes: List<String>,
     val autoUpdate: Boolean,
     val codexHooks: CodexHooksChoice = CodexHooksChoice(),
+    val seatd: SeatdChoice? = null,
 )
+
+/** The result of an update offer, for the closing summary. */
+internal enum class SetupOffer { NOTHING, DECLINED, DONE }

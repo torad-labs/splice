@@ -54,8 +54,11 @@ internal object FailureFamilies {
     }
 
     /** A hold that ended takes its family from the cause it held (section 11): a held limit ends H, a held overload R,
-     *  a held spent account P. A hold the session's wall cannot hold is handed to the client, L. */
+     *  a held spent account P. A hold the session's wall cannot hold is handed to the client, L. A hold refused by the
+     *  caller's no-hold opt-out stops immediately (P for payment, H otherwise) so persistent retry does not loop. */
     private fun outlasted(cause: FailureCause.Splice.HoldOutlasted): ClientWire.Family = when {
+        cause.why == Outlast.NO_HOLD ->
+            if (cause.held is FailureCause.Provider.NeedsPayment) ClientWire.Family.P else ClientWire.Family.H
         cause.why == Outlast.WALL -> ClientWire.Family.L
         // Its re-send goes on under a model with room, so the client sends it again at once (R's 529).
         cause.why == Outlast.MOVES -> ClientWire.Family.R

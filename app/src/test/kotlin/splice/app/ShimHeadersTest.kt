@@ -65,4 +65,13 @@ class ShimHeadersTest {
         assertEquals("", sent("x-splice-launch-proof: old", ""))
         assertEquals("x-team: blue", sent("x-team: blue", ""))
     }
+
+    @Test
+    fun `a caller's x-splice-no-hold header is preserved rather than stripped`() {
+        val ambient = "x-splice-no-hold: 1\nx-splice-client-wall-ms: 5"
+        assertEquals(
+            listOf("x-splice-no-hold: 1", "x-splice-client-wall-ms: 99"),
+            sent(ambient, "x-splice-client-wall-ms: 99").lines(),
+        )
+    }
 }

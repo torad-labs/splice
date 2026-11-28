@@ -290,7 +290,7 @@ public sealed class FailureCause {
              *  is the held cause's own ending. */
             override val persisted: PersistedCause
                 get() = when (why) {
-                    Outlast.TOO_FAR, Outlast.WALL, Outlast.MOVES -> held.persisted
+                    Outlast.TOO_FAR, Outlast.WALL, Outlast.MOVES, Outlast.NO_HOLD -> held.persisted
                     Outlast.MISSED_RESETS, Outlast.MAX_HOLD -> PersistedCause.HOLD_OUTLASTED
                 }
             override val providerReported: Boolean get() = held.providerReported

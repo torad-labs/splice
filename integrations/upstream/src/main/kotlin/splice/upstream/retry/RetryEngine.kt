@@ -37,10 +37,15 @@ public data class TurnFacts(
     val earliestLift: Instant?,
 ) {
     /** The progress deadline and usable hold allowance are separate readings of the same turn's bounds. */
-    public data class Deadlines(val wallLeftMs: Long, val holdWallLeftMs: Long = Long.MAX_VALUE)
+    public data class Deadlines(
+        val wallLeftMs: Long,
+        val holdWallLeftMs: Long = Long.MAX_VALUE,
+        val noHold: Boolean = false,
+    )
 
     public val wallLeftMs: Long get() = deadlines.wallLeftMs
     public val holdWallLeftMs: Long get() = deadlines.holdWallLeftMs
+    public val noHold: Boolean get() = deadlines.noHold
 }
 
 public object RetryEngine {
@@ -297,14 +302,16 @@ private object Logins {
  *  cannot hold to its end, its reset and stagger or its first probe, is handed to the client with the reset (L). */
 private object Holds {
     /** A collected request spends at most its short wait allowance. A limit it cannot wait out is handed to the
-     *  client with the reset, rather than becoming an unqualified permanent refusal. */
+     *  client with the reset, rather than becoming an unqualified permanent refusal — unless the caller opted out of
+     *  holds, in which case it ends immediately as [Outlast.NO_HOLD]. */
     fun waitBounded(turn: RetryTurn, step: RetryStep.Again): RetryStep {
-        val limited = turn.cause as? FailureCause.Provider.Limited
+        val limitedAt = (turn.cause as? FailureCause.Provider.Limited)?.lift as? Lift.At
         return when {
             step.afterMs <= turn.facts.wallLeftMs -> step
+            turn.facts.noHold && limitedAt != null -> turn.outlasted(Outlast.NO_HOLD, limitedAt.at)
             turn.facts.holdWallLeftMs > turn.facts.wallLeftMs -> turn.end
-            limited == null || limited.lift is Lift.Unstated -> turn.end
-            else -> turn.outlasted(Outlast.WALL, (limited.lift as? Lift.At)?.at)
+            limitedAt == null -> turn.end
+            else -> turn.outlasted(Outlast.WALL, limitedAt.at)
         }
     }
 
@@ -313,6 +320,7 @@ private object Holds {
         val nowMs = turn.now.toEpochMilli()
         val since = ledger.heldSinceMs
         return when {
+            turn.facts.noHold -> turn.outlasted(Outlast.NO_HOLD, hold.until)
             ledger.missedResets >= MAX_MISSED_RESETS ->
                 turn.outlasted(Outlast.MISSED_RESETS, hold.until)
             since != null && nowMs - since >= MAX_HOLD_MS -> turn.outlasted(Outlast.MAX_HOLD, hold.until)

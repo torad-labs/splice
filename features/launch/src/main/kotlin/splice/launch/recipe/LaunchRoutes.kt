@@ -251,6 +251,7 @@ public class LaunchRoutes(
                 noProxy = fields.getAll(NO_PROXY_FIELD).orEmpty(),
                 labels = fields.getAll("label").orEmpty(),
                 modsOff = fields["modsOff"],
+                noHold = LaunchClientTimers.noHold(fields["noHold"]),
             ),
         )
     }
@@ -273,6 +274,7 @@ public class LaunchRoutes(
                 listOfNotNull(JsonScalars.str(body, NO_PROXY_FIELD)),
                 LaunchLabels.jsonLabels(body),
                 JsonScalars.str(body, "modsOff"),
+                LaunchClientTimers.noHold(JsonScalars.str(body, "noHold")),
             ),
         )
     }

@@ -4,6 +4,9 @@
 // already bounds, and every head wants its session to survive a hold.
 package splice.launch.recipe
 
+import splice.core.client.HOLD_BUDGET_MS
+import splice.core.client.NoHoldFlag
+
 /** why: Claude Code arms its stream idle timer with setTimeout, which takes a signed 32-bit delay; a longer one fires at
  *  once instead of late, so the planted idle timeout never exceeds it (about 24.8 days, past every head's wall). */
 private const val CLIENT_TIMER_MAX_MS: Long = Int.MAX_VALUE.toLong()
@@ -14,9 +17,18 @@ private const val CLIENT_TIMER_MAX_MS: Long = Int.MAX_VALUE.toLong()
 private const val CLIENT_BYTE_IDLE_MS: Long = 300_000L
 
 internal object LaunchClientTimers {
+    /** Whether the caller opted out of multi-hour/7-day holds (`SPLICE_NO_HOLD` / `noHold`). */
+    fun noHold(raw: String?): Boolean = NoHoldFlag.isOn(raw)
+
+    /** Effective client wall for a session: strips the 7-day hold window when [noHold] opts out of holds. */
+    fun wallMs(apiTimeoutMs: Long, noHold: Boolean): Long =
+        if (noHold && apiTimeoutMs > HOLD_BUDGET_MS) apiTimeoutMs - HOLD_BUDGET_MS else apiTimeoutMs
+
     /** The timers of a session whose client timeout is [apiTimeoutMs]: a head's wall plus its grace, or on the door the
-     *  longest of the walls its turns can run under (#791). */
-    fun of(apiTimeoutMs: Long): Map<String, String> = buildMap {
+     *  longest of the walls its turns can run under (#791). When [noHold] is true, strips the 7-day hold budget from
+     *  the timeouts and disables persistent retry (`CLAUDE_CODE_RETRY_WATCHDOG=0`). */
+    fun of(apiTimeoutMs: Long, noHold: Boolean = false): Map<String, String> = buildMap {
+        val effective = wallMs(apiTimeoutMs, noHold)
         // Claude Code's default request timeout is 600s and it also bounds the first-byte
         // deadline; the head's whole-turn cap is the wall that decides a turn, so the client
         // must outlive it (apiTimeoutMs = cap + grace). Without this every compaction
@@ -29,7 +41,7 @@ internal object LaunchClientTimers {
         // path answers it silently until the terminal body, and with the deadline past totalCap
         // the head's wall speaks first. CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK would only
         // delete a recovery path.
-        put("API_TIMEOUT_MS", apiTimeoutMs.toString())
+        put("API_TIMEOUT_MS", effective.toString())
         // Nov 8-9: Claude Code cut every non-streaming request through splice at about 360 s and re-sent it 228
         // times, so the deadline above never got to decide. The cut is Bun's own fetch timeout, not the client's
         // (measured on Bun 1.4.3: a server that sends nothing is cut at 360363 ms with the default options, and
@@ -49,7 +61,7 @@ internal object LaunchClientTimers {
         // (a NON-persistent client aborts above 60s) is skipped. splice already sends the
         // unified-reset header on its admission 429 (V4-51), so that sleep lands exactly on the
         // cooldown lift. It is a client-side WAIT policy.
-        put("CLAUDE_CODE_RETRY_WATCHDOG", "1")
+        put("CLAUDE_CODE_RETRY_WATCHDOG", if (noHold) "0" else "1")
         // Claude Code's limit for re-sending a non-streaming request that timed out is unlimited while this is
         // unset. 2 is the limit the client itself applies when its retry watchdog judges a failed stream
         // outlasted the timeout. It bounds only the retries the client COUNTS, and the client counts one only
@@ -69,7 +81,7 @@ internal object LaunchClientTimers {
         // so this timer takes the same value and never decides a turn the head is still keeping. Left on, not
         // disabled: off, the client stops yielding those pings as progress and its async-agent stall timer falls to a
         // fixed 600 s, which would end a held subagent's turn instead. That stall timer is this value plus 300 s.
-        put("CLAUDE_STREAM_IDLE_TIMEOUT_MS", minOf(apiTimeoutMs, CLIENT_TIMER_MAX_MS).toString())
+        put("CLAUDE_STREAM_IDLE_TIMEOUT_MS", minOf(effective, CLIENT_TIMER_MAX_MS).toString())
         // The value above also becomes the client's byte-level idle timeout and its first-byte window (capped at 30
         // min) unless this is set. Those catch a path that sends no byte at all, which a held turn never is (the
         // keepalive), so they keep the 300 s they had.

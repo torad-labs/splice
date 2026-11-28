@@ -144,6 +144,9 @@ public fun interface TurnWaits {
     /** Usable wait time left before the session's wall, with its response margin reserved, or the non-stream wait
      *  bound when sooner. Unbounded where nothing holds. */
     public fun holdWallLeftMs(): Long = Long.MAX_VALUE
+
+    /** Whether the caller opted out of holds (`x-splice-no-hold: 1`), so a limit or payment refusal stops instead. */
+    public val noHold: Boolean get() = false
 }
 
 /** One turn's retries: the [ledger] every post and round of the turn spends, and where its [waits] happen. */

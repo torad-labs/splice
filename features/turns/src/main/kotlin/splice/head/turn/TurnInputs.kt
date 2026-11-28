@@ -54,6 +54,7 @@ internal data class TurnInputs(
     val voice: TurnVoice,
 ) {
     val clientWallMs: Long get() = slot.clientWallMs
+    val noHold: Boolean get() = slot.pace.noHold
     val heapLease: HeapLease? get() = slot.heapLease
     val harness: HarnessRequest? get() = slot.harness?.request
     val rebuild: TurnRebuild? get() = slot.harness?.rebuild
@@ -94,10 +95,15 @@ internal data class TurnSlot(
 )
 
 /** How a turn's client is paced: [pingMs], how often it is pinged while it waits, the native disconnect probe unless a
- *  listener in front of the gateway asked for a shorter keepalive (GatewayTurns.clientPingMs); and [streamDeadlineMs],
+ *  listener in front of the gateway asked for a shorter keepalive (GatewayTurns.clientPingMs); [streamDeadlineMs],
  *  the deadline such a listener set on a silence once the client has seen content (GatewayTurns.streamDeadlineMs,
- *  #791), null on every other turn. Both are read off the call at admission, so they travel together. */
-internal data class ClientPace(val pingMs: Long = NATIVE_CLIENT_PING_MS, val streamDeadlineMs: Long? = null)
+ *  #791), null on every other turn; and [noHold], whether the caller opted out of multi-hour/7-day holds. All are read
+ *  off the call at admission, so they travel together. */
+internal data class ClientPace(
+    val pingMs: Long = NATIVE_CLIENT_PING_MS,
+    val streamDeadlineMs: Long? = null,
+    val noHold: Boolean = false,
+)
 
 /** The login a turn runs on and the quota tracker that login's usage lands in. They are chosen together and
  *  replaced together, so one value carries both. */

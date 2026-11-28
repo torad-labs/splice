@@ -46,7 +46,11 @@ internal class RoundSteps(
             continuesReasoning = continuesReasoning,
             canContinue = canContinue,
             // The turn's watchdog bounds a round's wait, as it bounds the round itself.
-            deadlines = TurnFacts.Deadlines(retry.waits.holdWallLeftMs(), retry.waits.holdWallLeftMs()),
+            deadlines = TurnFacts.Deadlines(
+                retry.waits.holdWallLeftMs(),
+                retry.waits.holdWallLeftMs(),
+                noHold = retry.waits.noHold,
+            ),
             earliestLift = null,
         )
         return RetryEngine.next(cause, at, retry.ledger, facts, Instant.ofEpochMilli(wall()))

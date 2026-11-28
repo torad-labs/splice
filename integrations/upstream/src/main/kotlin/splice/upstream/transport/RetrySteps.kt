@@ -145,6 +145,7 @@ internal class RetrySteps(
             deadlines = TurnFacts.Deadlines(
                 minOf(budget.leftMs(ctx, state.t0), state.retry.waits.holdWallLeftMs()),
                 state.retry.waits.holdWallLeftMs(),
+                noHold = state.retry.waits.noHold,
             ),
             earliestLift = null,
         )

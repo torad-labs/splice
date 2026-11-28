@@ -155,7 +155,7 @@ internal class TurnDriveFactory(
             deps.traffic.upstream.retryWall,
         ) { built.requestBody.toString().length.toLong() }
         val ledger = RetryLedger()
-        drive.retry = TurnRetry(ledger, TurnWaitsAtHead(waiter, emitter, hold))
+        drive.retry = TurnRetry(ledger, TurnWaitsAtHead(waiter, emitter, hold, inputs.noHold))
         drive.holdServed = Runnable {
             deps.traffic.liveTurns.holds.served(ledger.login)
             ledger.served()

@@ -8,6 +8,8 @@ import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
 import io.ktor.util.AttributeKey
 import splice.core.model.ClientWindow
+import splice.head.hold.ClientWallHeader
+import splice.head.turn.ClientPace
 import splice.head.wire.NATIVE_CLIENT_PING_MS
 
 /** One turn as the gateway hands it to a [ProviderRuntime]: [body] is the client's body with `model` already set to
@@ -84,6 +86,10 @@ internal object GatewayTurns {
 
     /** The deadline [call]'s listener set on a silence once its client has seen content; null where it set none. */
     fun streamDeadlineMs(call: ApplicationCall): Long? = of(call)?.listener?.streamIdleMs?.takeIf { it > 0L }
+
+    /** Admission-time client pacing and hold opt-out read off [call]. */
+    fun clientPace(call: ApplicationCall): ClientPace =
+        ClientPace(clientPingMs(call), streamDeadlineMs(call), ClientWallHeader.noHold(call))
 }
 
 /** Where a request's body comes from: the gateway's, when it handed one over, else the call's own bounded read. The

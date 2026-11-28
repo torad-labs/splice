@@ -36,6 +36,7 @@ import splice.client.wrap.WrapStateRead
 import splice.client.wrap.WrappedHead
 import splice.client.wrap.WrappedLaunch
 import splice.core.GATEWAY_VERSION
+import splice.core.client.NO_HOLD_HEADER
 import splice.core.client.SPLICE_CLIENT_HEADER
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
@@ -346,7 +347,7 @@ public class LaunchService(
         val dirs = listOf(spec.trees.own) + spec.trees.siblings
         val config = wrapped?.configRootUnsets(caller.inheritedConfigDir, dirs).orEmpty()
         // V4-449: what this head no longer plants must not leak in from an outer head's session either.
-        val own = { tiers: List<Pair<String, String>> -> buildEnv(held, tiers, caller.ambient.noProxy) }
+        val own = { tiers: List<Pair<String, String>> -> buildEnv(held, tiers, caller.ambient) }
         val planted = (gateway?.let { onGateway.env(own(emptyList()), held, it) } ?: own(slots)) +
             effort.env(held)
         val clientModels = if (spec.gateway.clientModels) {
@@ -371,12 +372,14 @@ public class LaunchService(
     private fun helperShadows(spec: LaunchSpec): List<String> =
         if (spec.gateway.keyHelper != null) listOf("ANTHROPIC_AUTH_TOKEN") else emptyList()
 
-    /** What [spec]'s launch sets with its tiers [slots], beside the caller shell's [noProxy] (LaunchCallerAmbient.noProxy). */
+    /** What [spec]'s launch sets with its tiers [slots], beside [callerAmbient] (LaunchCallerAmbient). */
     private fun buildEnv(
         spec: LaunchSpec,
         slots: List<Pair<String, String>>,
-        noProxy: List<String>,
+        callerAmbient: LaunchCallerAmbient,
     ): Map<String, String> {
+        val noHold = callerAmbient.noHold
+        val wallMs = LaunchClientTimers.wallMs(spec.gateway.apiTimeoutMs, noHold)
         return buildMap {
             // LAN share: a command another machine serves goes to that machine's address, never through this one.
             put("ANTHROPIC_BASE_URL", spec.gateway.remote ?: "http://127.0.0.1:${spec.gateway.port}")
@@ -398,14 +401,14 @@ public class LaunchService(
             // that bounds its own thinking keeps that bound.
             put("MAX_THINKING_TOKENS", "128000")
             // The client's own timers and retry limits, so the head's wall decides every turn (LaunchClientTimers).
-            putAll(LaunchClientTimers.of(spec.gateway.apiTimeoutMs))
+            putAll(LaunchClientTimers.of(spec.gateway.apiTimeoutMs, noHold))
             // Server mode (F8): Claude Code's own telemetry goes to its server's relay, when the server has one.
             putAll(LaunchTelemetry.env(spec))
             // Failure-handling slice 5: the same timeout, told to the head on every request, so a turn held for a reset
             // fits the session that sent it (a session launched before this reads as the 960 s every session had).
             // The shim adds the caller's own custom headers before these (LaunchAmbient).
-            putAll(ambient.customHeaders(spec.gateway.apiTimeoutMs, ownHeaders(spec)))
-            putAll(ambient.noProxy(spec.gateway.remote, noProxy))
+            putAll(ambient.customHeaders(wallMs, ownHeaders(spec, noHold)))
+            putAll(ambient.noProxy(spec.gateway.remote, callerAmbient.noProxy))
             // Hide Claude Code's built-in Anthropic-account commands: in a gateway head, auth is the
             // proxy bearer above, so /login (a local-jsx command hardwired to platform.claude.com —
             // no hook or base-url override can reach it) and /logout are dead doors. These are the
@@ -434,11 +437,13 @@ public class LaunchService(
     }
 
     /** splice's headers for [spec]'s session besides its client wall (LaunchAmbient.customHeaders): its window, on a
-     *  head here that forwards the client's login the launch's proof, and a team server's word that this is splice. */
-    private fun ownHeaders(spec: LaunchSpec): List<String> {
+     *  head here that forwards the client's login the launch's proof, a team server's word that this is splice, and
+     *  [NO_HOLD_HEADER] when the caller opted out of holds. */
+    private fun ownHeaders(spec: LaunchSpec, noHold: Boolean): List<String> {
         // Server mode (F9): a team server's command names this laptop's splice, so an older one is told to upgrade.
         val client = listOfNotNull(spec.teamServer?.let { "$SPLICE_CLIENT_HEADER: $GATEWAY_VERSION" })
-        return LaunchModelEnvironment.windowHeader(spec) + spec.gateway.proofLines + client
+        val optOut = if (noHold) listOf("$NO_HOLD_HEADER: 1") else emptyList()
+        return LaunchModelEnvironment.windowHeader(spec) + spec.gateway.proofLines + client + optOut
     }
 
     private fun withoutTokenCapture(spec: LaunchSpec) =

@@ -8,6 +8,12 @@ import splice.core.wire.HttpStatus
 /** The client timeout of the session that sent a request, in milliseconds (ANTHROPIC_CUSTOM_HEADERS carries it). */
 public const val CLIENT_WALL_HEADER: String = "x-splice-client-wall-ms"
 
+/** Opt-out header that disables multi-hour/7-day turn holds and fails fast when no free login can serve the turn. */
+public const val NO_HOLD_HEADER: String = "x-splice-no-hold"
+
+/** The seven-day hold window folded into a session's default client timeout and bounded by RetryEngine. */
+public const val HOLD_BUDGET_MS: Long = 604_800_000L
+
 /** The header each launch of a laptop names its splice's version in, as in `0.10.0`, which a team server holds against
  *  its `[server.client] minimum` (server mode, F9). */
 public const val SPLICE_CLIENT_HEADER: String = "x-splice-client"

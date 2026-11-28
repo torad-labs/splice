@@ -12,5 +12,6 @@ public enum class ProtocolFault { CODE_MODE_START, CODE_MODE_STATE, DIALECT_UNSU
  *  three times it stated; [MAX_HOLD], it held seven days; [TOO_FAR], the stated reset lies past seven days, so no hold
  *  begins; [WALL], the session cannot wait for it, so Claude Code is told the reset and waits itself; [MOVES], no login
  *  can serve the model the turn asks for while another model of the head has room, so no hold begins: Claude Code sends
- *  the turn again at once and it goes on under that model (Nov 17, 2026). */
-public enum class Outlast { MISSED_RESETS, MAX_HOLD, TOO_FAR, WALL, MOVES }
+ *  the turn again at once and it goes on under that model (Nov 17, 2026); [NO_HOLD], the caller opted out of holds,
+ *  so no hold begins and the turn stops immediately. */
+public enum class Outlast { MISSED_RESETS, MAX_HOLD, TOO_FAR, WALL, MOVES, NO_HOLD }

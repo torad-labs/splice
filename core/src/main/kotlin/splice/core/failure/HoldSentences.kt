@@ -17,6 +17,9 @@ private const val CONTINUES_AS_IT_LIFTS = "This turn waits and continues as soon
 /** What a payment hold line says the person does, and that the turn goes on once they have. */
 private const val CONTINUES_BY_ITSELF = " and this turn continues by itself."
 
+/** What a no-hold ending says next: the request opted out of waiting for limits to lift. */
+private const val NO_HOLD_NEXT = "Waiting for limits is disabled for this request."
+
 /** The sentences of a held turn and of an outlasted hold. */
 internal class HoldSentences(private val spoken: Spoken) {
     /** The line that opens a hold: what [cause] is, and when the turn goes on. */
@@ -86,6 +89,22 @@ internal class HoldSentences(private val spoken: Spoken) {
         Outlast.MISSED_RESETS -> missed(cause, facts)
         Outlast.MAX_HOLD -> week(cause, facts)
         Outlast.MOVES -> moves(cause, facts)
+        Outlast.NO_HOLD -> noHold(cause, facts)
+    }
+
+    /** The caller opted out of holds: state the limit, payment or overload clearly and stop without waiting. */
+    private fun noHold(cause: FailureCause.Splice.HoldOutlasted, facts: LineFacts): Said {
+        val head = facts.head
+        val held = cause.held
+        val at = cause.nextReset?.let(spoken::at)
+        val what = when {
+            held is FailureCause.Provider.NeedsPayment -> return credit(held, facts, ", then send the message again.")
+            held !is FailureCause.Provider.Limited -> "$head is overloaded until ${at ?: "later"}"
+            at == null ->
+                "$head reached ${spoken.window(held.window) ?: "its usage limit"} without saying when it resets"
+            else -> limitUntil(head, spoken.window(held.window), at, facts.request.otherLogin)
+        }
+        return Said(what, next = Next.Then(NO_HOLD_NEXT))
     }
 
     /** No login can serve the turn's model while another model has room (Nov 17, 2026): the turn's re-send goes on
@@ -100,39 +119,34 @@ internal class HoldSentences(private val spoken: Spoken) {
     /** A limit the session cannot wait out, told to Claude Code with its reset (family L): one login names the reset
      *  it retries at, a pool the 30 s in which it checks every login again. */
     private fun handedOver(cause: FailureCause.Splice.HoldOutlasted, facts: LineFacts): Said {
-        val head = facts.head
-        val reset = cause.nextReset ?: return heldOn(cause.held, facts)
-        val at = spoken.at(reset)
-        val window = (cause.held as? FailureCause.Provider.Limited)?.window?.let(spoken::window)
-        return if (facts.request.otherLogin) {
-            val what = if (window == null) {
-                "Every $head login is at its usage limit, the first until $at"
+        val reset = cause.nextReset
+        if (reset == null) {
+            val held = cause.held
+            return if (held is FailureCause.Provider.NeedsPayment) {
+                credit(held, facts, CONTINUES_BY_ITSELF).copy(next = Next.Resend(SEND_LATER))
             } else {
-                "Every $head login is at its usage limit; the first reached $window, until $at"
+                Said(
+                    "${facts.head} reached its usage limit without saying when it resets",
+                    next = Next.Resend(SEND_LATER),
+                )
             }
-            Said(
-                what,
-                next = Next.Then(
-                    "Claude Code checks again in ${spoken.span(TimeUnit.SECONDS.toMillis(RECHECK_SECONDS))} " +
-                        "and continues on the first login that frees.",
-                ),
-            )
-        } else {
-            val what = if (window == null) {
-                "$head is at its usage limit until $at"
-            } else {
-                "$head reached $window, " +
-                    "which resets $at"
-            }
-            Said(what, next = Next.Then("Claude Code retries at that time."))
         }
+        val window = (cause.held as? FailureCause.Provider.Limited)?.window?.let(spoken::window)
+        val what = limitUntil(facts.head, window, spoken.at(reset), facts.request.otherLogin)
+        val next = if (facts.request.otherLogin) {
+            "Claude Code checks again in ${spoken.span(TimeUnit.SECONDS.toMillis(RECHECK_SECONDS))} " +
+                "and continues on the first login that frees."
+        } else {
+            "Claude Code retries at that time."
+        }
+        return Said(what, next = Next.Then(next))
     }
 
-    /** A hold with no time stated, ended at the session's wall: the client sends the turn again and it holds anew. */
-    private fun heldOn(held: FailureCause, facts: LineFacts): Said = if (held is FailureCause.Provider.NeedsPayment) {
-        credit(held, facts, CONTINUES_BY_ITSELF).copy(next = Next.Resend(SEND_LATER))
-    } else {
-        Said("${facts.head} reached its usage limit without saying when it resets", next = Next.Resend(SEND_LATER))
+    private fun limitUntil(head: String, window: String?, at: String, otherLogin: Boolean): String = when {
+        otherLogin && window == null -> "Every $head login is at its usage limit, the first until $at"
+        otherLogin -> "Every $head login is at its usage limit; the first reached $window, until $at"
+        window == null -> "$head is at its usage limit until $at"
+        else -> "$head reached $window, which resets $at"
     }
 
     /** A reset past the seven days a turn may hold. */

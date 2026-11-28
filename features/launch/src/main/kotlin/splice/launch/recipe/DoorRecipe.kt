@@ -16,6 +16,7 @@ import splice.client.mcp.OwnMcpLaunch
 import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapStateRead
 import splice.client.wrap.WrappedHead
+import splice.core.client.NO_HOLD_HEADER
 import splice.core.util.EnvReader
 import splice.launch.LaunchOutcome
 import splice.sessions.registry.LaunchMarker
@@ -47,8 +48,9 @@ internal class DoorRecipe(
         val chosen = wrapState.claude()
         if (chosen is ClaudeToRun.Refused) return LaunchOutcome.Refused(chosen.reason)
         // custom-provider (cp-overlay): the person's own --settings are merged into the one overlay, never a second one.
+        val noHold = caller.ambient.noHold
         val modelGiven = ClaudeArgv.options(extraArgs).namesModel
-        val held = held(door, modelGiven, caller.ambient.noProxy)
+        val held = held(door, modelGiven, caller.ambient)
         val merged = when (val m = DoorOverlayMerge(door.overlay, caller.cwd, held).merge(extraArgs)) {
             is DoorOverlayMerge.Merged.Refused -> return LaunchOutcome.Refused(m.reason)
             is DoorOverlayMerge.Merged.Ready -> m
@@ -63,7 +65,9 @@ internal class DoorRecipe(
             addAll(merged.args)
         }
         val config = wrap.ownHome().configRootUnsets(caller.inheritedConfigDir, headDirs)
-        val headers = ambient.customHeaders(door.wallMs, emptyList(), merged.headers)
+        val wallMs = door.wallMs?.let { LaunchClientTimers.wallMs(it, noHold) }
+        val ownHeaders = if (noHold) listOf("$NO_HOLD_HEADER: 1") else emptyList()
+        val headers = ambient.customHeaders(wallMs, ownHeaders, merged.headers)
         // what the overlay says empty, the process environment takes out
         val cleared = held.filterValues(String::isEmpty).keys
         val env = door.env - cleared + held.filterValues(String::isNotEmpty) + headers
@@ -76,15 +80,18 @@ internal class DoorRecipe(
 
     /** What [door]'s launch plants beside what it carries, each in the process environment and in the overlay's `env`:
      *  the client's timers for the longest wall of its providers and heads, the door's window as the context and
-     *  compaction windows, and NO_PROXY with [noProxy], the caller's, and the door's host; and with [modelGiven], the
+     *  compaction windows, and NO_PROXY with [callerAmbient]'s entries and the door's host; and with [modelGiven], the
      *  person's `--model`, an empty starting model, which the process environment takes out. None is a secret. */
-    private fun held(door: DoorLaunchSpec, modelGiven: Boolean, noProxy: List<String>): Map<String, String> =
-        buildMap {
-            door.wallMs?.let { putAll(LaunchClientTimers.of(it)) }
-            putAll(LaunchModelEnvironment.gatewayWindows(door.window))
-            putAll(ambient.noProxy(door.env[GATEWAY_BASE_URL], noProxy))
-            if (modelGiven) put(STARTING_MODEL, "")
-        }
+    private fun held(
+        door: DoorLaunchSpec,
+        modelGiven: Boolean,
+        callerAmbient: LaunchCallerAmbient,
+    ): Map<String, String> = buildMap {
+        door.wallMs?.let { putAll(LaunchClientTimers.of(it, callerAmbient.noHold)) }
+        putAll(LaunchModelEnvironment.gatewayWindows(door.window))
+        putAll(ambient.noProxy(door.env[GATEWAY_BASE_URL], callerAmbient.noProxy))
+        if (modelGiven) put(STARTING_MODEL, "")
+    }
 }
 
 /** Claude Code's variable for the model a session starts on, which its `--model` outranks. */

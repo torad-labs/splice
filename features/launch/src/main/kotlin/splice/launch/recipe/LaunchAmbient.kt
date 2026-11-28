@@ -42,8 +42,11 @@ internal class LaunchAmbient(private val envReader: EnvReader) {
      *  launch's; a wrapper's own (`x-splice-wrapper`) stays. The shim adds the caller shell's headers, without the
      *  planted ones, before these. Said even when empty, so the shim always drops an outer session's. */
     fun customHeaders(wallMs: Long?, own: List<String>, given: String? = null): Map<String, String> {
-        val theirs = given.orEmpty().lines()
-            .filter { it.isNotBlank() && it.substringBefore(':').trim().lowercase() !in planted }
+        val ownNames = own.map { it.substringBefore(':').trim().lowercase() }.toSet()
+        val theirs = given.orEmpty().lines().filter { line ->
+            val name = line.substringBefore(':').trim().lowercase()
+            line.isNotBlank() && name !in planted && name !in ownNames
+        }
         val wall = listOfNotNull(wallMs?.let { "$CLIENT_WALL_HEADER: $it" })
         return mapOf(GATEWAY_HEADERS to (theirs + wall + own).joinToString("\n"))
     }

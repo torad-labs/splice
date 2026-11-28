@@ -3,12 +3,14 @@
 // these numbers and RetryEngine holds no number of its own.
 package splice.upstream.retry
 
+import splice.core.client.HOLD_BUDGET_MS
+
 /** A stated lift this close is waited out on the login, never held: Claude Code abandons and re-sends a request it
  *  waits on for half a minute or more, and a hold costs a committed stream. */
 internal const val HOLD_FLOOR_MS: Long = 15_000L
 
 /** The longest a stated reset is held for: a reset further away is past any session's use, so the turn ends. */
-public const val MAX_HOLD_MS: Long = 604_800_000L
+public const val MAX_HOLD_MS: Long = HOLD_BUDGET_MS
 
 /** A wait this long or longer is told when it starts; a shorter one is waited in silence (section 8, "Lines from
  *  waits"). */

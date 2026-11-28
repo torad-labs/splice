@@ -137,7 +137,7 @@ internal class TurnAccountHandoff(
      *  already. A strict earlier comparison prevents bouncing between logins held to the same reset. A current login
      *  that was refused ([refused]) or is signed out now resets never, so any held login is earlier. */
     private fun earlierHeld(drive: TurnDrive, reset: Instant? = null, refused: Boolean = false): Boolean {
-        val current = drive.account?.account?.label ?: return false
+        val current = drive.account?.account?.label?.takeUnless { drive.inputs.noHold } ?: return false
         val view = pool.view(drive.meta.scope.sessionId, drive.meta.route.upstreamModel)
         val resets = view.blockedUntilEpochSecondsByLabel
         val currentReset = currentReset(view, current, reset, refused) ?: return false

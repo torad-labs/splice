@@ -8,6 +8,7 @@ package splice.launch.recipe
 import splice.client.desktop.GATEWAY_HEADERS
 import splice.core.client.CLIENT_WALL_HEADER
 import splice.core.client.LAUNCH_OWNER_HEADER
+import splice.core.client.NO_HOLD_HEADER
 import splice.core.client.SPLICE_CLIENT_HEADER
 import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.model.CLIENT_WINDOW_HEADER
@@ -41,9 +42,18 @@ internal class LaunchAmbient(private val envReader: EnvReader) {
      *  an outer session's proof would reach a head it was not planted for and its wall and window are not this
      *  launch's; a wrapper's own (`x-splice-wrapper`) stays. The shim adds the caller shell's headers, without the
      *  planted ones, before these. Said even when empty, so the shim always drops an outer session's. */
-    fun customHeaders(wallMs: Long?, own: List<String>, given: String? = null): Map<String, String> {
-        val theirs = given.orEmpty().lines()
-            .filter { it.isNotBlank() && it.substringBefore(':').trim().lowercase() !in planted }
+    fun customHeaders(
+        wallMs: Long?,
+        own: List<String>,
+        given: String? = null,
+        stripNoHold: Boolean = false,
+    ): Map<String, String> {
+        val ownNames = own.map { it.substringBefore(':').trim().lowercase() }.toSet()
+        val drop = if (stripNoHold) planted + NO_HOLD_HEADER else planted
+        val theirs = given.orEmpty().lines().filter { line ->
+            val name = line.substringBefore(':').trim().lowercase()
+            line.isNotBlank() && name !in drop && name !in ownNames
+        }
         val wall = listOfNotNull(wallMs?.let { "$CLIENT_WALL_HEADER: $it" })
         return mapOf(GATEWAY_HEADERS to (theirs + wall + own).joinToString("\n"))
     }

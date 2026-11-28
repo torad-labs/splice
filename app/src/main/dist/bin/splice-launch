@@ -14,7 +14,7 @@
 
 # Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 # — bump both together whenever this shim's behavior changes. No code generation.
-SPLICE_SHIM_VERSION="shim-31"
+SPLICE_SHIM_VERSION="shim-32"
 # Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 SPLICE_GATEWAY_VERSION="0.6.4"
 
@@ -892,6 +892,7 @@ request_launch() {
     set -- "$@" --data-urlencode "label=${rl_name#SPLICE_LABEL_}=$rl_value"
   done
   if [ -n "${SPLICE_MODS_OFF-}" ]; then set -- "$@" --data-urlencode "modsOff=$SPLICE_MODS_OFF"; fi
+  if [ -n "${SPLICE_NO_HOLD-}" ]; then set -- "$@" --data-urlencode "noHold=$SPLICE_NO_HOLD"; fi
   rl_try=0
   rl_delays=$LAUNCH_BUSY_DELAYS
   while :; do
@@ -972,6 +973,7 @@ caller_headers() {
     ch_name=$(printf '%s' "${ch_line%%:*}" | tr -d ' \t' | tr '[:upper:]' '[:lower:]')
     case $ch_name in
       '' | x-splice-client | x-splice-client-wall-ms | x-splice-client-window | x-splice-launch-proof | x-splice-launch-owner) ;;
+      x-splice-no-hold) blank "${SPLICE_NO_HOLD-}" && CALLER_HEADERS=${CALLER_HEADERS:+$CALLER_HEADERS$NL}$ch_line ;;
       *) CALLER_HEADERS=${CALLER_HEADERS:+$CALLER_HEADERS$NL}$ch_line ;;
     esac
   done

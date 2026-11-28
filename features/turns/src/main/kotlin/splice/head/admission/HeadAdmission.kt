@@ -17,7 +17,6 @@ import splice.head.HeadDeps
 import splice.head.hold.ClientWallHeader
 import splice.head.hold.ResendLedger
 import splice.head.observe.TurnObserverAdmission
-import splice.head.turn.ClientPace
 import splice.head.turn.Preparation
 import splice.head.turn.SESSION_TAG_CHARS
 import splice.head.turn.TurnAccountQuota
@@ -260,7 +259,7 @@ internal class HeadAdmission(
             TurnSlot(
                 admitted.slot,
                 clientWallMs = ClientWallHeader.ms(call),
-                pace = ClientPace(GatewayTurns.clientPingMs(call), GatewayTurns.streamDeadlineMs(call)),
+                pace = GatewayTurns.clientPace(call),
                 heapLease = admitted.heapLease,
                 harness = prepared.harness,
                 reply = TurnReply(prepared.reply.usage, admitted.live),

@@ -125,7 +125,7 @@ internal class SseRoundPost(
         return PostLimits(
             rateLimitCooldown = selection?.account?.cooldown,
             remainingTurnWait = drive.remainingTurnWait,
-            warmWait = selection?.warmWait,
+            warmWait = if (drive.inputs.noHold) null else selection?.warmWait,
             retry = drive.retry,
             otherLoginFree = drive.accountHandoff?.let { handoff ->
                 OtherLoginFree { cause -> handoff.otherFree(drive, cause) }

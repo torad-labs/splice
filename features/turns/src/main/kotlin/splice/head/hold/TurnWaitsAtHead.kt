@@ -10,6 +10,8 @@ package splice.head.hold
 
 import io.ktor.server.application.ApplicationCall
 import splice.core.client.CLIENT_WALL_HEADER
+import splice.core.client.NO_HOLD_HEADER
+import splice.core.client.NoHoldFlag
 import splice.core.failure.FailureCause
 import splice.core.failure.Position
 import splice.core.failure.Recovery
@@ -32,6 +34,7 @@ internal class TurnWaitsAtHead(
     private val waiter: Waiter,
     private val terminal: TurnTerminal,
     private val hold: TurnHold? = null,
+    override val noHold: Boolean = false,
 ) : TurnWaits {
     override suspend fun wait(afterMs: Long, cause: FailureCause, at: Position) {
         if (afterMs >= VISIBLE_WAIT_MS) terminal.recovering(WaitLine(cause, Recovery.RetryIn(afterMs)))
@@ -49,6 +52,9 @@ internal object ClientWallHeader {
     /** The client timeout [call] names, in milliseconds. */
     fun ms(call: ApplicationCall): Long =
         call.request.headers[CLIENT_WALL_HEADER]?.trim()?.toLongOrNull()?.takeIf { it > 0L } ?: OLD_CLIENT_WALL_MS
+
+    /** Whether [call] opted out of multi-hour/7-day turn holds via [NO_HOLD_HEADER]. */
+    fun noHold(call: ApplicationCall): Boolean = NoHoldFlag.isOn(call.request.headers[NO_HOLD_HEADER])
 
     /** The timer Claude Code aborts a compaction of about [bodyBytes] on: 1.5 ms a token, from 600 s to an hour, at
      *  about four bytes a token. */

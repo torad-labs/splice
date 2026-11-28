@@ -27,23 +27,27 @@ class ShimLabelsTest(@param:TempDir private val dir: Path) {
         val output = process.inputStream.bufferedReader().readText()
         assertEquals(0, process.waitFor(), output)
         return Files.readString(form).split('\u0000')
-            .filter { it.startsWith("label=") || it.startsWith("modsOff=") }
+            .filter { it.startsWith("label=") || it.startsWith("modsOff=") || it.startsWith("noHold=") }
             .sorted()
     }
 
     @Test
-    fun `a resumed headless launch sends its labels and off list as form values`() {
+    fun `a resumed headless launch sends its labels, off list and noHold as form values`() {
         val env = mapOf(
             "SPLICE_LABEL_ROLE" to "worker",
             "SPLICE_LABEL_CAMPAIGN" to "c=1 & 2",
             "SPLICE_MODS_OFF" to "a,b",
+            "SPLICE_NO_HOLD" to "1",
             "OTHER_LABEL" to "not sent",
         )
-        assertEquals(listOf("label=CAMPAIGN=c=1 & 2", "label=ROLE=worker", "modsOff=a,b"), form(env))
+        assertEquals(
+            listOf("label=CAMPAIGN=c=1 & 2", "label=ROLE=worker", "modsOff=a,b", "noHold=1"),
+            form(env),
+        )
     }
 
     @Test
-    fun `a launch without labels or an off switch sends neither`() {
+    fun `a launch without labels, off switch or noHold sends none`() {
         assertEquals(emptyList<String>(), form(emptyMap()))
     }
 }

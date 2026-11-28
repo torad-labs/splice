@@ -16,10 +16,10 @@ import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.lifecycle.upgrade.UPGRADE_PAD
 
-/** One maintenance step: what it did, a line each (none when there was nothing to do). May throw; the aftercare says
- *  the failure and goes on. */
+/** One maintenance step: what it did, a line each (none when there was nothing to do). In [invoke]'s
+ *  automatic mode a step can omit notices meant for an interactive user. */
 public fun interface AftercareStep {
-    public operator fun invoke(): List<String>
+    public operator fun invoke(auto: Boolean): List<String>
 }
 
 /** What the install has not set up yet, a line each, in the words of what to do. */
@@ -37,7 +37,7 @@ public class UpgradeAftercare(
      *  upgrade that passed. */
     public fun run(auto: Boolean): Boolean {
         steps.forEach { step ->
-            Cancellables.runCatchingBestEffort { step() }.fold(
+            Cancellables.runCatchingBestEffort { step(auto) }.fold(
                 onSuccess = { lines -> lines.forEach { output.line("  ${"aftercare".padEnd(UPGRADE_PAD)} $it") } },
                 onFailure = {
                     val why = SafeFailureText.render(it)

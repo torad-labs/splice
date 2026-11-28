@@ -18,8 +18,6 @@ import splice.core.terminal.TerminalOutput
 import splice.core.topology.CLAUDE_COMMAND
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
-import splice.launch.install.GeminiShim
-import splice.launch.install.GeminiShimLaid
 import splice.launch.install.InstallCommand
 import splice.topology.TopologyLoader
 import java.nio.file.Files
@@ -42,6 +40,7 @@ internal class SetupUpdate(
     private val sync = SetupMcpSync(env)
     private val codexHooks = SetupCodexHooks(prompts)
     private val autoUpdate = SetupAutoUpdate(prompts, env)
+    private val seatd = SetupSeatd(prompts, env, effects.seatd)
 
     /** False only when there is no install to update; every offer declined is still a good run. */
     suspend fun run(): Boolean {
@@ -54,10 +53,10 @@ internal class SetupUpdate(
         }
         val facts = detect().capabilities
         val gaps = facts?.let { CapabilityGaps(it, claudeWrapped()).all() }.orEmpty()
-        // The shim is upkeep, said when laid, and no offer: "nothing new" is about what the person is asked.
-        shim()
         val hooksReading = facts?.harness?.takeIf { it.codex != null }?.codexHooks
         if (prompts.hasConsole()) asked(path, facts?.desktop, hooksReading, gaps) else unattended(gaps)
+        // The shim is upkeep, said when laid, and no offer: "nothing new" is about what the person is asked.
+        effects.refreshGeminiShim()?.let(frame::step)
         effects.checkup(env)
         frame.outro("Up to date.")
         return true
@@ -73,6 +72,7 @@ internal class SetupUpdate(
     ) {
         val kinds = gaps.map { it.kind }.toSet()
         val offers = listOf(
+            seatd.update(),
             launchers(desktop),
             desktop(desktop),
             mcp(GapKind.MCP_SYNC in kinds),
@@ -83,9 +83,9 @@ internal class SetupUpdate(
         val left = gaps.filter { it.kind in SAID_ONLY }
         left.forEach { frame.step(it.text) }
         when {
-            offers.all { it == Offer.NOTHING } && left.isEmpty() ->
+            offers.all { it == SetupOffer.NOTHING } && left.isEmpty() ->
                 frame.step(NOTHING_NEW)
-            offers.none { it == Offer.DONE } ->
+            offers.none { it == SetupOffer.DONE } ->
                 frame.step("Nothing changed; `splice setup --update` asks again any time.")
         }
     }
@@ -100,74 +100,65 @@ internal class SetupUpdate(
         frame.step("Run `splice setup --update` in a terminal to set these up.")
     }
 
-    /** The Antigravity shim, laid where it is missing or stale, and said when it was. */
-    private fun shim() {
-        when (val laid = GeminiShim(env).lay()) {
-            is GeminiShimLaid.Written -> frame.step("Laid the Antigravity shim at ${laid.path}")
-            is GeminiShimLaid.Failed -> frame.step("Could not lay the Antigravity shim (${laid.why})")
-            GeminiShimLaid.Current -> Unit
-        }
-    }
-
     /** The side-by-side launchers not installed yet. */
-    private fun launchers(desktop: DesktopFacts?): Offer {
+    private fun launchers(desktop: DesktopFacts?): SetupOffer {
         val missing = desktop == null || !desktop.sideBySideCli || (desktop.program != null && !desktop.sideBySideApp)
-        if (!missing) return Offer.NOTHING
+        if (!missing) return SetupOffer.NOTHING
         val launchers = effects.launchers()
-        val choice = launchers.offer(prompts, desktop, onlyNew = true) ?: return Offer.DECLINED
+        val choice = launchers.offer(prompts, desktop, onlyNew = true) ?: return SetupOffer.DECLINED
         launchers.apply(choice, frame)
-        return if (choice.cliShortcut || choice.desktopApp) Offer.DONE else Offer.DECLINED
+        return if (choice.cliShortcut || choice.desktopApp) SetupOffer.DONE else SetupOffer.DECLINED
     }
 
     /** All of Claude Desktop on splice, offered where Desktop is installed and is off splice or on the older
      *  Code-tab-only door. */
-    private suspend fun desktop(desktop: DesktopFacts?): Offer {
+    private suspend fun desktop(desktop: DesktopFacts?): SetupOffer {
         val mode = desktop?.takeIf { it.program != null }?.mode
-        if (mode != DesktopMode.OFF && mode != DesktopMode.STANDARD) return Offer.NOTHING
+        if (mode !in setOf(DesktopMode.OFF, DesktopMode.STANDARD) || !seatd.installed()) return SetupOffer.NOTHING
         val older = mode == DesktopMode.STANDARD
         val question = if (older) {
             "Move Claude Desktop from the older Code-tab door to all of Desktop on splice (`splice desktop on`)?"
         } else {
             "Put all of Claude Desktop (Chat, Cowork, Code) on splice now (`splice desktop on`)?"
         }
-        if (!frame.confirm(question, older)) return Offer.DECLINED
+        if (!frame.confirm(question, older)) return SetupOffer.DECLINED
         val on = Cancellables.runCatchingBestEffort { desktopOn() }.getOrDefault(false)
-        return if (on) Offer.DONE else Offer.DECLINED
+        return if (on) SetupOffer.DONE else SetupOffer.DECLINED
     }
 
     /** MCP import and harness sync, which offers itself where there is something to bring in or sync; [unsynced]:
      *  agy or codex is installed and not synced, so declining leaves something undone. */
-    private suspend fun mcp(unsynced: Boolean): Offer {
-        val choice = sync.offer(prompts) ?: return Offer.DECLINED
+    private suspend fun mcp(unsynced: Boolean): SetupOffer {
+        val choice = sync.offer(prompts) ?: return SetupOffer.DECLINED
         sync.apply(choice, frame)
         return when {
-            choice.active -> Offer.DONE
-            unsynced -> Offer.DECLINED
-            else -> Offer.NOTHING
+            choice.active -> SetupOffer.DONE
+            unsynced -> SetupOffer.DECLINED
+            else -> SetupOffer.NOTHING
         }
     }
 
-    private fun codexPeerHooks(reading: CodexHooksReading?): Offer = when (codexHooks.offerUpdate(reading)) {
-        null -> Offer.NOTHING
-        true -> Offer.DONE
-        false -> Offer.DECLINED
+    private fun codexPeerHooks(reading: CodexHooksReading?): SetupOffer = when (codexHooks.offerUpdate(reading)) {
+        null -> SetupOffer.NOTHING
+        true -> SetupOffer.DONE
+        false -> SetupOffer.DECLINED
     }
 
     /** The Modes that are off; a running daemon is restarted onto any turned on, so the doctor and the next session
      *  see them. */
-    private fun modes(path: Path): Offer {
-        val on = modes.offer(path) ?: return Offer.NOTHING
+    private fun modes(path: Path): SetupOffer {
+        val on = modes.offer(path) ?: return SetupOffer.NOTHING
         modes.save(path, on)
-        if (on.isEmpty()) return Offer.DECLINED
+        if (on.isEmpty()) return SetupOffer.DECLINED
         effects.restart()
-        return Offer.DONE
+        return SetupOffer.DONE
     }
 
-    private fun autoUpdate(path: Path): Offer {
-        if (!autoUpdate.askable(path)) return Offer.NOTHING
+    private fun autoUpdate(path: Path): SetupOffer {
+        if (!autoUpdate.askable(path)) return SetupOffer.NOTHING
         val on = autoUpdate.offer(path)
         autoUpdate.save(path, on)
-        return if (on) Offer.DONE else Offer.DECLINED
+        return if (on) SetupOffer.DONE else SetupOffer.DECLINED
     }
 
     /** Whether plain `claude` runs splice's launch shim: an older `splice setup` wrapped it. */
@@ -176,9 +167,6 @@ internal class SetupUpdate(
         InstallCommand(quiet, quiet).runsShim(CLAUDE_COMMAND, env)
     }.getOrDefault(false)
 }
-
-/** What one offer came to: nothing to offer, offered and left as it was, or done. */
-private enum class Offer { NOTHING, DECLINED, DONE }
 
 // What an update says where it found nothing to set up. It speaks only of what splice checked: some places, such as
 // those Claude Code takes managed settings from, splice names without reading, and the checkup after it names them.

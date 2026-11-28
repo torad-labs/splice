@@ -12,8 +12,20 @@ import java.nio.file.Path
 private const val SEATD_RETRY = "splice setup --update"
 private const val SEATD_INSTALL_LOCK = ".install.lock"
 
-/** The one install and lookup entry point for the optional companion. The caller owns consent and output. */
-public class SeatdInstaller(private val env: EnvReader = EnvReader(System::getenv)) {
+/** Local availability and consented installation of the optional companion. */
+public interface SeatdCompanion {
+    /** The running Splice release's pin, if present. */
+    public fun installed(): SeatdInstaller.Location?
+
+    /** Whether any version is present to refresh, even if the running release pins another. */
+    public fun hasInstallation(): Boolean
+
+    /** Installs the running Splice release's pin. Blocking; the caller owns consent and output. */
+    public fun install(retryCommand: String = SEATD_RETRY): SeatdInstaller.Result
+}
+
+/** The one installer, backed by the pin shipped with the running release. */
+public class SeatdInstaller(private val env: EnvReader = EnvReader(System::getenv)) : SeatdCompanion {
     private val downloader: UpgradeFetch by lazy { JdkUpgradeFetch() }
 
     /** The pinned version's immutable executable path. */
@@ -37,10 +49,13 @@ public class SeatdInstaller(private val env: EnvReader = EnvReader(System::geten
     }
 
     /** Read-only lookup by file presence, with no download, hash or subprocess. */
-    public fun installed(): Location? = SeatdPins.bundled?.let { installed(it, SeatdPlatform()) }
+    override fun installed(): Location? = SeatdPins.bundled?.let { installed(it, SeatdPlatform()) }
+
+    /** Is there an installed version to refresh? The new jar's pin need not match the previous one. */
+    override fun hasInstallation(): Boolean = versions(SeatdPlatform()).hasInstallation()
 
     /** Installs only the bundled pin. Call off the request thread, and only after affirmative consent. */
-    public fun install(retryCommand: String = SEATD_RETRY): Result =
+    override fun install(retryCommand: String): Result =
         install(SeatdPins.bundled, SeatdPlatform(), retryCommand)
 
     internal fun installed(pin: SeatdPin, platform: SeatdPlatform): Location? =

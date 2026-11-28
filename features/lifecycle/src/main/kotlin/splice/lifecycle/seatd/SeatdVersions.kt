@@ -19,6 +19,16 @@ internal class SeatdVersions(val root: Path, private val platform: SeatdPlatform
         Files.isDirectory(path.parent, LinkOption.NOFOLLOW_LINKS) &&
         Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
 
+    fun hasInstallation(): Boolean = try {
+        !Files.isSymbolicLink(root) && ReleaseDirectories.children(root).any { dir ->
+            ReleaseDirectories.isVersion(dir.fileName.toString()) && installed(dir.resolve(SEATD_PIPE_BINARY))
+        }
+    } catch (_: IOException) {
+        false
+    } catch (_: UncheckedIOException) {
+        false
+    }
+
     fun prune(current: SeatdInstaller.Location): String? = try {
         if (discardOld(current)) null else cleanupNotice()
     } catch (_: IOException) {

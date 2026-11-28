@@ -4,13 +4,21 @@
 package splice.app.capability
 
 import splice.app.desktop.setup.DesktopMode
+import splice.app.seatd.SeatdAdvice
 import splice.core.mcp.McpHarness
 import splice.diagnostics.doctor.ToolLevel
 import splice.diagnostics.doctor.ToolReading
 
 internal class CapabilityTools(private val facts: Capabilities) {
     fun readings(): List<ToolReading> =
-        listOfNotNull(desktop(), managed(), agy(), shim(), codex(), codexHooks(), hub())
+        listOfNotNull(desktop(), managed(), seatd(), agy(), shim(), codex(), codexHooks(), hub())
+
+    private fun seatd(): ToolReading {
+        val installed = facts.seatd
+        if (installed != null) return ToolReading("seatd-pipe", ToolLevel.OK, "installed (${installed.version})")
+        val level = if (facts.desktop.mode == DesktopMode.OFF) ToolLevel.INFO else ToolLevel.WARN
+        return ToolReading("seatd-pipe", level, "not installed. ${SeatdAdvice.about}", SeatdAdvice.how)
+    }
 
     /** Claude Desktop, said when splice has it on, or its Claude (Splice) app launcher is installed, or when it is
      *  installed at all. `claude-splice` runs Claude Code in a terminal, not Desktop, so it is no use of Desktop. */
@@ -61,7 +69,7 @@ internal class CapabilityTools(private val facts: Capabilities) {
     private fun shim(): ToolReading? {
         if (facts.harness.agy == null) return null
         return if (facts.harness.geminiShim) {
-            ToolReading(SHIM_ROW, ToolLevel.OK, "laid; Claude Desktop can run Antigravity models")
+            ToolReading(SHIM_ROW, ToolLevel.OK, "laid")
         } else {
             ToolReading(
                 SHIM_ROW,

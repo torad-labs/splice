@@ -12,6 +12,10 @@ import splice.configuration.add.AddProfiles
 import splice.configuration.add.DaemonRestart
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
+import splice.launch.install.GeminiShim
+import splice.launch.install.GeminiShimLaid
+import splice.lifecycle.seatd.SeatdCompanion
+import splice.lifecycle.seatd.SeatdInstaller
 
 /** The steps of `setup` that change the machine, beside install: the profile add (and retiring the command it links),
  *  the daemon restart and the launchers. Not prompts, which is the line SetupPrompts draws. Each reads through [env],
@@ -23,11 +27,19 @@ internal class SetupEffects(
     private val add: ProfileAdd = CommandAdd(choices),
     val restart: DaemonRestart = DaemonRestart { LifecycleWiring.restart() },
     private val launchers: SetupLaunchers = SetupLaunchers(env),
+    val seatd: SeatdCompanion = SeatdInstaller(env),
 ) {
     fun heads(profiles: AddProfiles, prompts: SetupPrompts, env: EnvReader): SetupHeads =
         SetupHeads(profiles, prompts.pickHeads, add, restart, prompts.hasConsole, env, prompts.frame)
 
     fun launchers(): SetupLaunchers = launchers
+
+    /** Upkeep, never an offer: the shim is laid again where it is missing or stale. */
+    fun refreshGeminiShim(): String? = when (val laid = GeminiShim(env).lay()) {
+        is GeminiShimLaid.Written -> "Laid the Antigravity shim at ${laid.path}"
+        is GeminiShimLaid.Failed -> "Could not lay the Antigravity shim (${laid.why})"
+        GeminiShimLaid.Current -> null
+    }
 
     /** `splice doctor`, once, at the end of setup: with no plan connected as much as with three. */
     fun checkup(env: EnvReader) = add.checkup(env)

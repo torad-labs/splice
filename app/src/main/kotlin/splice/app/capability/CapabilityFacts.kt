@@ -5,6 +5,7 @@ package splice.app.capability
 
 import splice.app.desktop.setup.DesktopMode
 import splice.core.mcp.McpHarness
+import splice.lifecycle.seatd.SeatdInstaller
 import java.nio.file.Path
 
 /** Claude Desktop: its [program] (null when not installed), the [mode] splice has it in, whether `claude-splice`
@@ -39,4 +40,5 @@ internal data class Capabilities(
     val harness: HarnessFacts,
     val hub: HubFacts,
     val autoUpdate: Boolean?,
+    val seatd: SeatdInstaller.Location? = null,
 )

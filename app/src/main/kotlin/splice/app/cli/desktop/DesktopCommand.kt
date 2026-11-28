@@ -28,9 +28,14 @@ import splice.app.LifecycleWiring
 import splice.app.cli.hook.StreamDevice
 import splice.app.cli.hook.StreamTerminal
 import splice.app.desktop.acp.DesktopAcpCommand
+import splice.app.seatd.SeatdAdvice
+import splice.app.seatd.SeatdChoice
+import splice.app.seatd.SeatdConsent
 import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
+import splice.lifecycle.seatd.SeatdCompanion
+import splice.lifecycle.seatd.SeatdInstaller
 
 internal const val DESKTOP_USAGE =
     "[--json] | on [--model <id>] [--yes] | off | rotate-key | credential | launch <command> [args...] | " +
@@ -50,6 +55,7 @@ internal class DesktopCommand(
     private val confirm: DesktopConfirm = DesktopConfirm { question ->
         System.console()?.readLine(question)?.trim()?.lowercase() in setOf("y", "yes")
     },
+    private val seatd: SeatdCompanion = SeatdInstaller(env),
 ) {
     private val client = DoorClient("desktop", env, err, daemon)
     private val verbs = DoorVerbs(
@@ -66,9 +72,41 @@ internal class DesktopCommand(
         args == listOf("credential") -> DesktopCredential(out, err).run(StatePaths(envReader = env).desktopKeyFile)
         args.firstOrNull() == "launch" -> DesktopLaunch(env, err).run(args.drop(1))
         args.firstOrNull() == "wrapper" -> DesktopWrapper(env, out, err).run(args.drop(1))
-        args.firstOrNull() == "on" && "--yes" in args -> verbs.run(args - "--yes")
-        args.firstOrNull() == "on" -> asked(args)
+        args.firstOrNull() == "on" -> on(args)
         else -> verbs.run(args)
+    }
+
+    private fun on(args: List<String>): Int {
+        val open = args - "--yes"
+        if (!verbs.canOpen(open)) return verbs.run(open)
+        val blocked = if (seatd.installed() == null) installCompanion() else null
+        return blocked ?: if ("--yes" in args) verbs.run(open) else asked(open)
+    }
+
+    /** A skipped or refused install ends the command before it tries to enable Desktop. */
+    private fun installCompanion(): Int? {
+        if (!acceptCompanion()) {
+            out.line(
+                "splice desktop: left Desktop unchanged. To install the companion and enable Desktop later, " +
+                    "run `${SeatdAdvice.DESKTOP}` in a terminal.",
+            )
+            return 0
+        }
+        val result = seatd.install(SeatdAdvice.DESKTOP)
+        if (result is SeatdInstaller.Result.Failed) return client.refused(result.message)
+        SeatdAdvice.lines(result).forEach(out::line)
+        return null
+    }
+
+    /** The Desktop mode confirmation cannot authorize installing another program. */
+    private fun acceptCompanion(): Boolean {
+        out.line(SeatdAdvice.about)
+        out.line(SeatdAdvice.WITHOUT)
+        if (!stdin.isTerminal()) return false
+        val accepted = confirm.yes("${SeatdAdvice.QUESTION} [y/N] ")
+        val choice = if (accepted) SeatdChoice.OPTED_IN else SeatdChoice.DECLINED
+        SeatdConsent(env).save(choice)?.let(err::line)
+        return accepted
     }
 
     /** `on` without `--yes`: what it costs said first, then asked on a terminal. With no terminal to ask on, nothing

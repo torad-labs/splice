@@ -67,7 +67,7 @@ internal class UpgradeAftercareTest : UpgradeRig() {
         var ran = 0
         val aftercare = UpgradeAftercare(
             TerminalOutput { said += it },
-            steps = listOf(AftercareStep { listOf("laid the shim").also { ran++ } }),
+            steps = listOf(AftercareStep { _ -> listOf("laid the shim").also { ran++ } }),
             gaps = AftercareGaps { listOf("a gap") },
         )
         assertTrue(aftercare.run(auto = true))
@@ -81,7 +81,10 @@ internal class UpgradeAftercareTest : UpgradeRig() {
         val said = mutableListOf<String>()
         val aftercare = UpgradeAftercare(
             TerminalOutput { said += it },
-            steps = listOf(AftercareStep { error("disk full") }, AftercareStep { listOf("refreshed the hub") }),
+            steps = listOf(
+                AftercareStep { _ -> error("disk full") },
+                AftercareStep { _ -> listOf("refreshed the hub") },
+            ),
         )
         assertTrue(aftercare.run(auto = true), "nothing in the aftercare can fail an upgrade that passed")
         assertTrue(said.any { "did not run" in it }, said.toString())
@@ -105,7 +108,7 @@ internal class UpgradeAftercareTest : UpgradeRig() {
             VersionedRestart { true },
             aftercare = UpgradeAftercare(
                 TerminalOutput { },
-                steps = listOf(AftercareStep { emptyList<String>().also { ran++ } }),
+                steps = listOf(AftercareStep { _ -> emptyList<String>().also { ran++ } }),
             ),
         )
         assertTrue(verb.upgrade(listOf(AFTERCARE_FLAG, AFTERCARE_AUTO_FLAG)))
@@ -123,7 +126,7 @@ internal class UpgradeAftercareTest : UpgradeRig() {
             VersionedRestart { true },
             aftercare = UpgradeAftercare(
                 TerminalOutput { },
-                steps = listOf(AftercareStep { emptyList<String>().also { ran++ } }),
+                steps = listOf(AftercareStep { _ -> emptyList<String>().also { ran++ } }),
             ),
         )
         assertFalse(verb.upgrade(listOf(AFTERCARE_FLAG, "--now")))

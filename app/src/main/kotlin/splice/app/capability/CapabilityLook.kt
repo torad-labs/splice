@@ -14,6 +14,8 @@ import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.launch.install.GeminiShim
+import splice.lifecycle.seatd.SeatdCompanion
+import splice.lifecycle.seatd.SeatdInstaller
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -23,11 +25,12 @@ internal class CapabilityLook(
     private val env: EnvReader = EnvReader(System::getenv),
     private val osName: String = System.getProperty("os.name").orEmpty(),
     private val desktop: DesktopFactsRead = DesktopFactsRead(env, osName),
+    private val seatd: SeatdCompanion = SeatdInstaller(env),
 ) {
     /** What [topology] (splice.toml as parsed; by default read from disk, null where it is missing or broken) and
      *  this machine say. Its `[daemon] state_dir` decides where Desktop's record is read, as the daemon reads it. */
     fun read(topology: Topology? = topology()): Capabilities =
-        Capabilities(desktop.read(topology), harness(), hub(topology), topology?.daemon?.autoUpdate)
+        Capabilities(desktop.read(topology), harness(), hub(topology), topology?.daemon?.autoUpdate, seatd.installed())
 
     private fun harness(): HarnessFacts {
         val home = UserHome.dir(env)

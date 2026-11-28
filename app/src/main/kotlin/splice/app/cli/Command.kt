@@ -114,6 +114,9 @@ public sealed class Command {
     public data object Init : Command() {
         override suspend fun run(): Int = success { InstallWiring.init(EnvReader(System::getenv)) }
     }
+    public data object OfferSeatdPipe : Command() {
+        override suspend fun run(): Int = splice.app.cli.setup.SeatdInstallCommand().run()
+    }
     public data class Install(val target: String?) : Command() {
         override suspend fun run(): Int {
             val env = EnvReader(System::getenv)

@@ -148,6 +148,9 @@ jobs:
         # integrations/mcp-hub is no longer the tree the pair was built from (tools/release/mcp-hub.tree).
         run: bun tools/release hub place
 
+      - name: fetch the reviewed seatd-pipe archives
+        run: bun tools/release seatd fetch "$RUNNER_TEMP/seatd-pipe"
+
       - name: stage exact release bundle
         # DR-19: thread the resolved version in as the tag so the SemVer + tag/version equality
         # block runs on the PROMOTION path too (a real pushed tag still wins inside the task via
@@ -155,12 +158,13 @@ jobs:
         # The two -x flags skip linking the hub: the placed, qualified pair above is what ships, not a build of it.
         env:
           RESOLVED_VERSION: ${{ steps.version.outputs.version }}
+          SPLICE_SEATD_PIPE_ASSETS: ${{ runner.temp }}/seatd-pipe
         run: SPLICE_RELEASE_TAG="v$RESOLVED_VERSION" ./gradlew :app:stageRelease --no-daemon --no-parallel -x :integrations-mcp-hub:linkHolderReleaseExecutableLinuxX64 -x :integrations-mcp-hub:linkFrontReleaseExecutableLinuxX64
 
       - name: accept exact release bundle
         env:
           RESOLVED_VERSION: ${{ steps.version.outputs.version }}
-        run: SPLICE_EXPECTED_VERSION="$RESOLVED_VERSION" bun tools/release accept
+        run: SPLICE_EXPECTED_VERSION="$RESOLVED_VERSION" bun tools/release accept --with-seatd
 
       - name: hub pair matches the qualified hashes
         # The MCP hub's two binaries ship only as the qualified bytes: each staged one must hash to its

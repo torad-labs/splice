@@ -36,6 +36,8 @@ export const GATED_STAGE_RUN =
 export const STAGE_TASK = ":app:stageRelease";
 export const RESOLVED_VERSION = "${{ steps.version.outputs.version }}";
 export const PRERELEASE_INPUT = "${{ contains(needs.build.outputs.version, '-') }}";
+const SEATD_FETCH_RUN = 'bun tools/release seatd fetch "$RUNNER_TEMP/seatd-pipe"';
+const ACCEPT_RUN = 'SPLICE_EXPECTED_VERSION="$RESOLVED_VERSION" bun tools/release accept --with-seatd';
 
 /**
  * The environment a TAG MUTANT runs under.
@@ -115,6 +117,14 @@ export function stageStepProblem(workflow: Workflow): string | null {
   if (step.env?.RESOLVED_VERSION !== RESOLVED_VERSION) {
     return `release verify: stage step env does not thread the resolved version: ${JSON.stringify(step.env)}`;
   }
+  const build = steps(workflow, "build");
+  const stageAt = build.indexOf(step);
+  const fetchAt = build.findIndex((candidate) => candidate.run === SEATD_FETCH_RUN);
+  const acceptAt = build.findIndex((candidate) => candidate.run === ACCEPT_RUN);
+  if (fetchAt < 0 || fetchAt >= stageAt || step.env?.SPLICE_SEATD_PIPE_ASSETS !== "${{ runner.temp }}/seatd-pipe") {
+    return "release verify: stage step must take reviewed seatd-pipe assets from an earlier fetch";
+  }
+  if (acceptAt <= stageAt) return "release verify: the staged bundle must be accepted with the reviewed companion";
   return null;
 }
 

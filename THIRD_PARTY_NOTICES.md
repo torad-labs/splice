@@ -4,6 +4,12 @@ splice bundles or builds against the third-party materials listed below. This fi
 factual provenance, not legal advice; consult the referenced licenses for the authoritative
 terms.
 
+## seatd-pipe
+
+Splice redistributes the optional seatd-pipe companion under the MIT License.
+[Source repository](tools/release/seatd-pipe.json) (see the release pin's `repository` field).
+The companion's own `LICENSE` and `THIRD_PARTY_NOTICES.md` ship beside the installed program.
+
 ## Gradle Wrapper
 
 - File: `gradle/wrapper/gradle-wrapper.jar`

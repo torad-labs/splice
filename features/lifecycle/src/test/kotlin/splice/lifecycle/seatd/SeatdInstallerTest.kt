@@ -191,7 +191,8 @@ class SeatdInstallerTest(@TempDir scratch: Path) {
         Files.createDirectories(running.parent)
         val session = startSession(running)
         try {
-            assertTrue(session.isAlive)
+            val reply = session.inputStream.bufferedReader()
+            assertEquals("ready", reply.readLine())
             publish(archive)
 
             assertInstanceOf(SeatdInstaller.Result.Installed::class.java, install())
@@ -200,6 +201,9 @@ class SeatdInstallerTest(@TempDir scratch: Path) {
             assertTrue(Files.exists(newer))
             assertTrue(Files.exists(running))
             assertTrue(session.isAlive)
+            session.outputStream.bufferedWriter().use { it.newLine() }
+            assertEquals("1.0.0", reply.readLine())
+            assertEquals(0, session.waitFor())
         } finally {
             session.destroyForcibly().waitFor()
         }
@@ -209,7 +213,18 @@ class SeatdInstallerTest(@TempDir scratch: Path) {
         // Compile a real executable: system sleep may be a multicall binary or restricted to its original location.
         val build = ProcessBuilder("cc", "-x", "c", "-", "-o", path.toString()).redirectErrorStream(true).start()
         build.outputStream.bufferedWriter().use {
-            it.write("#include <unistd.h>\nint main(void) { sleep(60); return 0; }\n")
+            it.write(
+                """
+                #include <stdio.h>
+                int main(void) {
+                    puts("ready");
+                    fflush(stdout);
+                    if (getchar() == EOF) return 1;
+                    puts("1.0.0");
+                    return 0;
+                }
+                """.trimIndent(),
+            )
         }
         val diagnostics = build.inputStream.bufferedReader().use { it.readText() }
         assertEquals(0, build.waitFor(), diagnostics)

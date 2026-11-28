@@ -106,6 +106,7 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
     "capabilities" to CommandRegistration("", CommandFactory.Alone(Command.Capabilities)),
     "shim-version" to CommandRegistration("", CommandFactory.Alone(Command.ShimVersion)),
     "init" to CommandRegistration("", CommandFactory.Alone(Command.Init)),
+    "offer-seatd-pipe" to CommandRegistration("", CommandFactory.Alone(Command.OfferSeatdPipe)),
     "install" to CommandRegistration("[<head>|--all]", CommandFactory.OneHead { a -> Command.Install(a.getOrNull(1)) }),
     "uninstall" to CommandRegistration(
         "[<head>|--all]",

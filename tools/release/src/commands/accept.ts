@@ -28,6 +28,7 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SUMS, readManifest } from "../lib/dist.ts";
+import { readSeatdPin, requireSeatdAssets, type SeatdPin } from "../lib/seatd.ts";
 import { shimMarkers, stagedGatewayVersion } from "../lib/shim.ts";
 import {
   assertFailedWithoutSuccess,
@@ -44,7 +45,7 @@ import {
 import { zipEntry } from "../lib/zip.ts";
 
 export const usage =
-  "accept [distDir] [--version X]       accept a staged release bundle: assets, checksums, the jar's sidecars, and install.sh end to end";
+  "accept [distDir] [--version X] [--with-seatd]  accept a staged release bundle; --with-seatd requires the reviewed companion";
 
 /** stageRelease snapshots the same task output provider that shadowJar packages. */
 
@@ -75,8 +76,10 @@ function jarVersionOf(jar: string): string {
   return Bun.spawnSync(["java", "-jar", jar, "version"], { stdout: "pipe", stderr: "pipe" }).stdout.toString().trim();
 }
 
-export async function accept(argv: readonly string[], repoRoot: string): Promise<number> {
+// The off-line rehearsal supplies a fixture pin in-process; the CLI always uses the checked-in pin.
+export async function accept(argv: readonly string[], repoRoot: string, rehearsalPin?: SeatdPin): Promise<number> {
   let dist: string | undefined;
+  let withSeatd = false;
   let expected = Bun.env.SPLICE_EXPECTED_VERSION ?? "";
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
@@ -84,6 +87,8 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
       const value = argv[++i];
       if (!value) return fail("release accept: --version needs the version it expects");
       expected = value;
+    } else if (arg === "--with-seatd") {
+      withSeatd = true;
     } else if (arg.startsWith("-")) {
       return fail(`release accept: unknown argument ${arg}`);
     } else if (dist === undefined) {
@@ -99,6 +104,13 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
   // refusal is the same line the asset loop would have printed for it.
   const manifest = readManifest(distDir);
   if (manifest instanceof Error) return fail(manifest.message);
+  if (withSeatd) {
+    try {
+      requireSeatdAssets(distDir, manifest, rehearsalPin ?? readSeatdPin(repoRoot));
+    } catch (error) {
+      return fail(`release accept: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
   for (const asset of [...manifest.assets, SUMS]) {
     const path = join(distDir, asset);
     let size = -1;
@@ -139,6 +151,10 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
   onDisk.delete(SUMS);
   if (staged.size !== onDisk.size || [...onDisk].some((name) => !staged.has(name))) {
     return fail("release accept: sha256sums.txt does not cover the exact asset set");
+  }
+
+  if (!staged.has("THIRD_PARTY_NOTICES.md")) {
+    return fail("release accept: THIRD_PARTY_NOTICES.md is missing from the release");
   }
 
   // ── the compliance documents, and the jar's own copies of them ───────────────────────────────

@@ -829,6 +829,16 @@ else
   echo "splice: the ✗/! checks above are next steps with their fixes — the install itself landed."
 fi
 
+# Piped installers have no consent, even when their output goes to a terminal. The installed jar
+# owns both the prompt (including the pinned repository link) and any consented download.
+if [ -t 0 ] && [ -t 1 ]; then
+  if ! SPLICE_JAR="$JAR_DST" run_jar "$JAR_DST" offer-seatd-pipe; then
+    echo "splice: to try adding seatd-pipe again, run: splice setup --update"
+  fi
+else
+  echo "To add seatd-pipe later, run: splice setup --update"
+fi
+
 # A command left linked to the shim after its head was renamed or removed (`install --all` links
 # the topology's commands and never prunes one) is doctor's row above, with the rm that clears it:
 # only the topology knows whether a head still claims a name. The hardcoded claudeor notice that

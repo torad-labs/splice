@@ -42,7 +42,7 @@ describe("release verify", () => {
   test("the release workflow stages through the Gradle task and accepts through this CLI", () => {
     const workflow = read(".github/workflows/release.yml");
     expect(workflow).toContain(`run: ${GATED_STAGE_RUN}`);
-    expect(workflow).toContain('run: SPLICE_EXPECTED_VERSION="$RESOLVED_VERSION" bun tools/release accept');
+    expect(workflow).toContain('run: SPLICE_EXPECTED_VERSION="$RESOLVED_VERSION" bun tools/release accept --with-seatd');
     expect(workflow).not.toContain("checks/release/");
   });
 

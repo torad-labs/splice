@@ -31,6 +31,7 @@ import io.ktor.client.HttpClient
 import splice.core.auth.LoginAnswer
 import splice.core.auth.RefreshOutcome
 import splice.core.failure.FailureEvidence
+import splice.core.perf.UpstreamAttemptTiming
 import splice.core.usage.PlanLimit
 import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
@@ -250,7 +251,13 @@ public class UpstreamClient(
             state.markResend(ctx)
             request.execute(
                 ctx,
-                AttemptWire(auth.credentials, auth.headers, body.bytes, recorder),
+                AttemptWire(
+                    auth.credentials,
+                    auth.headers,
+                    body.bytes,
+                    recorder,
+                    ctx.observers.perf?.let(::UpstreamAttemptTiming),
+                ),
                 auth,
                 onStreamStart = {
                     streamHandedOff = true

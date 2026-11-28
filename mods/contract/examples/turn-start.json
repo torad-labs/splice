@@ -1,0 +1,12 @@
+{
+  "session": "d2080d4f-0992-421b-86dd-7d80c45c12bc",
+  "turn": "turn-42",
+  "at": 1785156300000,
+  "labels": {
+    "ticket": "42"
+  },
+  "head": "claude",
+  "model": "requested-model",
+  "compact": false,
+  "agent": null
+}

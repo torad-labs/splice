@@ -23,6 +23,7 @@ import splice.head.GatewayTurns
 import splice.head.HeadDeps
 import splice.head.HeldLoginVerdict
 import splice.head.RefusedRequest
+import splice.head.observe.TurnObserverAdmission
 import splice.head.transport.CallerCredential
 import splice.head.turn.Preparation
 import splice.head.turn.SESSION_TAG_CHARS
@@ -50,6 +51,7 @@ internal class PreDriveRefusals(
     /** The head's run of refusals before any upstream turn (2026-11-09 audit), read degraded on /health: each refusal
      *  here counts, and an admitted turn ends it. */
     val streak = RefusalStreak(head, deps.log, deps.traffic.upstream.retryWall)
+    private val observer = TurnObserverAdmission(deps.seams.reports.observers, head, deps.log)
 
     /** A defect that escaped the request's own handling (HeadAdmission's door): its kind and the splice line it came
      *  from go to daemon.log (never its message, which may quote the transcript), its request row ends unexpected, and
@@ -75,7 +77,10 @@ internal class PreDriveRefusals(
         streak.refused(responses.lineOf(cause).sentence, detail)
         deps.seams.events.turnStarted(refused.sessionId)
         val refusal = LocalRefusal(OutcomeTag.UNEXPECTED.wire, detail, trace = null)
-        driver.recordLocalRefusal(refused.meta(), telemetry.begin(arrivalAt), arrivalAt, refusal)
+        val meta = refused.meta()
+        val perf = telemetry.begin(arrivalAt)
+        observer.begin(call, perf, meta)
+        driver.recordLocalRefusal(meta, perf, arrivalAt, refusal)
         if (committed) return
         responses.respondRefusal(call, cause, OutcomeTag.UNEXPECTED)
     }
@@ -94,6 +99,7 @@ internal class PreDriveRefusals(
         RequestObservation.refused(admitted.perf, request.model, request.sessionId, request.stream)
         // A refusal writes a row, so it is announced like the turns that run: the console sees a start and its end.
         deps.seams.events.turnStarted(request.sessionId)
+        observer.begin(call, admitted.perf, meta)
         val trace = request.inbound?.let { deps.stores.captures.trace?.begin(meta, it) }
         RequestObservation.turn(admitted.perf, trace?.turnId)
         val sentence = responses.lineOf(cause).sentence

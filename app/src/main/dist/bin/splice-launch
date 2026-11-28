@@ -14,7 +14,7 @@
 
 # Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 # — bump both together whenever this shim's behavior changes. No code generation.
-SPLICE_SHIM_VERSION="shim-30"
+SPLICE_SHIM_VERSION="shim-31"
 # Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 SPLICE_GATEWAY_VERSION="0.6.4"
 
@@ -884,6 +884,14 @@ request_launch() {
   # (LaunchAmbient): the daemon's own environment is not this shell's.
   if [ -n "${NO_PROXY-}" ]; then set -- --data-urlencode "noProxy=$NO_PROXY" "$@"; fi
   if [ -n "${no_proxy-}" ]; then set -- --data-urlencode "noProxy=$no_proxy" "$@"; fi
+  # Only read shell identifiers with the label prefix, and never evaluate their values as code.
+  for rl_name in $(export -p | LC_ALL=C sed -n 's/^export \(SPLICE_LABEL_[A-Za-z0-9_]*\)=.*/\1/p' | LC_ALL=C sort -u); do
+    eval 'rl_present=${'"$rl_name"'+set}'
+    [ "$rl_present" = set ] || continue
+    eval 'rl_value=${'"$rl_name"'}'
+    set -- "$@" --data-urlencode "label=${rl_name#SPLICE_LABEL_}=$rl_value"
+  done
+  if [ -n "${SPLICE_MODS_OFF-}" ]; then set -- "$@" --data-urlencode "modsOff=$SPLICE_MODS_OFF"; fi
   rl_try=0
   rl_delays=$LAUNCH_BUSY_DELAYS
   while :; do
@@ -950,12 +958,9 @@ drop_own_token() {
   dot_mgmt=""
 }
 
-# shim-30 (#791): this shell's ANTHROPIC_CUSTOM_HEADERS without blank lines and without the four headers a launch plants
-# for its session (its client wall, its window, its launch proof, and a team server's x-splice-client), which an outer
-# session leaves behind and the recipe names again for this one. Every other header stays, a wrapper's x-splice-wrapper
-# among them. Read here, not sent: a header of the caller's can hold a secret, and the daemon's recipe names splice's
-# own headers alone, which follow these (merged_headers). The four are LaunchAmbient's `planted`. Answered in
-# CALLER_HEADERS.
+# The caller's ANTHROPIC_CUSTOM_HEADERS without blank lines or LaunchAmbient's planted headers, which an
+# outer session leaves behind and the recipe names again for this one. Keep a wrapper's x-splice-wrapper.
+# Read here, not sent: a caller header can hold a secret. Answered in CALLER_HEADERS.
 caller_headers() {
   CALLER_HEADERS=""
   ch_rest=${ANTHROPIC_CUSTOM_HEADERS-}
@@ -966,7 +971,7 @@ caller_headers() {
     esac
     ch_name=$(printf '%s' "${ch_line%%:*}" | tr -d ' \t' | tr '[:upper:]' '[:lower:]')
     case $ch_name in
-      '' | x-splice-client | x-splice-client-wall-ms | x-splice-client-window | x-splice-launch-proof) ;;
+      '' | x-splice-client | x-splice-client-wall-ms | x-splice-client-window | x-splice-launch-proof | x-splice-launch-owner) ;;
       *) CALLER_HEADERS=${CALLER_HEADERS:+$CALLER_HEADERS$NL}$ch_line ;;
     esac
   done

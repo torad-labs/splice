@@ -16,6 +16,8 @@
 package splice.sessions.http
 
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import splice.sessions.registry.SessionRecord
 
 /** The daemon-supplied per-session facts a row carries. Every member defaults to "nothing wired", so a
@@ -31,20 +33,52 @@ public data class SessionRowFacts(
     val servedOf: SessionServedOf = NoSessionServed,
     /** The context window its client reported to its head (SessionWindowOf): `client_context_window`. */
     val windowOf: SessionWindowOf = NoSessionWindow,
+    /** The launch's labels: `labels`, an empty object when none were supplied. */
+    val labelsOf: SessionLabelsOf = NoSessionLabels,
 ) {
     /** One snapshot of every source, taken once per request before the first row is written. A source
      *  without a bounded lookup returns itself, so this is free for the ones that do not need it. */
-    public fun forRecords(records: List<SessionRecord>): SessionRowFacts =
-        SessionRowFacts(accountOf.forRecords(records), turnsOf.forRecords(records), endingOf, servedOf, windowOf)
+    public fun forRecords(records: List<SessionRecord>): SessionRowFacts {
+        val registered = records.filter { it.client.launchLabels == null }
+        return copy(
+            accountOf = accountOf.forRecords(registered),
+            turnsOf = turnsOf.forRecords(registered),
+            labelsOf = labelsOf.forRecords(registered),
+        )
+    }
 
     /** Each source writes its own keys. The order is the order they are declared in, and nothing here
      *  reads or overwrites another's key: two sources that wanted the same key would be a conflict to
      *  resolve at the source, not a precedence to encode here. */
     public fun write(record: SessionRecord, target: JsonObjectBuilder) {
-        accountOf.write(record, target)
-        turnsOf.write(record, target)
-        endingOf.write(record, target)
-        servedOf.write(record, target)
-        windowOf.write(record, target)
+        if (record.client.launchLabels != null) {
+            target.put("id", record.sessionId)
+            target.put("kind", record.client.kind)
+            target.put("pid", record.process.pid)
+        } else {
+            accountOf.write(record, target)
+            turnsOf.write(record, target)
+            endingOf.write(record, target)
+            servedOf.write(record, target)
+            windowOf.write(record, target)
+        }
+        labelsOf.write(record, target)
     }
+}
+
+/** The row's launch labels, kept here with the snapshot that consumes and writes them. */
+public fun interface SessionLabelsOf {
+    public fun labelsOf(record: SessionRecord): Map<String, String>
+
+    public fun forRecords(records: List<SessionRecord>): SessionLabelsOf = this
+
+    public fun write(record: SessionRecord, target: JsonObjectBuilder) {
+        target.putJsonObject("labels") {
+            (record.client.launchLabels ?: labelsOf(record)).forEach { (key, value) -> put(key, value) }
+        }
+    }
+}
+
+internal object NoSessionLabels : SessionLabelsOf {
+    override fun labelsOf(record: SessionRecord): Map<String, String> = emptyMap()
 }

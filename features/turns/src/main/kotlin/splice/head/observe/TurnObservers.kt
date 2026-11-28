@@ -1,0 +1,38 @@
+package splice.head.observe
+
+import splice.core.turn.TurnObservation
+import splice.core.turn.TurnObserverOffer
+
+/** Admission-time offer port. Return null if no turn events are wanted; never wait, run a mod, or do I/O here. */
+public interface TurnObservers {
+    public val observingTurns: Boolean get() = true
+    public val observingSessions: Boolean get() = true
+
+    /** One failure report for this observer across all heads that use it. */
+    public val offerAudit: TurnObserverOffer? get() = null
+
+    /** Remember first sight without allocating a turn observation when no mod wants turns. */
+    public fun sessionSeen(sessionId: String, launchOwner: String?) {}
+
+    public fun begin(facts: ObservedTurnFacts): TurnObservation?
+
+    public fun begin(facts: ObservedTurnFacts, credentials: ObservedCredentials): TurnObservation? = begin(facts)
+}
+
+public object NoTurnObservers : TurnObservers {
+    override val observingTurns: Boolean = false
+    override val observingSessions: Boolean = false
+
+    override fun begin(facts: ObservedTurnFacts): TurnObservation? = null
+}
+
+/** Local identity and routing facts only. Launch ownership is a UUID, never a proof or credential. */
+public data class ObservedTurnFacts(
+    val sessionId: String?,
+    val launchOwner: String?,
+    val head: String,
+    val model: String,
+    val compact: Boolean,
+    val agent: String?,
+    val atEpochMs: Long,
+)

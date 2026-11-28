@@ -73,8 +73,8 @@ export function refuseForeign(h: Home, account: string = userInfo().homedir): vo
 
 /** A new home under /tmp. Every refusal is decided on its paths before anything is made, so a refused home leaves no
  *  folder behind; the folder itself is then made exclusively, so two homes never share one. */
-export function makeHome(): Home {
-  const h = homeAt(join(TMP, PREFIX + randomBytes(6).toString("hex")));
+export function makeHome(prefix = PREFIX): Home {
+  const h = homeAt(join(TMP, prefix + randomBytes(6).toString("hex")));
   refuseForeign(h);
   mkdirSync(h.root, { mode: 0o700 });
   for (const d of [h.state, dirname(h.config), h.tmux, h.bin, h.work]) mkdirSync(d, { recursive: true });

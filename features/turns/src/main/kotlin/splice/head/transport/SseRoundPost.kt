@@ -97,7 +97,8 @@ internal class SseRoundPost(
                 ),
                 limits = postLimits(inputs, selection),
             ).also { context ->
-                context.providerAnswerObserver = answers
+                context.providerAnswerObserver = drive.perf.observed?.let { ObservedProviderAnswers(answers, it) }
+                    ?: answers
                 context.bodyRefusedAsTooLarge = inputs.refusedAsTooLarge()
                 context.upstreamAccepted = splice.upstream.StreamStart {
                     drive.accountHandoff?.commit()

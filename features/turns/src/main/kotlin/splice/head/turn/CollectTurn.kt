@@ -60,6 +60,7 @@ internal class CollectTurn(
                 built.meta.scope.sessionId,
             ),
             voice = inputs.voice,
+            observed = inputs.perf.observed,
         )
         // Inert writer: collect never writes SSE frames. clientGone is flipped by Netty
         // closeFuture (HD-29), not by a failed write.

@@ -1,14 +1,25 @@
 /**
  * The Splice Mods v2 contract: every shape a mod and Splice exchange, as TypeScript declarations.
+ * It declares more than this version of Splice runs; mods/README.md, "What runs today", says which part runs.
  *
  * A mod is a small folder a person installs into Splice. It watches or changes what passes through
  * Splice (a session starting, a turn, a tool call), adds rows and views to any app that shows
  * Splice's sessions, and gives the model tools that draw UI in a conversation. Splice's core holds
  * no code for any one mod.
  *
- * NOTHING HERE RUNS YET. This file is the shapes alone, so that Splice and the mods written against
- * it build against one file. When the runner lands, a mod using an event Splice does not serve yet
- * is refused at load, in words naming the mod and the event.
+ * WHAT RUNS NOW. A mod runs in its own Bun process, as an observer. Splice serves `mod.start`, `mod.stop`,
+ * `session.start`, `session.end`, `turn.start`, `request.send`, `stream.event`, `tool.call`,
+ * `response.receive` and `turn.complete`, and the handle's `store`, `clock`, `log` and `sessions.list`.
+ * A handler's answer, and a changed event passed to `next`, change nothing. Everything else here (rows,
+ * `ui.render`, `command.run`, `http.request`, `launch.prepare`, `sessions.list`, a mod's own tools, and the
+ * handle's `sessions.invalidate` and `ui.respond`) is the contract's wider shape: a mod that registers an event
+ * Splice does not serve is told so at load, in words naming the mod and the event, and its other handlers run.
+ *
+ * Two surfaces of one contract. `Register` (the default, "observe") is what runs: the six turn events arrive as
+ * the metadata shapes `TurnStart`, `RequestSend`, `StreamEvent`, `ToolCall`, `ResponseReceive` and
+ * `TurnComplete`. `Register<"full">` is the wider contract, whose shapes (bodies, frames, tool arguments, and
+ * answers that change a turn) are `FullTurnStart`, `FullRequestSend`, `FullStreamEvent`, `FullToolCall`,
+ * `FullResponseReceive` and `FullTurnComplete`. This host does not serve them.
  *
  * The author's page is mods/README.md. A mod imports these declarations as types only:
  *
@@ -344,6 +355,18 @@ export interface ModLifecycle {
   readonly version: string;
 }
 
+export interface ModStart extends ModLifecycle {
+  /** Events the mod registered that this host serves. */
+  readonly served: readonly EventName[];
+  /** Why other requested events or handle members are not served. */
+  readonly refused: readonly string[];
+}
+
+export interface ModStop extends ModLifecycle {
+  /** Why this host is stopping, e.g. "disabled" or "handover". */
+  readonly reason: string;
+}
+
 export interface SessionStart {
   /** The harness's own session id, the `session_id` of `GET /api/sessions`. The id is the session:
    *  it stays one row however many processes serve it. */
@@ -380,7 +403,7 @@ export interface SessionsList {
   readonly allRows: boolean;
 }
 
-export interface TurnStart {
+export interface FullTurnStart {
   readonly session: string;
   readonly turn: string;
   readonly labels: Labels;
@@ -388,7 +411,7 @@ export interface TurnStart {
 }
 
 /** A request on its way to the model. A handler changes it by passing a changed `e` to `next`. */
-export interface RequestSend {
+export interface FullRequestSend {
   readonly session: string;
   readonly turn: string;
   readonly model: string;
@@ -397,7 +420,7 @@ export interface RequestSend {
 }
 
 /** One event of the model's stream. Return what the client receives; return `null` to drop it. */
-export interface StreamEvent {
+export interface FullStreamEvent {
   readonly session: string;
   readonly turn: string;
   readonly event: JsonObject;
@@ -408,7 +431,7 @@ export interface StreamEvent {
  * infer an identity from tool arguments or untrusted request metadata. App calls from views or
  * actions can be sessionless; when an app call has a session, it too comes from host context.
  */
-export type ToolCall = ToolCallFields & (
+export type FullToolCall = ToolCallFields & (
   | { readonly caller: "model"; readonly session: string }
   | { readonly caller: "app"; readonly session?: string }
 );
@@ -421,7 +444,7 @@ interface ToolCallFields {
   readonly arguments: JsonObject;
 }
 
-export interface ResponseReceive {
+export interface FullResponseReceive {
   readonly session: string;
   readonly turn: string;
   readonly model: string;
@@ -430,11 +453,12 @@ export interface ResponseReceive {
   readonly body: JsonObject;
 }
 
-export interface TurnComplete {
+export interface FullTurnComplete {
   readonly session: string;
   readonly turn: string;
   readonly model: string;
   readonly stopReason: string;
+  /** `input` includes `cacheRead` and `cacheWrite`: it is every token the request sent, not only the uncached part. */
   readonly usage?: { readonly input: number; readonly output: number; readonly cacheRead: number; readonly cacheWrite: number };
 }
 
@@ -466,18 +490,18 @@ export interface HttpAnswer {
 
 /** Every event: its payload `e`, its filter, and what `next(e)` and the handler return. */
 export interface Events {
-  "mod.start": { payload: ModLifecycle; filter: never; result: void };
-  "mod.stop": { payload: ModLifecycle; filter: never; result: void };
+  "mod.start": { payload: ModStart; filter: never; result: void };
+  "mod.stop": { payload: ModStop; filter: never; result: void };
   "session.start": { payload: SessionStart; filter: never; result: void };
   "session.end": { payload: SessionEnd; filter: never; result: void };
   "launch.prepare": { payload: LaunchPrepare; filter: never; result: LaunchPrepare };
   "sessions.list": { payload: SessionsList; filter: never; result: readonly SessionRow[] };
-  "turn.start": { payload: TurnStart; filter: never; result: void };
-  "request.send": { payload: RequestSend; filter: never; result: RequestSend };
-  "stream.event": { payload: StreamEvent; filter: never; result: StreamEvent | null };
-  "tool.call": { payload: ToolCall; filter: { readonly server?: string; readonly tool?: string }; result: ToolResult };
-  "response.receive": { payload: ResponseReceive; filter: never; result: ResponseReceive };
-  "turn.complete": { payload: TurnComplete; filter: never; result: void };
+  "turn.start": { payload: FullTurnStart; filter: never; result: void };
+  "request.send": { payload: FullRequestSend; filter: never; result: FullRequestSend };
+  "stream.event": { payload: FullStreamEvent; filter: never; result: FullStreamEvent | null };
+  "tool.call": { payload: FullToolCall; filter: { readonly server?: string; readonly tool?: string }; result: ToolResult };
+  "response.receive": { payload: FullResponseReceive; filter: never; result: FullResponseReceive };
+  "turn.complete": { payload: FullTurnComplete; filter: never; result: void };
   "ui.render": {
     payload: UiRenderRequest;
     filter: { readonly surface?: string } & (
@@ -490,22 +514,97 @@ export interface Events {
   "http.request": { payload: HttpRequest; filter: { readonly path?: string; readonly method?: string }; result: HttpAnswer };
 }
 
+/**
+ * The shapes this version of Splice serves for the six turn events: the full contract projected onto metadata.
+ * Splice neither publishes bodies, frames and tool arguments nor runs a handler that changes a turn.
+ * Every one carries `session` (null when the turn is not attributed to one), `turn`, `labels` and `at`
+ * (Unix milliseconds).
+ */
+interface TurnFacts {
+  readonly session: string | null;
+  readonly turn: string;
+  readonly labels: Labels;
+  readonly at: number;
+}
+
+export interface TurnStart extends TurnFacts {
+  /** The model the client asked for. */
+  readonly model: string;
+  readonly head: string;
+  readonly compact: boolean;
+  readonly agent: string | null;
+}
+
+export interface RequestSend extends TurnFacts {
+  /** The upstream model this round goes to. */
+  readonly model: string;
+  readonly round: number;
+}
+
+export interface StreamEvent extends TurnFacts {
+  readonly seq: number;
+  readonly type: string;
+  readonly bytes: number;
+}
+
+export interface ToolCall extends TurnFacts {
+  /** A model opened a tool block. This says the model asked, not that the client ran the tool. */
+  readonly caller: "model";
+  readonly id: string;
+  /** The MCP server, or null for a tool the client has natively. */
+  readonly server: string | null;
+  readonly tool: string;
+}
+
+export interface ResponseReceive extends TurnFacts {
+  /** The model the client asked for. */
+  readonly model: string;
+  readonly status: number;
+  /** The transport attempt. */
+  readonly attempt: number;
+}
+
+export interface TurnComplete extends TurnFacts {
+  readonly model: string;
+  /** The stop reason in the client's clean ending, or null when no clean ending was written. */
+  readonly stopReason: string | null;
+  /** The daemon's outcome, distinct from the client's stop reason. */
+  readonly outcome: string;
+  readonly durationMs: number;
+  /** `input` includes `cacheRead` and `cacheWrite`: it is every token the request sent, not only the uncached part. */
+  readonly usage: { readonly input: number; readonly output: number; readonly cacheRead: number; readonly cacheWrite: number };
+}
+
+interface Observations {
+  "turn.start": TurnStart;
+  "request.send": RequestSend;
+  "stream.event": StreamEvent;
+  "tool.call": ToolCall;
+  "response.receive": ResponseReceive;
+  "turn.complete": TurnComplete;
+}
+
 export type EventName = keyof Events;
-export type Payload<E extends EventName> = Events[E]["payload"];
+type ObserverEvents = { [E in EventName]: E extends keyof Observations
+  ? { payload: Observations[E]; result: void } : Events[E] };
+type HookSurface = "observe" | "full";
+type HookEvents<S extends HookSurface> = S extends "observe" ? ObserverEvents : Events;
+
+export type Payload<E extends EventName, S extends HookSurface = "observe"> = HookEvents<S>[E]["payload"];
 type KeysOfUnion<T> = T extends unknown ? keyof T : never;
 type FilterKey = KeysOfUnion<Events[EventName]["filter"]>;
 type EventFilter<F> = F extends object ? F & { readonly [K in Exclude<FilterKey, keyof F>]?: never } : never;
 
 /** Keys belonging to other filters are invalid even when the filter is passed in a variable. */
 export type Filter<E extends EventName> = EventFilter<Events[E]["filter"]>;
-export type Result<E extends EventName> = Events[E]["result"];
+export type Result<E extends EventName, S extends HookSurface = "observe"> = HookEvents<S>[E]["result"];
 
-/** The rest of the chain: the next mod's handler, or Splice's own behaviour at the end. */
-export type Next<E extends EventName> = (e: Payload<E>) => Promise<Result<E>>;
+/** The rest of the chain. In the observation host it only calls the mod's other handlers. */
+export type Next<E extends EventName, S extends HookSurface = "observe"> = (e: Payload<E, S>) => Promise<Result<E, S>>;
 
-/** A handler is a layer of an onion: it may act before `next`, change `e`, skip `next` and answer
- *  itself, or change what `next` returned. */
-export type Handler<E extends EventName> = ($: Handle, e: Payload<E>, next: Next<E>) => Promise<Result<E>>;
+export type Handler<E extends EventName, S extends HookSurface = "observe"> = (
+  $: Handle, e: Payload<E, S>, next: Next<E, S>,
+) => Promise<Result<E, S>>;
 
 /** What a handler threw, as the `.catch` handler receives it beside the event. */
 export interface ModError {
@@ -516,14 +615,14 @@ export interface ModError {
 
 /** Runs when the registration's handler throws or rejects. Its answer stands in for the handler's;
  *  calling `next` lets the event go on as though the handler were absent. */
-export type CatchHandler<E extends EventName> = (
+export type CatchHandler<E extends EventName, S extends HookSurface = "observe"> = (
   $: Handle,
-  e: Payload<E> & { readonly error: ModError },
-  next: Next<E>,
-) => Promise<Result<E>>;
+  e: Payload<E, S> & { readonly error: ModError },
+  next: Next<E, S>,
+) => Promise<Result<E, S>>;
 
-export interface Registration<E extends EventName> {
-  catch(handler: CatchHandler<E>): Registration<E>;
+export interface Registration<E extends EventName, S extends HookSurface = "observe"> {
+  catch(handler: CatchHandler<E, S>): Registration<E, S>;
 }
 
 // Distribute over E, but compare each member with the whole inferred event type.
@@ -533,17 +632,17 @@ type SingleEvent<E extends EventName, Whole = E> = E extends EventName
 
 /** Register one event at a time: narrow a dynamic name before calling. The event determines the
  *  filter, the payload and the result of both the handler and its error handler. */
-export interface On {
-  <E extends EventName>(event: E & NoInfer<SingleEvent<E>>, handler: Handler<NoInfer<E>>): Registration<E>;
+export interface On<S extends HookSurface = "observe"> {
+  <E extends EventName>(event: E & NoInfer<SingleEvent<E>>, handler: Handler<NoInfer<E>, S>): Registration<E, S>;
   <E extends EventName>(
     event: E & NoInfer<SingleEvent<E>>,
     filter: Filter<NoInfer<E>>,
-    handler: Handler<NoInfer<E>>,
-  ): Registration<E>;
+    handler: Handler<NoInfer<E>, S>,
+  ): Registration<E, S>;
 }
 
-/** `hooks/register.ts` exports `register: Register`. Splice calls it once when the mod loads. */
-export type Register = (on: On) => void;
+/** The installed runner calls `register: Register` once. `Register<"full">` describes the wider contract, not this host. */
+export type Register<S extends HookSurface = "observe"> = (on: On<S>) => void;
 
 // ---------------------------------------------------------------------------------------------
 // The handle `$`

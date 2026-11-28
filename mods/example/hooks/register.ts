@@ -1,4 +1,6 @@
-// An example mod written against the contract. It does not run: Splice serves no mod events yet.
+// An example mod written against the contract. Installed today, its served event handlers (session.start) run as
+// observers. Its tool.call handlers load but never fire, because no session is offered the mod's own tools yet, and
+// its sessions.list and ui.render handlers are refused at load (mods/README.md, "What runs today").
 // It shows the three shapes together: a lifecycle hook (session.start), rows with actions
 // (sessions.list and the resolve tool behind its buttons) and a page (ui.render).
 import type { Json, ModSessionRow, Register, UiRenderAnswer } from "../../contract/index.ts";
@@ -49,7 +51,7 @@ function page(reviews: readonly Review[], theme: "light" | "dark"): UiRenderAnsw
   };
 }
 
-export const register: Register = (on) => {
+export const register: Register<"full"> = (on) => {
   const open = async (store: { list(p?: string): Promise<readonly string[]>; get(k: string): Promise<Json | undefined> }) => {
     const reviews: Review[] = [];
     for (const key of await store.list("review/")) {
@@ -64,7 +66,6 @@ export const register: Register = (on) => {
     const title = e.labels["review"];
     if (title && !e.seenBefore) {
       await $.store.set(`review/${e.session}`, { id: e.session, session: e.session, title });
-      $.sessions.invalidate();
     }
     return next(e);
   });
@@ -80,7 +81,8 @@ export const register: Register = (on) => {
   });
 
   // The tool behind the row's buttons. It is marked for the app alone, so the model never sees it.
-  on("tool.call", { server: MOD, tool: "resolve" }, async ($, e) => {
+  on("tool.call", { server: MOD, tool: "resolve" }, async ($, e, next) => {
+    if (e.caller !== "app") return next(e);
     const review = String(e.arguments["review"]);
     const verdict = String(e.arguments["verdict"]);
     await $.store.delete(`review/${review}`);

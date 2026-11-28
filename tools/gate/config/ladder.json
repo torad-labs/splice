@@ -105,7 +105,7 @@
     {
       "task": "modContractTests",
       "inputs": ["mods/**","package.json","bun.lock"],
-      "why": "The mod contract (mods/contract/index.ts) against its JSON examples and the example mod: each example and each JSON file of the example mod is compiled as a value of its declared type, so a wrong field in an example fails, and mutated examples prove the check is not vacuous.",
+      "why": "Checks the contract's JSON examples and example mod against their types, and drives the installed Bun host over its stdio pipe.",
       "command": ["bun", "test", "mods"]
     },
     { "task": "prTitle", "fresh": true, "on": "push", "why": "The commit subject against the conventional-type vocabulary; in CI the org gate judges the PR title instead.", "command": ["bun", "tools/gate", "title"] },

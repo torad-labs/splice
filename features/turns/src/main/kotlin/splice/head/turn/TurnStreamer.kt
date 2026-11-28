@@ -98,6 +98,7 @@ internal class TurnStreamer(
                 perf.wire,
                 retryWrite = pending::retryProgress,
                 ending = pending::ending,
+                observed = perf.observed,
             ),
             model = meta.route.originalModel,
             usagePayload = wiring.usagePayloadBuilder(

@@ -28,7 +28,6 @@ import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import splice.core.failure.FailureEvidence
 import splice.core.perf.OutcomeTag
-import splice.core.perf.UpstreamAttemptTiming
 import splice.core.turn.TurnOutcome
 import splice.core.util.WallClock
 import splice.upstream.RoundBody
@@ -87,7 +86,7 @@ internal class UpstreamRequest(
         block: UpstreamHandler<T>,
     ): RetryOutcome<T> {
         val postedAtMs = auth.postedAtMs
-        val timing = ctx.observers.perf?.let(::UpstreamAttemptTiming)
+        val timing = wire.timing
         val route = ctx.recovery.route
         // The vendor's route hears the write and the headers the timing hears, perf observed or not.
         val marks = if (timing == null && route == null) null else AttemptMarks(timing, route)
@@ -142,7 +141,7 @@ internal class UpstreamRequest(
         val recorder = wire.recorder
         ctx.markHeaders()
         val answeredAt = wallClock()
-        ctx.providerAnswerObserver.observed(resp.status.value, answeredAt)
+        ctx.providerAnswerObserver.observed(resp.status.value, answeredAt, wire.timing?.attempt)
         // V4-220 item 6b: every answer reaches the provider, so a forwarded credential's verdict is known.
         ctx.auth.upstreamAnswered(resp.status.value, resp.status.isSuccess())
         recorder?.response(resp.status.value, resp.headers.entries().associate { (k, v) -> k to v.joinToString() })

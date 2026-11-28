@@ -16,6 +16,7 @@ import splice.head.GatewayTurns
 import splice.head.HeadDeps
 import splice.head.hold.ClientWallHeader
 import splice.head.hold.ResendLedger
+import splice.head.observe.TurnObserverAdmission
 import splice.head.turn.ClientPace
 import splice.head.turn.Preparation
 import splice.head.turn.SESSION_TAG_CHARS
@@ -39,6 +40,7 @@ internal class HeadAdmission(
     private val driver: TurnDriver,
 ) {
     private val keyAccounts = KeyAccount(preparation.provider.auth, deps.quotaBundle)
+    private val observer = TurnObserverAdmission(deps.seams.reports.observers, preparation.provider.key, deps.log)
 
     private val refusals =
         preparation.provider.let { PreDriveRefusals(deps, admission, responses, driver, it.loginCommand, it.key) }
@@ -157,7 +159,8 @@ internal class HeadAdmission(
         // TurnTelemetry's emitters, which fire turn.end. Local and Replay write no row, so announcing them
         // would leave the console a start with no end; Rejected writes one and announces itself
         // (PreDriveRefusals.refusePrepared).
-        deps.seams.events.turnStarted(prepared.built.meta.scope.sessionId)
+        deps.seams.events.turnStarted(meta.scope.sessionId)
+        observer.begin(call, admitted.perf, meta)
         // V4-174: the trace begins HERE, before the two local refusals, because a refused turn is a
         // request the head received and answered — a trace that skipped it would show a client
         // retrying for no visible reason. Null for every head whose trace is off.

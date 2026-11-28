@@ -1,0 +1,104 @@
+package splice.app.mods.run
+
+import splice.core.util.Cancellables
+import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
+import java.nio.file.Files
+import java.nio.file.NoSuchFileException
+import java.nio.file.Path
+import java.time.Instant
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
+
+private const val MOD_PS_TIMEOUT_MS = 3000L // why: ps is the one external helper, and a hung one must not hold a stop
+private const val STAT_STATE_INDEX = 0 // why: after the command's ")" /proc/<pid>/stat runs state, parent, group
+private const val STAT_GROUP_INDEX = 2 // why: the process group follows state and parent in /proc/<pid>/stat
+private const val PS_FIELDS = 3 // why: pid, group, state
+
+/** A process told apart from every later user of its pid by the moment it started. */
+internal data class ModIdentity(val pid: Long, val birth: Instant)
+
+/**
+ * The process group of every live process on the machine, as pid to group, or null when the table could not be read
+ * whole. Null is never an answer of "nobody": a caller that cannot read the table must not conclude a group is gone.
+ * Zombies are not listed: a process that has exited holds nothing.
+ */
+internal object ModProcessIdentity {
+    fun of(handle: ProcessHandle): ModIdentity? =
+        handle.info().startInstant().orElse(null)?.let { ModIdentity(handle.pid(), it) }
+
+    fun of(pid: Long): ModIdentity? =
+        ProcessHandle.of(pid).orElse(null)?.takeIf(ProcessHandle::isAlive)?.let(::of)
+
+    fun matches(identity: ModIdentity): Boolean = of(identity.pid) == identity
+}
+
+/**
+ * Reads the process table where splice can do it with certainty. Linux reads /proc. macOS asks one `ps`, bounded by
+ * [MOD_PS_TIMEOUT_MS]. Every other system answers null, so a mod is refused there instead of being started with processes
+ * nobody could stop. A table that does not list this very process is not whole and answers null as well.
+ */
+internal class ModProcessTable(
+    private val osName: String = System.getProperty("os.name").orEmpty(),
+    private val psPath: String = "/bin/ps",
+    private val log: LogSink = LogSink {},
+) {
+    private val blanks = Regex("\\s+")
+
+    val supported: Boolean get() = osName.startsWith("Linux") || osName.startsWith("Mac")
+
+    fun groups(): Map<Long, Long>? {
+        val read = Cancellables.runCatchingCancellable {
+            when {
+                osName.startsWith("Linux") -> fromProc()
+                osName.startsWith("Mac") -> fromPs()
+                else -> null
+            }
+        }.onFailure { log("[mods] cannot read the process table: ${SafeFailureText.render(it)}\n") }
+        return read.getOrNull()?.takeIf { ProcessHandle.current().pid() in it }
+    }
+
+    /** `ps -o pid=,pgid=,stat=` lines to pid and group, zombies left out. */
+    fun parse(text: String): Map<Long, Long> = buildMap {
+        for (line in text.lineSequence()) {
+            val fields = line.trim().split(blanks)
+            val pid = fields.getOrNull(0)?.toLongOrNull()
+            val group = fields.getOrNull(1)?.toLongOrNull()
+            val zombie = fields.getOrNull(PS_FIELDS - 1)?.startsWith("Z") ?: true
+            if (pid != null && group != null) {
+                if (!zombie) put(pid, group)
+            }
+        }
+    }
+
+    private fun fromProc(): Map<Long, Long> = ProcessHandle.allProcesses().use { all ->
+        buildMap { all.forEach { handle -> groupFromStat(handle.pid())?.let { put(handle.pid(), it) } } }
+    }
+
+    // A process that exits between the listing and this read is simply not there any more.
+    private fun groupFromStat(pid: Long): Long? = try {
+        val raw = Files.readString(Path.of("/proc/$pid/stat"), Charsets.ISO_8859_1)
+        val fields = raw.substringAfterLast(')').trim().split(' ')
+        fields[STAT_GROUP_INDEX].toLong().takeUnless { fields[STAT_STATE_INDEX] in "ZX" }
+    } catch (_: NoSuchFileException) {
+        null
+    }
+
+    private fun fromPs(): Map<Long, Long>? {
+        val ps = ProcessBuilder(psPath, "-A", "-o", "pid=,pgid=,stat=")
+            .redirectError(ProcessBuilder.Redirect.DISCARD)
+            .start()
+        val listing = CompletableFuture<String?>()
+        Thread.startVirtualThread {
+            Cancellables.runCatchingBestEffort {
+                val text = ps.inputStream.bufferedReader().use { it.readText() }
+                listing.complete(text.takeIf { ps.waitFor() == 0 })
+            }.onFailure(listing::completeExceptionally)
+        }
+        return try {
+            listing.get(MOD_PS_TIMEOUT_MS, TimeUnit.MILLISECONDS)?.let(::parse)
+        } finally {
+            if (ps.isAlive) ps.destroyForcibly()
+        }
+    }
+}

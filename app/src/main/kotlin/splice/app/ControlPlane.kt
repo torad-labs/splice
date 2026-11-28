@@ -31,6 +31,7 @@ import splice.app.head.HeadProbeReadings
 import splice.app.head.LaunchSpeedWiring
 import splice.app.modes.DaemonModes
 import splice.app.modes.ModesNow
+import splice.app.mods.run.ModCallRows
 import splice.app.provider.ClaudeAccountWiring
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ModelRosters
@@ -165,6 +166,24 @@ internal class ControlPlane(
     internal val alerts = stores.alerts
     internal val perfRows = stores.perfRows
     internal val foregroundTools = stores.foregroundTools
+    internal val modLaunches = stores.modLaunches
+    internal val modRunner = stores.modRunner
+    internal val modSessions = stores.modSessions
+    internal val modTurns = splice.app.mods.events.ModObservationGate(modSessions, stores.modTurns)
+    internal val modTracking = splice.app.mods.ModSessionTracking(
+        probeScope,
+        stores.mods.presence,
+        modSessions,
+        modLaunches,
+        statePaths.envReader(splice.app.daemon.SPLICE_SUCCEEDS).let { predecessor ->
+            splice.app.mods.handover.ModHandoverStarts(predecessor != null, predecessor?.toLongOrNull())
+        },
+    ).also { modRunner.handoverStarts = it.starts }
+
+    internal fun prepareModObservations(providers: Map<String, splice.core.topology.ProviderConfig>) {
+        stores.rememberModCredentials(providers)
+        modRunner.start(recoveredSessions = modTracking.ready)
+    }
     internal val sessionFallbacks = stores.sessionFallbacks
     internal val playgroundProviders = stores.playgroundProviders
     internal val playground = stores.playground
@@ -240,6 +259,7 @@ internal class ControlPlane(
         // door (this machine's, on this control port, or a `[remote.*]` one) is placed on it (door-sessions).
         val doors = LaunchDoors(topology.launches.remote, controlPort)
         val sessions = sessionWiring.source(home, heads, doors, console, foregroundTools)
+        modRunner.attachSessions(ModCallRows(sessions, modLaunches, stores.modText, modSessions))
         val signals = health.signals(heads, sessions, probes, home)
         val guard = parts.guard()
         val listen = adopted.control(controlPort)
@@ -251,7 +271,7 @@ internal class ControlPlane(
             log,
             readings = ControlReadings(health.report(heads, failedHeads, headCount, probes, signals), signals),
             runtime = ControlRuntime(
-                launchService = launch.service(home, sharing, controlPort, mcp.hubLive)
+                launchService = launch.service(home, sharing, controlPort, mcp.hubLive, modLaunches)
                     .also {
                         it.remotes = remoteCommands
                         it.speeds = speeds.of(heads, desktop?.servedProviders)
@@ -270,6 +290,7 @@ internal class ControlPlane(
         parts.wirePeers(srv, guard, probeScope)
         parts.wireRestartSuccessor(srv, controlPort)
         return if (ownership.bind(srv, controlPort, listen.handOn(guard))) {
+            modTracking.start()
             srv.also { mcp.onControlBound(mcpServices, probeScope, home, it.listeningPort, it.mcpHarnessSyncLock) }
         } else {
             null
@@ -294,11 +315,14 @@ internal class ControlPlane(
         performance?.let { srv.wirePerformance(it) }
         srv.ports.turns.codeMode = providerAssembly.codeModeControls
         srv.ports.turns.foreground = foregroundTools
+        srv.ports.modLaunches = modLaunches
         srv.ports.compaction = compactionInstructions
         srv.ports.claudeLogins = claudeLogin.owner
         srv.ports.serverMode = serverMode
         srv.ports.desktop = desktop
         srv.ports.modes = modes
+        srv.ports.mods = stores.mods
+        srv.ports.modRunner = modRunner
         srv.ports.quotaReadFailures = quotaReadFailures
         srv.ports.sessionFallbacks = sessionFallbacks
         srv.ports.lifecycle.keyRotation = KeyRotation(daemon.mgmtKey, daemon.mcpAccess, statePaths, log)
